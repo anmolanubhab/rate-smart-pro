@@ -22,6 +22,9 @@ export type Database = {
           bill_on_mrp: number
           created_at: string
           id: string
+          invoice_date: string | null
+          invoice_number: string | null
+          party_name: string | null
           rd_amount: number
           required_discount: number
           user_id: string
@@ -33,6 +36,9 @@ export type Database = {
           bill_on_mrp: number
           created_at?: string
           id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          party_name?: string | null
           rd_amount: number
           required_discount: number
           user_id: string
@@ -44,6 +50,9 @@ export type Database = {
           bill_on_mrp?: number
           created_at?: string
           id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          party_name?: string | null
           rd_amount?: number
           required_discount?: number
           user_id?: string
