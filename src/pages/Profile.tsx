@@ -33,7 +33,7 @@ const Profile = () => {
         <div className="mt-8 space-y-3">
           <InfoRow icon={Mail} label="Email" value={user?.email ?? "—"} />
           <InfoRow icon={Calendar} label="Joined" value={user?.created_at ? new Date(user.created_at).toLocaleDateString() : "—"} />
-          <InfoRow icon={Shield} label="User ID" value={user?.id?.slice(0, 8) + "…" ?? "—"} mono />
+          <InfoRow icon={Shield} label="User ID" value={user?.id ? user.id.slice(0, 8) + "…" : "—"} mono />
         </div>
 
         <div className="mt-8 pt-6 border-t border-border">
