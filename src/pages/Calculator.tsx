@@ -51,7 +51,7 @@ const Calculator = () => {
     }
   }, [user]);
 
-  // Load segment discounts when party changes, auto-fill party name
+  // Load segment discounts when party changes, auto-fill party name + bill discount
   useEffect(() => {
     if (!selectedParty) {
       setPartyDiscounts([]);
@@ -59,6 +59,8 @@ const Calculator = () => {
       return;
     }
     setPartyName(selectedParty.name);
+    // Auto-fill Bill Discount from party default_discount
+    setBillDiscount(String(selectedParty.default_discount));
     (async () => {
       const pd = await fetchPartyDiscounts(selectedParty.id);
       setPartyDiscounts(pd);
@@ -313,7 +315,7 @@ const Calculator = () => {
           <p className="text-xs text-muted-foreground mt-2">Enter total bill amount here</p>
         </div>
 
-        <InputCard label="Bill Discount" value={billDiscount} onChange={setBillDiscount} accent="from-accent/20 to-accent/5" suffix="%" />
+        <InputCard label="Bill Discount" value={billDiscount} onChange={setBillDiscount} accent="from-accent/20 to-accent/5" suffix="%" helper={selectedParty ? "Auto-filled from Party settings" : undefined} />
 
         {mode === "CD" ? (
           <InputCard
@@ -466,8 +468,8 @@ const Calculator = () => {
 };
 
 const InputCard = ({
-  label, value, onChange, accent, prefix, suffix,
-}: { label: string; value: string; onChange: (v: string) => void; accent: string; prefix?: string; suffix?: string }) => (
+  label, value, onChange, accent, prefix, suffix, helper,
+}: { label: string; value: string; onChange: (v: string) => void; accent: string; prefix?: string; suffix?: string; helper?: string }) => (
   <div className={cn("rounded-2xl p-5 bg-card border border-border shadow-soft transition-smooth hover:shadow-elegant hover:-translate-y-0.5 bg-gradient-to-br", accent)}>
     <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">{label}</Label>
     <div className="flex items-center gap-2 mt-2">
@@ -481,6 +483,7 @@ const InputCard = ({
       />
       {suffix && <span className="text-2xl font-display font-semibold text-muted-foreground">{suffix}</span>}
     </div>
+    {helper && <p className="text-xs text-primary/80 mt-2 font-medium">{helper}</p>}
   </div>
 );
 
