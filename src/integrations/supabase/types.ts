@@ -20,13 +20,18 @@ export type Database = {
           bill_amount: number
           bill_discount: number
           bill_on_mrp: number
+          cd_discount: number | null
           created_at: string
           id: string
           invoice_date: string | null
           invoice_number: string | null
+          mode: Database["public"]["Enums"]["discount_type"] | null
+          party_id: string | null
           party_name: string | null
           rd_amount: number
           required_discount: number
+          segment_id: string | null
+          total_benefit: number | null
           user_id: string
         }
         Insert: {
@@ -34,13 +39,18 @@ export type Database = {
           bill_amount: number
           bill_discount: number
           bill_on_mrp: number
+          cd_discount?: number | null
           created_at?: string
           id?: string
           invoice_date?: string | null
           invoice_number?: string | null
+          mode?: Database["public"]["Enums"]["discount_type"] | null
+          party_id?: string | null
           party_name?: string | null
           rd_amount: number
           required_discount: number
+          segment_id?: string | null
+          total_benefit?: number | null
           user_id: string
         }
         Update: {
@@ -48,14 +58,136 @@ export type Database = {
           bill_amount?: number
           bill_discount?: number
           bill_on_mrp?: number
+          cd_discount?: number | null
           created_at?: string
           id?: string
           invoice_date?: string | null
           invoice_number?: string | null
+          mode?: Database["public"]["Enums"]["discount_type"] | null
+          party_id?: string | null
           party_name?: string | null
           rd_amount?: number
           required_discount?: number
+          segment_id?: string | null
+          total_benefit?: number | null
           user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calculations_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calculations_segment_id_fkey"
+            columns: ["segment_id"]
+            isOneToOne: false
+            referencedRelation: "segments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      parties: {
+        Row: {
+          address: string | null
+          agreed_discount: number
+          created_at: string
+          default_discount: number
+          discount_type: Database["public"]["Enums"]["discount_type"]
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          address?: string | null
+          agreed_discount?: number
+          created_at?: string
+          default_discount?: number
+          discount_type?: Database["public"]["Enums"]["discount_type"]
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          address?: string | null
+          agreed_discount?: number
+          created_at?: string
+          default_discount?: number
+          discount_type?: Database["public"]["Enums"]["discount_type"]
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      party_discounts: {
+        Row: {
+          created_at: string
+          discount: number
+          id: string
+          party_id: string
+          segment_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          discount?: number
+          id?: string
+          party_id: string
+          segment_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          discount?: number
+          id?: string
+          party_id?: string
+          segment_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "party_discounts_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_discounts_segment_id_fkey"
+            columns: ["segment_id"]
+            isOneToOne: false
+            referencedRelation: "segments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      segments: {
+        Row: {
+          created_at: string
+          id: string
+          is_default: boolean
+          name: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -67,7 +199,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      discount_type: "RD" | "CD"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -194,6 +326,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      discount_type: ["RD", "CD"],
+    },
   },
 } as const

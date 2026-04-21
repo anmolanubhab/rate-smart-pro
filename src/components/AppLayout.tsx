@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { NavLink, useLocation, Navigate } from "react-router-dom";
-import { LayoutDashboard, Calculator, History, User, LogOut, Moon, Sun, Sparkles } from "lucide-react";
+import { LayoutDashboard, Calculator, History, User, LogOut, Moon, Sun, Sparkles, Users } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/calculator", label: "Calculator", icon: Calculator },
+  { to: "/parties", label: "Parties", icon: Users },
   { to: "/history", label: "History", icon: History },
   { to: "/profile", label: "Profile", icon: User },
 ];
@@ -95,7 +96,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
 
         {/* Mobile bottom nav */}
         <nav className="md:hidden fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border z-40">
-          <div className="grid grid-cols-4">
+          <div className="grid grid-cols-5">
             {navItems.map(({ to, label, icon: Icon }) => (
               <NavLink
                 key={to}
