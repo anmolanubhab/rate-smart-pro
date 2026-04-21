@@ -51,7 +51,7 @@ const Calculator = () => {
     }
   }, [user]);
 
-  // Load segment discounts when party changes, auto-fill party name
+  // Load segment discounts when party changes, auto-fill party name + bill discount
   useEffect(() => {
     if (!selectedParty) {
       setPartyDiscounts([]);
@@ -59,6 +59,8 @@ const Calculator = () => {
       return;
     }
     setPartyName(selectedParty.name);
+    // Auto-fill Bill Discount from party default_discount
+    setBillDiscount(String(selectedParty.default_discount));
     (async () => {
       const pd = await fetchPartyDiscounts(selectedParty.id);
       setPartyDiscounts(pd);
