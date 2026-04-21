@@ -11,6 +11,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Calculator from "./pages/Calculator";
 import History from "./pages/History";
+import Parties from "./pages/Parties";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
@@ -30,6 +31,7 @@ const App = () => (
               <Route path="/dashboard" element={<AppLayout><Dashboard /></AppLayout>} />
               <Route path="/calculator" element={<AppLayout><Calculator /></AppLayout>} />
               <Route path="/history" element={<AppLayout><History /></AppLayout>} />
+              <Route path="/parties" element={<AppLayout><Parties /></AppLayout>} />
               <Route path="/profile" element={<AppLayout><Profile /></AppLayout>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
