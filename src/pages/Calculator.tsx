@@ -315,7 +315,7 @@ const Calculator = () => {
           <p className="text-xs text-muted-foreground mt-2">Enter total bill amount here</p>
         </div>
 
-        <InputCard label="Bill Discount" value={billDiscount} onChange={setBillDiscount} accent="from-accent/20 to-accent/5" suffix="%" />
+        <InputCard label="Bill Discount" value={billDiscount} onChange={setBillDiscount} accent="from-accent/20 to-accent/5" suffix="%" helper={selectedParty ? "Auto-filled from Party settings" : undefined} />
 
         {mode === "CD" ? (
           <InputCard
