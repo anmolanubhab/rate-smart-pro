@@ -32,6 +32,7 @@ type Calc = {
 };
 
 const fmt = (n: number) => new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(n));
+const fmtPct = (n: number | null) => Number(n || 0).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -248,7 +249,7 @@ const Dashboard = () => {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {c.mode === "CD"
-                        ? `${c.bill_discount}% + ${Number(c.cd_discount || 0).toFixed(2).replace(/\.00$/, "")} % (CD)`
+                        ? `${c.bill_discount}% + ${fmtPct(c.cd_discount)}% (CD)`
                         : `${c.bill_discount}% → ${c.required_discount}%`}{" "}• {new Date(c.created_at).toLocaleDateString()}
                       {c.invoice_number && <> • {c.invoice_number}</>}
                     </div>
