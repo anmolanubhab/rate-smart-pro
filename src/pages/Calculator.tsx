@@ -88,13 +88,17 @@ const Calculator = () => {
 
     const billOnMrp = bDisc < 100 ? bill / (1 - bDisc / 100) : 0;
 
-    // RD path: apply rDisc on billOnMrp
+    // RD path: apply rDisc on billOnMrp (UNCHANGED)
     const afterRd = billOnMrp * (1 - rDisc / 100);
     const rdAmount = afterRd - bill;
 
-    // CD path: CD applied on top of bill discount (on the entered bill amount)
-    const cdAmount = bill * (cd / 100); // benefit
-    const afterCd = bill - cdAmount;
+    // CD path (sequential): treat entered bill as MRP total.
+    // Net = Bill × (1 − BaseDiscount%)  →  Final = Net × (1 − CD%)
+    const cdNetAmount = bill * (1 - bDisc / 100); // after Base Discount
+    const cdAmount = cdNetAmount * (cd / 100);    // CD benefit on Net
+    const afterCd = cdNetAmount - cdAmount;       // Final payable
+    // Effective discount vs MRP (e.g. 27 + 2 → ~28.46%)
+    const cdEffective = bill > 0 ? ((bill - afterCd) / bill) * 100 : 0;
 
     // Agreed diff for RD display (agreed - bill discount)
     const agreedDiff = selectedParty?.discount_type === "RD"
@@ -105,9 +109,9 @@ const Calculator = () => {
 
     const isCd = mode === "CD";
     const finalPayable = isCd ? afterCd : afterRd;
-    const totalBenefit = isCd ? cdAmount : -rdAmount; // RD neg = surplus? keep signed
+    const totalBenefit = isCd ? (bill - afterCd) : -rdAmount; // CD: total saved vs MRP
 
-    return { bill, bDisc, rDisc, cd, billOnMrp, afterRd, rdAmount, cdAmount, afterCd, agreedDiff, extraNeeded, finalPayable, totalBenefit };
+    return { bill, bDisc, rDisc, cd, billOnMrp, afterRd, rdAmount, cdNetAmount, cdAmount, afterCd, cdEffective, agreedDiff, extraNeeded, finalPayable, totalBenefit };
   }, [billAmount, billDiscount, requiredDiscount, cdDiscount, mode, selectedParty]);
 
   const payload = {
