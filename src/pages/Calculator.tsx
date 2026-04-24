@@ -398,29 +398,42 @@ const Calculator = () => {
       </Collapsible>
 
       {/* Computed results */}
-      <div className="grid md:grid-cols-3 gap-4">
-        <ResultCard label="Bill on MRP" value={`₹${fmtINR(calc.billOnMrp)}`} subtle />
-        <ResultCard
-          label={mode === "CD" ? "After CD" : "After RD"}
-          value={`₹${fmtINR(calc.finalPayable)}`}
-          tone="success"
-        />
-        {mode === "CD" ? (
+      {mode === "CD" ? (
+        <div className="grid md:grid-cols-3 gap-4">
+          <ResultCard label="Bill Amount (MRP)" value={`₹${fmtINR(calc.bill)}`} subtle />
+          <ResultCard label={`Net after ${calc.bDisc}% Base`} value={`₹${fmtINR(calc.cdNetAmount)}`} subtle />
+          {calc.cd > 0 && (
+            <ResultCard
+              label={`CD Amount (${calc.cd}%)`}
+              value={`-₹${fmtINR(calc.cdAmount)}`}
+              tone="success"
+              icon={TrendingDown}
+            />
+          )}
+          <ResultCard label="Final Payable" value={`₹${fmtINR(calc.afterCd)}`} tone="success" />
           <ResultCard
-            label="CD Amount"
-            value={`-₹${fmtINR(calc.cdAmount)}`}
-            tone="success"
-            icon={TrendingDown}
+            label="Effective Discount"
+            value={`${calc.cdEffective.toFixed(2)}%`}
+            subtle
           />
-        ) : (
+          <ResultCard label="Commitment" value={`${calc.bDisc}% + ${calc.cd}%`} subtle />
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-3 gap-4">
+          <ResultCard label="Bill on MRP" value={`₹${fmtINR(calc.billOnMrp)}`} subtle />
+          <ResultCard
+            label="After RD"
+            value={`₹${fmtINR(calc.finalPayable)}`}
+            tone="success"
+          />
           <ResultCard
             label="RD Amount"
             value={`${isNegative ? "-" : "+"}₹${fmtINR(Math.abs(calc.rdAmount))}`}
             tone={isNegative ? "destructive" : "warning"}
             icon={isNegative ? TrendingDown : TrendingUp}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Total benefit */}
       {mode && calc.bill > 0 && (
@@ -433,7 +446,7 @@ const Calculator = () => {
           </div>
           <div className="text-xs text-muted-foreground max-w-sm text-right">
             {mode === "CD"
-              ? "CD applied on top of bill discount — pure savings for the party."
+              ? `Sequential: ${calc.bDisc}% Base on MRP, then ${calc.cd}% CD on Net. Effective ${calc.cdEffective.toFixed(2)}%.`
               : calc.totalBenefit >= 0
                 ? "Surplus you can adjust against this bill."
                 : "Shortfall — additional discount is needed to match."}
