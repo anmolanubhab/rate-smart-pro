@@ -73,11 +73,18 @@ const Calculator = () => {
     const { value, source } = resolveDiscount(selectedParty, segmentId || null, partyDiscounts);
     if (selectedParty.discount_type === "RD") {
       setRequiredDiscount(String(value));
+      setAutoApplied(source);
     } else {
-      // CD mode: the "auto" value represents the CD% to apply on top of bill discount
-      setCdDiscount(String(value));
+      // CD mode:
+      //   Bill Discount  = party.default_discount (Base)
+      //   CD %           = max(0, segmentDiscount - baseDiscount)
+      // If no segment is selected (source !== "segment"), CD = 0.
+      const base = Number(selectedParty.default_discount) || 0;
+      const cdPct = source === "segment" ? Math.max(0, Number(value) - base) : 0;
+      // Round to 2 decimals to avoid float noise
+      setCdDiscount(String(Math.round(cdPct * 100) / 100));
+      setAutoApplied(source);
     }
-    setAutoApplied(source);
   }, [selectedParty, segmentId, partyDiscounts]);
 
   const calc = useMemo(() => {
