@@ -33,6 +33,7 @@ const Parties = () => {
   const [segDiscounts, setSegDiscounts] = useState<Record<string, string>>({});
   const [newSegmentName, setNewSegmentName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [cdExtrasByParty, setCdExtrasByParty] = useState<Record<string, number>>({});
 
   useEffect(() => {
     document.title = "Parties — RD Calculator Pro";
@@ -44,8 +45,20 @@ const Parties = () => {
     setLoading(true);
     try {
       const [p, s] = await Promise.all([fetchParties(user.id), fetchSegments()]);
+      const cdExtras = Object.fromEntries(
+        await Promise.all(
+          p
+            .filter((party) => party.discount_type === "CD")
+            .map(async (party) => {
+              const discounts = await fetchPartyDiscounts(party.id);
+              const highestCommitted = discounts.reduce((max, discount) => Math.max(max, Number(discount.discount) || 0), Number(party.default_discount) || 0);
+              return [party.id, Math.round(Math.max(0, highestCommitted - (Number(party.default_discount) || 0)) * 100) / 100] as const;
+            }),
+        ),
+      );
       setParties(p);
       setSegments(s);
+      setCdExtrasByParty(cdExtras);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -154,6 +167,16 @@ const Parties = () => {
     (p.address || "").toLowerCase().includes(search.toLowerCase()),
   );
 
+  const getCdPreview = (baseDiscount: number) => {
+    const values = Object.entries(segDiscounts)
+      .filter(([segmentId, value]) => segmentId && value !== "" && !isNaN(parseFloat(value)))
+      .map(([, value]) => parseFloat(value))
+      .filter((value) => value > baseDiscount);
+
+    if (values.length === 0) return 0;
+    return Math.round((Math.max(...values) - baseDiscount) * 100) / 100;
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-fade-in-up">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
@@ -218,6 +241,12 @@ const Parties = () => {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Agreed</p>
                     <p className="font-semibold tabular-nums">{p.agreed_discount}%</p>
+                  </div>
+                )}
+                {p.discount_type === "CD" && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">CD</p>
+                    <p className="font-semibold tabular-nums">+{cdExtrasByParty[p.id] ?? 0}%</p>
                   </div>
                 )}
               </div>
@@ -299,6 +328,22 @@ const Parties = () => {
                   placeholder="e.g. 24"
                 />
                 <p className="text-xs text-muted-foreground">Used as the Required Discount in the calculator.</p>
+              </div>
+            )}
+
+            {form.discount_type === "CD" && (
+              <div className="rounded-xl border border-border bg-muted/30 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">CD Preview</p>
+                    <p className="font-display text-2xl font-bold mt-1 tabular-nums">
+                      {parseFloat(form.default_discount) || 0}% + {getCdPreview(parseFloat(form.default_discount) || 0)}% (CD)
+                    </p>
+                  </div>
+                  <p className="max-w-sm text-xs text-muted-foreground">
+                    Base Discount comes from Default Discount. Extra CD is auto-derived from the highest segment discount above base.
+                  </p>
+                </div>
               </div>
             )}
 

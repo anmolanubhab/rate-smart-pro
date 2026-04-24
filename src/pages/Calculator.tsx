@@ -56,15 +56,25 @@ const Calculator = () => {
     if (!selectedParty) {
       setPartyDiscounts([]);
       setAutoApplied(null);
+      setCdDiscount("0");
       return;
     }
     setPartyName(selectedParty.name);
     // Auto-fill Bill Discount from party default_discount
     setBillDiscount(String(selectedParty.default_discount));
+    setPartyDiscounts([]);
+    let active = true;
     (async () => {
-      const pd = await fetchPartyDiscounts(selectedParty.id);
-      setPartyDiscounts(pd);
+      try {
+        const pd = await fetchPartyDiscounts(selectedParty.id);
+        if (active) setPartyDiscounts(pd);
+      } catch (e: any) {
+        if (active) toast.error(e.message);
+      }
     })();
+    return () => {
+      active = false;
+    };
   }, [selectedParty]);
 
   // Apply auto discount whenever party/segment/discounts change
@@ -75,16 +85,30 @@ const Calculator = () => {
       setRequiredDiscount(String(value));
       setAutoApplied(source);
     } else {
-      // CD mode:
-      //   Bill Discount  = party.default_discount (Base)
-      //   CD %           = max(0, segmentDiscount - baseDiscount)
-      // If no segment is selected (source !== "segment"), CD = 0.
       const base = Number(selectedParty.default_discount) || 0;
-      const cdPct = source === "segment" ? Math.max(0, Number(value) - base) : 0;
-      // Round to 2 decimals to avoid float noise
+      const committed = source === "segment" ? Math.max(base, Number(value) || 0) : base;
+      const cdPct = Math.max(0, committed - base);
+      setRequiredDiscount(String(Math.round(committed * 100) / 100));
       setCdDiscount(String(Math.round(cdPct * 100) / 100));
       setAutoApplied(source);
     }
+  }, [selectedParty, segmentId, partyDiscounts]);
+
+  const cdPartySummary = useMemo(() => {
+    if (!selectedParty || selectedParty.discount_type !== "CD") return null;
+
+    const base = Number(selectedParty.default_discount) || 0;
+    const segmentValue = segmentId
+      ? partyDiscounts.find((discount) => discount.segment_id === segmentId)?.discount ?? null
+      : null;
+    const committed = segmentValue === null ? base : Math.max(base, Number(segmentValue) || 0);
+    const cd = Math.max(0, committed - base);
+
+    return {
+      base,
+      cd: Math.round(cd * 100) / 100,
+      committed: Math.round(committed * 100) / 100,
+    };
   }, [selectedParty, segmentId, partyDiscounts]);
 
   const calc = useMemo(() => {
@@ -297,6 +321,14 @@ const Calculator = () => {
             </span>
           </div>
         )}
+
+        {cdPartySummary && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <PartySummaryStat label="Default" value={`${cdPartySummary.base}%`} />
+            <PartySummaryStat label="CD" value={`+${cdPartySummary.cd}%`} tone="success" />
+            <PartySummaryStat label="Commitment" value={`${cdPartySummary.base}% + ${cdPartySummary.cd}%`} />
+          </div>
+        )}
       </div>
 
       {/* Inputs */}
@@ -335,6 +367,7 @@ const Calculator = () => {
             onChange={setCdDiscount}
             accent="from-success/20 to-success/5"
             suffix="%"
+            helper={selectedParty ? "Auto-calculated from segment discount" : undefined}
           />
         ) : (
           <InputCard
@@ -530,5 +563,20 @@ const ResultCard = ({
     </div>
   );
 };
+
+const PartySummaryStat = ({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "success";
+}) => (
+  <div className="rounded-xl border border-border bg-background/60 p-3">
+    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+    <p className={cn("mt-1 font-display text-xl font-bold tabular-nums", tone === "success" ? "text-success" : "text-foreground")}>{value}</p>
+  </div>
+);
 
 export default Calculator;
