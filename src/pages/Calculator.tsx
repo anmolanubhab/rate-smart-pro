@@ -463,8 +463,11 @@ const Calculator = () => {
           <h3 className="font-display font-semibold">Auto Insight</h3>
           {mode === "CD" ? (
             <p className="text-sm text-muted-foreground mt-1">
-              Cash discount of <span className="font-semibold text-success">{calc.cd}%</span> saves{" "}
-              <span className="font-semibold text-success">₹{fmtINR(calc.cdAmount)}</span> on this bill.
+              Commitment <span className="font-semibold text-foreground">{calc.bDisc}% + {calc.cd}%</span> applied sequentially:
+              Net ₹{fmtINR(calc.cdNetAmount)} after base, then{" "}
+              <span className="font-semibold text-success">{calc.cd}% CD</span> saves{" "}
+              <span className="font-semibold text-success">₹{fmtINR(calc.cdAmount)}</span>.
+              Effective discount <span className="font-semibold text-foreground">{calc.cdEffective.toFixed(2)}%</span>.
             </p>
           ) : isNegative ? (
             <p className="text-sm text-muted-foreground mt-1">
