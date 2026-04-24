@@ -154,6 +154,16 @@ const Parties = () => {
     (p.address || "").toLowerCase().includes(search.toLowerCase()),
   );
 
+  const getCdPreview = (partyId: string, baseDiscount: number) => {
+    const values = Object.entries(segDiscounts)
+      .filter(([segmentId, value]) => segmentId && value !== "" && !isNaN(parseFloat(value)))
+      .map(([, value]) => parseFloat(value))
+      .filter((value) => value > baseDiscount);
+
+    if (values.length === 0) return 0;
+    return Math.round((Math.max(...values) - baseDiscount) * 100) / 100;
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-fade-in-up">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
@@ -218,6 +228,12 @@ const Parties = () => {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Agreed</p>
                     <p className="font-semibold tabular-nums">{p.agreed_discount}%</p>
+                  </div>
+                )}
+                {p.discount_type === "CD" && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">CD</p>
+                    <p className="font-semibold tabular-nums">+{Math.max(0, Number(p.agreed_discount) || 0)}%</p>
                   </div>
                 )}
               </div>
@@ -299,6 +315,22 @@ const Parties = () => {
                   placeholder="e.g. 24"
                 />
                 <p className="text-xs text-muted-foreground">Used as the Required Discount in the calculator.</p>
+              </div>
+            )}
+
+            {form.discount_type === "CD" && (
+              <div className="rounded-xl border border-border bg-muted/30 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">CD Preview</p>
+                    <p className="font-display text-2xl font-bold mt-1 tabular-nums">
+                      {parseFloat(form.default_discount) || 0}% + {getCdPreview(editing?.id ?? "", parseFloat(form.default_discount) || 0)}% (CD)
+                    </p>
+                  </div>
+                  <p className="max-w-sm text-xs text-muted-foreground">
+                    Base Discount comes from Default Discount. Extra CD is auto-derived from the highest segment discount above base.
+                  </p>
+                </div>
               </div>
             )}
 
