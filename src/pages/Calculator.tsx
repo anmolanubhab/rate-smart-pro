@@ -211,7 +211,7 @@ const Calculator = () => {
             ₹{fmtINR(calc.finalPayable)}
           </div>
           <div className="mt-3 text-white/90 text-sm">
-            on a bill of ₹{fmtINR(calc.bill)} — {mode === "CD" ? `${calc.cd}% cash discount` : `${calc.rDisc}% required discount`}
+            on a bill of ₹{fmtINR(calc.bill)} — {mode === "CD" ? `${calc.bDisc}% + ${calc.cd}% (CD)` : `${calc.rDisc}% required discount`}
           </div>
         </div>
       </div>
