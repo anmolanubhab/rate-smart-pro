@@ -21,6 +21,8 @@ type Calc = {
   bill_amount: number;
   bill_discount: number;
   required_discount: number;
+  cd_discount: number | null;
+  mode: "RD" | "CD" | null;
   after_rd: number;
   rd_amount: number;
   party_name: string | null;
@@ -245,7 +247,9 @@ const Dashboard = () => {
                       {c.party_name && <span className="ml-2 text-xs font-normal text-muted-foreground">· {c.party_name}</span>}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {c.bill_discount}% → {c.required_discount}% • {new Date(c.created_at).toLocaleDateString()}
+                      {c.mode === "CD"
+                        ? `${c.bill_discount}% + ${Number(c.cd_discount || 0).toFixed(2).replace(/\.00$/, "")} % (CD)`
+                        : `${c.bill_discount}% → ${c.required_discount}%`}{" "}• {new Date(c.created_at).toLocaleDateString()}
                       {c.invoice_number && <> • {c.invoice_number}</>}
                     </div>
                   </div>
