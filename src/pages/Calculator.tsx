@@ -88,13 +88,17 @@ const Calculator = () => {
 
     const billOnMrp = bDisc < 100 ? bill / (1 - bDisc / 100) : 0;
 
-    // RD path: apply rDisc on billOnMrp
+    // RD path: apply rDisc on billOnMrp (UNCHANGED)
     const afterRd = billOnMrp * (1 - rDisc / 100);
     const rdAmount = afterRd - bill;
 
-    // CD path: CD applied on top of bill discount (on the entered bill amount)
-    const cdAmount = bill * (cd / 100); // benefit
-    const afterCd = bill - cdAmount;
+    // CD path (sequential): treat entered bill as MRP total.
+    // Net = Bill × (1 − BaseDiscount%)  →  Final = Net × (1 − CD%)
+    const cdNetAmount = bill * (1 - bDisc / 100); // after Base Discount
+    const cdAmount = cdNetAmount * (cd / 100);    // CD benefit on Net
+    const afterCd = cdNetAmount - cdAmount;       // Final payable
+    // Effective discount vs MRP (e.g. 27 + 2 → ~28.46%)
+    const cdEffective = bill > 0 ? ((bill - afterCd) / bill) * 100 : 0;
 
     // Agreed diff for RD display (agreed - bill discount)
     const agreedDiff = selectedParty?.discount_type === "RD"
@@ -105,9 +109,9 @@ const Calculator = () => {
 
     const isCd = mode === "CD";
     const finalPayable = isCd ? afterCd : afterRd;
-    const totalBenefit = isCd ? cdAmount : -rdAmount; // RD neg = surplus? keep signed
+    const totalBenefit = isCd ? (bill - afterCd) : -rdAmount; // CD: total saved vs MRP
 
-    return { bill, bDisc, rDisc, cd, billOnMrp, afterRd, rdAmount, cdAmount, afterCd, agreedDiff, extraNeeded, finalPayable, totalBenefit };
+    return { bill, bDisc, rDisc, cd, billOnMrp, afterRd, rdAmount, cdNetAmount, cdAmount, afterCd, cdEffective, agreedDiff, extraNeeded, finalPayable, totalBenefit };
   }, [billAmount, billDiscount, requiredDiscount, cdDiscount, mode, selectedParty]);
 
   const payload = {
@@ -207,7 +211,7 @@ const Calculator = () => {
             ₹{fmtINR(calc.finalPayable)}
           </div>
           <div className="mt-3 text-white/90 text-sm">
-            on a bill of ₹{fmtINR(calc.bill)} — {mode === "CD" ? `${calc.cd}% cash discount` : `${calc.rDisc}% required discount`}
+            on a bill of ₹{fmtINR(calc.bill)} — {mode === "CD" ? `${calc.bDisc}% + ${calc.cd}% (CD)` : `${calc.rDisc}% required discount`}
           </div>
         </div>
       </div>
@@ -394,29 +398,42 @@ const Calculator = () => {
       </Collapsible>
 
       {/* Computed results */}
-      <div className="grid md:grid-cols-3 gap-4">
-        <ResultCard label="Bill on MRP" value={`₹${fmtINR(calc.billOnMrp)}`} subtle />
-        <ResultCard
-          label={mode === "CD" ? "After CD" : "After RD"}
-          value={`₹${fmtINR(calc.finalPayable)}`}
-          tone="success"
-        />
-        {mode === "CD" ? (
+      {mode === "CD" ? (
+        <div className="grid md:grid-cols-3 gap-4">
+          <ResultCard label="Bill Amount (MRP)" value={`₹${fmtINR(calc.bill)}`} subtle />
+          <ResultCard label={`Net after ${calc.bDisc}% Base`} value={`₹${fmtINR(calc.cdNetAmount)}`} subtle />
+          {calc.cd > 0 && (
+            <ResultCard
+              label={`CD Amount (${calc.cd}%)`}
+              value={`-₹${fmtINR(calc.cdAmount)}`}
+              tone="success"
+              icon={TrendingDown}
+            />
+          )}
+          <ResultCard label="Final Payable" value={`₹${fmtINR(calc.afterCd)}`} tone="success" />
           <ResultCard
-            label="CD Amount"
-            value={`-₹${fmtINR(calc.cdAmount)}`}
-            tone="success"
-            icon={TrendingDown}
+            label="Effective Discount"
+            value={`${calc.cdEffective.toFixed(2)}%`}
+            subtle
           />
-        ) : (
+          <ResultCard label="Commitment" value={`${calc.bDisc}% + ${calc.cd}%`} subtle />
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-3 gap-4">
+          <ResultCard label="Bill on MRP" value={`₹${fmtINR(calc.billOnMrp)}`} subtle />
+          <ResultCard
+            label="After RD"
+            value={`₹${fmtINR(calc.finalPayable)}`}
+            tone="success"
+          />
           <ResultCard
             label="RD Amount"
             value={`${isNegative ? "-" : "+"}₹${fmtINR(Math.abs(calc.rdAmount))}`}
             tone={isNegative ? "destructive" : "warning"}
             icon={isNegative ? TrendingDown : TrendingUp}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Total benefit */}
       {mode && calc.bill > 0 && (
@@ -429,7 +446,7 @@ const Calculator = () => {
           </div>
           <div className="text-xs text-muted-foreground max-w-sm text-right">
             {mode === "CD"
-              ? "CD applied on top of bill discount — pure savings for the party."
+              ? `Sequential: ${calc.bDisc}% Base on MRP, then ${calc.cd}% CD on Net. Effective ${calc.cdEffective.toFixed(2)}%.`
               : calc.totalBenefit >= 0
                 ? "Surplus you can adjust against this bill."
                 : "Shortfall — additional discount is needed to match."}
@@ -446,8 +463,11 @@ const Calculator = () => {
           <h3 className="font-display font-semibold">Auto Insight</h3>
           {mode === "CD" ? (
             <p className="text-sm text-muted-foreground mt-1">
-              Cash discount of <span className="font-semibold text-success">{calc.cd}%</span> saves{" "}
-              <span className="font-semibold text-success">₹{fmtINR(calc.cdAmount)}</span> on this bill.
+              Commitment <span className="font-semibold text-foreground">{calc.bDisc}% + {calc.cd}%</span> applied sequentially:
+              Net ₹{fmtINR(calc.cdNetAmount)} after base, then{" "}
+              <span className="font-semibold text-success">{calc.cd}% CD</span> saves{" "}
+              <span className="font-semibold text-success">₹{fmtINR(calc.cdAmount)}</span>.
+              Effective discount <span className="font-semibold text-foreground">{calc.cdEffective.toFixed(2)}%</span>.
             </p>
           ) : isNegative ? (
             <p className="text-sm text-muted-foreground mt-1">
