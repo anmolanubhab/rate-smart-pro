@@ -1,17 +1,79 @@
 import { ReactNode } from "react";
 import { NavLink, useLocation, Navigate } from "react-router-dom";
-import { LayoutDashboard, Calculator, History, User, LogOut, Moon, Sun, Sparkles, Users } from "lucide-react";
+import {
+  LayoutDashboard,
+  Calculator,
+  History,
+  User,
+  LogOut,
+  Moon,
+  Sun,
+  Sparkles,
+  Users,
+  ShoppingCart,
+  PlusSquare,
+  Package,
+  FileSpreadsheet,
+  Boxes,
+  BarChart3,
+  Settings as SettingsIcon,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/calculator", label: "Calculator", icon: Calculator },
+type NavItem = { to: string; label: string; icon: any };
+type NavGroup = { label?: string; items: NavItem[] };
+
+const navGroups: NavGroup[] = [
+  {
+    label: "Overview",
+    items: [
+      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/calculator", label: "RD Calculator", icon: Calculator },
+    ],
+  },
+  {
+    label: "Orders",
+    items: [
+      { to: "/orders", label: "Orders", icon: ShoppingCart },
+      { to: "/orders/new", label: "Create Order", icon: PlusSquare },
+      { to: "/excel-import", label: "Excel Import", icon: FileSpreadsheet },
+    ],
+  },
+  {
+    label: "Catalog",
+    items: [
+      { to: "/parties", label: "Parties", icon: Users },
+      { to: "/products", label: "Products", icon: Package },
+      { to: "/inventory", label: "Inventory", icon: Boxes },
+    ],
+  },
+  {
+    label: "Insights",
+    items: [
+      { to: "/history", label: "History", icon: History },
+      { to: "/reports", label: "Reports", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { to: "/profile", label: "Profile", icon: User },
+      { to: "/settings", label: "Settings", icon: SettingsIcon },
+    ],
+  },
+];
+
+const flatNav = navGroups.flatMap((g) => g.items);
+// Mobile bottom nav (5 most-used)
+const mobileNav: NavItem[] = [
+  { to: "/dashboard", label: "Home", icon: LayoutDashboard },
+  { to: "/orders/new", label: "Order", icon: PlusSquare },
+  { to: "/orders", label: "Orders", icon: ShoppingCart },
+  { to: "/calculator", label: "RD", icon: Calculator },
   { to: "/parties", label: "Parties", icon: Users },
-  { to: "/history", label: "History", icon: History },
-  { to: "/profile", label: "Profile", icon: User },
 ];
 
 export const AppLayout = ({ children }: { children: ReactNode }) => {
@@ -40,28 +102,38 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
             </div>
             <div>
               <h1 className="font-display font-bold text-base text-white leading-tight">RD Calculator</h1>
-              <p className="text-xs text-sidebar-foreground/60">Pro</p>
+              <p className="text-xs text-sidebar-foreground/60">Pro · Spare Parts</p>
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
-          {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-smooth",
-                  isActive
-                    ? "bg-sidebar-accent text-sidebar-primary shadow-soft"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                )
-              }
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </NavLink>
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+          {navGroups.map((group) => (
+            <div key={group.label} className="space-y-1">
+              {group.label && (
+                <p className="px-3 pt-2 text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
+                  {group.label}
+                </p>
+              )}
+              {group.items.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === "/orders"}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-smooth",
+                      isActive
+                        ? "bg-sidebar-accent text-sidebar-primary shadow-soft"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
@@ -97,10 +169,11 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
         {/* Mobile bottom nav */}
         <nav className="md:hidden fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border z-40">
           <div className="grid grid-cols-5">
-            {navItems.map(({ to, label, icon: Icon }) => (
+            {mobileNav.map(({ to, label, icon: Icon }) => (
               <NavLink
                 key={to}
                 to={to}
+                end={to === "/orders"}
                 className={({ isActive }) =>
                   cn(
                     "flex flex-col items-center gap-1 py-3 text-xs transition-smooth",
@@ -118,3 +191,6 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     </div>
   );
 };
+
+// Re-export for convenience
+export { flatNav };
