@@ -89,6 +89,14 @@ const Parties = () => {
       default_discount: String(p.default_discount),
       discount_type: p.discount_type,
       agreed_discount: String(p.agreed_discount),
+      phone: p.phone || "",
+      gst: p.gst || "",
+      billing_address: p.billing_address || "",
+      shipping_address: p.shipping_address || "",
+      beat: p.beat || "",
+      credit_limit: String(p.credit_limit ?? 0),
+      outstanding_balance: String(p.outstanding_balance ?? 0),
+      notes: p.notes || "",
     });
     const pd = await fetchPartyDiscounts(p.id);
     const map: Record<string, string> = {};
