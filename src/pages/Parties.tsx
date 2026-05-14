@@ -308,14 +308,47 @@ const Parties = () => {
               </div>
             </div>
 
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+91 ..." />
+              </div>
+              <div className="space-y-1.5">
+                <Label>GST Number</Label>
+                <Input value={form.gst} onChange={(e) => setForm({ ...form, gst: e.target.value })} placeholder="29ABCDE1234F1Z5" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Beat / Area</Label>
+                <Input value={form.beat} onChange={(e) => setForm({ ...form, beat: e.target.value })} placeholder="e.g. Market Road" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Credit Limit (₹)</Label>
+                <Input type="number" value={form.credit_limit} onChange={(e) => setForm({ ...form, credit_limit: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Outstanding Balance (₹)</Label>
+                <Input type="number" value={form.outstanding_balance} onChange={(e) => setForm({ ...form, outstanding_balance: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Short Address (legacy)</Label>
+                <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Optional" />
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Billing Address</Label>
+                <Textarea value={form.billing_address} onChange={(e) => setForm({ ...form, billing_address: e.target.value })} rows={2} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Shipping Address</Label>
+                <Textarea value={form.shipping_address} onChange={(e) => setForm({ ...form, shipping_address: e.target.value })} rows={2} />
+              </div>
+            </div>
+
             <div className="space-y-1.5">
-              <Label>Address</Label>
-              <Textarea
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                placeholder="Optional"
-                rows={2}
-              />
+              <Label>Notes</Label>
+              <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} placeholder="Internal notes..." />
             </div>
 
             <div className="space-y-2">
