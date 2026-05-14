@@ -19,6 +19,14 @@ const emptyForm = {
   default_discount: "0",
   discount_type: "RD" as DiscountType,
   agreed_discount: "0",
+  phone: "",
+  gst: "",
+  billing_address: "",
+  shipping_address: "",
+  beat: "",
+  credit_limit: "0",
+  outstanding_balance: "0",
+  notes: "",
 };
 
 const Parties = () => {
