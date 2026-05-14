@@ -89,37 +89,245 @@ export type Database = {
           },
         ]
       }
+      inventory_adjustments: {
+        Row: {
+          created_at: string
+          delta: number
+          id: string
+          product_id: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          delta: number
+          id?: string
+          product_id: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          delta?: number
+          id?: string
+          product_id?: string
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_adjustments_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_items: {
+        Row: {
+          created_at: string
+          description: string | null
+          discount_pct: number
+          gst_pct: number
+          id: string
+          mrp: number
+          net_rate: number
+          order_id: string
+          part_number: string | null
+          position: number
+          product_id: string | null
+          qty: number
+          total: number
+          user_id: string
+          vehicle_model: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          discount_pct?: number
+          gst_pct?: number
+          id?: string
+          mrp?: number
+          net_rate?: number
+          order_id: string
+          part_number?: string | null
+          position?: number
+          product_id?: string | null
+          qty?: number
+          total?: number
+          user_id: string
+          vehicle_model?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          discount_pct?: number
+          gst_pct?: number
+          id?: string
+          mrp?: number
+          net_rate?: number
+          order_id?: string
+          part_number?: string | null
+          position?: number
+          product_id?: string | null
+          qty?: number
+          total?: number
+          user_id?: string
+          vehicle_model?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          billing_address: string | null
+          cd_total: number
+          created_at: string
+          discount_total: number
+          grand_total: number
+          gst_total: number
+          id: string
+          mode: Database["public"]["Enums"]["discount_type"] | null
+          notes: string | null
+          order_date: string
+          order_number: string
+          party_id: string | null
+          party_name: string | null
+          party_snapshot: Json | null
+          salesman: string | null
+          shipping_address: string | null
+          shipping_charges: number
+          status: Database["public"]["Enums"]["order_status"]
+          subtotal: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          billing_address?: string | null
+          cd_total?: number
+          created_at?: string
+          discount_total?: number
+          grand_total?: number
+          gst_total?: number
+          id?: string
+          mode?: Database["public"]["Enums"]["discount_type"] | null
+          notes?: string | null
+          order_date?: string
+          order_number: string
+          party_id?: string | null
+          party_name?: string | null
+          party_snapshot?: Json | null
+          salesman?: string | null
+          shipping_address?: string | null
+          shipping_charges?: number
+          status?: Database["public"]["Enums"]["order_status"]
+          subtotal?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          billing_address?: string | null
+          cd_total?: number
+          created_at?: string
+          discount_total?: number
+          grand_total?: number
+          gst_total?: number
+          id?: string
+          mode?: Database["public"]["Enums"]["discount_type"] | null
+          notes?: string | null
+          order_date?: string
+          order_number?: string
+          party_id?: string | null
+          party_name?: string | null
+          party_snapshot?: Json | null
+          salesman?: string | null
+          shipping_address?: string | null
+          shipping_charges?: number
+          status?: Database["public"]["Enums"]["order_status"]
+          subtotal?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       parties: {
         Row: {
           address: string | null
           agreed_discount: number
+          beat: string | null
+          billing_address: string | null
           created_at: string
+          credit_limit: number
           default_discount: number
           discount_type: Database["public"]["Enums"]["discount_type"]
+          gst: string | null
           id: string
           name: string
+          notes: string | null
+          outstanding_balance: number
+          phone: string | null
+          shipping_address: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           address?: string | null
           agreed_discount?: number
+          beat?: string | null
+          billing_address?: string | null
           created_at?: string
+          credit_limit?: number
           default_discount?: number
           discount_type?: Database["public"]["Enums"]["discount_type"]
+          gst?: string | null
           id?: string
           name: string
+          notes?: string | null
+          outstanding_balance?: number
+          phone?: string | null
+          shipping_address?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           address?: string | null
           agreed_discount?: number
+          beat?: string | null
+          billing_address?: string | null
           created_at?: string
+          credit_limit?: number
           default_discount?: number
           discount_type?: Database["public"]["Enums"]["discount_type"]
+          gst?: string | null
           id?: string
           name?: string
+          notes?: string | null
+          outstanding_balance?: number
+          phone?: string | null
+          shipping_address?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -167,6 +375,60 @@ export type Database = {
           },
         ]
       }
+      products: {
+        Row: {
+          barcode: string | null
+          category: Database["public"]["Enums"]["product_category"]
+          created_at: string
+          dealer_rate: number
+          gst_pct: number
+          id: string
+          low_stock_threshold: number
+          mrp: number
+          name: string
+          part_number: string
+          status: string
+          stock: number
+          updated_at: string
+          user_id: string
+          vehicle_model: string | null
+        }
+        Insert: {
+          barcode?: string | null
+          category?: Database["public"]["Enums"]["product_category"]
+          created_at?: string
+          dealer_rate?: number
+          gst_pct?: number
+          id?: string
+          low_stock_threshold?: number
+          mrp?: number
+          name: string
+          part_number: string
+          status?: string
+          stock?: number
+          updated_at?: string
+          user_id: string
+          vehicle_model?: string | null
+        }
+        Update: {
+          barcode?: string | null
+          category?: Database["public"]["Enums"]["product_category"]
+          created_at?: string
+          dealer_rate?: number
+          gst_pct?: number
+          id?: string
+          low_stock_threshold?: number
+          mrp?: number
+          name?: string
+          part_number?: string
+          status?: string
+          stock?: number
+          updated_at?: string
+          user_id?: string
+          vehicle_model?: string | null
+        }
+        Relationships: []
+      }
       segments: {
         Row: {
           created_at: string
@@ -196,10 +458,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      next_order_number: { Args: { _user_id: string }; Returns: string }
     }
     Enums: {
       discount_type: "RD" | "CD"
+      order_status: "draft" | "confirmed" | "cancelled" | "completed"
+      product_category: "spare" | "lubricant" | "accessory" | "other"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -328,6 +592,8 @@ export const Constants = {
   public: {
     Enums: {
       discount_type: ["RD", "CD"],
+      order_status: ["draft", "confirmed", "cancelled", "completed"],
+      product_category: ["spare", "lubricant", "accessory", "other"],
     },
   },
 } as const
