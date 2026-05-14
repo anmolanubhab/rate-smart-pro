@@ -130,6 +130,14 @@ const Parties = () => {
         default_discount: parseFloat(form.default_discount) || 0,
         discount_type: form.discount_type,
         agreed_discount: parseFloat(form.agreed_discount) || 0,
+        phone: form.phone.trim() || null,
+        gst: form.gst.trim() || null,
+        billing_address: form.billing_address.trim() || null,
+        shipping_address: form.shipping_address.trim() || null,
+        beat: form.beat.trim() || null,
+        credit_limit: parseFloat(form.credit_limit) || 0,
+        outstanding_balance: parseFloat(form.outstanding_balance) || 0,
+        notes: form.notes.trim() || null,
       };
 
       let partyId = editing?.id;
