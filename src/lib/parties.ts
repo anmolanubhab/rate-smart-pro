@@ -10,6 +10,15 @@ export interface Party {
   discount_type: DiscountType;
   agreed_discount: number;
   created_at: string;
+  // extended fields
+  phone?: string | null;
+  gst?: string | null;
+  billing_address?: string | null;
+  shipping_address?: string | null;
+  beat?: string | null;
+  credit_limit?: number;
+  outstanding_balance?: number;
+  notes?: string | null;
 }
 
 export interface Segment {
