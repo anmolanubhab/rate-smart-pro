@@ -145,9 +145,9 @@ export const generateInvoicePdf = (p: InvoicePayload) => {
   y += 50;
 
   const negative = p.rdAmount < 0;
-  const rdLabel = negative ? "Shortfall" : "RD Surplus";
+  const rdLabel = negative ? "Rate Difference Benefit" : "RD Surplus";
   const rdColor: [number, number, number] = negative ? [200, 40, 50] : [180, 130, 20];
-  row(rdLabel, `${negative ? "-" : "+"}Rs. ${fmtINR(Math.abs(p.rdAmount))}`, { bold: true, color: rdColor });
+  row(rdLabel, `${negative ? "" : "+"}Rs. ${fmtINR(Math.abs(p.rdAmount))}`, { bold: true, color: rdColor });
 
   // Footer
   const footerY = doc.internal.pageSize.getHeight() - 40;
