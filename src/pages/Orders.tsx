@@ -56,7 +56,7 @@ const Orders = () => {
       </header>
 
       <div className="flex gap-2 flex-wrap">
-        {["all", "draft", "confirmed", "completed", "cancelled"].map((s) => (
+        {["all", "draft", "pending", "partial", "completed", "cancelled"].map((s) => (
           <Button key={s} size="sm" variant={filter === s ? "default" : "outline"} onClick={() => setFilter(s)} className="capitalize">
             {s}
           </Button>
