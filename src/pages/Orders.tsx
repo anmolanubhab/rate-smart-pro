@@ -84,19 +84,22 @@ const Orders = () => {
                   <th className="text-left px-4 py-3">Date</th>
                   <th className="text-left px-4 py-3">Party</th>
                   <th className="text-left px-4 py-3">Status</th>
+                  <th className="text-right px-4 py-3">Pending Qty</th>
                   <th className="text-right px-4 py-3">Subtotal</th>
                   <th className="text-right px-4 py-3">Grand Total</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((o) => (
-                  <tr key={o.id} className="border-t border-border hover:bg-muted/30">
+                  <tr key={o.id} className="border-t border-border hover:bg-muted/30 cursor-pointer"
+                      onClick={() => window.location.href = `/orders/edit/${o.id}`}>
                     <td className="px-4 py-2.5 font-mono text-xs">{o.order_number}</td>
                     <td className="px-4 py-2.5">{o.order_date}</td>
                     <td className="px-4 py-2.5 font-medium">{o.party_name || "—"}</td>
                     <td className="px-4 py-2.5">
                       <Badge variant="outline" className={statusColor[o.status]}>{o.status}</Badge>
                     </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{Number((o as any).pending_total_qty || 0).toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">₹{Number(o.subtotal).toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold">₹{Number(o.grand_total).toFixed(2)}</td>
                   </tr>
