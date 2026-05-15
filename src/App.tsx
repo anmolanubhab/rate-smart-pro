@@ -44,6 +44,9 @@ const App = () => (
               <Route path="/products" element={<AppLayout><Products /></AppLayout>} />
               <Route path="/orders" element={<AppLayout><Orders /></AppLayout>} />
               <Route path="/orders/new" element={<AppLayout><CreateOrder /></AppLayout>} />
+              <Route path="/orders/edit/:id" element={<AppLayout><CreateOrder /></AppLayout>} />
+              <Route path="/pending" element={<AppLayout><PendingOrders /></AppLayout>} />
+              <Route path="/dispatch" element={<AppLayout><Dispatch /></AppLayout>} />
               <Route path="/excel-import" element={<AppLayout><ExcelImport /></AppLayout>} />
               <Route path="/inventory" element={<AppLayout><Inventory /></AppLayout>} />
               <Route path="/reports" element={<AppLayout><Reports /></AppLayout>} />
