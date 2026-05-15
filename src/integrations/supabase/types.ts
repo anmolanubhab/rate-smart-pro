@@ -89,6 +89,105 @@ export type Database = {
           },
         ]
       }
+      dispatch_items: {
+        Row: {
+          created_at: string
+          dispatch_id: string
+          dispatched_qty: number
+          id: string
+          order_item_id: string
+          rate: number
+          total: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dispatch_id: string
+          dispatched_qty?: number
+          id?: string
+          order_item_id: string
+          rate?: number
+          total?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dispatch_id?: string
+          dispatched_qty?: number
+          id?: string
+          order_item_id?: string
+          rate?: number
+          total?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatch_items_dispatch_id_fkey"
+            columns: ["dispatch_id"]
+            isOneToOne: false
+            referencedRelation: "dispatches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_items_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dispatches: {
+        Row: {
+          created_at: string
+          dispatch_date: string
+          dispatch_number: string
+          id: string
+          notes: string | null
+          order_id: string
+          party_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dispatch_date?: string
+          dispatch_number: string
+          id?: string
+          notes?: string | null
+          order_id: string
+          party_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dispatch_date?: string
+          dispatch_number?: string
+          id?: string
+          notes?: string | null
+          order_id?: string
+          party_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatches_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_adjustments: {
         Row: {
           created_at: string
@@ -129,15 +228,19 @@ export type Database = {
           created_at: string
           description: string | null
           discount_pct: number
+          dispatched_qty: number
           gst_pct: number
           id: string
+          item_status: string
           mrp: number
           net_rate: number
           order_id: string
           part_number: string | null
+          pending_qty: number | null
           position: number
           product_id: string | null
           qty: number
+          rate: number
           total: number
           user_id: string
           vehicle_model: string | null
@@ -146,15 +249,19 @@ export type Database = {
           created_at?: string
           description?: string | null
           discount_pct?: number
+          dispatched_qty?: number
           gst_pct?: number
           id?: string
+          item_status?: string
           mrp?: number
           net_rate?: number
           order_id: string
           part_number?: string | null
+          pending_qty?: number | null
           position?: number
           product_id?: string | null
           qty?: number
+          rate?: number
           total?: number
           user_id: string
           vehicle_model?: string | null
@@ -163,15 +270,19 @@ export type Database = {
           created_at?: string
           description?: string | null
           discount_pct?: number
+          dispatched_qty?: number
           gst_pct?: number
           id?: string
+          item_status?: string
           mrp?: number
           net_rate?: number
           order_id?: string
           part_number?: string | null
+          pending_qty?: number | null
           position?: number
           product_id?: string | null
           qty?: number
+          rate?: number
           total?: number
           user_id?: string
           vehicle_model?: string | null
@@ -199,19 +310,27 @@ export type Database = {
           cd_total: number
           created_at: string
           discount_total: number
+          dispatched_total_qty: number
           grand_total: number
           gst_total: number
           id: string
+          last_dispatch_date: string | null
           mode: Database["public"]["Enums"]["discount_type"] | null
           notes: string | null
           order_date: string
           order_number: string
+          order_type: string
+          parent_order_ids: string[]
           party_id: string | null
           party_name: string | null
           party_snapshot: Json | null
+          pending_items_count: number
+          pending_total_qty: number
+          remarks: string | null
           salesman: string | null
           shipping_address: string | null
           shipping_charges: number
+          source_type: string
           status: Database["public"]["Enums"]["order_status"]
           subtotal: number
           updated_at: string
@@ -222,19 +341,27 @@ export type Database = {
           cd_total?: number
           created_at?: string
           discount_total?: number
+          dispatched_total_qty?: number
           grand_total?: number
           gst_total?: number
           id?: string
+          last_dispatch_date?: string | null
           mode?: Database["public"]["Enums"]["discount_type"] | null
           notes?: string | null
           order_date?: string
           order_number: string
+          order_type?: string
+          parent_order_ids?: string[]
           party_id?: string | null
           party_name?: string | null
           party_snapshot?: Json | null
+          pending_items_count?: number
+          pending_total_qty?: number
+          remarks?: string | null
           salesman?: string | null
           shipping_address?: string | null
           shipping_charges?: number
+          source_type?: string
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
           updated_at?: string
@@ -245,19 +372,27 @@ export type Database = {
           cd_total?: number
           created_at?: string
           discount_total?: number
+          dispatched_total_qty?: number
           grand_total?: number
           gst_total?: number
           id?: string
+          last_dispatch_date?: string | null
           mode?: Database["public"]["Enums"]["discount_type"] | null
           notes?: string | null
           order_date?: string
           order_number?: string
+          order_type?: string
+          parent_order_ids?: string[]
           party_id?: string | null
           party_name?: string | null
           party_snapshot?: Json | null
+          pending_items_count?: number
+          pending_total_qty?: number
+          remarks?: string | null
           salesman?: string | null
           shipping_address?: string | null
           shipping_charges?: number
+          source_type?: string
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
           updated_at?: string
@@ -458,11 +593,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      next_dispatch_number: { Args: { _user_id: string }; Returns: string }
       next_order_number: { Args: { _user_id: string }; Returns: string }
+      recompute_order: { Args: { _order_id: string }; Returns: undefined }
+      recompute_order_item: {
+        Args: { _order_item_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       discount_type: "RD" | "CD"
-      order_status: "draft" | "confirmed" | "cancelled" | "completed"
+      order_status:
+        | "draft"
+        | "confirmed"
+        | "cancelled"
+        | "completed"
+        | "pending"
+        | "partial"
       product_category: "spare" | "lubricant" | "accessory" | "other"
     }
     CompositeTypes: {
@@ -592,7 +739,14 @@ export const Constants = {
   public: {
     Enums: {
       discount_type: ["RD", "CD"],
-      order_status: ["draft", "confirmed", "cancelled", "completed"],
+      order_status: [
+        "draft",
+        "confirmed",
+        "cancelled",
+        "completed",
+        "pending",
+        "partial",
+      ],
       product_category: ["spare", "lubricant", "accessory", "other"],
     },
   },

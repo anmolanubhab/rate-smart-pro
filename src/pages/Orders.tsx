@@ -11,6 +11,8 @@ import { fetchOrders, Order } from "@/lib/orders";
 const statusColor: Record<string, string> = {
   draft: "border-muted-foreground/30 text-muted-foreground bg-muted/30",
   confirmed: "border-primary/30 text-primary bg-primary/5",
+  pending: "border-amber-500/30 text-amber-600 bg-amber-500/5",
+  partial: "border-blue-500/30 text-blue-600 bg-blue-500/5",
   cancelled: "border-destructive/30 text-destructive bg-destructive/5",
   completed: "border-emerald-500/30 text-emerald-600 bg-emerald-500/5",
 };
@@ -54,7 +56,7 @@ const Orders = () => {
       </header>
 
       <div className="flex gap-2 flex-wrap">
-        {["all", "draft", "confirmed", "completed", "cancelled"].map((s) => (
+        {["all", "draft", "pending", "partial", "completed", "cancelled"].map((s) => (
           <Button key={s} size="sm" variant={filter === s ? "default" : "outline"} onClick={() => setFilter(s)} className="capitalize">
             {s}
           </Button>
@@ -82,19 +84,22 @@ const Orders = () => {
                   <th className="text-left px-4 py-3">Date</th>
                   <th className="text-left px-4 py-3">Party</th>
                   <th className="text-left px-4 py-3">Status</th>
+                  <th className="text-right px-4 py-3">Pending Qty</th>
                   <th className="text-right px-4 py-3">Subtotal</th>
                   <th className="text-right px-4 py-3">Grand Total</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((o) => (
-                  <tr key={o.id} className="border-t border-border hover:bg-muted/30">
+                  <tr key={o.id} className="border-t border-border hover:bg-muted/30 cursor-pointer"
+                      onClick={() => window.location.href = `/orders/edit/${o.id}`}>
                     <td className="px-4 py-2.5 font-mono text-xs">{o.order_number}</td>
                     <td className="px-4 py-2.5">{o.order_date}</td>
                     <td className="px-4 py-2.5 font-medium">{o.party_name || "—"}</td>
                     <td className="px-4 py-2.5">
                       <Badge variant="outline" className={statusColor[o.status]}>{o.status}</Badge>
                     </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{Number((o as any).pending_total_qty || 0).toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">₹{Number(o.subtotal).toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold">₹{Number(o.grand_total).toFixed(2)}</td>
                   </tr>
