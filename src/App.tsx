@@ -20,6 +20,8 @@ import ExcelImport from "./pages/ExcelImport";
 import Inventory from "./pages/Inventory";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+import PendingOrders from "./pages/PendingOrders";
+import Dispatch from "./pages/Dispatch";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
