@@ -11,6 +11,8 @@ import { fetchOrders, Order } from "@/lib/orders";
 const statusColor: Record<string, string> = {
   draft: "border-muted-foreground/30 text-muted-foreground bg-muted/30",
   confirmed: "border-primary/30 text-primary bg-primary/5",
+  pending: "border-amber-500/30 text-amber-600 bg-amber-500/5",
+  partial: "border-blue-500/30 text-blue-600 bg-blue-500/5",
   cancelled: "border-destructive/30 text-destructive bg-destructive/5",
   completed: "border-emerald-500/30 text-emerald-600 bg-emerald-500/5",
 };
