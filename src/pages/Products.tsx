@@ -35,6 +35,7 @@ const Products = () => {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     document.title = "Products — Spare Parts OMS";
