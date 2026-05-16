@@ -143,11 +143,16 @@ const Products = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search part number / name..." className="pl-9 w-full md:w-72" />
           </div>
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4" /> Import Products
+          </Button>
           <Button onClick={openNew} className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant">
             <Plus className="h-4 w-4" /> Add Product
           </Button>
         </div>
       </header>
+
+      <ProductImport open={importOpen} onOpenChange={setImportOpen} onImported={load} />
 
       {loading ? (
         <div className="rounded-2xl bg-card border border-border p-12 text-center text-muted-foreground">Loading...</div>
