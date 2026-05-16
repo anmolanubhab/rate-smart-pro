@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Package, Search, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, Search, AlertTriangle, Upload } from "lucide-react";
+import ProductImport from "@/components/ProductImport";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
