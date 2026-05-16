@@ -63,13 +63,13 @@ interface Row {
 const FIELDS = [
   { key: "part_number", label: "Part Number", required: true },
   { key: "name", label: "Product Name", required: true },
-  { key: "vehicle_model", label: "Vehicle Model" },
-  { key: "category", label: "Category" },
-  { key: "mrp", label: "MRP" },
-  { key: "dealer_rate", label: "Dealer Rate" },
-  { key: "stock", label: "Stock" },
-  { key: "gst_pct", label: "GST %" },
-  { key: "barcode", label: "Barcode" },
+  { key: "vehicle_model", label: "Vehicle Model", required: false },
+  { key: "category", label: "Category", required: false },
+  { key: "mrp", label: "MRP", required: false },
+  { key: "dealer_rate", label: "Dealer Rate", required: false },
+  { key: "stock", label: "Stock", required: false },
+  { key: "gst_pct", label: "GST %", required: false },
+  { key: "barcode", label: "Barcode", required: false },
 ] as const;
 
 const ALIASES: Record<string, string[]> = {
