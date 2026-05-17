@@ -223,6 +223,39 @@ export type Database = {
           },
         ]
       }
+      order_activity_logs: {
+        Row: {
+          action: string
+          created_at: string
+          description: string | null
+          id: string
+          new_data: Json | null
+          old_data: Json | null
+          order_id: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          order_id: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          order_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           created_at: string
@@ -307,8 +340,11 @@ export type Database = {
       orders: {
         Row: {
           billing_address: string | null
+          cancelled_at: string | null
+          cancelled_reason: string | null
           cd_total: number
           created_at: string
+          deleted_at: string | null
           discount_total: number
           dispatched_total_qty: number
           grand_total: number
@@ -334,12 +370,16 @@ export type Database = {
           status: Database["public"]["Enums"]["order_status"]
           subtotal: number
           updated_at: string
+          updated_by: string | null
           user_id: string
         }
         Insert: {
           billing_address?: string | null
+          cancelled_at?: string | null
+          cancelled_reason?: string | null
           cd_total?: number
           created_at?: string
+          deleted_at?: string | null
           discount_total?: number
           dispatched_total_qty?: number
           grand_total?: number
@@ -365,12 +405,16 @@ export type Database = {
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
           updated_at?: string
+          updated_by?: string | null
           user_id: string
         }
         Update: {
           billing_address?: string | null
+          cancelled_at?: string | null
+          cancelled_reason?: string | null
           cd_total?: number
           created_at?: string
+          deleted_at?: string | null
           discount_total?: number
           dispatched_total_qty?: number
           grand_total?: number
@@ -396,6 +440,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
           updated_at?: string
+          updated_by?: string | null
           user_id?: string
         }
         Relationships: [
