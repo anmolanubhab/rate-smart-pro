@@ -319,3 +319,77 @@ export async function setOrderStatus(id: string, status: OrderStatus) {
   const { error } = await supabase.from("orders").update({ status }).eq("id", id);
   if (error) throw error;
 }
+
+export async function cancelOrder(id: string, reason: string, userId: string) {
+  const { error } = await supabase.from("orders").update({
+    status: "cancelled",
+    cancelled_at: new Date().toISOString(),
+    cancelled_reason: reason || null,
+    updated_by: userId,
+  } as any).eq("id", id);
+  if (error) throw error;
+  await logActivity({ userId, orderId: id, action: "cancelled", description: reason || "Order cancelled" });
+}
+
+export async function duplicateOrder(id: string, userId: string): Promise<Order> {
+  const original = await fetchOrder(id);
+  const items = await fetchOrderItems(id);
+  const cloned = await saveOrder({
+    userId,
+    order_date: new Date().toISOString().slice(0, 10),
+    party_id: original.party_id,
+    party_name: original.party_name,
+    party_snapshot: original.party_snapshot,
+    billing_address: original.billing_address,
+    shipping_address: original.shipping_address,
+    salesman: original.salesman,
+    notes: original.notes,
+    remarks: `Duplicated from ${original.order_number}`,
+    mode: original.mode,
+    source_type: "manual",
+    status: "draft",
+    shipping_charges: original.shipping_charges,
+    items: items.map((it) => ({ ...it, id: undefined, order_id: undefined, dispatched_qty: 0 })),
+  });
+  await logActivity({ userId, orderId: cloned.id, action: "duplicated", description: `From ${original.order_number}` });
+  return cloned;
+}
+
+export interface ActivityLog {
+  id: string;
+  user_id: string;
+  order_id: string;
+  action: string;
+  description: string | null;
+  old_data: any;
+  new_data: any;
+  created_at: string;
+}
+
+export async function logActivity(input: {
+  userId: string;
+  orderId: string;
+  action: string;
+  description?: string;
+  oldData?: any;
+  newData?: any;
+}) {
+  await supabase.from("order_activity_logs" as any).insert({
+    user_id: input.userId,
+    order_id: input.orderId,
+    action: input.action,
+    description: input.description ?? null,
+    old_data: input.oldData ?? null,
+    new_data: input.newData ?? null,
+  });
+}
+
+export async function fetchActivityLogs(orderId: string): Promise<ActivityLog[]> {
+  const { data, error } = await supabase
+    .from("order_activity_logs" as any)
+    .select("*")
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []) as unknown as ActivityLog[];
+}
