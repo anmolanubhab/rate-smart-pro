@@ -12,10 +12,18 @@ const Inventory = () => {
   const { user } = useAuth();
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [importOpen, setImportOpen] = useState(false);
+
+  const load = () => {
+    if (!user) return;
+    setLoading(true);
+    fetchProducts(user.id).then(setItems).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     document.title = "Inventory — Spare Parts OMS";
-    if (user) fetchProducts(user.id).then(setItems).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const out = items.filter((p) => Number(p.stock) <= 0);
@@ -34,11 +42,28 @@ const Inventory = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in-up">
-      <header>
-        <p className="text-sm text-muted-foreground font-medium">Catalog</p>
-        <h1 className="font-display text-3xl md:text-4xl font-bold mt-1">Inventory</h1>
-        <p className="text-muted-foreground mt-1">Live view of stock levels with low-stock and out-of-stock alerts.</p>
+      <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+        <div>
+          <p className="text-sm text-muted-foreground font-medium">Catalog</p>
+          <h1 className="font-display text-3xl md:text-4xl font-bold mt-1">Inventory</h1>
+          <p className="text-muted-foreground mt-1">Live view of stock levels with low-stock and out-of-stock alerts.</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={downloadStockTemplate}>
+            <FileSpreadsheet className="h-4 w-4" /> Sample Template
+          </Button>
+          <Button onClick={() => setImportOpen(true)} className="gradient-primary text-white border-0 shadow-elegant">
+            <Upload className="h-4 w-4" /> Update Stock via Excel
+          </Button>
+        </div>
       </header>
+
+      <InventoryStockImport
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        userId={user?.id || ""}
+        onDone={load}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Tile icon={Boxes} label="In stock" value={ok} color="text-emerald-500" />
