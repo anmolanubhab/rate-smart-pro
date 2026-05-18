@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, Boxes, PackageX } from "lucide-react";
+import { AlertTriangle, Boxes, PackageX, Upload, FileSpreadsheet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchProducts, Product } from "@/lib/products";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import InventoryStockImport from "@/components/InventoryStockImport";
+import { downloadStockTemplate } from "@/lib/excelTemplates";
 
 const Inventory = () => {
   const { user } = useAuth();
