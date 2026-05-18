@@ -82,6 +82,7 @@ const CreateOrder = () => {
     fetchParties(user.id).then(setParties).catch((e) => toast.error(e.message));
     if (!editId) {
       nextOrderNumber(user.id).then(setOrderNumber).catch(() => {});
+      setEditMode(false);
     } else {
       (async () => {
         try {
@@ -92,10 +93,15 @@ const CreateOrder = () => {
           setPartyId(o.party_id || "");
           setSalesman(o.salesman || "");
           setNarration(o.notes || "");
+          setRefNo((o.remarks || "").replace(/^Ref:\s*/i, ""));
+          setEditMode(true);
+          setEditStatus(o.status);
+          setDraftId(o.id);
           const rows: Row[] = its.length
             ? its.map((it) => ({ ...computeItem(it), hsn: "", rack: "" }))
             : Array.from({ length: 6 }, blankRow);
           setItems(rows);
+          if (printOnLoad) setTimeout(() => window.print(), 600);
         } catch (e: any) {
           toast.error(e.message);
         }
