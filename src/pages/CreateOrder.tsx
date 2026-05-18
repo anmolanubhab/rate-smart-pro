@@ -291,18 +291,27 @@ const CreateOrder = () => {
       <div className="print:hidden flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
-            Invoice Entry
+            {editMode ? (editStatus === "draft" ? "Editing Draft Invoice" : `Editing Invoice (${editStatus})`) : "New Invoice"}
           </span>
-          {draftId && <Badge variant="outline" className="text-[10px]">Draft #{draftId.slice(0, 6)}</Badge>}
+          {draftId && <Badge variant="outline" className="text-[10px]">#{orderNumber || draftId.slice(0, 8)}</Badge>}
+          {editMode && editStatus === "draft" && (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/5 text-[10px]">Draft</Badge>
+          )}
           {dupSet.size > 0 && (
             <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/5 text-[10px]">
               Duplicate items
             </Badge>
           )}
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8">
+            <Upload className="h-3.5 w-3.5" /> Upload Excel
+          </Button>
+          <Button size="sm" variant="ghost" onClick={downloadOrderTemplate} className="h-8">
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Template
+          </Button>
           <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving} className="h-8">
-            <Save className="h-3.5 w-3.5" /> Save Draft
+            <Save className="h-3.5 w-3.5" /> {editMode && editStatus === "draft" ? "Update Draft" : "Save Draft"}
           </Button>
           <Button
             size="sm"
@@ -320,6 +329,20 @@ const CreateOrder = () => {
           </Button>
         </div>
       </div>
+
+      <OrderExcelUpload
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        userId={user?.id || ""}
+        defaultDiscount={party ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0 : 0}
+        onImport={(imported) => {
+          setItems((prev) => {
+            // drop blank rows then append imported
+            const nonBlank = prev.filter((r) => r.part_number.trim());
+            return [...nonBlank, ...imported.map((it) => ({ ...it, hsn: "", rack: "" } as Row))];
+          });
+        }}
+      />
 
       {/* Invoice sheet */}
       <div className="border border-border bg-[hsl(var(--invoice-bg,60_30%_96%))] shadow-soft print:shadow-none print:border-0">
