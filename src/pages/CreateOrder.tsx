@@ -647,12 +647,26 @@ const CreateOrder = () => {
             <tfoot>
               <tr className="border-t-2 border-border bg-muted/40 font-semibold">
                 <td colSpan={6} className="px-1.5 py-1 print:hidden">
-                  <button
-                    onClick={addRow}
-                    className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
-                  >
-                    <Plus className="h-3 w-3" /> Add Row (Enter)
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={addRow}
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
+                    >
+                      <Plus className="h-3 w-3" /> Add Row (Enter)
+                    </button>
+                    <button
+                      onClick={() => setUploadOpen(true)}
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
+                    >
+                      <Upload className="h-3 w-3" /> Upload Excel
+                    </button>
+                    <button
+                      onClick={downloadOrderTemplate}
+                      className="text-[11px] text-muted-foreground hover:underline inline-flex items-center gap-1 font-sans"
+                    >
+                      <FileSpreadsheet className="h-3 w-3" /> Sample Template
+                    </button>
+                  </div>
                 </td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
                 <td colSpan={4}></td>
