@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Save, FileCheck2, Printer, FileDown, Plus, Trash2 } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, Upload, FileSpreadsheet } from "lucide-react";
+import OrderExcelUpload from "@/components/OrderExcelUpload";
+import { downloadOrderTemplate } from "@/lib/excelTemplates";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -37,7 +39,12 @@ const CreateOrder = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const editId = params.get("id");
+  const routeParams = useParams<{ id?: string }>();
+  const editId = routeParams.id || params.get("id");
+  const printOnLoad = params.get("print") === "1";
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editStatus, setEditStatus] = useState<string>("draft");
 
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
