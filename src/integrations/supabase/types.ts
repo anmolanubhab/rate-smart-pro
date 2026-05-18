@@ -223,6 +223,45 @@ export type Database = {
           },
         ]
       }
+      inventory_import_logs: {
+        Row: {
+          created_at: string
+          errors: Json | null
+          failed_count: number
+          file_name: string | null
+          id: string
+          import_mode: string
+          success_count: number
+          summary: Json | null
+          total_rows: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          errors?: Json | null
+          failed_count?: number
+          file_name?: string | null
+          id?: string
+          import_mode?: string
+          success_count?: number
+          summary?: Json | null
+          total_rows?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          errors?: Json | null
+          failed_count?: number
+          file_name?: string | null
+          id?: string
+          import_mode?: string
+          success_count?: number
+          summary?: Json | null
+          total_rows?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       order_activity_logs: {
         Row: {
           action: string
@@ -252,6 +291,48 @@ export type Database = {
           new_data?: Json | null
           old_data?: Json | null
           order_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      order_import_logs: {
+        Row: {
+          created_at: string
+          errors: Json | null
+          failed_count: number
+          file_name: string | null
+          id: string
+          import_mode: string
+          order_id: string | null
+          success_count: number
+          summary: Json | null
+          total_rows: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          errors?: Json | null
+          failed_count?: number
+          file_name?: string | null
+          id?: string
+          import_mode?: string
+          order_id?: string | null
+          success_count?: number
+          summary?: Json | null
+          total_rows?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          errors?: Json | null
+          failed_count?: number
+          file_name?: string | null
+          id?: string
+          import_mode?: string
+          order_id?: string | null
+          success_count?: number
+          summary?: Json | null
+          total_rows?: number
           user_id?: string
         }
         Relationships: []

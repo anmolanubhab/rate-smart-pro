@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Save, FileCheck2, Printer, FileDown, Plus, Trash2 } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, Upload, FileSpreadsheet } from "lucide-react";
+import OrderExcelUpload from "@/components/OrderExcelUpload";
+import { downloadOrderTemplate } from "@/lib/excelTemplates";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -37,7 +39,12 @@ const CreateOrder = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const editId = params.get("id");
+  const routeParams = useParams<{ id?: string }>();
+  const editId = routeParams.id || params.get("id");
+  const printOnLoad = params.get("print") === "1";
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editStatus, setEditStatus] = useState<string>("draft");
 
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
@@ -75,6 +82,7 @@ const CreateOrder = () => {
     fetchParties(user.id).then(setParties).catch((e) => toast.error(e.message));
     if (!editId) {
       nextOrderNumber(user.id).then(setOrderNumber).catch(() => {});
+      setEditMode(false);
     } else {
       (async () => {
         try {
@@ -85,10 +93,15 @@ const CreateOrder = () => {
           setPartyId(o.party_id || "");
           setSalesman(o.salesman || "");
           setNarration(o.notes || "");
+          setRefNo((o.remarks || "").replace(/^Ref:\s*/i, ""));
+          setEditMode(true);
+          setEditStatus(o.status);
+          setDraftId(o.id);
           const rows: Row[] = its.length
             ? its.map((it) => ({ ...computeItem(it), hsn: "", rack: "" }))
             : Array.from({ length: 6 }, blankRow);
           setItems(rows);
+          if (printOnLoad) setTimeout(() => window.print(), 600);
         } catch (e: any) {
           toast.error(e.message);
         }
@@ -278,18 +291,27 @@ const CreateOrder = () => {
       <div className="print:hidden flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
-            Invoice Entry
+            {editMode ? (editStatus === "draft" ? "Editing Draft Invoice" : `Editing Invoice (${editStatus})`) : "New Invoice"}
           </span>
-          {draftId && <Badge variant="outline" className="text-[10px]">Draft #{draftId.slice(0, 6)}</Badge>}
+          {draftId && <Badge variant="outline" className="text-[10px]">#{orderNumber || draftId.slice(0, 8)}</Badge>}
+          {editMode && editStatus === "draft" && (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/5 text-[10px]">Draft</Badge>
+          )}
           {dupSet.size > 0 && (
             <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/5 text-[10px]">
               Duplicate items
             </Badge>
           )}
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8">
+            <Upload className="h-3.5 w-3.5" /> Upload Excel
+          </Button>
+          <Button size="sm" variant="ghost" onClick={downloadOrderTemplate} className="h-8">
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Template
+          </Button>
           <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving} className="h-8">
-            <Save className="h-3.5 w-3.5" /> Save Draft
+            <Save className="h-3.5 w-3.5" /> {editMode && editStatus === "draft" ? "Update Draft" : "Save Draft"}
           </Button>
           <Button
             size="sm"
@@ -307,6 +329,20 @@ const CreateOrder = () => {
           </Button>
         </div>
       </div>
+
+      <OrderExcelUpload
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        userId={user?.id || ""}
+        defaultDiscount={party ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0 : 0}
+        onImport={(imported) => {
+          setItems((prev) => {
+            // drop blank rows then append imported
+            const nonBlank = prev.filter((r) => r.part_number.trim());
+            return [...nonBlank, ...imported.map((it) => ({ ...it, hsn: "", rack: "" } as Row))];
+          });
+        }}
+      />
 
       {/* Invoice sheet */}
       <div className="border border-border bg-[hsl(var(--invoice-bg,60_30%_96%))] shadow-soft print:shadow-none print:border-0">
@@ -611,12 +647,26 @@ const CreateOrder = () => {
             <tfoot>
               <tr className="border-t-2 border-border bg-muted/40 font-semibold">
                 <td colSpan={6} className="px-1.5 py-1 print:hidden">
-                  <button
-                    onClick={addRow}
-                    className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
-                  >
-                    <Plus className="h-3 w-3" /> Add Row (Enter)
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={addRow}
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
+                    >
+                      <Plus className="h-3 w-3" /> Add Row (Enter)
+                    </button>
+                    <button
+                      onClick={() => setUploadOpen(true)}
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
+                    >
+                      <Upload className="h-3 w-3" /> Upload Excel
+                    </button>
+                    <button
+                      onClick={downloadOrderTemplate}
+                      className="text-[11px] text-muted-foreground hover:underline inline-flex items-center gap-1 font-sans"
+                    >
+                      <FileSpreadsheet className="h-3 w-3" /> Sample Template
+                    </button>
+                  </div>
                 </td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
                 <td colSpan={4}></td>
