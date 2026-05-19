@@ -24,8 +24,6 @@ type Row = {
   raw: any;
   part_number: string;
   stock_value: number;
-  warehouse: string;
-  remarks: string;
   matched?: Product;
   previous?: number;
   final?: number;
@@ -58,7 +56,7 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
 
   const recompute = (parsed: Row[], m: "replace" | "add") => parsed.map((r) => {
     if (r.error && r.error !== "Negative stock") return r;
-    if (!r.matched) return { ...r, error: "Product not found" };
+    if (!r.matched) return { ...r, error: "Part number not found" };
     const prev = Number(r.matched.stock) || 0;
     const final = m === "replace" ? r.stock_value : prev + r.stock_value;
     const err = final < 0 ? "Negative stock" : undefined;
@@ -79,15 +77,13 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
 
       const parsed: Row[] = json.map((r) => {
         const part = String(pick(r, ["part number", "part_no", "partno", "part", "sku", "code"]) || "").trim();
-        const stock = num(pick(r, ["current stock", "stock", "qty", "quantity"]));
-        const wh = String(pick(r, ["warehouse", "location"]) || "").trim();
-        const rem = String(pick(r, ["remarks", "note"]) || "").trim();
+        const stock = num(pick(r, ["qty", "quantity", "current stock", "stock"]));
         const matched = part ? byPart.get(part.toLowerCase()) : undefined;
         let error: string | undefined;
         if (!part) error = "Missing part number";
-        else if (!isFinite(stock)) error = "Invalid stock";
-        else if (!matched) error = "Product not found";
-        return { raw: r, part_number: part, stock_value: isFinite(stock) ? stock : 0, warehouse: wh, remarks: rem, matched, error };
+        else if (!isFinite(stock)) error = "Invalid qty";
+        else if (!matched) error = "Part number not found";
+        return { raw: r, part_number: part, stock_value: isFinite(stock) ? stock : 0, matched, error };
       });
       setRows(recompute(parsed, mode));
     } catch (e: any) {
@@ -109,23 +105,33 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
     const errors: any[] = [];
     let success = 0;
     try {
-      // Chunked updates (Supabase: single row update per call)
       for (const r of valid) {
+        const before = r.previous ?? 0;
+        const after = r.final ?? 0;
         const { error } = await supabase
           .from("products")
-          .update({ stock: r.final })
+          .update({ stock: after })
           .eq("id", r.matched!.id)
           .eq("user_id", userId);
-        if (error) errors.push({ part: r.part_number, error: error.message });
-        else {
-          success++;
-          await supabase.from("inventory_adjustments").insert({
-            user_id: userId,
-            product_id: r.matched!.id,
-            delta: (r.final ?? 0) - (r.previous ?? 0),
-            reason: `Excel import (${mode}) — ${fileName}`,
-          });
-        }
+        if (error) { errors.push({ part: r.part_number, error: error.message }); continue; }
+        success++;
+        // Log movement (atomic per-row)
+        await supabase.from("inventory_movements" as any).insert({
+          user_id: userId,
+          product_id: r.matched!.id,
+          movement_type: "import",
+          qty: after - before,
+          stock_before: before,
+          stock_after: after,
+          reference_type: "stock_import",
+          notes: `Excel import (${mode}) — ${fileName}`,
+        });
+        await supabase.from("inventory_adjustments").insert({
+          user_id: userId,
+          product_id: r.matched!.id,
+          delta: after - before,
+          reason: `Excel import (${mode}) — ${fileName}`,
+        });
       }
     } finally {
       await supabase.from("inventory_import_logs" as any).insert({
@@ -152,15 +158,15 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
         <DialogHeader>
           <DialogTitle>Update Stock via Excel</DialogTitle>
           <DialogDescription>
-            Upload an .xlsx / .xls / .csv. Choose replace or add mode. Preview before applying.
+            Upload a sheet with only <strong>Part Number</strong> and <strong>Qty</strong>. Choose Replace or Add mode.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center gap-4 px-1">
           <Label className="text-sm font-medium">Mode:</Label>
           <RadioGroup value={mode} onValueChange={(v: any) => changeMode(v)} className="flex gap-4">
-            <div className="flex items-center gap-2"><RadioGroupItem value="replace" id="rep" /><Label htmlFor="rep">Replace stock</Label></div>
-            <div className="flex items-center gap-2"><RadioGroupItem value="add" id="add" /><Label htmlFor="add">Add to stock</Label></div>
+            <div className="flex items-center gap-2"><RadioGroupItem value="replace" id="rep" /><Label htmlFor="rep">Replace existing stock</Label></div>
+            <div className="flex items-center gap-2"><RadioGroupItem value="add" id="add" /><Label htmlFor="add">Add to existing stock</Label></div>
           </RadioGroup>
         </div>
 
@@ -174,7 +180,7 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
             >
               <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="font-medium">Click or drag file here</p>
-              <p className="text-sm text-muted-foreground mt-1">.xlsx, .xls, .csv up to 10MB</p>
+              <p className="text-sm text-muted-foreground mt-1">.xlsx, .xls, .csv · only Part Number + Qty</p>
               {busy && <Loader2 className="h-5 w-5 animate-spin mx-auto mt-3" />}
             </div>
             <input

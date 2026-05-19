@@ -19,7 +19,6 @@ export function downloadOrderTemplate() {
   const aoa = [headers, ...samples];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = autoWidth(aoa);
-  ws["!freeze"] = { xSplit: 0, ySplit: 1 } as any;
 
   const instructions = [
     ["Order Import — Instructions"],
@@ -30,7 +29,6 @@ export function downloadOrderTemplate() {
     ["Matching priority: Part Number → Product Name (case-insensitive)"],
     ["Duplicate part numbers will be merged (quantities summed) or kept separate (your choice)."],
     ["Quantity must be > 0. Rows with missing Part Number are skipped."],
-    ["If a product is not found in your catalog, you can skip the row or add it manually later."],
   ];
   const wsI = XLSX.utils.aoa_to_sheet(instructions);
   wsI["!cols"] = [{ wch: 80 }];
@@ -42,11 +40,11 @@ export function downloadOrderTemplate() {
 }
 
 export function downloadStockTemplate() {
-  const headers = ["Part Number", "Current Stock", "Warehouse", "Remarks"];
+  const headers = ["Part Number", "Qty"];
   const samples = [
-    ["TVS-001", 25, "Main", "Initial stock"],
-    ["TVS-022", 100, "Main", ""],
-    ["LUB-100", 12, "Counter", "Display unit"],
+    ["M10805", 40],
+    ["25P110", 65],
+    ["TVS-001", 10],
   ];
   const aoa = [headers, ...samples];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -55,16 +53,17 @@ export function downloadStockTemplate() {
   const instructions = [
     ["Stock Import — Instructions"],
     [""],
-    ["Required columns: Part Number, Current Stock"],
-    ["Optional columns: Warehouse, Location, Remarks"],
+    ["Only TWO columns are required:"],
+    ["  1) Part Number"],
+    ["  2) Qty"],
     [""],
-    ["Match by Part Number. Unknown parts are reported as failed rows."],
+    ["Product name, rate, MRP etc. already exist in your catalog and don't need to be re-uploaded."],
     [""],
     ["Modes:"],
-    ["  REPLACE — overwrites existing stock with the uploaded value."],
-    ["  ADD — adds uploaded quantity to existing stock."],
+    ["  REPLACE — overwrites existing stock with the uploaded Qty."],
+    ["  ADD — adds uploaded Qty to existing stock."],
     [""],
-    ["Negative final stock is rejected."],
+    ["Unknown part numbers will appear in the error report. Negative final stock is rejected."],
   ];
   const wsI = XLSX.utils.aoa_to_sheet(instructions);
   wsI["!cols"] = [{ wch: 80 }];
@@ -79,5 +78,12 @@ export function downloadErrorReport(rows: any[], name = "import-errors.xlsx") {
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Errors");
+  XLSX.writeFile(wb, name);
+}
+
+export function exportSheet(rows: any[], name: string, sheetName = "Sheet1") {
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, name);
 }
