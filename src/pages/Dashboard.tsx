@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import InventoryWidgets from "@/components/InventoryWidgets";
 
 type Calc = {
   id: string;
@@ -131,6 +132,8 @@ const Dashboard = () => {
           <Link to="/calculator"><CalcIcon className="h-4 w-4" /> New calculation</Link>
         </Button>
       </header>
+
+      <InventoryWidgets />
 
       {/* Filters */}
       <div className="rounded-2xl bg-card border border-border shadow-soft p-4 grid md:grid-cols-4 gap-3">
