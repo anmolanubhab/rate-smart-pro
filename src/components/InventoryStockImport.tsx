@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchProducts, Product } from "@/lib/products";
+import { fetchProducts, normalizePart, Product } from "@/lib/products";
 import { downloadStockTemplate, downloadErrorReport } from "@/lib/excelTemplates";
 
 interface Props {
