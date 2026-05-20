@@ -219,9 +219,11 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+              <Tile label="Total" value={rows.length} />
               <Tile icon={CheckCircle2} label="Valid" value={valid.length} color="text-emerald-600" />
-              <Tile icon={AlertCircle} label="Invalid" value={invalid.length} color="text-destructive" />
+              <Tile icon={AlertCircle} label="Not Found" value={rows.filter(r => r.error === "Part number not found").length} color="text-destructive" />
+              <Tile label="Invalid Qty" value={rows.filter(r => r.error === "Invalid qty" || r.error === "Missing part number").length} color="text-amber-600" />
               <Tile label="Mode" value={mode === "replace" ? "Replace" : "Add"} />
               <Tile label="File" value={fileName.slice(0, 18)} />
             </div>
