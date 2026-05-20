@@ -73,18 +73,41 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
       if (!json.length) throw new Error("Empty file");
 
       const products = await fetchProducts(userId);
-      const byPart = new Map(products.map((p) => [p.part_number.trim().toLowerCase(), p]));
+      // Build normalized index. If duplicates exist in the DB, last wins (rare).
+      const byPart = new Map<string, Product>();
+      for (const p of products) {
+        const key = normalizePart(p.part_number);
+        if (key) byPart.set(key, p);
+      }
 
-      const parsed: Row[] = json.map((r) => {
-        const part = String(pick(r, ["part number", "part_no", "partno", "part", "sku", "code"]) || "").trim();
+      // First pass: parse + normalize + dedupe excel rows by part number (sum qty).
+      const seen = new Map<string, Row>();
+      const parsed: Row[] = [];
+      for (const r of json) {
+        const partRaw = String(pick(r, ["part number", "part_no", "partno", "part", "sku", "code"]) || "");
+        const part = partRaw.trim();
+        const norm = normalizePart(part);
         const stock = num(pick(r, ["qty", "quantity", "current stock", "stock"]));
-        const matched = part ? byPart.get(part.toLowerCase()) : undefined;
+        const matched = norm ? byPart.get(norm) : undefined;
+
         let error: string | undefined;
-        if (!part) error = "Missing part number";
+        if (!norm) error = "Missing part number";
         else if (!isFinite(stock)) error = "Invalid qty";
         else if (!matched) error = "Part number not found";
-        return { raw: r, part_number: part, stock_value: isFinite(stock) ? stock : 0, matched, error };
-      });
+
+        const row: Row = { raw: r, part_number: part, stock_value: isFinite(stock) ? stock : 0, matched, error };
+
+        if (!error && norm && seen.has(norm)) {
+          // duplicate in excel → merge by summing (replace mode keeps last excel value;
+          // we keep summed for both modes so user can see combined intent)
+          const prev = seen.get(norm)!;
+          prev.stock_value = (prev.stock_value || 0) + row.stock_value;
+          prev.raw = { ...prev.raw, _duplicate_merged: true };
+        } else {
+          if (norm) seen.set(norm, row);
+          parsed.push(row);
+        }
+      }
       setRows(recompute(parsed, mode));
     } catch (e: any) {
       toast.error(e.message || "Failed to parse file");
