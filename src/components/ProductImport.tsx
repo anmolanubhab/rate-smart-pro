@@ -652,4 +652,4 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
       </DialogContent>
     </Dialog>
   );
-}
+};
