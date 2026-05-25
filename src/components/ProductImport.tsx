@@ -157,20 +157,42 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
     setTimeout(reset, 200);
   };
 
-  const ws = XLSX.utils.json_to_sheet([
-  {
-    "Part Number": "TVS-001",
-    Quantity: 2,
-  },
-  {
-    "Part Number": "TVS-022",
-    Quantity: 5,
-  },
-  {
-    "Part Number": "LUB-100",
-    Quantity: 1,
-  },
-]);
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet([
+      {
+        "Part Number": "TVS-001",
+        "Product Name": "Engine Oil",
+        "Vehicle Model": "TVS Apache",
+        "Category": "lubricant",
+        "MRP": 450,
+        "Dealer Rate": 380,
+        "Stock": 50,
+        "GST %": 18,
+        "Barcode": "1234567890123",
+      },
+      {
+        "Part Number": "TVS-022",
+        "Product Name": "Air Filter",
+        "Vehicle Model": "TVS Sport",
+        "Category": "spare",
+        "MRP": 280,
+        "Dealer Rate": 200,
+        "Stock": 30,
+        "GST %": 18,
+        "Barcode": "1234567890124",
+      },
+      {
+        "Part Number": "LUB-100",
+        "Product Name": "Gear Oil",
+        "Vehicle Model": "TVS Heavy Bike",
+        "Category": "lubricant",
+        "MRP": 550,
+        "Dealer Rate": 420,
+        "Stock": 25,
+        "GST %": 18,
+        "Barcode": "1234567890125",
+      },
+    ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Products");
     XLSX.writeFile(wb, "products-template.xlsx");
@@ -652,4 +674,4 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
       </DialogContent>
     </Dialog>
   );
-};
+}
