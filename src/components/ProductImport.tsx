@@ -199,7 +199,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
   const buildPreview = useCallback(async () => {
     if (!user) return;
     if (!mapping.part_number || !mapping.name) {
-      return toast.error("Map Part Number and Product Name to continue");
+      return toast.error("Map Part Number to continue");
     }
     const built: Row[] = rawRows.map((r) => {
       const num = (v: any) => {
