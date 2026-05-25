@@ -87,7 +87,7 @@ export function downloadOrderTemplate() {
   XLSX.utils.book_append_sheet(wb, ws, "Items");
   XLSX.utils.book_append_sheet(wb, wsI, "Instructions");
 
-  XLSX.writeFile(wb, "order-import-template.xlsx");
+  XLSX.writeFile(wb, "NEW-TEMPLATE.xlsx");
 }
 
 /* =========================================================
