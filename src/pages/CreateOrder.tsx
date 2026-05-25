@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, Upload, FileSpreadsheet } from "lucide-react";
 import OrderExcelUpload from "@/components/OrderExcelUpload";
+import { downloadOrderTemplate } from "@/lib/excelTemplates";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ const blankRow = (): Row => ({
 const fmt = (n: number) =>
   Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const COLS = ["part", "qty"] as const;
+const COLS = ["part", "desc", "hsn", "gst", "rack", "qty", "mrp", "disc"] as const;
 type Col = (typeof COLS)[number];
 
 const CreateOrder = () => {
@@ -117,6 +118,7 @@ const CreateOrder = () => {
       rows.map((r) => (r.discount_pct === 0 && !r.part_number ? { ...r, discount_pct: def } : r)),
     );
     setPartyQuery(party.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId]);
 
   // product search
@@ -130,23 +132,6 @@ const CreateOrder = () => {
     }, 180);
     return () => clearTimeout(t);
   }, [searchTerm, searchIdx, user]);
-
-  // Client-side Custom 2-Column CSV Template Generator (No extra modules required)
-  const handleDownloadOnlyTwoColumnsTemplate = () => {
-    try {
-      const csvContent = "data:text/csv;charset=utf-8,Part Number,Quantity\nTVS-001,2\nTVS-022,5\nLUB-100,1\n";
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", "order_template_simple.csv");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Simple Template downloaded successfully!");
-    } catch (err) {
-      toast.error("Failed to download template");
-    }
-  };
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
   const cgst = +(totals.gst_total / 2).toFixed(2);
@@ -193,6 +178,7 @@ const CreateOrder = () => {
     setSearchIdx(null);
     setSearchTerm("");
     setSearchResults([]);
+    // focus qty next
     setTimeout(() => focusCell(idx, "qty"), 10);
   };
 
@@ -266,6 +252,7 @@ const CreateOrder = () => {
     }
   };
 
+  // auto-save draft every 30s when there are valid rows
   const lastSavedAt = useRef(0);
   useEffect(() => {
     const id = setInterval(() => {
@@ -276,8 +263,10 @@ const CreateOrder = () => {
       handleSave("draft");
     }, 30000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, partyId, user]);
 
+  // duplicate detection
   const dupSet = useMemo(() => {
     const counts = new Map<string, number>();
     items.forEach((r) => {
@@ -287,6 +276,7 @@ const CreateOrder = () => {
     return new Set(Array.from(counts.entries()).filter(([, v]) => v > 1).map(([k]) => k));
   }, [items]);
 
+  // RD discount breakdown (display only)
   const rdBreakdown = useMemo(() => {
     if (!party || party.discount_type !== "RD") return null;
     const sys = Number(party.default_discount) || 0;
@@ -297,7 +287,7 @@ const CreateOrder = () => {
 
   return (
     <div className="invoice-entry max-w-[1400px] mx-auto text-[13px] font-mono">
-      {/* Top action bar */}
+      {/* Top action bar (screen only) */}
       <div className="print:hidden flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
@@ -317,7 +307,7 @@ const CreateOrder = () => {
           <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8">
             <Upload className="h-3.5 w-3.5" /> Upload Excel
           </Button>
-          <Button size="sm" variant="ghost" onClick={handleDownloadOnlyTwoColumnsTemplate} className="h-8">
+          <Button size="sm" variant="ghost" onClick={downloadOrderTemplate} className="h-8">
             <FileSpreadsheet className="h-3.5 w-3.5" /> Template
           </Button>
           <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving} className="h-8">
@@ -347,6 +337,7 @@ const CreateOrder = () => {
         defaultDiscount={party ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0 : 0}
         onImport={(imported) => {
           setItems((prev) => {
+            // drop blank rows then append imported
             const nonBlank = prev.filter((r) => r.part_number.trim());
             return [...nonBlank, ...imported.map((it) => ({ ...it, hsn: "", rack: "" } as Row))];
           });
@@ -355,6 +346,7 @@ const CreateOrder = () => {
 
       {/* Invoice sheet */}
       <div className="border border-border bg-[hsl(var(--invoice-bg,60_30%_96%))] shadow-soft print:shadow-none print:border-0">
+        {/* Header strip */}
         <div className="bg-primary text-primary-foreground px-3 py-1.5 flex items-center justify-between text-xs">
           <div className="font-sans font-semibold tracking-wide">{voucherType}</div>
           <div className="font-sans">Viswanath Automobiles Pvt. Ltd. [TVS]</div>
@@ -472,14 +464,23 @@ const CreateOrder = () => {
           )}
         </div>
 
-        {/* Billing grid (Strictly 2 Data Columns) */}
+        {/* Billing grid */}
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] border-collapse">
             <thead>
               <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
                 <th className="text-left px-1.5 py-1 w-6">#</th>
-                <th className="text-left px-1.5 py-1 min-w-[160px]">Part Number</th>
-                <th className="text-right px-1.5 py-1 w-20">Quantity</th>
+                <th className="text-left px-1.5 py-1 min-w-[120px]">Name of Item</th>
+                <th className="text-left px-1.5 py-1 min-w-[180px]">Description</th>
+                <th className="text-left px-1.5 py-1 w-20">HSN/SAC</th>
+                <th className="text-right px-1.5 py-1 w-14">GST %</th>
+                <th className="text-left px-1.5 py-1 w-14">Rack</th>
+                <th className="text-right px-1.5 py-1 w-16">Quantity</th>
+                <th className="text-right px-1.5 py-1 w-20">MRP</th>
+                <th className="text-right px-1.5 py-1 w-20">Rate</th>
+                <th className="text-right px-1.5 py-1 w-14">Disc %</th>
+                <th className="text-right px-1.5 py-1 w-20">Net Rate</th>
+                <th className="text-right px-1.5 py-1 w-24">Amount</th>
                 <th className="w-6 print:hidden"></th>
               </tr>
             </thead>
@@ -542,6 +543,48 @@ const CreateOrder = () => {
                     <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
+                        data-col="desc"
+                        value={it.description}
+                        onChange={(e) => updateRow(idx, { description: e.target.value })}
+                        onKeyDown={(e) => handleKey(e, idx, "desc")}
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                      />
+                    </td>
+                    <td className="px-0.5 py-0.5">
+                      <Input
+                        data-row={idx}
+                        data-col="hsn"
+                        value={it.hsn || ""}
+                        onChange={(e) => updateRow(idx, { hsn: e.target.value })}
+                        onKeyDown={(e) => handleKey(e, idx, "hsn")}
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                      />
+                    </td>
+                    <td className="px-0.5 py-0.5">
+                      <Input
+                        data-row={idx}
+                        data-col="gst"
+                        type="number"
+                        step="any"
+                        value={it.gst_pct || ""}
+                        onChange={(e) => updateRow(idx, { gst_pct: +e.target.value })}
+                        onKeyDown={(e) => handleKey(e, idx, "gst")}
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                      />
+                    </td>
+                    <td className="px-0.5 py-0.5">
+                      <Input
+                        data-row={idx}
+                        data-col="rack"
+                        value={it.rack || ""}
+                        onChange={(e) => updateRow(idx, { rack: e.target.value.toUpperCase() })}
+                        onKeyDown={(e) => handleKey(e, idx, "rack")}
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
+                      />
+                    </td>
+                    <td className="px-0.5 py-0.5">
+                      <Input
+                        data-row={idx}
                         data-col="qty"
                         type="number"
                         step="any"
@@ -550,6 +593,37 @@ const CreateOrder = () => {
                         onKeyDown={(e) => handleKey(e, idx, "qty")}
                         className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
                       />
+                    </td>
+                    <td className="px-0.5 py-0.5">
+                      <Input
+                        data-row={idx}
+                        data-col="mrp"
+                        type="number"
+                        step="any"
+                        value={it.mrp || ""}
+                        onChange={(e) => updateRow(idx, { mrp: +e.target.value })}
+                        onKeyDown={(e) => handleKey(e, idx, "mrp")}
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                      />
+                    </td>
+                    <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground">
+                      {fmt(it.mrp)}
+                    </td>
+                    <td className="px-0.5 py-0.5">
+                      <Input
+                        data-row={idx}
+                        data-col="disc"
+                        type="number"
+                        step="any"
+                        value={it.discount_pct || ""}
+                        onChange={(e) => updateRow(idx, { discount_pct: +e.target.value })}
+                        onKeyDown={(e) => handleKey(e, idx, "disc")}
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                      />
+                    </td>
+                    <td className="px-1 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
+                    <td className="px-1 py-0.5 text-right tabular-nums font-semibold">
+                      {fmt(it.total)}
                     </td>
                     <td className="px-0.5 py-0.5 print:hidden">
                       <button
@@ -563,15 +637,16 @@ const CreateOrder = () => {
                   </tr>
                 );
               })}
+              {/* spacer empty rows to look like a printed sheet */}
               {Array.from({ length: Math.max(0, 4 - items.length % 4) }).map((_, i) => (
                 <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
-                  <td colSpan={3}>&nbsp;</td>
+                  <td colSpan={13}>&nbsp;</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-border bg-muted/40 font-semibold">
-                <td colSpan={1} className="px-1.5 py-1 print:hidden">
+                <td colSpan={6} className="px-1.5 py-1 print:hidden">
                   <div className="flex items-center gap-3">
                     <button
                       onClick={addRow}
@@ -586,7 +661,7 @@ const CreateOrder = () => {
                       <Upload className="h-3 w-3" /> Upload Excel
                     </button>
                     <button
-                      onClick={handleDownloadOnlyTwoColumnsTemplate}
+                      onClick={downloadOrderTemplate}
                       className="text-[11px] text-muted-foreground hover:underline inline-flex items-center gap-1 font-sans"
                     >
                       <FileSpreadsheet className="h-3 w-3" /> Sample Template
@@ -594,6 +669,7 @@ const CreateOrder = () => {
                   </div>
                 </td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
+                <td colSpan={4}></td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.taxable + totals.gst_total)}</td>
                 <td className="print:hidden"></td>
               </tr>
@@ -601,7 +677,7 @@ const CreateOrder = () => {
           </table>
         </div>
 
-        {/* Bottom section */}
+        {/* Bottom section: narration + totals */}
         <div className="grid grid-cols-12 gap-3 px-3 py-2 border-t border-border">
           <div className="col-span-12 md:col-span-7 space-y-2">
             <div>
