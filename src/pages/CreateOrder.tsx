@@ -32,7 +32,8 @@ const blankRow = (): Row => ({
 const fmt = (n: number) =>
   Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const COLS = ["part", "desc", "hsn", "gst", "rack", "qty", "mrp", "disc"] as const;
+// Updated columns to only track 'part' and 'qty' navigation if needed, keeping layout minimal
+const COLS = ["part", "qty"] as const;
 type Col = (typeof COLS)[number];
 
 const CreateOrder = () => {
@@ -124,7 +125,7 @@ const CreateOrder = () => {
   // product search
   useEffect(() => {
     if (searchIdx === null || !user || !searchTerm.trim()) {
-      setSearchResults([]);
+      searchResults([]);
       return;
     }
     const t = setTimeout(() => {
@@ -178,7 +179,6 @@ const CreateOrder = () => {
     setSearchIdx(null);
     setSearchTerm("");
     setSearchResults([]);
-    // focus qty next
     setTimeout(() => focusCell(idx, "qty"), 10);
   };
 
@@ -337,7 +337,6 @@ const CreateOrder = () => {
         defaultDiscount={party ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0 : 0}
         onImport={(imported) => {
           setItems((prev) => {
-            // drop blank rows then append imported
             const nonBlank = prev.filter((r) => r.part_number.trim());
             return [...nonBlank, ...imported.map((it) => ({ ...it, hsn: "", rack: "" } as Row))];
           });
@@ -470,17 +469,8 @@ const CreateOrder = () => {
             <thead>
               <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
                 <th className="text-left px-1.5 py-1 w-6">#</th>
-                <th className="text-left px-1.5 py-1 min-w-[120px]">Name of Item</th>
-                <th className="text-left px-1.5 py-1 min-w-[180px]">Description</th>
-                <th className="text-left px-1.5 py-1 w-20">HSN/SAC</th>
-                <th className="text-right px-1.5 py-1 w-14">GST %</th>
-                <th className="text-left px-1.5 py-1 w-14">Rack</th>
-                <th className="text-right px-1.5 py-1 w-16">Quantity</th>
-                <th className="text-right px-1.5 py-1 w-20">MRP</th>
-                <th className="text-right px-1.5 py-1 w-20">Rate</th>
-                <th className="text-right px-1.5 py-1 w-14">Disc %</th>
-                <th className="text-right px-1.5 py-1 w-20">Net Rate</th>
-                <th className="text-right px-1.5 py-1 w-24">Amount</th>
+                <th className="text-left px-1.5 py-1 min-w-[160px]">Part Number</th>
+                <th className="text-right px-1.5 py-1 w-20">Quantity</th>
                 <th className="w-6 print:hidden"></th>
               </tr>
             </thead>
@@ -543,48 +533,6 @@ const CreateOrder = () => {
                     <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
-                        data-col="desc"
-                        value={it.description}
-                        onChange={(e) => updateRow(idx, { description: e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "desc")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
-                      />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input
-                        data-row={idx}
-                        data-col="hsn"
-                        value={it.hsn || ""}
-                        onChange={(e) => updateRow(idx, { hsn: e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "hsn")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
-                      />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input
-                        data-row={idx}
-                        data-col="gst"
-                        type="number"
-                        step="any"
-                        value={it.gst_pct || ""}
-                        onChange={(e) => updateRow(idx, { gst_pct: +e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "gst")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
-                      />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input
-                        data-row={idx}
-                        data-col="rack"
-                        value={it.rack || ""}
-                        onChange={(e) => updateRow(idx, { rack: e.target.value.toUpperCase() })}
-                        onKeyDown={(e) => handleKey(e, idx, "rack")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
-                      />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input
-                        data-row={idx}
                         data-col="qty"
                         type="number"
                         step="any"
@@ -593,37 +541,6 @@ const CreateOrder = () => {
                         onKeyDown={(e) => handleKey(e, idx, "qty")}
                         className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
                       />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input
-                        data-row={idx}
-                        data-col="mrp"
-                        type="number"
-                        step="any"
-                        value={it.mrp || ""}
-                        onChange={(e) => updateRow(idx, { mrp: +e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "mrp")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
-                      />
-                    </td>
-                    <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground">
-                      {fmt(it.mrp)}
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input
-                        data-row={idx}
-                        data-col="disc"
-                        type="number"
-                        step="any"
-                        value={it.discount_pct || ""}
-                        onChange={(e) => updateRow(idx, { discount_pct: +e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "disc")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
-                      />
-                    </td>
-                    <td className="px-1 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
-                    <td className="px-1 py-0.5 text-right tabular-nums font-semibold">
-                      {fmt(it.total)}
                     </td>
                     <td className="px-0.5 py-0.5 print:hidden">
                       <button
@@ -637,16 +554,16 @@ const CreateOrder = () => {
                   </tr>
                 );
               })}
-              {/* spacer empty rows to look like a printed sheet */}
+              {/* spacer empty rows */}
               {Array.from({ length: Math.max(0, 4 - items.length % 4) }).map((_, i) => (
                 <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
-                  <td colSpan={13}>&nbsp;</td>
+                  <td colSpan={3}>&nbsp;</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-border bg-muted/40 font-semibold">
-                <td colSpan={6} className="px-1.5 py-1 print:hidden">
+                <td colSpan={1} className="px-1.5 py-1 print:hidden">
                   <div className="flex items-center gap-3">
                     <button
                       onClick={addRow}
@@ -660,16 +577,9 @@ const CreateOrder = () => {
                     >
                       <Upload className="h-3 w-3" /> Upload Excel
                     </button>
-                    <button
-                      onClick={downloadOrderTemplate}
-                      className="text-[11px] text-muted-foreground hover:underline inline-flex items-center gap-1 font-sans"
-                    >
-                      <FileSpreadsheet className="h-3 w-3" /> Sample Template
-                    </button>
                   </div>
                 </td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
-                <td colSpan={4}></td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.taxable + totals.gst_total)}</td>
                 <td className="print:hidden"></td>
               </tr>
