@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, Upload, FileSpreadsheet } from "lucide-react";
 import OrderExcelUpload from "@/components/OrderExcelUpload";
-import { downloadOrderTemplate } from "@/lib/excelTemplates";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -32,7 +31,6 @@ const blankRow = (): Row => ({
 const fmt = (n: number) =>
   Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Updated columns to only track 'part' and 'qty' navigation if needed, keeping layout minimal
 const COLS = ["part", "qty"] as const;
 type Col = (typeof COLS)[number];
 
@@ -119,13 +117,12 @@ const CreateOrder = () => {
       rows.map((r) => (r.discount_pct === 0 && !r.part_number ? { ...r, discount_pct: def } : r)),
     );
     setPartyQuery(party.name);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId]);
 
   // product search
   useEffect(() => {
     if (searchIdx === null || !user || !searchTerm.trim()) {
-      searchResults([]);
+      setSearchResults([]);
       return;
     }
     const t = setTimeout(() => {
@@ -133,6 +130,23 @@ const CreateOrder = () => {
     }, 180);
     return () => clearTimeout(t);
   }, [searchTerm, searchIdx, user]);
+
+  // Client-side Custom 2-Column CSV Template Generator (No extra modules required)
+  const handleDownloadOnlyTwoColumnsTemplate = () => {
+    try {
+      const csvContent = "data:text/csv;charset=utf-8,Part Number,Quantity\nTVS-001,2\nTVS-022,5\nLUB-100,1\n";
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "order_template_simple.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Simple Template downloaded successfully!");
+    } catch (err) {
+      toast.error("Failed to download template");
+    }
+  };
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
   const cgst = +(totals.gst_total / 2).toFixed(2);
@@ -252,7 +266,6 @@ const CreateOrder = () => {
     }
   };
 
-  // auto-save draft every 30s when there are valid rows
   const lastSavedAt = useRef(0);
   useEffect(() => {
     const id = setInterval(() => {
@@ -263,10 +276,8 @@ const CreateOrder = () => {
       handleSave("draft");
     }, 30000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, partyId, user]);
 
-  // duplicate detection
   const dupSet = useMemo(() => {
     const counts = new Map<string, number>();
     items.forEach((r) => {
@@ -276,7 +287,6 @@ const CreateOrder = () => {
     return new Set(Array.from(counts.entries()).filter(([, v]) => v > 1).map(([k]) => k));
   }, [items]);
 
-  // RD discount breakdown (display only)
   const rdBreakdown = useMemo(() => {
     if (!party || party.discount_type !== "RD") return null;
     const sys = Number(party.default_discount) || 0;
@@ -287,7 +297,7 @@ const CreateOrder = () => {
 
   return (
     <div className="invoice-entry max-w-[1400px] mx-auto text-[13px] font-mono">
-      {/* Top action bar (screen only) */}
+      {/* Top action bar */}
       <div className="print:hidden flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
@@ -307,7 +317,7 @@ const CreateOrder = () => {
           <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8">
             <Upload className="h-3.5 w-3.5" /> Upload Excel
           </Button>
-          <Button size="sm" variant="ghost" onClick={downloadOrderTemplate} className="h-8">
+          <Button size="sm" variant="ghost" onClick={handleDownloadOnlyTwoColumnsTemplate} className="h-8">
             <FileSpreadsheet className="h-3.5 w-3.5" /> Template
           </Button>
           <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving} className="h-8">
@@ -345,7 +355,6 @@ const CreateOrder = () => {
 
       {/* Invoice sheet */}
       <div className="border border-border bg-[hsl(var(--invoice-bg,60_30%_96%))] shadow-soft print:shadow-none print:border-0">
-        {/* Header strip */}
         <div className="bg-primary text-primary-foreground px-3 py-1.5 flex items-center justify-between text-xs">
           <div className="font-sans font-semibold tracking-wide">{voucherType}</div>
           <div className="font-sans">Viswanath Automobiles Pvt. Ltd. [TVS]</div>
@@ -463,7 +472,7 @@ const CreateOrder = () => {
           )}
         </div>
 
-        {/* Billing grid */}
+        {/* Billing grid (Strictly 2 Data Columns) */}
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] border-collapse">
             <thead>
@@ -554,7 +563,6 @@ const CreateOrder = () => {
                   </tr>
                 );
               })}
-              {/* spacer empty rows */}
               {Array.from({ length: Math.max(0, 4 - items.length % 4) }).map((_, i) => (
                 <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
                   <td colSpan={3}>&nbsp;</td>
@@ -577,6 +585,12 @@ const CreateOrder = () => {
                     >
                       <Upload className="h-3 w-3" /> Upload Excel
                     </button>
+                    <button
+                      onClick={handleDownloadOnlyTwoColumnsTemplate}
+                      className="text-[11px] text-muted-foreground hover:underline inline-flex items-center gap-1 font-sans"
+                    >
+                      <FileSpreadsheet className="h-3 w-3" /> Sample Template
+                    </button>
                   </div>
                 </td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
@@ -587,7 +601,7 @@ const CreateOrder = () => {
           </table>
         </div>
 
-        {/* Bottom section: narration + totals */}
+        {/* Bottom section */}
         <div className="grid grid-cols-12 gap-3 px-3 py-2 border-t border-border">
           <div className="col-span-12 md:col-span-7 space-y-2">
             <div>
