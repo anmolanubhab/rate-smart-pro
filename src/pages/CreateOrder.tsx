@@ -722,7 +722,7 @@ const CreateOrder = () => {
                   <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-sans">
                     Grand Total
                   </span>
-                  <span className="font-bold text-lg gradient-primary bg-clip-text text-transparent tabular-nums">
+                  <span className="font-bold text-lg text-primary tabular-nums">
                     ₹{fmt(finalTotal)}
                   </span>
                 </div>
