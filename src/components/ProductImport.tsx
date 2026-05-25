@@ -157,20 +157,20 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
     setTimeout(reset, 200);
   };
 
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([
-      {
-        "Part Number": "N1234",
-        "Product Name": "Brake Shoe Set",
-        "Vehicle Model": "Apache RTR 160",
-        Category: "spare",
-        MRP: 450,
-        "Dealer Rate": 360,
-        Stock: 25,
-        GST: 18,
-        Barcode: "8901234567890",
-      },
-    ]);
+  const ws = XLSX.utils.json_to_sheet([
+  {
+    "Part Number": "TVS-001",
+    Quantity: 2,
+  },
+  {
+    "Part Number": "TVS-022",
+    Quantity: 5,
+  },
+  {
+    "Part Number": "LUB-100",
+    Quantity: 1,
+  },
+]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Products");
     XLSX.writeFile(wb, "products-template.xlsx");
