@@ -254,7 +254,7 @@ const CreateOrder = () => {
       }
     } catch (e: any) {
       toast.error(e.message);
-    } finaly {
+    } finally {
       setSaving(false);
     }
   };
