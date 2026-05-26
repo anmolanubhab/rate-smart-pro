@@ -1,1 +1,46 @@
 
+@media print {
+
+  body {
+    background: white;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .invoice-print {
+    padding: 20px;
+    width: 100%;
+    color: black;
+    background: white;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  table th,
+  table td {
+    border: 1px solid black;
+    padding: 8px;
+    font-size: 12px;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+
+  .totals {
+    margin-top: 20px;
+    text-align: right;
+  }
+
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+}
