@@ -392,7 +392,7 @@ const CreateOrder = () => {
               <Input
                 value={refNo}
                 onChange={(e) => setRefNo(e.target.value)}
-                placeholder="Ex: 11299/vishal"
+                placeholder="Chalan Number and Bill by"
                 className="h-7 text-[12px] font-mono px-2 rounded-lg border border-border/60 bg-card focus-visible:ring-1 focus-visible:ring-primary"
               />
             </div>
