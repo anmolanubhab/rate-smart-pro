@@ -329,7 +329,7 @@ const CreateOrder = () => {
             <FileCheck2 className="h-3.5 w-3.5 mr-1" /> Commit to Ledger
           </Button>
           <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8 rounded-xl border-border/60">
-            <Printer className="h-3.5 w-3.5" />
+            <FileDown className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -350,12 +350,21 @@ const CreateOrder = () => {
       {/* Main Neo-Brutalist Futuristic Core Workspace */}
       <div className="rounded-3xl border border-border/60 bg-card overflow-hidden shadow-soft print:shadow-none print:border-0 print:rounded-none">
         
-        {/* Dynamic Telemetry Banner */}
+        {/* Dynamic Telemetry Banner with Option 2 Print Button Implementation */}
         <div className="gradient-primary text-white px-4 py-2.5 flex items-center justify-between text-xs tracking-wide">
           <div className="flex items-center gap-2 font-sans font-bold uppercase tracking-widest">
             <Layers className="h-4 w-4" /> {voucherType} System
           </div>
-          <div className="font-sans font-semibold hidden sm:block opacity-90">Viswanath Automobiles Pvt. Ltd. [TVS]</div>
+          
+          {/* STEP 4 - OPTION 2: Print Invoice Button inside Sheet Header Banner */}
+          <button 
+            type="button"
+            onClick={() => window.print()}
+            className="print:hidden bg-white/15 hover:bg-white/25 active:scale-95 text-white font-sans font-bold text-[11px] px-3 py-1 rounded-lg border border-white/10 flex items-center gap-1.5 shadow-soft transition-all duration-150"
+          >
+            <Printer className="h-3.5 w-3.5" /> Print Invoice
+          </button>
+
           <div className="font-mono bg-white/10 px-2 py-0.5 rounded-md border border-white/10 text-[11px] font-bold">{day.toUpperCase()}</div>
         </div>
 
@@ -392,7 +401,7 @@ const CreateOrder = () => {
               <Input
                 value={refNo}
                 onChange={(e) => setRefNo(e.target.value)}
-                placeholder="Chalan Number and Bill by"
+                placeholder="Ex: 11299/vishal"
                 className="h-7 text-[12px] font-mono px-2 rounded-lg border border-border/60 bg-card focus-visible:ring-1 focus-visible:ring-primary"
               />
             </div>
@@ -521,7 +530,6 @@ const CreateOrder = () => {
                   >
                     <td className="text-center text-muted-foreground text-[10px] font-sans font-bold select-none">{idx + 1}</td>
                     
-                    {/* Autocomplete Dynamic input */}
                     <td className="p-0.5 relative">
                       <Input
                         data-row={idx}
@@ -662,6 +670,7 @@ const CreateOrder = () => {
                     
                     <td className="text-center print:hidden align-middle">
                       <button
+                        type="button"
                         onClick={() => delRow(idx)}
                         className="text-muted-foreground/40 hover:text-destructive transition-colors duration-150"
                         title="Evict row"
@@ -685,18 +694,21 @@ const CreateOrder = () => {
                 <td colSpan={6} className="px-3 py-2.5 print:hidden">
                   <div className="flex items-center gap-4">
                     <button
+                      type="button"
                       onClick={addRow}
                       className="text-[11px] text-primary hover:text-primary-glow inline-flex items-center gap-1 transition-colors"
                     >
                       <Plus className="h-3.5 w-3.5" /> Append Row (Enter)
                     </button>
                     <button
+                      type="button"
                       onClick={() => setUploadOpen(true)}
                       className="text-[11px] text-primary/80 hover:text-primary inline-flex items-center gap-1 transition-colors"
                     >
                       <Upload className="h-3.5 w-3.5" /> Inject Spreadsheet
                     </button>
                     <button
+                      type="button"
                       onClick={downloadOrderTemplate}
                       className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
                     >
