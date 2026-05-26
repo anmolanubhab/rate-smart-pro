@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Save, Copy, Sparkles, TrendingUp, TrendingDown, Info, FileText, Share2, ChevronDown, FileDown, Users, Tag, Wand2 } from "lucide-react";
+import { 
+  Save, Copy, Sparkles, TrendingUp, TrendingDown, 
+  Info, FileText, Share2, ChevronDown, FileDown, 
+  Users, Tag, Wand2 
+} from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -13,8 +17,40 @@ import { cn } from "@/lib/utils";
 import { generateInvoicePdf, shareOnWhatsApp, fmtINR } from "@/lib/invoice";
 import { fetchParties, fetchSegments, fetchPartyDiscounts, resolveDiscount, Party, Segment, PartyDiscount } from "@/lib/parties";
 
+// ==========================================
+// TYPES & INTERFACES
+// ==========================================
+interface InputCardProps {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  accent: string;
+  prefix?: string;
+  suffix?: string;
+  helper?: string;
+}
+
+interface ResultCardProps {
+  label: string;
+  value: string;
+  tone?: "success" | "destructive" | "warning";
+  subtle?: boolean;
+  icon?: React.ComponentType<{ className?: string }>;
+}
+
+interface PartySummaryStatProps {
+  label: string;
+  value: string;
+  tone?: "success";
+}
+
+// ==========================================
+// MAIN CALCULATOR COMPONENT
+// ==========================================
 const Calculator = () => {
   const { user } = useAuth();
+  
+  // Input States
   const [billAmount, setBillAmount] = useState("");
   const [billDiscount, setBillDiscount] = useState("22");
   const [requiredDiscount, setRequiredDiscount] = useState("24");
@@ -22,10 +58,12 @@ const Calculator = () => {
   const [partyName, setPartyName] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  
+  // UI States
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Party / Segment
+  // Master Data States
   const [parties, setParties] = useState<Party[]>([]);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [partyId, setPartyId] = useState<string>("");
@@ -33,73 +71,87 @@ const Calculator = () => {
   const [partyDiscounts, setPartyDiscounts] = useState<PartyDiscount[]>([]);
   const [autoApplied, setAutoApplied] = useState<"segment" | "agreed" | "default" | null>(null);
 
+  // Memoized Selectors
   const selectedParty = useMemo(() => parties.find((p) => p.id === partyId) || null, [parties, partyId]);
   const mode = selectedParty?.discount_type ?? null; // "RD" | "CD" | null
 
+  // Meta Title & Initial Fetch
   useEffect(() => {
     document.title = "Calculator — RD Calculator Pro";
-    if (user) {
-      (async () => {
-        try {
-          const [p, s] = await Promise.all([fetchParties(user.id), fetchSegments()]);
-          setParties(p);
-          setSegments(s);
-        } catch (e: any) {
-          toast.error(e.message);
+    if (!user) return;
+
+    let isMounted = true;
+    (async () => {
+      try {
+        const [fetchedParties, fetchedSegments] = await Promise.all([
+          fetchParties(user.id),
+          fetchSegments()
+        ]);
+        if (isMounted) {
+          setParties(fetchedParties);
+          setSegments(fetchedSegments);
         }
-      })();
-    }
+      } catch (e: any) {
+        if (isMounted) toast.error(e.message || "Failed to fetch master data");
+      }
+    })();
+
+    return () => { isMounted = false; };
   }, [user]);
 
-  // Load segment discounts when party changes, auto-fill party name + bill discount
+  // Party Switch Automation
   useEffect(() => {
     if (!selectedParty) {
       setPartyDiscounts([]);
       setAutoApplied(null);
       setCdDiscount("0");
+      setPartyName("");
       return;
     }
+
     setPartyName(selectedParty.name);
-    // Auto-fill Bill Discount from party default_discount
     setBillDiscount(String(selectedParty.default_discount));
     setPartyDiscounts([]);
-    let active = true;
+    
+    let isMounted = true;
     (async () => {
       try {
         const pd = await fetchPartyDiscounts(selectedParty.id);
-        if (active) setPartyDiscounts(pd);
+        if (isMounted) setPartyDiscounts(pd);
       } catch (e: any) {
-        if (active) toast.error(e.message);
+        if (isMounted) toast.error(e.message || "Failed to fetch discounts");
       }
     })();
-    return () => {
-      active = false;
-    };
+
+    return () => { isMounted = false; };
   }, [selectedParty]);
 
-  // Apply auto discount whenever party/segment/discounts change
+  // Resolution Logic for Discounts
   useEffect(() => {
     if (!selectedParty) return;
+    
     const { value, source } = resolveDiscount(selectedParty, segmentId || null, partyDiscounts);
+    setAutoApplied(source);
+
     if (selectedParty.discount_type === "RD") {
       setRequiredDiscount(String(value));
-      setAutoApplied(source);
     } else {
       const base = Number(selectedParty.default_discount) || 0;
       const committed = source === "segment" ? Math.max(base, Number(value) || 0) : base;
       const cdPct = Math.max(0, committed - base);
+      
       setRequiredDiscount(String(Math.round(committed * 100) / 100));
       setCdDiscount(String(Math.round(cdPct * 100) / 100));
-      setAutoApplied(source);
     }
   }, [selectedParty, segmentId, partyDiscounts]);
 
+  // CD Summary Calculations
   const cdPartySummary = useMemo(() => {
     if (!selectedParty || selectedParty.discount_type !== "CD") return null;
 
     const base = Number(selectedParty.default_discount) || 0;
     const segmentValue = segmentId
-      ? partyDiscounts.find((discount) => discount.segment_id === segmentId)?.discount ?? null
+      ? partyDiscounts.find((d) => d.segment_id === segmentId)?.discount ?? null
       : null;
     const committed = segmentValue === null ? base : Math.max(base, Number(segmentValue) || 0);
     const cd = Math.max(0, committed - base);
@@ -111,6 +163,7 @@ const Calculator = () => {
     };
   }, [selectedParty, segmentId, partyDiscounts]);
 
+  // Core Math Engine
   const calc = useMemo(() => {
     const bill = parseFloat(billAmount) || 0;
     const bDisc = parseFloat(billDiscount) || 0;
@@ -119,33 +172,35 @@ const Calculator = () => {
 
     const billOnMrp = bDisc < 100 ? bill / (1 - bDisc / 100) : 0;
 
-    // RD path: apply rDisc on billOnMrp (UNCHANGED)
+    // RD Calculations
     const afterRd = billOnMrp * (1 - rDisc / 100);
     const rdAmount = afterRd - bill;
 
-    // CD path (sequential): treat entered bill as MRP total.
-    // Net = Bill × (1 − BaseDiscount%)  →  Final = Net × (1 − CD%)
-    const cdNetAmount = bill * (1 - bDisc / 100); // after Base Discount
-    const cdAmount = cdNetAmount * (cd / 100);    // CD benefit on Net
-    const afterCd = cdNetAmount - cdAmount;       // Final payable
-    // Effective discount vs MRP (e.g. 27 + 2 → ~28.46%)
+    // CD Calculations (Sequential)
+    const cdNetAmount = bill * (1 - bDisc / 100);
+    const cdAmount = cdNetAmount * (cd / 100);
+    const afterCd = cdNetAmount - cdAmount;
     const cdEffective = bill > 0 ? ((bill - afterCd) / bill) * 100 : 0;
 
-    // Agreed diff for RD display (agreed - bill discount)
+    // Extras
     const agreedDiff = selectedParty?.discount_type === "RD"
       ? Number(selectedParty.agreed_discount) - bDisc
       : 0;
-
     const extraNeeded = bill > 0 && billOnMrp > 0 ? ((billOnMrp - bill) / billOnMrp) * 100 : 0;
 
     const isCd = mode === "CD";
     const finalPayable = isCd ? afterCd : afterRd;
-    const totalBenefit = isCd ? (bill - afterCd) : -rdAmount; // CD: total saved vs MRP
+    const totalBenefit = isCd ? (bill - afterCd) : -rdAmount;
 
-    return { bill, bDisc, rDisc, cd, billOnMrp, afterRd, rdAmount, cdNetAmount, cdAmount, afterCd, cdEffective, agreedDiff, extraNeeded, finalPayable, totalBenefit };
+    return { 
+      bill, bDisc, rDisc, cd, billOnMrp, afterRd, rdAmount, 
+      cdNetAmount, cdAmount, afterCd, cdEffective, agreedDiff, 
+      extraNeeded, finalPayable, totalBenefit 
+    };
   }, [billAmount, billDiscount, requiredDiscount, cdDiscount, mode, selectedParty]);
 
-  const payload = {
+  // Context-Aware Payload Creation
+  const payload = useMemo(() => ({
     partyName: partyName.trim() || null,
     invoiceDate: invoiceDate || null,
     invoiceNumber: invoiceNumber.trim() || null,
@@ -155,36 +210,46 @@ const Calculator = () => {
     billOnMrp: Math.round(calc.billOnMrp),
     afterRd: Math.round(mode === "CD" ? calc.afterCd : calc.afterRd),
     rdAmount: Math.round(mode === "CD" ? -calc.cdAmount : calc.rdAmount),
-  };
+  }), [partyName, invoiceDate, invoiceNumber, calc, mode]);
 
+  // Callbacks / Action Handlers
   const handleSave = async () => {
     if (!user) return;
     if (!calc.bill) return toast.error("Enter bill amount first");
+    
     setSaving(true);
-    const { error } = await supabase.from("calculations").insert({
-      user_id: user.id,
-      bill_amount: calc.bill,
-      bill_discount: calc.bDisc,
-      required_discount: calc.rDisc,
-      bill_on_mrp: Math.round(calc.billOnMrp),
-      after_rd: Math.round(mode === "CD" ? calc.afterCd : calc.afterRd),
-      rd_amount: Math.round(mode === "CD" ? -calc.cdAmount : calc.rdAmount),
-      party_name: payload.partyName,
-      invoice_date: payload.invoiceDate,
-      invoice_number: payload.invoiceNumber,
-      party_id: partyId || null,
-      segment_id: segmentId || null,
-      mode: mode,
-      cd_discount: mode === "CD" ? calc.cd : null,
-      total_benefit: Math.round(calc.totalBenefit),
-    });
-    setSaving(false);
-    if (error) toast.error(error.message);
-    else toast.success("Calculation saved");
+    try {
+      const { error } = await supabase.from("calculations").insert({
+        user_id: user.id,
+        bill_amount: calc.bill,
+        bill_discount: calc.bDisc,
+        required_discount: calc.rDisc,
+        bill_on_mrp: payload.billOnMrp,
+        after_rd: payload.afterRd,
+        rd_amount: payload.rdAmount,
+        party_name: payload.partyName,
+        invoice_date: payload.invoiceDate,
+        invoice_number: payload.invoiceNumber,
+        party_id: partyId || null,
+        segment_id: segmentId || null,
+        mode: mode,
+        cd_discount: mode === "CD" ? calc.cd : null,
+        total_benefit: Math.round(calc.totalBenefit),
+      });
+
+      if (error) throw error;
+      toast.success("Calculation saved successfully");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to save calculation");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCopy = async () => {
-    const text = `Final Payable: ₹${fmtINR(calc.finalPayable)}\nBill on MRP: ₹${fmtINR(calc.billOnMrp)}\n${mode === "CD" ? `CD Amount: ₹${fmtINR(calc.cdAmount)}` : `RD Amount: ₹${fmtINR(calc.rdAmount)}`}`;
+    const text = `Final Payable: ₹${fmtINR(calc.finalPayable)}\nBill on MRP: ₹${fmtINR(calc.billOnMrp)}\n${
+      mode === "CD" ? `CD Amount: ₹${fmtINR(calc.cdAmount)}` : `RD Amount: ₹${fmtINR(calc.rdAmount)}`
+    }`;
     await navigator.clipboard.writeText(text);
     toast.success("Result copied to clipboard");
   };
@@ -194,9 +259,7 @@ const Calculator = () => {
     toast.success("Invoice PDF generated");
   };
 
-  const handleShare = () => {
-    shareOnWhatsApp(payload);
-  };
+  const handleShare = () => shareOnWhatsApp(payload);
 
   const isNegative = mode === "CD" ? false : calc.rdAmount < 0;
   const hasInvoiceData = !!(payload.partyName || payload.invoiceDate || payload.invoiceNumber);
@@ -204,6 +267,7 @@ const Calculator = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in-up">
+      {/* Top Header Row */}
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground font-medium">Calculator</p>
@@ -212,21 +276,29 @@ const Calculator = () => {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={handleCopy}>
-            <Copy className="h-4 w-4" /> Copy
+            <Copy className="h-4 w-4 mr-1" /> Copy
           </Button>
           <Button variant="outline" onClick={handlePdf}>
-            <FileDown className="h-4 w-4" /> PDF
+            <FileDown className="h-4 w-4 mr-1" /> PDF
           </Button>
-          <Button variant="outline" onClick={handleShare} className="border-success/30 text-success hover:bg-success/10 hover:text-success">
-            <Share2 className="h-4 w-4" /> WhatsApp
+          <Button 
+            variant="outline" 
+            onClick={handleShare} 
+            className="border-success/30 text-success hover:bg-success/10 hover:text-success"
+          >
+            <Share2 className="h-4 w-4 mr-1" /> WhatsApp
           </Button>
-          <Button onClick={handleSave} disabled={saving} className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant">
-            <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save"}
+          <Button 
+            onClick={handleSave} 
+            disabled={saving} 
+            className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant"
+          >
+            <Save className="h-4 w-4 mr-1" /> {saving ? "Saving..." : "Save"}
           </Button>
         </div>
       </header>
 
-      {/* Hero result */}
+      {/* Hero Display Card */}
       <div className="relative overflow-hidden rounded-2xl gradient-success p-8 md:p-10 text-white shadow-elegant animate-scale-in">
         <div className="absolute inset-0 opacity-20" style={{ background: "radial-gradient(circle at 20% 50%, white, transparent 50%)" }} />
         <div className="relative">
@@ -247,7 +319,7 @@ const Calculator = () => {
         </div>
       </div>
 
-      {/* Party & Segment card */}
+      {/* Profile: Party & Segment Configurer */}
       <div className="rounded-2xl p-5 md:p-6 bg-card border border-border shadow-soft bg-gradient-to-br from-primary/5 to-accent/5">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div className="flex items-center gap-3">
@@ -274,7 +346,7 @@ const Calculator = () => {
           )}
         </div>
 
-        <div className="grid md:grid-cols-2 gap-3">
+        <div className="grid md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Party</Label>
             <Select value={partyId || "none"} onValueChange={(v) => setPartyId(v === "none" ? "" : v)}>
@@ -291,6 +363,7 @@ const Calculator = () => {
               </SelectContent>
             </Select>
           </div>
+          
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
               <Tag className="h-3 w-3" /> Segment
@@ -331,9 +404,8 @@ const Calculator = () => {
         )}
       </div>
 
-      {/* Inputs */}
+      {/* Main Dynamic Inputs Grid */}
       <div className="grid md:grid-cols-3 gap-4">
-        {/* Bill Amount with pulse-on-empty */}
         <div
           className={cn(
             "rounded-2xl p-5 bg-card border shadow-soft transition-smooth hover:-translate-y-0.5 bg-gradient-to-br from-primary/20 to-primary/5 relative",
@@ -351,14 +423,21 @@ const Calculator = () => {
               inputMode="decimal"
               value={billAmount}
               onChange={(e) => setBillAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-              placeholder="Bill Amount Put Here"
+              placeholder="0.00"
               className="border-0 bg-transparent text-2xl font-display font-bold p-0 h-auto focus-visible:ring-0 tabular-nums placeholder:text-muted-foreground/40 placeholder:text-lg"
             />
           </div>
           <p className="text-xs text-muted-foreground mt-2">Enter total bill amount here</p>
         </div>
 
-        <InputCard label="Bill Discount" value={billDiscount} onChange={setBillDiscount} accent="from-accent/20 to-accent/5" suffix="%" helper={selectedParty ? "Auto-filled from Party settings" : undefined} />
+        <InputCard 
+          label="Bill Discount" 
+          value={billDiscount} 
+          onChange={setBillDiscount} 
+          accent="from-accent/20 to-accent/5" 
+          suffix="%" 
+          helper={selectedParty ? "Auto-filled from Party settings" : undefined} 
+        />
 
         {mode === "CD" ? (
           <InputCard
@@ -380,7 +459,7 @@ const Calculator = () => {
         )}
       </div>
 
-      {/* RD-specific info */}
+      {/* Rate Diff Helper Info (Only for RD Mode) */}
       {mode === "RD" && selectedParty && (
         <div className="rounded-2xl p-5 bg-card border border-border shadow-soft bg-gradient-to-br from-primary/5 to-transparent">
           <div className="flex flex-wrap items-center gap-4 justify-between">
@@ -399,7 +478,7 @@ const Calculator = () => {
         </div>
       )}
 
-      {/* Invoice details (optional, collapsible) */}
+      {/* Metadata Accordion Section */}
       <Collapsible open={invoiceOpen} onOpenChange={setInvoiceOpen}>
         <div className="rounded-2xl bg-card border border-border shadow-soft overflow-hidden">
           <CollapsibleTrigger asChild>
@@ -437,7 +516,7 @@ const Calculator = () => {
         </div>
       </Collapsible>
 
-      {/* Computed results */}
+      {/* Breakdowns & Output Analytics Grid */}
       {mode === "CD" ? (
         <div className="grid md:grid-cols-3 gap-4">
           <ResultCard label="Bill Amount (MRP)" value={`₹${fmtINR(calc.bill)}`} subtle />
@@ -451,21 +530,13 @@ const Calculator = () => {
             />
           )}
           <ResultCard label="Final Payable" value={`₹${fmtINR(calc.afterCd)}`} tone="success" />
-          <ResultCard
-            label="Effective Discount"
-            value={`${calc.cdEffective.toFixed(2)}%`}
-            subtle
-          />
+          <ResultCard label="Effective Discount" value={`${calc.cdEffective.toFixed(2)}%`} subtle />
           <ResultCard label="Commitment" value={`${calc.bDisc}% + ${calc.cd}%`} subtle />
         </div>
       ) : (
         <div className="grid md:grid-cols-3 gap-4">
           <ResultCard label="Bill on MRP" value={`₹${fmtINR(calc.billOnMrp)}`} subtle />
-          <ResultCard
-            label="After RD"
-            value={`₹${fmtINR(calc.finalPayable)}`}
-            tone="success"
-          />
+          <ResultCard label="After RD" value={`₹${fmtINR(calc.finalPayable)}`} tone="success" />
           <ResultCard
             label="RD Amount"
             value={`${isNegative ? "-" : "+"}₹${fmtINR(Math.abs(calc.rdAmount))}`}
@@ -475,7 +546,7 @@ const Calculator = () => {
         </div>
       )}
 
-      {/* Total benefit */}
+      {/* Net Strategic Benefits */}
       {mode && calc.bill > 0 && (
         <div className="rounded-2xl p-5 bg-card border border-border shadow-soft flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -494,7 +565,7 @@ const Calculator = () => {
         </div>
       )}
 
-      {/* Insight */}
+      {/* AI/Auto Insights Card */}
       <div className="glass rounded-2xl p-6 flex items-start gap-4">
         <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
           <Info className="h-5 w-5" />
@@ -527,9 +598,12 @@ const Calculator = () => {
   );
 };
 
+// ==========================================
+// SUB-COMPONENTS (PROPERLY TYPED)
+// ==========================================
 const InputCard = ({
   label, value, onChange, accent, prefix, suffix, helper,
-}: { label: string; value: string; onChange: (v: string) => void; accent: string; prefix?: string; suffix?: string; helper?: string }) => (
+}: InputCardProps) => (
   <div className={cn("rounded-2xl p-5 bg-card border border-border shadow-soft transition-smooth hover:shadow-elegant hover:-translate-y-0.5 bg-gradient-to-br", accent)}>
     <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">{label}</Label>
     <div className="flex items-center gap-2 mt-2">
@@ -539,7 +613,7 @@ const InputCard = ({
         inputMode="decimal"
         value={value}
         onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ""))}
-        className="border-0 bg-transparent text-2xl font-display font-bold p-0 h-auto focus-visible:ring-0 tabular-nums"
+        className="border-0 bg-transparent text-2xl font-display font-bold p-0 h-auto focus-visible:ring-0 tabular-nums w-full"
       />
       {suffix && <span className="text-2xl font-display font-semibold text-muted-foreground">{suffix}</span>}
     </div>
@@ -549,8 +623,14 @@ const InputCard = ({
 
 const ResultCard = ({
   label, value, tone, subtle, icon: Icon,
-}: { label: string; value: string; tone?: "success" | "destructive" | "warning"; subtle?: boolean; icon?: any }) => {
-  const toneClass = tone === "success" ? "text-success" : tone === "destructive" ? "text-destructive" : tone === "warning" ? "text-warning" : "text-foreground";
+}: ResultCardProps) => {
+  const toneClass = cn({
+    "text-success": tone === "success",
+    "text-destructive": tone === "destructive",
+    "text-warning": tone === "warning",
+    "text-foreground": !tone
+  });
+
   return (
     <div className="rounded-2xl p-5 bg-card border border-border shadow-soft transition-smooth hover:shadow-elegant">
       <div className="flex items-center justify-between">
@@ -564,18 +644,12 @@ const ResultCard = ({
   );
 };
 
-const PartySummaryStat = ({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "success";
-}) => (
+const PartySummaryStat = ({ label, value, tone }: PartySummaryStatProps) => (
   <div className="rounded-xl border border-border bg-background/60 p-3">
     <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
-    <p className={cn("mt-1 font-display text-xl font-bold tabular-nums", tone === "success" ? "text-success" : "text-foreground")}>{value}</p>
+    <p className={cn("mt-1 font-display text-xl font-bold tabular-nums", tone === "success" ? "text-success" : "text-foreground")}>
+      {value}
+    </p>
   </div>
 );
 
