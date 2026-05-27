@@ -331,28 +331,24 @@ const CreateOrder = () => {
       }
     }
 
-    // NORMAL GRID NAVIGATION WITH EXTENDED 'CROSS NEXT ROW' LOGIC
+    // NORMAL GRID NAVIGATION & ARROW KEY BACK-TRACKING
     const ci = COLS.indexOf(col);
 
     if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
       
-      // CRITICAL FIX: Agar user 'Name of Item' (part) column par hai
+      // Enter dabane par sirf tabhi description mein jaye jab data ho, nahi to cross kare
       if (col === "part") {
         const hasValidPart = items[idx].part_number.trim().length > 0;
-        
         if (hasValidPart) {
-          // Agar part code select kar liya hai, tabhi aage 'desc' column par bhejein
           focusCell(idx, "desc");
         } else {
-          // Agar field khali hai, toh cross karke direct next row ke 'part' par bhej dein
           if (idx === items.length - 1) addRow();
           setTimeout(() => focusCell(idx + 1, "part"), 10);
         }
         return;
       }
 
-      // Baaki normal grid cells ke liye sequential behavior
       if (ci < COLS.length - 1) {
         focusCell(idx, COLS[ci + 1]);
       } else {
@@ -360,9 +356,11 @@ const CreateOrder = () => {
         setTimeout(() => focusCell(idx + 1, "part"), 10);
       }
     } else if (e.key === "ArrowDown") {
+      // FIXED: Arrow down dabaney par bina kisi lock ke niche ja sakein
       e.preventDefault();
       focusCell(Math.min(items.length - 1, idx + 1), col);
     } else if (e.key === "ArrowUp") {
+      // FIXED: Description ya kisi bhi column se wapas pichli row/Name of Item par jaa sakein
       e.preventDefault();
       focusCell(Math.max(0, idx - 1), col);
     }
@@ -437,8 +435,8 @@ const CreateOrder = () => {
   // RD discount breakdown (display only)
   const rdBreakdown = useMemo(() => {
     if (!party || party.discount_type !== "RD") return null;
-    const sys = Number(party.default_discount) || 0;
-    const agreed = Number(party.agreed_discount) || 0;
+    const sys = Number(party.default_discount || 0);
+    const agreed = Number(party.agreed_discount || 0);
     const rdExtra = Math.max(agreed - sys, 0);
     return { sys, agreed, rdExtra, effective: agreed };
   }, [party]);
