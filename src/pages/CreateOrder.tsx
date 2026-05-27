@@ -50,6 +50,7 @@ const CreateOrder = () => {
   const [partyId, setPartyId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
   const [partyOpen, setPartyOpen] = useState(false);
+  const [partyHighlightedIndex, setPartyHighlightedIndex] = useState(0);
 
   const [orderNumber, setOrderNumber] = useState("");
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
@@ -68,31 +69,61 @@ const CreateOrder = () => {
   const [searchCol, setSearchCol] = useState<Col>("part");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
+  // Autofocus input ref
+  const partyInputRef = useRef<HTMLInputElement>(null);
+
   const party = useMemo(() => parties.find((p) => p.id === partyId) || null, [parties, partyId]);
   const day = useMemo(
     () => new Date(orderDate).toLocaleDateString("en-IN", { weekday: "long" }),
     [orderDate],
   );
 
-  // Global Keydown Listeners for Page-level Shortcuts (Save, Print, Confirm, Add Row)
+  // Filtered party list based on input query
+  const partResults = useMemo(() => {
+    const q = partyQuery.trim().toLowerCase();
+    if (!q) return parties.slice(0, 12);
+    return parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12);
+  }, [parties, partyQuery]);
+
+  // Exact Match Verification Logic
+  const checkExactPartyMatch = (query: string, currentParties: Party[]) => {
+    const cleanQuery = query.trim().toLowerCase();
+    const exactMatch = currentParties.find((p) => p.name.trim().toLowerCase() === cleanQuery);
+    if (exactMatch) {
+      setPartyId(exactMatch.id);
+      setPartyOpen(false);
+    } else {
+      // Clear if query drifts away from exact matched string
+      if (party && party.name.trim().toLowerCase() !== cleanQuery) {
+        setPartyId("");
+      }
+    }
+  };
+
+  // Focus party input field on mount (Create Mode only)
+  useEffect(() => {
+    if (!editId) {
+      setTimeout(() => {
+        partyInputRef.current?.focus();
+      }, 100);
+    }
+  }, [editId]);
+
+  // Global Keydown Listeners for Shortcuts
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      // Ctrl + S -> Save Draft
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         handleSave("draft");
       }
-      // Ctrl + Enter -> Confirm Invoice
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
         handleSave("pending");
       }
-      // Ctrl + P -> Print Invoice
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
         e.preventDefault();
         window.print();
       }
-      // Alt + N -> Add New Row
       if (e.altKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         addRow();
@@ -109,7 +140,13 @@ const CreateOrder = () => {
 
   useEffect(() => {
     if (!user) return;
-    fetchParties(user.id).then(setParties).catch((e) => toast.error(e.message));
+    fetchParties(user.id)
+      .then((data) => {
+        setParties(data);
+        if (partyQuery) checkExactPartyMatch(partyQuery, data);
+      })
+      .catch((e) => toast.error(e.message));
+      
     if (!editId) {
       nextOrderNumber(user.id).then(setOrderNumber).catch(() => {});
       setEditMode(false);
@@ -174,12 +211,6 @@ const CreateOrder = () => {
   const finalTotal = Math.round(totals.grand_total);
   const totalQty = items.reduce((s, r) => s + (Number(r.qty) || 0), 0);
 
-  const partResults = useMemo(() => {
-    const q = partyQuery.trim().toLowerCase();
-    if (!q) return parties.slice(0, 12);
-    return parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12);
-  }, [parties, partyQuery]);
-
   const updateRow = (idx: number, patch: Partial<Row>) => {
     setItems((rows) =>
       rows.map((r, i) => {
@@ -221,6 +252,42 @@ const CreateOrder = () => {
     );
     el?.focus();
     el?.select();
+  };
+
+  // Keyboard navigation logic for Party A/c Name field
+  const handlePartyKeyDown = (e: React.KeyboardEvent) => {
+    if (partyOpen && partResults.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setPartyHighlightedIndex((prev) => Math.min(prev + 1, partResults.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setPartyHighlightedIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const selectedParty = partResults[partyHighlightedIndex];
+        if (selectedParty) {
+          setPartyId(selectedParty.id);
+          setPartyQuery(selectedParty.name);
+          setPartyOpen(false);
+          // Jump focus to first row's item code field
+          setTimeout(() => focusCell(0, "part"), 10);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        setPartyOpen(false);
+        return;
+      }
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      // If closed or no results, jump to billing table item field
+      e.preventDefault();
+      focusCell(0, "part");
+    }
   };
 
   const handleKey = (e: React.KeyboardEvent, idx: number, col: Col) => {
@@ -457,36 +524,48 @@ const CreateOrder = () => {
           <div className="col-span-2 text-muted-foreground">Party A/c Name</div>
           <div className="col-span-10 relative">
             <Input
+              ref={partyInputRef}
               value={partyQuery}
               onChange={(e) => {
                 setPartyQuery(e.target.value);
                 setPartyOpen(true);
+                setPartyHighlightedIndex(0);
+                checkExactPartyMatch(e.target.value, parties);
               }}
-              onFocus={() => setPartyOpen(true)}
+              onFocus={() => {
+                setPartyOpen(true);
+                setPartyHighlightedIndex(0);
+              }}
               onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
+              onKeyDown={handlePartyKeyDown}
               placeholder="Type to search party…"
-              className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary animate-pulse"
             />
             {partyOpen && partResults.length > 0 && (
               <div className="absolute z-30 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-64 overflow-auto">
-                {partResults.map((p) => (
-                  <button
-                    type="button"
-                    key={p.id}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setPartyId(p.id);
-                      setPartyQuery(p.name);
-                      setPartyOpen(false);
-                    }}
-                    className="w-full text-left px-2 py-1 text-[12px] hover:bg-muted border-b border-border last:border-0 flex items-center justify-between gap-2"
-                  >
-                    <span className="font-semibold">{p.name}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {p.discount_type} · {Number(p.discount_type === "RD" ? p.agreed_discount : p.default_discount).toFixed(1)}%
-                    </span>
-                  </button>
-                ))}
+                {partResults.map((p, i) => {
+                  const isPartyHighlighted = partyHighlightedIndex === i;
+                  return (
+                    <button
+                      type="button"
+                      key={p.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setPartyId(p.id);
+                        setPartyQuery(p.name);
+                        setPartyOpen(false);
+                      }}
+                      className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 flex items-center justify-between gap-2 ${
+                        isPartyHighlighted ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                      }`}
+                    >
+                      <span className="font-semibold">{p.name}</span>
+                      <span className={`text-[10px] ${isPartyHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                        {p.discount_type} · {Number(p.discount_type === "RD" ? p.agreed_discount : p.default_discount).toFixed(1)}%
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
