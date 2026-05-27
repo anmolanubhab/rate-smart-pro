@@ -96,7 +96,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   return (
     <div className="min-h-screen flex w-full bg-background gradient-mesh">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
+      <aside className="no-print hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-2.5">
             <div className="h-9 w-9 rounded-xl gradient-primary flex items-center justify-center shadow-glow">
@@ -154,7 +154,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between p-4 border-b border-border bg-card/80 backdrop-blur sticky top-0 z-30">
+        <header className="no-print md:hidden flex items-center justify-between p-4 border-b border-border bg-card/80 backdrop-blur sticky top-0 z-30">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center">
               <Sparkles className="h-4 w-4 text-white" />
@@ -169,7 +169,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
         <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-auto">{children}</main>
 
         {/* Mobile bottom nav */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border z-40">
+        <nav className="no-print md:hidden fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border z-40">
           <div className="grid grid-cols-5">
             {mobileNav.map(({ to, label, icon: Icon }) => (
               <NavLink
