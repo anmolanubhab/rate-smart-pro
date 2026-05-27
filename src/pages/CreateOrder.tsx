@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-// Types
 type Col = 'part' | 'qty' | 'mrp' | 'disc';
+
 type Item = {
   part: string;
   qty: number;
@@ -13,56 +13,44 @@ const CreateOrder = () => {
   const [items, setItems] = useState<Item[]>([
     { part: '', qty: 1, mrp: 0, disc: 0 }
   ]);
-  
+
   const COLS: Col[] = ['part', 'qty', 'mrp', 'disc'];
   const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
-  // Focus cell function
   const focusCell = (rowIdx: number, col: Col) => {
     const key = `${rowIdx}-${col}`;
     const element = inputRefs.current[key];
     if (element) {
       element.focus();
-      // Select all text in the input
       element.select();
     }
   };
 
-  // Add new row
   const addRow = () => {
     setItems(prev => [...prev, { part: '', qty: 1, mrp: 0, disc: 0 }]);
   };
 
-  // Handle keyboard navigation
   const handleKey = (e: React.KeyboardEvent, idx: number, col: Col) => {
     const ci = COLS.indexOf(col);
     
     if (e.key === "Enter") {
       e.preventDefault();
-      
       if (ci < COLS.length - 1) {
-        // Move to next column in same row (part -> qty -> mrp -> disc)
         focusCell(idx, COLS[ci + 1]);
       } else {
-        // Last column (disc) - move to next row
         if (idx === items.length - 1) {
-          // Add new row if at the end
           addRow();
-          // Delay to ensure React has rendered the new row
           setTimeout(() => focusCell(idx + 1, "part"), 100);
         } else {
-          // Move to next row's first column
           focusCell(idx + 1, "part");
         }
       }
-    } 
-    else if (e.key === "ArrowDown") {
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       if (idx < items.length - 1) {
         focusCell(idx + 1, col);
       }
-    } 
-    else if (e.key === "ArrowUp") {
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
       if (idx > 0) {
         focusCell(idx - 1, col);
@@ -70,10 +58,8 @@ const CreateOrder = () => {
     }
   };
 
-  // Handle input changes
   const handleChange = (idx: number, col: Col, value: string | number) => {
     const newItems = [...items];
-    
     if (col === 'part') {
       newItems[idx].part = value as string;
     } else if (col === 'qty') {
@@ -83,27 +69,23 @@ const CreateOrder = () => {
     } else if (col === 'disc') {
       newItems[idx].disc = Number(value) || 0;
     }
-    
     setItems(newItems);
   };
 
-  // Calculate total after discount
   const calculateTotal = (item: Item) => {
     const subtotal = item.qty * item.mrp;
     const discountAmount = (subtotal * item.disc) / 100;
     return subtotal - discountAmount;
   };
 
-  // Calculate grand total
   const calculateGrandTotal = () => {
     return items.reduce((total, item) => total + calculateTotal(item), 0);
   };
 
-  // Render input field based on column type
   const renderInput = (item: Item, idx: number, col: Col) => {
     const value = item[col];
     const key = `${idx}-${col}`;
-    
+
     if (col === 'part') {
       return (
         <input
@@ -132,7 +114,6 @@ const CreateOrder = () => {
     }
   };
 
-  // Auto-focus first cell on mount
   useEffect(() => {
     setTimeout(() => focusCell(0, 'part'), 100);
   }, []);
@@ -140,7 +121,7 @@ const CreateOrder = () => {
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Create Order</h1>
-      
+
       <div className="overflow-x-auto">
         <table className="min-w-full bg-white border">
           <thead>
@@ -154,19 +135,11 @@ const CreateOrder = () => {
           </thead>
           <tbody>
             {items.map((item, idx) => (
-              <tr key={idx} className="hover:bg-gray-50">
-                <td className="border p-2">
-                  {renderInput(item, idx, 'part')}
-                </td>
-                <td className="border p-2">
-                  {renderInput(item, idx, 'qty')}
-                </td>
-                <td className="border p-2">
-                  {renderInput(item, idx, 'mrp')}
-                </td>
-                <td className="border p-2">
-                  {renderInput(item, idx, 'disc')}
-                </td>
+              <tr key={idx}>
+                <td className="border p-2">{renderInput(item, idx, 'part')}</td>
+                <td className="border p-2">{renderInput(item, idx, 'qty')}</td>
+                <td className="border p-2">{renderInput(item, idx, 'mrp')}</td>
+                <td className="border p-2">{renderInput(item, idx, 'disc')}</td>
                 <td className="border p-2 text-right font-semibold">
                   ₹{calculateTotal(item).toFixed(2)}
                 </td>
@@ -185,7 +158,7 @@ const CreateOrder = () => {
           </tfoot>
         </table>
       </div>
-      
+
       <div className="mt-4 flex justify-end">
         <button
           onClick={() => {
