@@ -25,3 +25,6 @@ const handleKey = (e: React.KeyboardEvent, idx: number, col: Col) => {
     focusCell(Math.max(0, idx - 1), col);
   }
 };
+// ... ऊपर का सारा कोड वैसा ही रहेगा
+
+export default CreateOrder;
