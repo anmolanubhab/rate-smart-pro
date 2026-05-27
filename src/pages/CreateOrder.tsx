@@ -952,30 +952,33 @@ const CreateOrder = () => {
             height: auto !important;
           }
 
-          body * {
-            visibility: hidden;
-          }
-
-          .invoice-entry,
-          .invoice-entry * {
-            visibility: visible;
-          }
-
-          .invoice-entry {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            font-size: 11px;
-            overflow: visible !important;
+          body {
+            margin: 0;
+            padding: 0;
           }
 
           .print\\:hidden {
             display: none !important;
           }
 
+          .invoice-entry {
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow: visible !important;
+            font-size: 11px;
+            color: black !important;
+            background: white !important;
+          }
+
           table {
+            width: 100%;
+            border-collapse: collapse;
             page-break-inside: auto;
+            position: relative;
+          }
+
+          tbody tr {
+            position: relative;
           }
 
           tr {
@@ -991,9 +994,6 @@ const CreateOrder = () => {
             display: table-footer-group;
           }
         }
-
-        table { position: relative; }
-        tbody tr { position: relative; }
 
         :root {
           --invoice-bg: 60 30% 96%;
