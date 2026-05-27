@@ -30,9 +30,26 @@
   .invoice-print,
   .invoice-entry {
     position: absolute;
-    left: 0;
+    left: 50%;
     top: 0;
-    width: 100%;
+    width: 190mm;
+    max-width: 190mm;
+    transform: translateX(-50%);
+  }
+
+  .invoice-entry .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .invoice-entry table {
+    width: 100% !important;
+    font-size: 10px !important;
+  }
+
+  .invoice-entry th,
+  .invoice-entry td {
+    padding: 2px 3px !important;
+    min-width: 0 !important;
   }
 
   table {
