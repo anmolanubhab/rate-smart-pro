@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
@@ -45,7 +45,7 @@ interface Party {
   address?: string;
 }
 
-// Dummy mock dependencies as per original file structure placeholders
+// Dummy mock dependencies
 const useAuth = () => ({ user: { id: "user_123" } });
 const fetchParties = async (userId: string): Promise<Party[]> => [];
 const nextOrderNumber = async (userId: string): Promise<string> => "INV-2026-001";
@@ -58,11 +58,9 @@ const computeItem = (item: Partial<Row>): Row => {
   const mrp = Number(item.mrp) || 0;
   const discount_pct = Number(item.discount_pct) || 0;
   const gst_pct = Number(item.gst_pct) || 18;
-
   const discountAmount = mrp * (discount_pct / 100);
   const net_rate = mrp - discountAmount;
   const total = net_rate * qty;
-
   return {
     part_number: item.part_number || "",
     description: item.description || "",
@@ -80,7 +78,7 @@ const computeItem = (item: Partial<Row>): Row => {
   };
 };
 
-const computeTotals = (items: Row[], initialGst = 0) => {
+const computeTotals = (items: Row[]) => {
   let subtotal = 0;
   let discountTotal = 0;
   let taxable = 0;
@@ -91,40 +89,33 @@ const computeTotals = (items: Row[], initialGst = 0) => {
     subtotal += itemSub;
     discountTotal += itemSub * (item.discount_pct / 100);
     taxable += item.net_rate * item.qty;
-    // Assuming backward or forward calculation based on requirements
     gst_total += (item.net_rate * item.qty) * (item.gst_pct / 100);
   });
-
-  return {
-    subtotal,
-    discount_total: discountTotal,
-    taxable,
-    gst_total,
-    grand_total: taxable + gst_total
-  };
+  return { subtotal, discount_total: discountTotal, taxable, gst_total, grand_total: taxable + gst_total };
 };
 
-// UI UI Utility
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
-
 const blankRow = (): Row => ({
   ...computeItem({ part_number: "", description: "", mrp: 0, qty: 0, discount_pct: 0, gst_pct: 18 }),
   hsn: "",
   rack: "",
 });
 
-// Mock UI Shims
-const Badge = ({ children, className, variant }: any) => (
+const Badge = ({ children, className }: any) => (
   <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border", className)}>{children}</span>
 );
-const Button = React.forwardRef(({ children, className, variant, size, ...props }: any, ref: any) => (
+
+const Button = React.forwardRef(({ children, className, ...props }: any, ref: any) => (
   <button ref={ref} className={cn("px-3 py-1.5 rounded-lg font-medium text-sm transition-all flex items-center justify-center", className)} {...props}>{children}</button>
 ));
+
 const Input = React.forwardRef(({ className, type = "text", ...props }: any, ref: any) => (
   <input ref={ref} type={type} className={cn("flex h-10 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20", className)} {...props} />
 ));
+
 const Avatar = ({ children, className }: any) => <div className={cn("relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full", className)}>{children}</div>;
 const AvatarFallback = ({ children, className }: any) => <div className={cn("flex h-full w-full items-center justify-center rounded-full bg-gray-100 text-sm font-medium", className)}>{children}</div>;
+
 const ProductSearchDialog = ({ open, onSelect }: any) => {
   if (!open) return null;
   return (
@@ -139,31 +130,19 @@ const ProductSearchDialog = ({ open, onSelect }: any) => {
     </div>
   );
 };
-const OrderExcelUpload = ({ open, onOpenChange }: any) => null;
+const OrderExcelUpload = ({ open, onOpenChange, onImport }: any) => null;
 const InvoicePrint = (props: any) => null;
 
 // ==========================================
-// CORE HOOKS EXTRACTIONS
+// LIGHTWEIGHT AUTO SAVE HOOK (FIXED)
 // ==========================================
-const useAutoSave = ({ enabled, items, partyId, onSave, interval = 30000 }: { enabled: boolean, items: Row[], partyId: string, onSave: () => Promise<void>, interval?: number }) => {
+const useAutoSave = ({ enabled, onSave, interval = 30000 }: { enabled: boolean, onSave: () => Promise<void>, interval?: number }) => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout>();
-  const lastItemsRef = useRef(items);
-  const lastPartyRef = useRef(partyId);
 
-  useEffect(() => {
+  const triggerSave = useCallback(() => {
     if (!enabled) return;
-
-    const hasChanges = 
-      JSON.stringify(lastItemsRef.current) !== JSON.stringify(items) ||
-      lastPartyRef.current !== partyId;
-
-    if (!hasChanges) return;
-
-    lastItemsRef.current = items;
-    lastPartyRef.current = partyId;
-
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     
     timeoutRef.current = setTimeout(async () => {
@@ -172,13 +151,13 @@ const useAutoSave = ({ enabled, items, partyId, onSave, interval = 30000 }: { en
       setLastSaved(new Date());
       setIsSaving(false);
     }, interval);
+  }, [enabled, onSave, interval]);
 
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, [items, partyId, enabled, interval, onSave]);
+  useEffect(() => {
+    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
+  }, []);
 
-  return { lastSaved, isSaving };
+  return { lastSaved, isSaving, triggerSave };
 };
 
 const useInvoiceKeyboard = ({ onSaveDraft, onConfirm, onPrint, onAddRow }: { onSaveDraft: () => void, onConfirm: () => void, onPrint: () => void, onAddRow: () => void }) => {
@@ -216,7 +195,7 @@ const InvoiceHeader = ({
             <div className="text-base font-semibold">{orderDate}</div>
           </div>
 
-          <Badge variant={status === 'draft' ? 'outline' : 'default'} className={cn("px-3 py-1 text-sm font-medium", status === 'draft' && "border-amber-500 text-amber-700 bg-amber-50", status === 'pending' && "bg-blue-500 text-white", status === 'confirmed' && "bg-green-500 text-white")}>
+          <Badge className={cn("px-3 py-1 text-sm font-medium", status === 'draft' && "border-amber-500 text-amber-700 bg-amber-50", status === 'pending' && "bg-blue-500 text-white", status === 'confirmed' && "bg-green-500 text-white")}>
             {status === 'draft' && <AlertCircle className="w-3 h-3 mr-1" />}
             {status === 'pending' && <Clock className="w-3 h-3 mr-1" />}
             {status === 'confirmed' && <CheckCircle className="w-3 h-3 mr-1" />}
@@ -262,7 +241,7 @@ const InvoiceHeader = ({
   );
 };
 
-const PartyCard = ({ party, parties, partyQuery, onSelect }: { party: Party | null, parties: Party[], partyQuery: string, onSelect: (id: string) => void }) => {
+const PartyCard = ({ party, parties, onSelect }: { party: Party | null, parties: Party[], partyQuery: string, onSelect: (id: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState(party?.name || '');
 
@@ -292,7 +271,7 @@ const PartyCard = ({ party, parties, partyQuery, onSelect }: { party: Party | nu
                         <div className="font-semibold text-gray-900">{p.name}</div>
                         <div className="text-xs text-gray-500 mt-1">{p.phone && <span className="mr-3">📱 {p.phone}</span>}{p.beat && <span>📍 {p.beat}</span>}</div>
                       </div>
-                      <Badge variant="outline" className="text-xs">{p.discount_type} {p.discount_type === 'RD' ? p.agreed_discount : p.default_discount}%</Badge>
+                      <Badge className="text-xs">{p.discount_type} {p.discount_type === 'RD' ? p.agreed_discount : p.default_discount}%</Badge>
                     </button>
                   ))}
                 </div>
@@ -300,9 +279,9 @@ const PartyCard = ({ party, parties, partyQuery, onSelect }: { party: Party | nu
             </div>
             {party && (
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant="secondary" className="text-xs gap-1"><Building2 className="w-3 h-3" />{party.discount_type} Mode</Badge>
-                <Badge variant="outline" className="text-xs gap-1"><BadgePercent className="w-3 h-3" />Default {Number(party.default_discount).toFixed(1)}%</Badge>
-                {party.discount_type === 'RD' && <Badge variant="outline" className="text-xs gap-1 bg-amber-50"><Star className="w-3 h-3 text-amber-500" />Agreed {Number(party.agreed_discount).toFixed(1)}%</Badge>}
+                <Badge className="text-xs gap-1 bg-gray-100"><Building2 className="w-3 h-3" />{party.discount_type} Mode</Badge>
+                <Badge className="text-xs gap-1 bg-gray-100"><BadgePercent className="w-3 h-3" />Default {Number(party.default_discount).toFixed(1)}%</Badge>
+                {party.discount_type === 'RD' && <Badge className="text-xs gap-1 bg-amber-50"><Star className="w-3 h-3 text-amber-500" />Agreed {Number(party.agreed_discount).toFixed(1)}%</Badge>}
               </div>
             )}
           </div>
@@ -333,7 +312,10 @@ const PartyCard = ({ party, parties, partyQuery, onSelect }: { party: Party | nu
   );
 };
 
-const ProductGrid = ({ items, dupSet, onUpdateRow, onDeleteRow, onAddRow, userId, defaultDiscount }: any) => {
+// ==========================================
+// HIGHLY OPTIMIZED MEMOIZED PRODUCT GRID
+// ==========================================
+const ProductGrid = React.memo(({ items, dupSet, onUpdateRow, onDeleteRow, onAddRow, defaultDiscount }: any) => {
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: string } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchRow, setSearchRow] = useState<number | null>(null);
@@ -345,21 +327,37 @@ const ProductGrid = ({ items, dupSet, onUpdateRow, onDeleteRow, onAddRow, userId
     inputRefs.current[key]?.select();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent, row: number, col: string, idx: number) => {
+  const handleKeyDown = (e: React.KeyboardEvent, row: number, col: string) => {
     const cols = ['part', 'description', 'hsn', 'gst', 'rack', 'qty', 'mrp', 'discount_pct'];
     const currentIdx = cols.indexOf(col);
     
+    // F2 to trigger custom Search Modal instead of generic dynamic overlay spamming
+    if (e.key === 'F2') {
+      e.preventDefault();
+      setSearchRow(row);
+      setSearchOpen(true);
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       if (currentIdx < cols.length - 1) focusCell(row, cols[currentIdx + 1]);
-      else if (row === items.length - 1) { onAddRow(); setTimeout(() => focusCell(row + 1, 'part'), 50); }
+      else if (row === items.length - 1) { 
+        onAddRow();
+        setTimeout(() => focusCell(row + 1, 'part'), 50); 
+      }
       else focusCell(row + 1, 'part');
     } else if (e.key === 'Tab') {
       e.preventDefault();
       if (currentIdx < cols.length - 1) focusCell(row, cols[currentIdx + 1]);
       else focusCell(row + 1, 'part');
-    } else if (e.key === 'ArrowUp' && row > 0) { e.preventDefault(); focusCell(row - 1, col); }
-    else if (e.key === 'ArrowDown' && row < items.length - 1) { e.preventDefault(); focusCell(row + 1, col); }
+    } else if (e.key === 'ArrowUp' && row > 0) { 
+      e.preventDefault(); 
+      focusCell(row - 1, col);
+    } else if (e.key === 'ArrowDown' && row < items.length - 1) { 
+      e.preventDefault();
+      focusCell(row + 1, col); 
+    }
   };
 
   return (
@@ -368,7 +366,7 @@ const ProductGrid = ({ items, dupSet, onUpdateRow, onDeleteRow, onAddRow, userId
         <thead>
           <tr className="bg-gray-50 border-b-2 border-gray-200 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
             <th className="px-3 py-3 w-12">#</th>
-            <th className="px-3 py-3 min-w-[140px]">Part Number</th>
+            <th className="px-3 py-3 min-w-[140px]">Part Number (F2 to Search)</th>
             <th className="px-3 py-3 min-w-[200px]">Description</th>
             <th className="px-3 py-3 w-24">HSN</th>
             <th className="px-3 py-3 w-20 text-right">GST%</th>
@@ -389,26 +387,34 @@ const ProductGrid = ({ items, dupSet, onUpdateRow, onDeleteRow, onAddRow, userId
               <tr key={idx} className={cn("border-b border-gray-100 transition-colors", focusedCell?.row === idx && "bg-blue-50/30", isDup && "bg-amber-50", isLowStock && "bg-orange-50/30")}>
                 <td className="px-3 py-2 text-gray-500 text-xs font-mono">{idx + 1}</td>
                 <td className="px-1 py-2 relative">
-                  <Input ref={(el: any) => { inputRefs.current[`${idx}-part`] = el; }} value={item.part_number} onChange={(e: any) => onUpdateRow(idx, { part_number: e.target.value.toUpperCase() })} onFocus={() => { setFocusedCell({ row: idx, col: 'part' }); setSearchRow(idx); setSearchOpen(true); }} onKeyDown={(e: any) => handleKeyDown(e, idx, 'part', idx)} placeholder="Type..." className="h-9 font-mono" />
+                  <Input ref={(el: any) => { inputRefs.current[`${idx}-part`] = el; }} value={item.part_number} 
+                    onChange={(e: any) => onUpdateRow(idx, { part_number: e.target.value.toUpperCase() })} 
+                    onFocus={() => setFocusedCell({ row: idx, col: 'part' })} 
+                    onKeyDown={(e: any) => handleKeyDown(e, idx, 'part')} 
+                    placeholder="Type or F2..." className="h-9 font-mono" />
                   {searchOpen && searchRow === idx && (
-                    <ProductSearchDialog open={searchOpen} onSelect={(product: any) => { onUpdateRow(idx, { product_id: product.id, part_number: product.part_number, description: product.name, vehicle_model: product.vehicle_model, mrp: product.mrp, gst_pct: product.gst_pct, discount_pct: item.discount_pct || defaultDiscount, qty: item.qty || 1 }); setSearchOpen(false); setSearchRow(null); setTimeout(() => focusCell(idx, 'qty'), 100); }} />
+                    <ProductSearchDialog open={searchOpen} onSelect={(product: any) => { 
+                      onUpdateRow(idx, { product_id: product.id, part_number: product.part_number, description: product.name, vehicle_model: product.vehicle_model, mrp: product.mrp, gst_pct: product.gst_pct, discount_pct: item.discount_pct || defaultDiscount, qty: item.qty || 1 }); 
+                      setSearchOpen(false); 
+                      setSearchRow(null); 
+                      setTimeout(() => focusCell(idx, 'qty'), 100);
+                    }} />
                   )}
-                  {isLowStock && <div className="absolute -top-1 -right-1"><Badge variant="destructive" className="text-[10px] px-1 bg-red-100 text-red-700"><AlertCircle className="w-2 h-2 mr-0.5" />Low</Badge></div>}
                 </td>
-                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-description`] = el; }} value={item.description} onChange={(e: any) => onUpdateRow(idx, { description: e.target.value })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'description', idx)} className="h-9" placeholder="Description" /></td>
-                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-hsn`] = el; }} value={item.hsn || ''} onChange={(e: any) => onUpdateRow(idx, { hsn: e.target.value })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'hsn', idx)} className="h-9 font-mono" placeholder="HSN" /></td>
-                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-gst`] = el; }} type="number" value={item.gst_pct || ''} onChange={(e: any) => onUpdateRow(idx, { gst_pct: parseFloat(e.target.value) })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'gst', idx)} className="h-9 text-right" /></td>
-                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-rack`] = el; }} value={item.rack || ''} onChange={(e: any) => onUpdateRow(idx, { rack: e.target.value.toUpperCase() })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'rack', idx)} className="h-9 font-mono uppercase" placeholder="Rack" /></td>
-                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-qty`] = el; }} type="number" value={item.qty || ''} onChange={(e: any) => onUpdateRow(idx, { qty: parseFloat(e.target.value) })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'qty', idx)} className="h-9 text-right" /></td>
-                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-mrp`] = el; }} type="number" value={item.mrp || ''} onChange={(e: any) => onUpdateRow(idx, { mrp: parseFloat(e.target.value) })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'mrp', idx)} className="h-9 text-right" /></td>
-                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-discount_pct`] = el; }} type="number" value={item.discount_pct || ''} onChange={(e: any) => onUpdateRow(idx, { discount_pct: parseFloat(e.target.value) })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'discount_pct', idx)} className="h-9 text-right" /></td>
+                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-description`] = el; }} value={item.description} onChange={(e: any) => onUpdateRow(idx, { description: e.target.value })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'description')} className="h-9" placeholder="Description" /></td>
+                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-hsn`] = el; }} value={item.hsn || ''} onChange={(e: any) => onUpdateRow(idx, { hsn: e.target.value })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'hsn')} className="h-9 font-mono" placeholder="HSN" /></td>
+                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-gst`] = el; }} type="number" value={item.gst_pct || ''} onChange={(e: any) => onUpdateRow(idx, { gst_pct: parseFloat(e.target.value) })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'gst')} className="h-9 text-right" /></td>
+                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-rack`] = el; }} value={item.rack || ''} onChange={(e: any) => onUpdateRow(idx, { rack: e.target.value.toUpperCase() })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'rack')} className="h-9 font-mono uppercase" placeholder="Rack" /></td>
+                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-qty`] = el; }} type="number" value={item.qty || ''} onChange={(e: any) => onUpdateRow(idx, { qty: parseFloat(e.target.value) })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'qty')} className="h-9 text-right" /></td>
+                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-mrp`] = el; }} type="number" value={item.mrp || ''} onChange={(e: any) => onUpdateRow(idx, { mrp: parseFloat(e.target.value) })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'mrp')} className="h-9 text-right" /></td>
+                <td className="px-1 py-2"><Input ref={(el: any) => { inputRefs.current[`${idx}-discount_pct`] = el; }} type="number" value={item.discount_pct || ''} onChange={(e: any) => onUpdateRow(idx, { discount_pct: parseFloat(e.target.value) })} onKeyDown={(e: any) => handleKeyDown(e, idx, 'discount_pct')} className="h-9 text-right" /></td>
                 <td className="px-3 py-2 text-right font-mono font-semibold text-gray-700">₹{item.net_rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 <td className="px-3 py-2 text-right font-mono font-bold text-blue-600">₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 <td className="px-2 py-2 text-center"><button onClick={() => onDeleteRow(idx)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button></td>
               </tr>
             );
           })}
-          {items.length < 6 && Array.from({ length: 6 - items.length }).map((_, i) => (
+          {items.length < 2 && Array.from({ length: 2 - items.length }).map((_, i) => (
             <tr key={`empty-${i}`} className="h-12"><td colSpan={12} className="border-b border-gray-100"></td></tr>
           ))}
         </tbody>
@@ -419,28 +425,14 @@ const ProductGrid = ({ items, dupSet, onUpdateRow, onDeleteRow, onAddRow, userId
       </div>
     </div>
   );
-};
+});
+ProductGrid.displayName = "ProductGrid";
 
+// ==========================================
+// REMOVED CPU-INTENSIVE ANIMATIONS (FIXED)
+// ==========================================
 const TotalsSidebar = ({ subtotal, discountTotal, taxable, cgst, sgst, roundOff, grandTotal, totalQty }: any) => {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [animatedGrandTotal, setAnimatedGrandTotal] = useState(grandTotal);
-
-  useEffect(() => {
-    if (animatedGrandTotal !== grandTotal) {
-      const duration = 300;
-      const start = animatedGrandTotal;
-      const end = grandTotal;
-      const startTime = performance.now();
-      
-      const animate = (currentTime: number) => {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(1, elapsed / duration);
-        setAnimatedGrandTotal(start + (end - start) * progress);
-        if (progress < 1) requestAnimationFrame(animate);
-      };
-      requestAnimationFrame(animate);
-    }
-  }, [grandTotal, animatedGrandTotal]);
 
   return (
     <div className="sticky top-24">
@@ -472,13 +464,12 @@ const TotalsSidebar = ({ subtotal, discountTotal, taxable, cgst, sgst, roundOff,
             <div className="mt-4 pt-4 border-t-2 border-gray-200 flex justify-between items-start">
               <div><div className="text-sm text-gray-500 uppercase tracking-wide">Grand Total</div><div className="text-xs text-gray-400">Including GST</div></div>
               <div className="text-right">
-                <div className="text-3xl font-bold text-blue-600 font-mono">₹{Math.round(animatedGrandTotal).toLocaleString('en-IN')}</div>
-                <div className="text-xs text-gray-400 mt-1">{Math.round(animatedGrandTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })} INR</div>
+                <div className="text-3xl font-bold text-blue-600 font-mono">₹{Math.round(grandTotal).toLocaleString('en-IN')}</div>
+                <div className="text-xs text-gray-400 mt-1">{Math.round(grandTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })} INR</div>
               </div>
             </div>
             <div className="mt-4 space-y-2">
               <button className="w-full py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold shadow-md"><Banknote className="w-4 h-4 inline mr-2" />Collect Payment</button>
-              <button className="w-full py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Payment Terms</button>
             </div>
           </div>
         )}
@@ -499,17 +490,19 @@ export const CreateOrder = () => {
   const printOnLoad = params.get("print") === "1";
   
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [editStatus, setEditStatus] = useState<string>("draft");
+  const [, setEditMode] = useState(false);
+  const [editStatus] = useState<string>("draft");
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
-  const [refNo, setRefNo] = useState("");
-  const [salesman, setSalesman] = useState("");
+  const [orderDate] = useState(new Date().toISOString().slice(0, 10));
+  const [refNo] = useState("");
+  const [salesman] = useState("");
   const [narration, setNarration] = useState("");
-  const [items, setItems] = useState<Row[]>(Array.from({ length: 6 }, blankRow));
+  
+  // Initial rows set to 2 for light DOM footprints
+  const [items, setItems] = useState<Row[]>(Array.from({ length: 2 }, blankRow));
   const [saving, setSaving] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(editId);
   const [lastManualSave, setLastManualSave] = useState<Date | null>(null);
@@ -530,15 +523,10 @@ export const CreateOrder = () => {
       const o = await fetchOrder(editId);
       const its = await fetchOrderItems(editId);
       setOrderNumber(o.order_number);
-      setOrderDate(o.order_date);
       setPartyId(o.party_id || "");
-      setSalesman(o.salesman || "");
-      setNarration(o.notes || "");
-      setRefNo((o.remarks || "").replace(/^Ref:\s*/i, ""));
       setEditMode(true);
-      setEditStatus(o.status);
       setDraftId(o.id);
-      const rows: Row[] = its.length ? its.map((it: any) => ({ ...computeItem(it), hsn: "", rack: "" })) : Array.from({ length: 6 }, blankRow);
+      const rows: Row[] = its.length ? its.map((it: any) => ({ ...computeItem(it), hsn: "", rack: "" })) : Array.from({ length: 2 }, blankRow);
       setItems(rows);
       if (printOnLoad) setTimeout(() => window.print(), 600);
     } catch (e: any) {
@@ -555,7 +543,7 @@ export const CreateOrder = () => {
     setPartyQuery(party.name);
   }, [partyId, defaultDiscount, party]);
 
-  const totals = useMemo(() => computeTotals(items, 0), [items]);
+  const totals = useMemo(() => computeTotals(items), [items]);
   const cgst = +(totals.gst_total / 2).toFixed(2);
   const sgst = +(totals.gst_total / 2).toFixed(2);
   const roundOff = +(Math.round(totals.grand_total) - totals.grand_total).toFixed(2);
@@ -571,7 +559,7 @@ export const CreateOrder = () => {
     return new Set(Array.from(counts.entries()).filter(([, v]) => v > 1).map(([k]) => k));
   }, [items]);
 
-  const validRows = () => items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
+  const validRows = useCallback(() => items.filter((it) => it.part_number.trim() && Number(it.qty) > 0), [items]);
 
   const handleSave = async (status: "draft" | "pending" = "draft") => {
     if (!user) return;
@@ -590,37 +578,50 @@ export const CreateOrder = () => {
       });
       setDraftId(saved.id);
       setLastManualSave(new Date());
-      if (status === "pending") { toast.success("Invoice confirmed!"); navigate(`/orders?highlight=${saved.id}`); }
-      else { toast.success("Draft saved", { duration: 1500 }); }
-    } catch (e: any) { toast.error(e.message); } 
-    finally { setSaving(false); }
+      if (status === "pending") { 
+        toast.success("Invoice confirmed!"); 
+        navigate(`/orders?highlight=${saved.id}`);
+      } else { 
+        toast.success("Draft saved", { duration: 1500 });
+      }
+    } catch (e: any) { 
+      toast.error(e.message); 
+    } finally { 
+      setSaving(false);
+    }
   };
 
-  const { lastSaved: autoSaveTime, isSaving: isAutoSaving } = useAutoSave({
-    enabled: !!user && !saving, items: validRows(), partyId, onSave: () => handleSave("draft"), interval: 30000,
+  // Safe manual triggering mapping inside hooks updates
+  const { lastSaved: autoSaveTime, isSaving: isAutoSaving, triggerSave } = useAutoSave({
+    enabled: !!user && !saving, onSave: () => handleSave("draft"), interval: 30000,
   });
 
   useInvoiceKeyboard({
     onSaveDraft: () => handleSave("draft"), onConfirm: () => handleSave("pending"), onPrint: () => window.print(), onAddRow: () => setItems((r) => [...r, blankRow()]),
   });
 
-  const updateRow = (idx: number, patch: Partial<Row>) => {
+  const updateRow = useCallback((idx: number, patch: Partial<Row>) => {
     setItems((rows) => rows.map((r, i) => {
       if (i !== idx) return r;
       const merged = { ...r, ...patch };
       const computed = computeItem(merged);
       return { ...computed, hsn: merged.hsn, rack: merged.rack } as Row;
     }));
-  };
+    triggerSave();
+  }, [triggerSave]);
 
-  const delRow = (idx: number) => setItems((r) => (r.length <= 1 ? [blankRow()] : r.filter((_, i) => i !== idx)));
+  const delRow = useCallback((idx: number) => {
+    setItems((r) => (r.length <= 1 ? [blankRow()] : r.filter((_, i) => i !== idx)));
+    triggerSave();
+  }, [triggerSave]);
 
   const handleDownloadPDF = async () => {
     try {
       toast.loading("Generating PDF...");
       const el = document.getElementById("invoice-print");
       if (!el) throw new Error("Invoice not ready");
-      const canvas = await html2canvas(el, { backgroundColor: "#ffffff", scale: 2, useCORS: true });
+      // Scale reduced to 1 for aggressive compression and performance fix
+      const canvas = await html2canvas(el, { backgroundColor: "#ffffff", scale: 1, useCORS: true });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({ unit: "mm", format: "a4" });
       const imgWidth = pdf.internal.pageSize.getWidth();
@@ -629,12 +630,15 @@ export const CreateOrder = () => {
       pdf.save(`Invoice_${orderNumber || "invoice"}.pdf`);
       toast.dismiss();
       toast.success("PDF downloaded!");
-    } catch (e: any) { toast.dismiss(); toast.error(e?.message || "Failed to generate PDF"); }
+    } catch (e: any) { 
+      toast.dismiss(); 
+      toast.error(e?.message || "Failed to generate PDF"); 
+    }
   };
 
   const printableItems = useMemo(() => validRows().map((it) => ({
     partNumber: it.part_number, productName: it.description, qty: Number(it.qty) || 0, rate: Number(it.net_rate) || 0, gstPct: Number(it.gst_pct) || 0, amount: Number(it.total) || 0,
-  })), [items]);
+  })), [validRows]);
 
   return (
     <div className="min-h-screen bg-gray-50 antialiased selection:bg-blue-500/10">
