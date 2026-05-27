@@ -301,7 +301,7 @@ const CreateOrder = () => {
   };
 
   const handleKey = (e: React.KeyboardEvent, idx: number, col: Col) => {
-    // PRODUCT DROPDOWN NAVIGATION
+    // PRODUCT DROPDOWN INTERACTION
     if (searchIdx === idx && searchResults.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -331,11 +331,28 @@ const CreateOrder = () => {
       }
     }
 
-    // NORMAL GRID NAVIGATION
+    // NORMAL GRID NAVIGATION WITH EXTENDED 'CROSS NEXT ROW' LOGIC
     const ci = COLS.indexOf(col);
 
     if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
+      
+      // CRITICAL FIX: Agar user 'Name of Item' (part) column par hai
+      if (col === "part") {
+        const hasValidPart = items[idx].part_number.trim().length > 0;
+        
+        if (hasValidPart) {
+          // Agar part code select kar liya hai, tabhi aage 'desc' column par bhejein
+          focusCell(idx, "desc");
+        } else {
+          // Agar field khali hai, toh cross karke direct next row ke 'part' par bhej dein
+          if (idx === items.length - 1) addRow();
+          setTimeout(() => focusCell(idx + 1, "part"), 10);
+        }
+        return;
+      }
+
+      // Baaki normal grid cells ke liye sequential behavior
       if (ci < COLS.length - 1) {
         focusCell(idx, COLS[ci + 1]);
       } else {
@@ -549,7 +566,7 @@ const CreateOrder = () => {
               onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
               onKeyDown={handlePartyKeyDown}
               placeholder="Type to search party…"
-              className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary animate-pulse"
+              className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
             />
             {partyOpen && partResults.length > 0 && (
               <div className="absolute z-50 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-64 overflow-auto">
@@ -670,14 +687,13 @@ const CreateOrder = () => {
                         className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
                       />
                       {searchIdx === idx && searchCol === "part" && searchResults.length > 0 && (
-                        /* FIXED: Added z-50 layer stacking and overflow positioning */
                         <div className="absolute z-50 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto scroll-smooth">
                           {searchResults.map((p, i) => {
                             const isHighlighted = highlightedIndex === i;
                             return (
                               <button
                                 key={p.id}
-                                id={`prod-item-${i}`} // FIXED: Added id tracking for smooth focus scroll alignment
+                                id={`prod-item-${i}`}
                                 type="button"
                                 onMouseDown={(e) => {
                                   e.preventDefault();
@@ -921,7 +937,6 @@ const CreateOrder = () => {
           body { background: white; }
           .invoice-entry { font-size: 11px; }
         }
-        /* FIXED: Table rows container constraint setup */
         table { position: relative; }
         tbody tr { position: relative; }
         :root { --invoice-bg: 60 30% 96%; }
