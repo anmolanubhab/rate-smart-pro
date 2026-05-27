@@ -79,7 +79,7 @@ const downloadPartyTemplate = () => {
   XLSX.writeFile(wb, "parties-template.xlsx");
 };
 
-export default function PartyExcelUpload({ open, onOpenChange, userId, onImported }: Props) {
+function PartyExcelUpload({ open, onOpenChange, userId, onImported }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Parsed[]>([]);
   const [fileName, setFileName] = useState("");
@@ -368,4 +368,4 @@ function Tile({
   );
 }
 
-
+export default PartyExcelUpload;
