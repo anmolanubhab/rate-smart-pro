@@ -1,46 +1,56 @@
-
 @media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
 
+  html,
   body {
-    background: white;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .no-print {
     display: none !important;
   }
 
+  body * {
+    visibility: hidden !important;
+  }
+
+  .invoice-print,
+  .invoice-print * {
+    visibility: visible !important;
+  }
+
   .invoice-print {
-    padding: 20px;
+    position: absolute;
+    left: 0;
+    top: 0;
     width: 100%;
-    color: black;
-    background: white;
   }
 
   table {
-    width: 100%;
-    border-collapse: collapse;
+    border-collapse: collapse !important;
   }
 
-  table th,
-  table td {
-    border: 1px solid black;
-    padding: 8px;
-    font-size: 12px;
+  th,
+  td {
+    border: 1px solid #000000 !important;
   }
 
-  .header {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 20px;
+  thead {
+    display: table-header-group;
   }
 
-  .totals {
-    margin-top: 20px;
-    text-align: right;
+  tfoot {
+    display: table-footer-group;
   }
 
-  @page {
-    size: A4;
-    margin: 10mm;
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 }
