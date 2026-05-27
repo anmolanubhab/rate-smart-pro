@@ -939,72 +939,69 @@ const CreateOrder = () => {
       </div>
 
       <style>{`
-  @media print {
+        @media print {
+          @page {
+            size: A4;
+            margin: 8mm;
+          }
 
-    @page {
-      size: A4;
-      margin: 8mm;
-    }
+          html,
+          body {
+            background: white !important;
+            overflow: visible !important;
+            height: auto !important;
+          }
 
-    html,
-    body {
-      background: white !important;
-      overflow: visible !important;
-      height: auto !important;
-    }
+          body * {
+            visibility: hidden;
+          }
 
-    body * {
-      visibility: hidden;
-    }
+          .invoice-entry,
+          .invoice-entry * {
+            visibility: visible;
+          }
 
-    .invoice-entry,
-    .invoice-entry * {
-      visibility: visible;
-    }
+          .invoice-entry {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            font-size: 11px;
+            overflow: visible !important;
+          }
 
-    .invoice-entry {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      font-size: 11px;
-      overflow: visible !important;
-    }
+          .print\\:hidden {
+            display: none !important;
+          }
 
-    .print\\:hidden {
-      display: none !important;
-    }
+          table {
+            page-break-inside: auto;
+          }
 
-    table {
-      page-break-inside: auto;
-    }
+          tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
 
-    tr {
-      page-break-inside: avoid;
-      page-break-after: auto;
-    }
+          thead {
+            display: table-header-group;
+          }
 
-    thead {
-      display: table-header-group;
-    }
+          tfoot {
+            display: table-footer-group;
+          }
+        }
 
-    tfoot {
-      display: table-footer-group;
-    }
-  }
-
-  :root {
-    --invoice-bg: 60 30% 96%;
-  }
-
-  .dark {
-    --invoice-bg: 240 8% 12%;
-  }
-`}</style>
         table { position: relative; }
         tbody tr { position: relative; }
-        :root { --invoice-bg: 60 30% 96%; }
-        .dark { --invoice-bg: 240 8% 12%; }
+
+        :root {
+          --invoice-bg: 60 30% 96%;
+        }
+
+        .dark {
+          --invoice-bg: 240 8% 12%;
+        }
       `}</style>
     </div>
   );
