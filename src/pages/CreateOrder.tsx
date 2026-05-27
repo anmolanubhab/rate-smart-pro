@@ -761,11 +761,11 @@ const CreateOrder = () => {
                 <Row label="CGST" value={fmt(cgst)} />
                 <Row label="SGST" value={fmt(sgst)} />
                 <Row label="Round Off" value={(roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff))} />
-                <div className="border-t border-border mt-1 pt-1 flex items-baseline justify-between">
-                  <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-sans">
+                <div className="border-t border-border mt-1 pt-2 flex items-baseline justify-between bg-primary/10 px-2 py-1 rounded">
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-foreground font-sans">
                     Grand Total
                   </span>
-                  <span className="font-bold text-lg gradient-primary bg-clip-text text-transparent tabular-nums">
+                  <span className="font-extrabold text-lg text-primary tabular-nums">
                     ₹{fmt(finalTotal)}
                   </span>
                 </div>
