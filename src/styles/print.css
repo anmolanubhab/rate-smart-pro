@@ -52,20 +52,6 @@
     min-width: 0 !important;
   }
 
-  .invoice-entry table tfoot {
-    display: none !important;
-  }
-
-  .invoice-entry table th:nth-child(4),
-  .invoice-entry table td:nth-child(4) {
-    display: none !important;
-  }
-
-  .invoice-entry table th:nth-child(9),
-  .invoice-entry table td:nth-child(9) {
-    display: none !important;
-  }
-
   table {
     border-collapse: collapse !important;
   }
