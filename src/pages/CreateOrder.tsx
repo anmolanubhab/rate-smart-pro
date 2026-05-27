@@ -93,7 +93,6 @@ const CreateOrder = () => {
       setPartyId(exactMatch.id);
       setPartyOpen(false);
     } else {
-      // Clear if query drifts away from exact matched string
       if (party && party.name.trim().toLowerCase() !== cleanQuery) {
         setPartyId("");
       }
@@ -108,6 +107,19 @@ const CreateOrder = () => {
       }, 100);
     }
   }, [editId]);
+
+  // Dynamic Auto-Scroll handler for keyboard navigation inside dropdown list
+  useEffect(() => {
+    if (searchIdx !== null && searchResults.length > 0) {
+      const activeEl = document.getElementById(`prod-item-${highlightedIndex}`);
+      if (activeEl) {
+        activeEl.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }
+    }
+  }, [highlightedIndex, searchIdx, searchResults]);
 
   // Global Keydown Listeners for Shortcuts
   useEffect(() => {
@@ -274,7 +286,6 @@ const CreateOrder = () => {
           setPartyId(selectedParty.id);
           setPartyQuery(selectedParty.name);
           setPartyOpen(false);
-          // Jump focus to first row's item code field
           setTimeout(() => focusCell(0, "part"), 10);
         }
         return;
@@ -284,7 +295,6 @@ const CreateOrder = () => {
         return;
       }
     } else if (e.key === "Enter" || e.key === "Tab") {
-      // If closed or no results, jump to billing table item field
       e.preventDefault();
       focusCell(0, "part");
     }
@@ -542,7 +552,7 @@ const CreateOrder = () => {
               className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary animate-pulse"
             />
             {partyOpen && partResults.length > 0 && (
-              <div className="absolute z-30 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-64 overflow-auto">
+              <div className="absolute z-50 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-64 overflow-auto">
                 {partResults.map((p, i) => {
                   const isPartyHighlighted = partyHighlightedIndex === i;
                   return (
@@ -660,12 +670,14 @@ const CreateOrder = () => {
                         className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
                       />
                       {searchIdx === idx && searchCol === "part" && searchResults.length > 0 && (
-                        <div className="absolute z-30 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto">
+                        /* FIXED: Added z-50 layer stacking and overflow positioning */
+                        <div className="absolute z-50 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto scroll-smooth">
                           {searchResults.map((p, i) => {
                             const isHighlighted = highlightedIndex === i;
                             return (
                               <button
                                 key={p.id}
+                                id={`prod-item-${i}`} // FIXED: Added id tracking for smooth focus scroll alignment
                                 type="button"
                                 onMouseDown={(e) => {
                                   e.preventDefault();
@@ -674,7 +686,7 @@ const CreateOrder = () => {
                                 className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 ${
                                   isHighlighted
                                     ? "bg-primary text-primary-foreground"
-                                    : "hover:bg-muted"
+                                    : "hover:bg-muted bg-popover"
                                 }`}
                               >
                                 <div className="flex items-center justify-between gap-2">
@@ -909,6 +921,9 @@ const CreateOrder = () => {
           body { background: white; }
           .invoice-entry { font-size: 11px; }
         }
+        /* FIXED: Table rows container constraint setup */
+        table { position: relative; }
+        tbody tr { position: relative; }
         :root { --invoice-bg: 60 30% 96%; }
         .dark { --invoice-bg: 240 8% 12%; }
       `}</style>
