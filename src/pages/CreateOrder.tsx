@@ -939,7 +939,6 @@ const CreateOrder = () => {
       </div>
 
       <style>{`
-        <style>{`
   @media print {
 
     @page {
