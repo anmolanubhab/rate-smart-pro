@@ -887,7 +887,7 @@ const CreateOrder = () => {
             <thead>
               <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
                 <th className="text-left px-1.5 py-1 w-6">#</th>
-                <th className="text-left px-1.5 py-1 w-32">Part No.</th>
+                <th className="text-left px-1.5 py-1 w-48">Part No.</th>
                 <th className="text-left px-1.5 py-1 w-[40%]">Description</th>
                 <th className="text-right px-1.5 py-1 w-16">Quantity</th>
                 <th className="text-left px-1.5 py-1 w-14">Rack</th>
@@ -907,7 +907,7 @@ const CreateOrder = () => {
                   return (
                     <tr key={`p-${idx}`} className="border-b border-border/60">
                       <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{n}</td>
-                      <td className="px-1.5 py-0.5 font-mono break-all">{empty ? "" : it.part_number}</td>
+                      <td className="px-1.5 py-0.5 font-mono whitespace-nowrap">{empty ? "" : it.part_number}</td>
                       <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.description}</td>
                       <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.qty}</td>
                       <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.rack || ""}</td>
