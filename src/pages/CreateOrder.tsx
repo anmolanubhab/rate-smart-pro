@@ -413,7 +413,7 @@ const CreateOrder = () => {
       }
     } catch (e: any) {
       toast.error(e.message);
-    } finally {
+    } final {
       setSaving(false);
     }
   };
@@ -867,7 +867,7 @@ const CreateOrder = () => {
 
         {/* Bottom section: narration + totals */}
         <div className="grid grid-cols-12 gap-3 px-3 py-2 border-t border-border">
-          <div className="col-span-12 md:col-span-7 space-y-2">
+          <div className="col-span-12 md:col-span-7 space-y-2 print:hidden">
             <div>
               <div className="text-[11px] text-muted-foreground uppercase tracking-wider">Narration</div>
               <Input
@@ -894,7 +894,7 @@ const CreateOrder = () => {
             <div className="text-[11px] text-muted-foreground pt-2">Provide e-Invoice details: No</div>
           </div>
 
-          <div className="col-span-12 md:col-span-5">
+          <div className="col-span-12 md:col-span-5 print:col-span-12">
             <div className="border border-border bg-card/60">
               <div className="px-2 py-1 text-[11px] uppercase tracking-wider text-muted-foreground bg-muted/40 border-b border-border font-sans">
                 Invoice Totals
@@ -940,68 +940,14 @@ const CreateOrder = () => {
 
       <style>{`
         @media print {
-          @page {
-            size: A4;
-            margin: 8mm;
-          }
-
-          html,
-          body {
-            background: white !important;
-            overflow: visible !important;
-            height: auto !important;
-          }
-
-          body {
-            margin: 0;
-            padding: 0;
-          }
-
-          .print\\:hidden {
-            display: none !important;
-          }
-
-          .invoice-entry {
-            width: 100% !important;
-            max-width: 100% !important;
-            overflow: visible !important;
-            font-size: 11px;
-            color: black !important;
-            background: white !important;
-          }
-
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            page-break-inside: auto;
-            position: relative;
-          }
-
-          tbody tr {
-            position: relative;
-          }
-
-          tr {
-            page-break-inside: avoid;
-            page-break-after: auto;
-          }
-
-          thead {
-            display: table-header-group;
-          }
-
-          tfoot {
-            display: table-footer-group;
-          }
+          @page { size: A4; margin: 10mm; }
+          body { background: white; }
+          .invoice-entry { font-size: 11px; }
         }
-
-        :root {
-          --invoice-bg: 60 30% 96%;
-        }
-
-        .dark {
-          --invoice-bg: 240 8% 12%;
-        }
+        table { position: relative; }
+        tbody tr { position: relative; }
+        :root { --invoice-bg: 60 30% 96%; }
+        .dark { --invoice-bg: 240 8% 12%; }
       `}</style>
     </div>
   );
