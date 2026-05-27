@@ -23,8 +23,8 @@ interface OrderItem {
   net_rate: number;
   total: number;
   stock?: number;
-  vehicle_model?: string;
-} [cite: 6]
+ vehicle_model?: string;
+}
 
 type Row = OrderItem & { hsn?: string; rack?: string };
 
