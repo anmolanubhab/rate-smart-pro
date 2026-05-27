@@ -21,11 +21,14 @@
   }
 
   .invoice-print,
-  .invoice-print * {
+  .invoice-print *,
+  .invoice-entry,
+  .invoice-entry * {
     visibility: visible !important;
   }
 
-  .invoice-print {
+  .invoice-print,
+  .invoice-entry {
     position: absolute;
     left: 0;
     top: 0;
