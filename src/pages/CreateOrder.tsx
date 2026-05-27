@@ -45,6 +45,7 @@ const CreateOrder = () => {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editStatus, setEditStatus] = useState<string>("draft");
+  const baseTitle = printOnLoad ? "Order" : "Invoice Entry — Spare Parts OMS";
 
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
@@ -150,8 +151,23 @@ const CreateOrder = () => {
   }, [items, partyId, user, orderNumber, orderDate, salesman, narration, refNo, party, saving]);
 
   useEffect(() => {
-    document.title = "Invoice Entry — Spare Parts OMS";
-  }, []);
+    document.title = baseTitle;
+  }, [baseTitle]);
+
+  useEffect(() => {
+    const onBefore = () => {
+      document.title = "Order";
+    };
+    const onAfter = () => {
+      document.title = baseTitle;
+    };
+    window.addEventListener("beforeprint", onBefore);
+    window.addEventListener("afterprint", onAfter);
+    return () => {
+      window.removeEventListener("beforeprint", onBefore);
+      window.removeEventListener("afterprint", onAfter);
+    };
+  }, [baseTitle]);
 
   useEffect(() => {
     if (!user) return;
@@ -452,6 +468,7 @@ const CreateOrder = () => {
 
   return (
     <div className="invoice-entry max-w-[1400px] mx-auto text-[13px] font-mono">
+      <div className="hidden print:block text-center font-sans font-bold text-[16px] mb-2">ORDER</div>
       {/* Top action bar */}
       <div className="print:hidden flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
@@ -537,12 +554,12 @@ const CreateOrder = () => {
             />
           </div>
 
-          <div className="col-span-2 text-muted-foreground">Reference No</div>
+          <div className="col-span-2 text-muted-foreground">Order Received By</div>
           <div className="col-span-4">
             <Input
               value={refNo}
               onChange={(e) => setRefNo(e.target.value)}
-              placeholder="Order intertainer"
+              placeholder="11299/vishal"
               className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
             />
           </div>
@@ -641,12 +658,12 @@ const CreateOrder = () => {
         </div>
 
         {/* Billing grid */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto print:hidden">
           <table className="w-full text-[12px] border-collapse">
             <thead>
               <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
                 <th className="text-left px-1.5 py-1 w-6">#</th>
-                <th className="text-left px-1.5 py-1 min-w-[120px]">Name of Item</th>
+                <th className="text-left px-1.5 py-1 min-w-[120px]">Part No.</th>
                 <th className="text-left px-1.5 py-1 min-w-[180px]">Description</th>
                 <th className="text-left px-1.5 py-1 w-20">HSN/SAC</th>
                 <th className="text-right px-1.5 py-1 w-14">GST %</th>
@@ -862,6 +879,48 @@ const CreateOrder = () => {
                 <td className="print:hidden"></td>
               </tr>
             </tfoot>
+          </table>
+        </div>
+
+        <div className="hidden print:block">
+          <table className="w-full text-[12px] border-collapse">
+            <thead>
+              <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
+                <th className="text-left px-1.5 py-1 w-6">#</th>
+                <th className="text-left px-1.5 py-1 w-32">Part No.</th>
+                <th className="text-left px-1.5 py-1 w-[40%]">Description</th>
+                <th className="text-right px-1.5 py-1 w-16">Quantity</th>
+                <th className="text-left px-1.5 py-1 w-14">Rack</th>
+                <th className="text-right px-1.5 py-1 w-14">GST %</th>
+                <th className="text-right px-1.5 py-1 w-20">MRP</th>
+                <th className="text-right px-1.5 py-1 w-14">Disc %</th>
+                <th className="text-right px-1.5 py-1 w-20">Net Rate</th>
+                <th className="text-right px-1.5 py-1 w-24">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                let sr = 0;
+                return items.map((it, idx) => {
+                  const empty = !it.part_number.trim() && !it.description.trim() && !Number(it.qty);
+                  const n = empty ? "" : String(++sr);
+                  return (
+                    <tr key={`p-${idx}`} className="border-b border-border/60">
+                      <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{n}</td>
+                      <td className="px-1.5 py-0.5 font-mono break-all">{empty ? "" : it.part_number}</td>
+                      <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.description}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.qty}</td>
+                      <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.rack || ""}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.gst_pct}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.mrp)}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.discount_pct}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.net_rate)}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.total)}</td>
+                    </tr>
+                  );
+                });
+              })()}
+            </tbody>
           </table>
         </div>
 
