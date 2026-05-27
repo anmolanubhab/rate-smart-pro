@@ -66,6 +66,7 @@ const CreateOrder = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [searchCol, setSearchCol] = useState<Col>("part");
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
 
   const party = useMemo(() => parties.find((p) => p.id === partyId) || null, [parties, partyId]);
   const day = useMemo(
@@ -118,7 +119,6 @@ const CreateOrder = () => {
       rows.map((r) => (r.discount_pct === 0 && !r.part_number ? { ...r, discount_pct: def } : r)),
     );
     setPartyQuery(party.name);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyId]);
 
   // product search
@@ -128,7 +128,12 @@ const CreateOrder = () => {
       return;
     }
     const t = setTimeout(() => {
-      searchProducts(user.id, searchTerm, 8).then(setSearchResults).catch(() => setSearchResults([]));
+      searchProducts(user.id, searchTerm, 8)
+        .then((results) => {
+          setSearchResults(results);
+          setHighlightedIndex(0); // Reset index on new search results fetch
+        })
+        .catch(() => setSearchResults([]));
     }, 180);
     return () => clearTimeout(t);
   }, [searchTerm, searchIdx, user]);
@@ -178,7 +183,6 @@ const CreateOrder = () => {
     setSearchIdx(null);
     setSearchTerm("");
     setSearchResults([]);
-    // focus qty next
     setTimeout(() => focusCell(idx, "qty"), 10);
   };
 
@@ -191,7 +195,39 @@ const CreateOrder = () => {
   };
 
   const handleKey = (e: React.KeyboardEvent, idx: number, col: Col) => {
+    // PRODUCT DROPDOWN NAVIGATION
+    if (searchIdx === idx && searchResults.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightedIndex((prev) => Math.min(prev + 1, searchResults.length - 1));
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightedIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const selected = searchResults[highlightedIndex];
+        if (selected) {
+          pickProduct(idx, selected);
+        }
+        return;
+      }
+
+      if (e.key === "Escape") {
+        setSearchIdx(null);
+        setSearchResults([]);
+        return;
+      }
+    }
+
+    // NORMAL GRID NAVIGATION
     const ci = COLS.indexOf(col);
+
     if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
       if (ci < COLS.length - 1) {
@@ -252,7 +288,7 @@ const CreateOrder = () => {
     }
   };
 
-  // auto-save draft every 30s when there are valid rows
+  // auto-save draft every 30s
   const lastSavedAt = useRef(0);
   useEffect(() => {
     const id = setInterval(() => {
@@ -263,7 +299,6 @@ const CreateOrder = () => {
       handleSave("draft");
     }, 30000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, partyId, user]);
 
   // duplicate detection
@@ -287,7 +322,7 @@ const CreateOrder = () => {
 
   return (
     <div className="invoice-entry max-w-[1400px] mx-auto text-[13px] font-mono">
-      {/* Top action bar (screen only) */}
+      {/* Top action bar */}
       <div className="print:hidden flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
@@ -337,7 +372,6 @@ const CreateOrder = () => {
         defaultDiscount={party ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0 : 0}
         onImport={(imported) => {
           setItems((prev) => {
-            // drop blank rows then append imported
             const nonBlank = prev.filter((r) => r.part_number.trim());
             return [...nonBlank, ...imported.map((it) => ({ ...it, hsn: "", rack: "" } as Row))];
           });
@@ -346,7 +380,6 @@ const CreateOrder = () => {
 
       {/* Invoice sheet */}
       <div className="border border-border bg-[hsl(var(--invoice-bg,60_30%_96%))] shadow-soft print:shadow-none print:border-0">
-        {/* Header strip */}
         <div className="bg-primary text-primary-foreground px-3 py-1.5 flex items-center justify-between text-xs">
           <div className="font-sans font-semibold tracking-wide">{voucherType}</div>
           <div className="font-sans">Viswanath Automobiles Pvt. Ltd. [TVS]</div>
@@ -505,11 +538,13 @@ const CreateOrder = () => {
                           setSearchIdx(idx);
                           setSearchCol("part");
                           setSearchTerm(e.target.value);
+                          setHighlightedIndex(0);
                         }}
                         onFocus={() => {
                           setSearchIdx(idx);
                           setSearchCol("part");
                           setSearchTerm(it.part_number);
+                          setHighlightedIndex(0);
                         }}
                         onBlur={() => setTimeout(() => setSearchIdx((s) => (s === idx && searchCol === "part" ? null : s)), 150)}
                         onKeyDown={(e) => handleKey(e, idx, "part")}
@@ -517,26 +552,35 @@ const CreateOrder = () => {
                       />
                       {searchIdx === idx && searchCol === "part" && searchResults.length > 0 && (
                         <div className="absolute z-30 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto">
-                          {searchResults.map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                pickProduct(idx, p);
-                              }}
-                              className="w-full text-left px-2 py-1 hover:bg-muted text-[12px] border-b border-border last:border-0"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono font-semibold">{p.part_number}</span>
-                                <span className="text-[10px] text-muted-foreground">Stk {p.stock}</span>
-                              </div>
-                              <div className="text-[11px] truncate">{p.name}</div>
-                              <div className="text-[10px] text-muted-foreground">
-                                MRP ₹{fmt(Number(p.mrp))} · GST {p.gst_pct}%
-                              </div>
-                            </button>
-                          ))}
+                          {searchResults.map((p, i) => {
+                            const isHighlighted = highlightedIndex === i;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  pickProduct(idx, p);
+                                }}
+                                className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 ${
+                                  isHighlighted
+                                    ? "bg-primary text-primary-foreground"
+                                    : "hover:bg-muted"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-mono font-semibold">{p.part_number}</span>
+                                  <span className={`text-[10px] ${isHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                                    Stk {p.stock}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] truncate">{p.name}</div>
+                                <div className={`text-[10px] ${isHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                                  MRP ₹{fmt(Number(p.mrp))} · GST {p.gst_pct}%
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </td>
@@ -547,7 +591,7 @@ const CreateOrder = () => {
                         value={it.description}
                         onChange={(e) => updateRow(idx, { description: e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "desc")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary"
                       />
                     </td>
                     <td className="px-0.5 py-0.5">
@@ -557,7 +601,7 @@ const CreateOrder = () => {
                         value={it.hsn || ""}
                         onChange={(e) => updateRow(idx, { hsn: e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "hsn")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary"
                       />
                     </td>
                     <td className="px-0.5 py-0.5">
@@ -569,7 +613,7 @@ const CreateOrder = () => {
                         value={it.gst_pct || ""}
                         onChange={(e) => updateRow(idx, { gst_pct: +e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "gst")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary"
                       />
                     </td>
                     <td className="px-0.5 py-0.5">
@@ -579,7 +623,7 @@ const CreateOrder = () => {
                         value={it.rack || ""}
                         onChange={(e) => updateRow(idx, { rack: e.target.value.toUpperCase() })}
                         onKeyDown={(e) => handleKey(e, idx, "rack")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary uppercase"
                       />
                     </td>
                     <td className="px-0.5 py-0.5">
@@ -591,7 +635,7 @@ const CreateOrder = () => {
                         value={it.qty || ""}
                         onChange={(e) => updateRow(idx, { qty: +e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "qty")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary"
                       />
                     </td>
                     <td className="px-0.5 py-0.5">
@@ -603,7 +647,7 @@ const CreateOrder = () => {
                         value={it.mrp || ""}
                         onChange={(e) => updateRow(idx, { mrp: +e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "mrp")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary"
                       />
                     </td>
                     <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground">
@@ -618,7 +662,7 @@ const CreateOrder = () => {
                         value={it.discount_pct || ""}
                         onChange={(e) => updateRow(idx, { discount_pct: +e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "disc")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary"
                       />
                     </td>
                     <td className="px-1 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
@@ -637,8 +681,7 @@ const CreateOrder = () => {
                   </tr>
                 );
               })}
-              {/* spacer empty rows to look like a printed sheet */}
-              {Array.from({ length: Math.max(0, 4 - items.length % 4) }).map((_, i) => (
+              {Array.from({ length: Math.max(0, 4 - (items.length % 4)) }).map((_, i) => (
                 <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
                   <td colSpan={13}>&nbsp;</td>
                 </tr>
@@ -731,7 +774,7 @@ const CreateOrder = () => {
           </div>
         </div>
 
-        {/* Print-only footer */}
+        {/* Print footer */}
         <div className="hidden print:block px-3 py-4 text-[11px] border-t border-border">
           <div className="grid grid-cols-3 gap-4">
             <div>
