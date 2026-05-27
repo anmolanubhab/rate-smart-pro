@@ -44,7 +44,7 @@ interface Party {
 }
 
 // Dummy mock dependencies [cite: 8]
-const useAuth = () => ({ user: { id: "user_123" } }); [cite: 8]
+const useAuth = () => ({ user: { id: "user_123" } });
 const fetchParties = async (userId: string): Promise<Party[]> => []; [cite: 9]
 const nextOrderNumber = async (userId: string): Promise<string> => "INV-2026-001"; [cite: 9]
 const fetchOrder = async (id: string): Promise<any> => ({}); [cite: 10]
