@@ -74,6 +74,35 @@ const CreateOrder = () => {
     [orderDate],
   );
 
+  // Global Keydown Listeners for Page-level Shortcuts (Save, Print, Confirm, Add Row)
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      // Ctrl + S -> Save Draft
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        handleSave("draft");
+      }
+      // Ctrl + Enter -> Confirm Invoice
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        handleSave("pending");
+      }
+      // Ctrl + P -> Print Invoice
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        window.print();
+      }
+      // Alt + N -> Add New Row
+      if (e.altKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        addRow();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalShortcuts);
+    return () => window.removeEventListener("keydown", handleGlobalShortcuts);
+  }, [items, partyId, user, orderNumber, orderDate, salesman, narration, refNo, draftId, party, saving]);
+
   useEffect(() => {
     document.title = "Invoice Entry — Spare Parts OMS";
   }, []);
@@ -131,7 +160,7 @@ const CreateOrder = () => {
       searchProducts(user.id, searchTerm, 8)
         .then((results) => {
           setSearchResults(results);
-          setHighlightedIndex(0); // Reset index on new search results fetch
+          setHighlightedIndex(0);
         })
         .catch(() => setSearchResults([]));
     }, 180);
@@ -249,7 +278,7 @@ const CreateOrder = () => {
     items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
 
   const handleSave = async (status: "draft" | "pending" = "draft") => {
-    if (!user) return;
+    if (!user || saving) return;
     const valid = validRows();
     if (status === "pending" && (!partyId || !valid.length)) {
       toast.error("Select party and add at least one item");
@@ -345,19 +374,20 @@ const CreateOrder = () => {
           <Button size="sm" variant="ghost" onClick={downloadOrderTemplate} className="h-8">
             <FileSpreadsheet className="h-3.5 w-3.5" /> Template
           </Button>
-          <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving} className="h-8">
-            <Save className="h-3.5 w-3.5" /> {editMode && editStatus === "draft" ? "Update Draft" : "Save Draft"}
+          <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving} className="h-8" title="Shortcut: Ctrl + S">
+            <Save className="h-3.5 w-3.5" /> {editMode && editStatus === "draft" ? "Update Draft (Ctrl+S)" : "Save Draft (Ctrl+S)"}
           </Button>
           <Button
             size="sm"
             onClick={() => handleSave("pending")}
             disabled={saving}
             className="h-8 gradient-primary text-white border-0"
+            title="Shortcut: Ctrl + Enter"
           >
-            <FileCheck2 className="h-3.5 w-3.5" /> Confirm Invoice
+            <FileCheck2 className="h-3.5 w-3.5" /> Confirm Invoice (Ctrl+✍)
           </Button>
-          <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8">
-            <Printer className="h-3.5 w-3.5" /> Print
+          <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8" title="Shortcut: Ctrl + P">
+            <Printer className="h-3.5 w-3.5" /> Print (Ctrl+P)
           </Button>
           <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8">
             <FileDown className="h-3.5 w-3.5" /> PDF
@@ -694,8 +724,9 @@ const CreateOrder = () => {
                     <button
                       onClick={addRow}
                       className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
+                      title="Shortcut: Alt + N"
                     >
-                      <Plus className="h-3 w-3" /> Add Row (Enter)
+                      <Plus className="h-3 w-3" /> Add Row (Alt+N)
                     </button>
                     <button
                       onClick={() => setUploadOpen(true)}
