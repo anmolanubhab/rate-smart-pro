@@ -533,7 +533,7 @@ const CreateOrder = () => {
             <Input
               value={refNo}
               onChange={(e) => setRefNo(e.target.value)}
-              placeholder="11299/vishal"
+              placeholder="Order by Telicolar"
               className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
             />
           </div>
