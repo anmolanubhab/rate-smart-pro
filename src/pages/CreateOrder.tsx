@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { 
-  Save, FileCheck2, Printer, FileDown, Plus, Trash2, 
-  Upload, FileSpreadsheet, Building2, Calendar, Hash, 
-  User, ShieldCheck, AlertTriangle, Layers, Info 
-} from "lucide-react";
+import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, Upload, FileSpreadsheet } from "lucide-react";
+import InvoicePrint from "@/components/InvoicePrint";
 import OrderExcelUpload from "@/components/OrderExcelUpload";
 import { downloadOrderTemplate } from "@/lib/excelTemplates";
 import { toast } from "sonner";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { fetchParties, Party } from "@/lib/parties";
 import { searchProducts, Product } from "@/lib/products";
-import { cn } from "@/lib/utils";
 import {
   computeItem,
   computeTotals,
@@ -25,14 +23,8 @@ import {
   fetchOrderItems,
 } from "@/lib/orders";
 
-/** Extended row that carries local variables for the automated ERP UI. */
+/** Extended row that also carries HSN/Rack for the Tally-style UI (not persisted). */
 type Row = OrderItem & { hsn?: string; rack?: string };
-
-interface TotalsRowProps {
-  label: string;
-  value: string;
-  bold?: boolean;
-}
 
 const blankRow = (): Row => ({
   ...computeItem({ part_number: "", description: "", mrp: 0, qty: 0, discount_pct: 0, gst_pct: 18 }),
@@ -51,10 +43,8 @@ const CreateOrder = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const routeParams = useParams<{ id?: string }>();
-  
   const editId = routeParams.id || params.get("id");
   const printOnLoad = params.get("print") === "1";
-  
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editStatus, setEditStatus] = useState<string>("draft");
@@ -74,7 +64,7 @@ const CreateOrder = () => {
   const [saving, setSaving] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(editId);
 
-  // Autocomplete Index tracking
+  // product autocomplete
   const [searchIdx, setSearchIdx] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
@@ -87,13 +77,12 @@ const CreateOrder = () => {
   );
 
   useEffect(() => {
-    document.title = "Invoice Entry Platform — Spare Parts OMS";
+    document.title = "Invoice Entry — Spare Parts OMS";
   }, []);
 
   useEffect(() => {
     if (!user) return;
     fetchParties(user.id).then(setParties).catch((e) => toast.error(e.message));
-    
     if (!editId) {
       nextOrderNumber(user.id).then(setOrderNumber).catch(() => {});
       setEditMode(false);
@@ -111,7 +100,6 @@ const CreateOrder = () => {
           setEditMode(true);
           setEditStatus(o.status);
           setDraftId(o.id);
-          
           const rows: Row[] = its.length
             ? its.map((it) => ({ ...computeItem(it), hsn: "", rack: "" }))
             : Array.from({ length: 6 }, blankRow);
@@ -124,17 +112,19 @@ const CreateOrder = () => {
     }
   }, [user, editId]);
 
-  // Handle party contextual defaults
+  // apply default discount when party changes
   useEffect(() => {
     if (!party) return;
-    const def = Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0;
+    const def =
+      Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0;
     setItems((rows) =>
       rows.map((r) => (r.discount_pct === 0 && !r.part_number ? { ...r, discount_pct: def } : r)),
     );
     setPartyQuery(party.name);
-  }, [partyId, party]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partyId]);
 
-  // Product pipeline telemetry search
+  // product search
   useEffect(() => {
     if (searchIdx === null || !user || !searchTerm.trim()) {
       setSearchResults([]);
@@ -152,6 +142,63 @@ const CreateOrder = () => {
   const roundOff = +(Math.round(totals.grand_total) - totals.grand_total).toFixed(2);
   const finalTotal = Math.round(totals.grand_total);
   const totalQty = items.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+  const printedAt = useMemo(() => new Date(), [orderNumber, orderDate, draftId]);
+
+  const printableItems = useMemo(
+    () =>
+      items
+        .filter((it) => it.part_number.trim() && Number(it.qty) > 0)
+        .map((it) => ({
+          partNumber: it.part_number,
+          productName: it.description,
+          qty: Number(it.qty) || 0,
+          rate: Number(it.net_rate) || 0,
+          gstPct: Number(it.gst_pct) || 0,
+          amount: Number(it.total) || 0,
+        })),
+    [items],
+  );
+
+  const handleDownloadPdf = async () => {
+    try {
+      const el = document.getElementById("invoice-print");
+      if (!el) {
+        toast.error("Invoice not ready");
+        return;
+      }
+
+      const canvas = await html2canvas(el, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ unit: "mm", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`Invoice_${orderNumber || "invoice"}.pdf`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to generate PDF");
+    }
+  };
 
   const partResults = useMemo(() => {
     const q = partyQuery.trim().toLowerCase();
@@ -175,7 +222,9 @@ const CreateOrder = () => {
     setItems((r) => (r.length <= 1 ? [blankRow()] : r.filter((_, i) => i !== idx)));
 
   const pickProduct = (idx: number, p: Product) => {
-    const def = party ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0 : 0;
+    const def = party
+      ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0
+      : 0;
     updateRow(idx, {
       product_id: p.id,
       part_number: p.part_number,
@@ -189,11 +238,14 @@ const CreateOrder = () => {
     setSearchIdx(null);
     setSearchTerm("");
     setSearchResults([]);
+    // focus qty next
     setTimeout(() => focusCell(idx, "qty"), 10);
   };
 
   const focusCell = (row: number, col: Col) => {
-    const el = document.querySelector<HTMLInputElement>(`input[data-row="${row}"][data-col="${col}"]`);
+    const el = document.querySelector<HTMLInputElement>(
+      `input[data-row="${row}"][data-col="${col}"]`,
+    );
     el?.focus();
     el?.select();
   };
@@ -217,13 +269,14 @@ const CreateOrder = () => {
     }
   };
 
-  const validRows = () => items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
+  const validRows = () =>
+    items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
 
   const handleSave = async (status: "draft" | "pending" = "draft") => {
     if (!user) return;
     const valid = validRows();
     if (status === "pending" && (!partyId || !valid.length)) {
-      toast.error("Select party and append at least one system telemetry item");
+      toast.error("Select party and add at least one item");
       return;
     }
     try {
@@ -247,10 +300,10 @@ const CreateOrder = () => {
       });
       setDraftId(saved.id);
       if (status === "pending") {
-        toast.success("Invoice fully confirmed to Ledger");
+        toast.success("Invoice confirmed");
         navigate(`/orders?highlight=${saved.id}`);
       } else {
-        toast.success("Draft saved successfully", { duration: 1500 });
+        toast.success("Draft saved", { duration: 1500 });
       }
     } catch (e: any) {
       toast.error(e.message);
@@ -259,7 +312,7 @@ const CreateOrder = () => {
     }
   };
 
-  // Automated cloud safe synchronization pipeline (Every 30s)
+  // auto-save draft every 30s when there are valid rows
   const lastSavedAt = useRef(0);
   useEffect(() => {
     const id = setInterval(() => {
@@ -270,9 +323,10 @@ const CreateOrder = () => {
       handleSave("draft");
     }, 30000);
     return () => clearInterval(id);
-  }, [items, partyId, user, saving]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, partyId, user]);
 
-  // Reactive Multi-Duplicate detection engine
+  // duplicate detection
   const dupSet = useMemo(() => {
     const counts = new Map<string, number>();
     items.forEach((r) => {
@@ -282,6 +336,7 @@ const CreateOrder = () => {
     return new Set(Array.from(counts.entries()).filter(([, v]) => v > 1).map(([k]) => k));
   }, [items]);
 
+  // RD discount breakdown (display only)
   const rdBreakdown = useMemo(() => {
     if (!party || party.discount_type !== "RD") return null;
     const sys = Number(party.default_discount) || 0;
@@ -291,45 +346,77 @@ const CreateOrder = () => {
   }, [party]);
 
   return (
-    <div className="invoice-entry max-w-[1440px] mx-auto text-[13px] font-mono space-y-4 p-2 sm:p-4 transition-all duration-300">
-      {/* HUD Controller Action Control Center */}
-      <div className="print:hidden glass blur-bg rounded-2xl border border-white/10 p-4 flex flex-col lg:flex-row items-center justify-between gap-4 shadow-elegant bg-background/60 sticky top-2 z-40 backdrop-blur-md">
-        <div className="flex items-center gap-3 w-full lg:w-auto">
-          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shrink-0">
-            <ShieldCheck className="h-5 w-5 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-widest text-muted-foreground font-sans font-bold">
-                {editMode ? (editStatus === "draft" ? "System Draft Invoice" : `Ledger Locked (${editStatus})`) : "Core Invoice Engine"}
-              </span>
-              {dupSet.size > 0 && (
-                <Badge variant="outline" className="border-destructive/40 text-destructive bg-destructive/5 text-[10px] animate-bounce">
-                  <AlertTriangle className="h-3 w-3 mr-1" /> Duplicate Items Found
-                </Badge>
-              )}
-            </div>
-            <h2 className="text-base font-sans font-bold text-foreground flex items-center gap-1.5 mt-0.5">
-              {voucherType} {draftId && <span className="text-xs font-mono font-normal text-muted-foreground">/ id_#{orderNumber || draftId.slice(0, 8)}</span>}
-            </h2>
-          </div>
+    <div className="max-w-[1400px] mx-auto">
+      <div className="absolute -left-[10000px] top-0 print:static print:left-auto">
+        <InvoicePrint
+          company={{
+            name: "Viswanath Automobiles Pvt. Ltd.",
+            addressLines: [],
+            gstin: null,
+            logoUrl: null,
+          }}
+          party={{
+            name: party?.name || "",
+            mobile: party?.phone || null,
+            address: party?.billing_address || party?.address || null,
+            gstNo: party?.gst || null,
+          }}
+          info={{
+            invoiceNumber: orderNumber,
+            date: orderDate,
+            time: printedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+            paymentMode: "—",
+          }}
+          items={printableItems}
+          totals={{
+            subtotal: totals.subtotal,
+            discount: totals.discount_total,
+            tax: totals.gst_total,
+            grandTotal: finalTotal,
+          }}
+        />
+      </div>
+
+      <div className="invoice-entry no-print text-[13px] font-mono">
+      {/* Top action bar (screen only) */}
+      <div className="no-print print:hidden flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
+            {editMode ? (editStatus === "draft" ? "Editing Draft Invoice" : `Editing Invoice (${editStatus})`) : "New Invoice"}
+          </span>
+          {draftId && <Badge variant="outline" className="text-[10px]">#{orderNumber || draftId.slice(0, 8)}</Badge>}
+          {editMode && editStatus === "draft" && (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/5 text-[10px]">Draft</Badge>
+          )}
+          {dupSet.size > 0 && (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/5 text-[10px]">
+              Duplicate items
+            </Badge>
+          )}
         </div>
-        
-        <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto justify-end">
-          <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8 border-border/60 hover:bg-muted rounded-xl">
-            <Upload className="h-3.5 w-3.5 mr-1" /> Upload Dataset
+        <div className="flex gap-1.5 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8">
+            <Upload className="h-3.5 w-3.5" /> Upload Excel
           </Button>
-          <Button size="sm" variant="ghost" onClick={downloadOrderTemplate} className="h-8 hover:bg-muted text-muted-foreground rounded-xl">
-            <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Template
+          <Button size="sm" variant="ghost" onClick={downloadOrderTemplate} className="h-8">
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Template
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => handleSave("draft")} disabled={saving} className="h-8 rounded-xl font-sans font-semibold">
-            <Save className="h-3.5 w-3.5 mr-1" /> {editMode && editStatus === "draft" ? "Update Workspace" : "Keep Draft"}
+          <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving} className="h-8">
+            <Save className="h-3.5 w-3.5" /> {editMode && editStatus === "draft" ? "Update Draft" : "Save Draft"}
           </Button>
-          <Button size="sm" onClick={() => handleSave("pending")} disabled={saving} className="h-8 gradient-primary text-white border-0 rounded-xl font-sans font-semibold shadow-elegant hover:opacity-95">
-            <FileCheck2 className="h-3.5 w-3.5 mr-1" /> Commit to Ledger
+          <Button
+            size="sm"
+            onClick={() => handleSave("pending")}
+            disabled={saving}
+            className="h-8 gradient-primary text-white border-0"
+          >
+            <FileCheck2 className="h-3.5 w-3.5" /> Confirm Invoice
           </Button>
-          <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8 rounded-xl border-border/60">
-            <FileDown className="h-3.5 w-3.5" />
+          <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8">
+            <Printer className="h-3.5 w-3.5" /> Print
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleDownloadPdf} className="h-8">
+            <FileDown className="h-3.5 w-3.5" /> PDF
           </Button>
         </div>
       </div>
@@ -341,196 +428,165 @@ const CreateOrder = () => {
         defaultDiscount={party ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0 : 0}
         onImport={(imported) => {
           setItems((prev) => {
+            // drop blank rows then append imported
             const nonBlank = prev.filter((r) => r.part_number.trim());
             return [...nonBlank, ...imported.map((it) => ({ ...it, hsn: "", rack: "" } as Row))];
           });
         }}
       />
 
-      {/* Main Neo-Brutalist Futuristic Core Workspace */}
-      <div className="rounded-3xl border border-border/60 bg-card overflow-hidden shadow-soft print:shadow-none print:border-0 print:rounded-none">
-        
-        {/* Dynamic Telemetry Banner with Option 2 Print Button Implementation */}
-        <div className="gradient-primary text-white px-4 py-2.5 flex items-center justify-between text-xs tracking-wide">
-          <div className="flex items-center gap-2 font-sans font-bold uppercase tracking-widest">
-            <Layers className="h-4 w-4" /> {voucherType} System
-          </div>
-          
-          {/* STEP 4 - OPTION 2: Print Invoice Button inside Sheet Header Banner */}
-          <button 
-            type="button"
-            onClick={() => window.print()}
-            className="print:hidden bg-white/15 hover:bg-white/25 active:scale-95 text-white font-sans font-bold text-[11px] px-3 py-1 rounded-lg border border-white/10 flex items-center gap-1.5 shadow-soft transition-all duration-150"
-          >
-            <Printer className="h-3.5 w-3.5" /> Print Invoice
-          </button>
-
-          <div className="font-mono bg-white/10 px-2 py-0.5 rounded-md border border-white/10 text-[11px] font-bold">{day.toUpperCase()}</div>
+      {/* Invoice sheet */}
+      <div className="border border-border bg-[hsl(var(--invoice-bg,60_30%_96%))] shadow-soft print:shadow-none print:border-0">
+        {/* Header strip */}
+        <div className="bg-primary text-primary-foreground px-3 py-1.5 flex items-center justify-between text-xs">
+          <div className="font-sans font-semibold tracking-wide">{voucherType}</div>
+          <div className="font-sans">Viswanath Automobiles Pvt. Ltd. [TVS]</div>
+          <div className="opacity-80">{day}</div>
         </div>
 
-        {/* Modular Profile Header Metadata Blocks */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 border-b border-border/50 bg-muted/20 text-[12px]">
-          
-          {/* System Control Inputs Block */}
-          <div className="lg:col-span-5 grid grid-cols-12 gap-3 bg-background/50 border border-border/40 p-4 rounded-2xl">
-            <div className="col-span-12 font-sans font-bold text-muted-foreground uppercase text-[10px] tracking-wider mb-1 flex items-center gap-1">
-              <Hash className="h-3 w-3" /> Core Transaction Anchors
-            </div>
-            
-            <div className="col-span-4 flex items-center text-muted-foreground font-medium">Voucher #</div>
-            <div className="col-span-8">
-              <Input
-                value={orderNumber}
-                onChange={(e) => setOrderNumber(e.target.value)}
-                className="h-7 text-[12px] font-mono px-2 rounded-lg border border-border/60 bg-card focus-visible:ring-1 focus-visible:ring-primary"
-              />
-            </div>
-
-            <div className="col-span-4 flex items-center text-muted-foreground font-medium">System Date</div>
-            <div className="col-span-8">
-              <Input
-                type="date"
-                value={orderDate}
-                onChange={(e) => setOrderDate(e.target.value)}
-                className="h-7 text-[12px] font-mono px-2 rounded-lg border border-border/60 bg-card focus-visible:ring-1 focus-visible:ring-primary"
-              />
-            </div>
-
-            <div className="col-span-4 flex items-center text-muted-foreground font-medium">Reference Key</div>
-            <div className="col-span-8">
-              <Input
-                value={refNo}
-                onChange={(e) => setRefNo(e.target.value)}
-                placeholder="Ex: 11299/vishal"
-                className="h-7 text-[12px] font-mono px-2 rounded-lg border border-border/60 bg-card focus-visible:ring-1 focus-visible:ring-primary"
-              />
-            </div>
-
-            <div className="col-span-4 flex items-center text-muted-foreground font-medium">Operator Agent</div>
-            <div className="col-span-8">
-              <Input
-                value={salesman}
-                onChange={(e) => setSalesman(e.target.value)}
-                placeholder="Sales executive name"
-                className="h-7 text-[12px] font-mono px-2 rounded-lg border border-border/60 bg-card focus-visible:ring-1 focus-visible:ring-primary"
-              />
-            </div>
+        {/* Header grid */}
+        <div className="grid grid-cols-12 gap-x-3 gap-y-1 px-3 py-2 border-b border-border text-[12px]">
+          <div className="col-span-2 text-muted-foreground">Voucher No</div>
+          <div className="col-span-4">
+            <Input
+              value={orderNumber}
+              onChange={(e) => setOrderNumber(e.target.value)}
+              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+            />
+          </div>
+          <div className="col-span-2 text-muted-foreground text-right">Date</div>
+          <div className="col-span-4">
+            <Input
+              type="date"
+              value={orderDate}
+              onChange={(e) => setOrderDate(e.target.value)}
+              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+            />
           </div>
 
-          {/* Account Identity Block */}
-          <div className="lg:col-span-7 flex flex-col justify-between bg-background/50 border border-border/40 p-4 rounded-2xl relative">
-            <div className="space-y-3">
-              <div className="font-sans font-bold text-muted-foreground uppercase text-[10px] tracking-wider flex items-center gap-1">
-                <Building2 className="h-3 w-3" /> Ledger Account Designation
-              </div>
-              
-              <div className="relative">
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  <User className="h-3.5 w-3.5" />
-                </div>
-                <Input
-                  value={partyQuery}
-                  onChange={(e) => {
-                    setPartyQuery(e.target.value);
-                    setPartyOpen(true);
-                  }}
-                  onFocus={() => setPartyOpen(true)}
-                  onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
-                  placeholder="Query terminal account identification stack..."
-                  className="h-8 pl-8 text-[12px] font-mono font-bold rounded-lg border border-border/60 bg-card focus-visible:ring-1 focus-visible:ring-primary"
-                />
-                
-                {partyOpen && partResults.length > 0 && (
-                  <div className="absolute z-50 left-0 right-0 mt-1 bg-popover border border-border/80 rounded-xl shadow-elegant max-h-64 overflow-auto backdrop-blur-lg">
-                    {partResults.map((p) => (
-                      <button
-                        type="button"
-                        key={p.id}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          setPartyId(p.id);
-                          setPartyQuery(p.name);
-                          setPartyOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 text-[12px] hover:bg-muted border-b border-border/40 last:border-0 flex items-center justify-between gap-2 transition-all"
-                      >
-                        <span className="font-bold text-foreground">{p.name}</span>
-                        <Badge variant="secondary" className="text-[10px] font-mono">
-                          {p.discount_type} · {Number(p.discount_type === "RD" ? p.agreed_discount : p.default_discount).toFixed(1)}%
-                        </Badge>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+          <div className="col-span-2 text-muted-foreground">Reference No</div>
+          <div className="col-span-4">
+            <Input
+              value={refNo}
+              onChange={(e) => setRefNo(e.target.value)}
+              placeholder="11299/vishal"
+              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+            />
+          </div>
+          <div className="col-span-2 text-muted-foreground text-right">Salesman</div>
+          <div className="col-span-4">
+            <Input
+              value={salesman}
+              onChange={(e) => setSalesman(e.target.value)}
+              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+            />
+          </div>
 
-              {party && (
-                <div className="grid grid-cols-12 gap-x-3 gap-y-1 text-[11px] text-muted-foreground bg-muted/40 p-2.5 rounded-xl border border-border/30">
-                  <div className="col-span-3 font-semibold">Ledger Bal:</div>
-                  <div className="col-span-9 text-foreground font-mono font-bold flex items-center gap-1">
-                    ₹{fmt(Number(party.outstanding_balance) || 0)} <span className="text-[10px] bg-amber-500/10 text-amber-600 px-1 rounded">DEBIT DR</span>
-                  </div>
-                  <div className="col-span-3 font-semibold">GSTIN Key:</div>
-                  <div className="col-span-9 text-foreground font-mono uppercase">{party.gst || "NOT IN LEDGER"}</div>
-                  <div className="col-span-3 font-semibold">Address:</div>
-                  <div className="col-span-9 text-foreground truncate">{party.billing_address || party.address || "—"}</div>
-                </div>
-              )}
-            </div>
-
-            {party && (
-              <div className="flex flex-wrap gap-1 mt-3 font-sans">
-                <Badge className="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20 text-[10px] font-bold px-2 rounded-md">
-                  {party.discount_type} Computation Node
-                </Badge>
-                <Badge variant="secondary" className="text-[10px] font-mono px-2 rounded-md">
-                  Base Rule: {Number(party.default_discount).toFixed(1)}%
-                </Badge>
-                {party.discount_type === "RD" && (
-                  <Badge variant="outline" className="border-accent/40 text-accent bg-accent/5 text-[10px] font-mono px-2 rounded-md">
-                    Agreed: {Number(party.agreed_discount).toFixed(1)}%
-                  </Badge>
-                )}
-                {party.beat && <Badge variant="outline" className="text-[10px] px-2 rounded-md">Sector: {party.beat}</Badge>}
+          <div className="col-span-2 text-muted-foreground">Party A/c Name</div>
+          <div className="col-span-10 relative">
+            <Input
+              value={partyQuery}
+              onChange={(e) => {
+                setPartyQuery(e.target.value);
+                setPartyOpen(true);
+              }}
+              onFocus={() => setPartyOpen(true)}
+              onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
+              placeholder="Type to search party…"
+              className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+            />
+            {partyOpen && partResults.length > 0 && (
+              <div className="absolute z-30 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-64 overflow-auto">
+                {partResults.map((p) => (
+                  <button
+                    type="button"
+                    key={p.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setPartyId(p.id);
+                      setPartyQuery(p.name);
+                      setPartyOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1 text-[12px] hover:bg-muted border-b border-border last:border-0 flex items-center justify-between gap-2"
+                  >
+                    <span className="font-semibold">{p.name}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {p.discount_type} · {Number(p.discount_type === "RD" ? p.agreed_discount : p.default_discount).toFixed(1)}%
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
+
+          {party && (
+            <>
+              <div className="col-span-2 text-muted-foreground">Current Balance</div>
+              <div className="col-span-4 italic">
+                ₹{fmt(Number(party.outstanding_balance) || 0)}{" "}
+                <span className="text-muted-foreground not-italic">Dr</span>
+              </div>
+              <div className="col-span-2 text-muted-foreground text-right">GSTIN</div>
+              <div className="col-span-4">{party.gst || "—"}</div>
+
+              <div className="col-span-2 text-muted-foreground">Address</div>
+              <div className="col-span-10 truncate">{party.billing_address || party.address || "—"}</div>
+
+              <div className="col-span-12 flex flex-wrap gap-1.5 pt-1 font-sans">
+                <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 text-[10px] h-5">
+                  {party.discount_type} Mode
+                </Badge>
+                <Badge variant="outline" className="text-[10px] h-5">
+                  Default {Number(party.default_discount).toFixed(1)}%
+                </Badge>
+                {party.discount_type === "RD" && (
+                  <Badge variant="outline" className="text-[10px] h-5">
+                    Agreed {Number(party.agreed_discount).toFixed(1)}%
+                  </Badge>
+                )}
+                {party.phone && (
+                  <Badge variant="outline" className="text-[10px] h-5">📱 {party.phone}</Badge>
+                )}
+                {party.beat && (
+                  <Badge variant="outline" className="text-[10px] h-5">Beat: {party.beat}</Badge>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Dynamic Tactical Matrix Ledger Table */}
+        {/* Billing grid */}
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] border-collapse">
             <thead>
-              <tr className="bg-muted/50 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border font-sans font-bold">
-                <th className="text-center py-2 w-8">#</th>
-                <th className="text-left px-2 py-2 min-w-[140px]">Part Number Identifier</th>
-                <th className="text-left px-2 py-2 min-w-[200px]">Description Metrics</th>
-                <th className="text-left px-2 py-2 w-24">HSN Static</th>
-                <th className="text-right px-2 py-2 w-16">GST %</th>
-                <th className="text-left px-2 py-2 w-16">Rack Loc</th>
-                <th className="text-right px-2 py-2 w-20">Volume</th>
-                <th className="text-right px-2 py-2 w-24">MRP Vector</th>
-                <th className="text-right px-2 py-2 w-24">Rate Space</th>
-                <th className="text-right px-2 py-2 w-16">Disc %</th>
-                <th className="text-right px-2 py-2 w-24">Net Margin</th>
-                <th className="text-right px-2 py-2 w-28">Net Amount</th>
-                <th className="w-8 print:hidden"></th>
+              <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
+                <th className="text-left px-1.5 py-1 w-6">#</th>
+                <th className="text-left px-1.5 py-1 min-w-[120px]">Name of Item</th>
+                <th className="text-left px-1.5 py-1 min-w-[180px]">Description</th>
+                <th className="text-left px-1.5 py-1 w-20">HSN/SAC</th>
+                <th className="text-right px-1.5 py-1 w-14">GST %</th>
+                <th className="text-left px-1.5 py-1 w-14">Rack</th>
+                <th className="text-right px-1.5 py-1 w-16">Quantity</th>
+                <th className="text-right px-1.5 py-1 w-20">MRP</th>
+                <th className="text-right px-1.5 py-1 w-20">Rate</th>
+                <th className="text-right px-1.5 py-1 w-14">Disc %</th>
+                <th className="text-right px-1.5 py-1 w-20">Net Rate</th>
+                <th className="text-right px-1.5 py-1 w-24">Amount</th>
+                <th className="w-6 print:hidden"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/40">
+            <tbody>
               {items.map((it, idx) => {
                 const isDup = it.part_number.trim() && dupSet.has(it.part_number.trim().toLowerCase());
                 return (
                   <tr
                     key={idx}
-                    className={cn(
-                      "hover:bg-muted/30 group transition-all duration-150 relative",
-                      isDup ? "bg-destructive/5 dark:bg-destructive/10" : ""
-                    )}
+                    className={`border-b border-border/60 hover:bg-muted/30 ${
+                      isDup ? "bg-amber-500/5" : ""
+                    }`}
                   >
-                    <td className="text-center text-muted-foreground text-[10px] font-sans font-bold select-none">{idx + 1}</td>
-                    
-                    <td className="p-0.5 relative">
+                    <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{idx + 1}</td>
+                    <td className="px-0.5 py-0.5 relative">
                       <Input
                         data-row={idx}
                         data-col="part"
@@ -548,10 +604,10 @@ const CreateOrder = () => {
                         }}
                         onBlur={() => setTimeout(() => setSearchIdx((s) => (s === idx && searchCol === "part" ? null : s)), 150)}
                         onKeyDown={(e) => handleKey(e, idx, "part")}
-                        className="h-7 text-[12px] font-mono px-2 rounded-md border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background uppercase font-bold"
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
                       />
                       {searchIdx === idx && searchCol === "part" && searchResults.length > 0 && (
-                        <div className="absolute z-50 left-1 mt-1 w-88 bg-popover border border-border rounded-xl shadow-elegant max-h-60 overflow-auto backdrop-blur-lg">
+                        <div className="absolute z-30 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto">
                           {searchResults.map((p) => (
                             <button
                               key={p.id}
@@ -560,14 +616,14 @@ const CreateOrder = () => {
                                 e.preventDefault();
                                 pickProduct(idx, p);
                               }}
-                              className="w-full text-left px-3 py-1.5 hover:bg-muted text-[12px] border-b border-border/40 last:border-0 block group/btn transition-colors"
+                              className="w-full text-left px-2 py-1 hover:bg-muted text-[12px] border-b border-border last:border-0"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono font-bold text-primary group-hover/btn:text-primary-glow">{p.part_number}</span>
-                                <span className="text-[10px] bg-muted px-1.5 py-0.2 rounded font-sans font-semibold text-muted-foreground">Vol: {p.stock}</span>
+                                <span className="font-mono font-semibold">{p.part_number}</span>
+                                <span className="text-[10px] text-muted-foreground">Stk {p.stock}</span>
                               </div>
-                              <div className="text-[11px] truncate text-foreground/80 mt-0.5">{p.name}</div>
-                              <div className="text-[10px] text-muted-foreground font-sans mt-0.5">
+                              <div className="text-[11px] truncate">{p.name}</div>
+                              <div className="text-[10px] text-muted-foreground">
                                 MRP ₹{fmt(Number(p.mrp))} · GST {p.gst_pct}%
                               </div>
                             </button>
@@ -575,30 +631,27 @@ const CreateOrder = () => {
                         </div>
                       )}
                     </td>
-
-                    <td className="p-0.5">
+                    <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
                         data-col="desc"
                         value={it.description}
                         onChange={(e) => updateRow(idx, { description: e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "desc")}
-                        className="h-7 text-[12px] font-mono px-2 rounded-md border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background truncate"
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
                       />
                     </td>
-
-                    <td className="p-0.5">
+                    <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
                         data-col="hsn"
                         value={it.hsn || ""}
                         onChange={(e) => updateRow(idx, { hsn: e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "hsn")}
-                        className="h-7 text-[12px] font-mono px-2 rounded-md border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background"
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
                       />
                     </td>
-
-                    <td className="p-0.5">
+                    <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
                         data-col="gst"
@@ -607,22 +660,20 @@ const CreateOrder = () => {
                         value={it.gst_pct || ""}
                         onChange={(e) => updateRow(idx, { gst_pct: +e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "gst")}
-                        className="h-7 text-[12px] font-mono px-2 text-right rounded-md border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background"
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
                       />
                     </td>
-
-                    <td className="p-0.5">
+                    <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
                         data-col="rack"
                         value={it.rack || ""}
                         onChange={(e) => updateRow(idx, { rack: e.target.value.toUpperCase() })}
                         onKeyDown={(e) => handleKey(e, idx, "rack")}
-                        className="h-7 text-[12px] font-mono px-2 rounded-md border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background uppercase"
+                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
                       />
                     </td>
-
-                    <td className="p-0.5">
+                    <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
                         data-col="qty"
@@ -631,11 +682,10 @@ const CreateOrder = () => {
                         value={it.qty || ""}
                         onChange={(e) => updateRow(idx, { qty: +e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "qty")}
-                        className="h-7 text-[12px] font-mono px-2 text-right rounded-md border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background font-bold text-foreground"
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
                       />
                     </td>
-
-                    <td className="p-0.5">
+                    <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
                         data-col="mrp"
@@ -644,15 +694,13 @@ const CreateOrder = () => {
                         value={it.mrp || ""}
                         onChange={(e) => updateRow(idx, { mrp: +e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "mrp")}
-                        className="h-7 text-[12px] font-mono px-2 text-right rounded-md border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background"
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
                       />
                     </td>
-
-                    <td className="px-2 py-0.5 text-right tabular-nums text-muted-foreground align-middle">
+                    <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground">
                       {fmt(it.mrp)}
                     </td>
-
-                    <td className="p-0.5">
+                    <td className="px-0.5 py-0.5">
                       <Input
                         data-row={idx}
                         data-col="disc"
@@ -661,126 +709,111 @@ const CreateOrder = () => {
                         value={it.discount_pct || ""}
                         onChange={(e) => updateRow(idx, { discount_pct: +e.target.value })}
                         onKeyDown={(e) => handleKey(e, idx, "disc")}
-                        className="h-7 text-[12px] font-mono px-2 text-right rounded-md border-0 bg-transparent focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-background text-primary font-semibold"
+                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
                       />
                     </td>
-
-                    <td className="px-2 py-0.5 text-right tabular-nums align-middle text-foreground/90">{fmt(it.net_rate)}</td>
-                    <td className="px-2 py-0.5 text-right tabular-nums font-bold text-foreground align-middle">{fmt(it.total)}</td>
-                    
-                    <td className="text-center print:hidden align-middle">
+                    <td className="px-1 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
+                    <td className="px-1 py-0.5 text-right tabular-nums font-semibold">
+                      {fmt(it.total)}
+                    </td>
+                    <td className="px-0.5 py-0.5 print:hidden">
                       <button
-                        type="button"
                         onClick={() => delRow(idx)}
-                        className="text-muted-foreground/40 hover:text-destructive transition-colors duration-150"
-                        title="Evict row"
+                        className="text-destructive/70 hover:text-destructive"
+                        title="Delete row"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3 w-3" />
                       </button>
                     </td>
                   </tr>
                 );
               })}
-              
-              {/* Native System Padding Spacer Blocks */}
-              {Array.from({ length: Math.max(0, 4 - (items.length % 4)) }).map((_, i) => (
-                <tr key={`sp-${i}`} className="border-b border-border/20 h-7 opacity-20 select-none pointer-events-none">
+              {/* spacer empty rows to look like a printed sheet */}
+              {Array.from({ length: Math.max(0, 4 - items.length % 4) }).map((_, i) => (
+                <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
                   <td colSpan={13}>&nbsp;</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-border bg-muted/30 font-sans font-bold text-foreground">
-                <td colSpan={6} className="px-3 py-2.5 print:hidden">
-                  <div className="flex items-center gap-4">
+              <tr className="border-t-2 border-border bg-muted/40 font-semibold">
+                <td colSpan={6} className="px-1.5 py-1 print:hidden">
+                  <div className="flex items-center gap-3">
                     <button
-                      type="button"
                       onClick={addRow}
-                      className="text-[11px] text-primary hover:text-primary-glow inline-flex items-center gap-1 transition-colors"
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Append Row (Enter)
+                      <Plus className="h-3 w-3" /> Add Row (Enter)
                     </button>
                     <button
-                      type="button"
                       onClick={() => setUploadOpen(true)}
-                      className="text-[11px] text-primary/80 hover:text-primary inline-flex items-center gap-1 transition-colors"
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans"
                     >
-                      <Upload className="h-3.5 w-3.5" /> Inject Spreadsheet
+                      <Upload className="h-3 w-3" /> Upload Excel
                     </button>
                     <button
-                      type="button"
                       onClick={downloadOrderTemplate}
-                      className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+                      className="text-[11px] text-muted-foreground hover:underline inline-flex items-center gap-1 font-sans"
                     >
-                      <FileSpreadsheet className="h-3.5 w-3.5" /> Template
+                      <FileSpreadsheet className="h-3 w-3" /> Sample Template
                     </button>
                   </div>
                 </td>
-                <td className="px-2 py-2.5 text-right tabular-nums text-foreground border-t border-border font-mono">{fmt(totalQty)} Units</td>
-                <td colSpan={4} className="border-t border-border"></td>
-                <td className="px-2 py-2.5 text-right tabular-nums text-primary font-mono text-[13px] border-t border-border font-bold">
-                  {fmt(totals.taxable + totals.gst_total)}
-                </td>
-                <td className="print:hidden border-t border-border"></td>
+                <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
+                <td colSpan={4}></td>
+                <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.taxable + totals.gst_total)}</td>
+                <td className="print:hidden"></td>
               </tr>
             </tfoot>
           </table>
         </div>
 
-        {/* Footer Metrics Module Stack */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 border-t border-border/50 bg-muted/10">
-          <div className="lg:col-span-7 space-y-3">
-            <div className="bg-background/40 border border-border/40 p-3 rounded-2xl">
-              <div className="text-[10px] text-muted-foreground uppercase font-sans font-bold tracking-widest mb-1 flex items-center gap-1">
-                <Info className="h-3 w-3" /> System Narration & Log
-              </div>
+        {/* Bottom section: narration + totals */}
+        <div className="grid grid-cols-12 gap-3 px-3 py-2 border-t border-border">
+          <div className="col-span-12 md:col-span-7 space-y-2">
+            <div>
+              <div className="text-[11px] text-muted-foreground uppercase tracking-wider">Narration</div>
               <Input
                 value={narration}
                 onChange={(e) => setNarration(e.target.value)}
-                placeholder="Append permanent notes/narration string onto this node transaction block..."
-                className="h-8 text-[12px] font-mono px-2 rounded-lg border border-border/60 bg-card focus-visible:ring-1 focus-visible:ring-primary"
+                placeholder="Discount- 18%"
+                className="h-7 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
               />
             </div>
-            
             {rdBreakdown && (
-              <div className="bg-background/40 border border-border/40 p-3 rounded-2xl text-[11px] grid grid-cols-2 gap-x-6 gap-y-1 font-mono">
-                <div className="text-muted-foreground">System Matrix Rule Discount</div>
-                <div className="text-right tabular-nums text-foreground">{rdBreakdown.sys.toFixed(2)}%</div>
-                <div className="text-muted-foreground">Contextual Rate Diff (Extra Allocation)</div>
-                <div className="text-right tabular-nums text-accent font-bold">+{rdBreakdown.rdExtra.toFixed(2)}%</div>
-                <div className="text-muted-foreground">Agreed Target Ledger Margin</div>
-                <div className="text-right tabular-nums text-foreground">{rdBreakdown.agreed.toFixed(2)}%</div>
-                <div className="font-bold border-t border-border/50 pt-1 text-primary">Calculated Final Margin Node</div>
-                <div className="text-right tabular-nums font-bold border-t border-border/50 pt-1 text-primary">
+              <div className="text-[11px] grid grid-cols-2 gap-x-4 gap-y-0.5 pt-1">
+                <div className="text-muted-foreground">System Discount</div>
+                <div className="text-right tabular-nums">{rdBreakdown.sys.toFixed(2)}%</div>
+                <div className="text-muted-foreground">RD (Extra)</div>
+                <div className="text-right tabular-nums">{rdBreakdown.rdExtra.toFixed(2)}%</div>
+                <div className="text-muted-foreground">Agreed (RD)</div>
+                <div className="text-right tabular-nums">{rdBreakdown.agreed.toFixed(2)}%</div>
+                <div className="font-semibold border-t border-border pt-0.5">Final Effective</div>
+                <div className="text-right tabular-nums font-semibold border-t border-border pt-0.5">
                   {rdBreakdown.effective.toFixed(2)}%
                 </div>
               </div>
             )}
-            <div className="text-[10px] text-muted-foreground/70 font-sans flex items-center gap-1 px-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-border inline-block"></span> Cryptographic e-Invoice Gateway Mapping: Disabled
-            </div>
+            <div className="text-[11px] text-muted-foreground pt-2">Provide e-Invoice details: No</div>
           </div>
 
-          {/* Core Analytics Totals Box */}
-          <div className="lg:col-span-5">
-            <div className="border border-border/50 rounded-2xl overflow-hidden bg-background/60 shadow-soft">
-              <div className="px-3 py-1.5 text-[10px] uppercase font-sans font-bold tracking-widest text-muted-foreground bg-muted/50 border-b border-border/40">
-                Ledger Balancing Diagnostics
+          <div className="col-span-12 md:col-span-5">
+            <div className="border border-border bg-card/60">
+              <div className="px-2 py-1 text-[11px] uppercase tracking-wider text-muted-foreground bg-muted/40 border-b border-border font-sans">
+                Invoice Totals
               </div>
-              <div className="p-3 text-[12px] space-y-1 font-mono">
-                <TotalsRow label="Gross Aggregate Base (MRP)" value={fmt(totals.subtotal)} />
-                <TotalsRow label="Aggregated Yield Discount" value={`− ${fmt(totals.discount_total)}`} />
-                <div className="border-t border-border/30 my-1"></div>
-                <TotalsRow label="Net Taxable Pool" value={fmt(totals.taxable)} bold />
-                <TotalsRow label="Central CGST Pool" value={fmt(cgst)} />
-                <TotalsRow label="State SGST Pool" value={fmt(sgst)} />
-                <TotalsRow label="Fractional Round Off" value={(roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff))} />
-                
-                <div className="border-t-2 border-dashed border-border/60 mt-2 pt-2 flex items-center justify-between">
-                  <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-primary">
-                    Final Grand Value
+              <div className="px-2 py-1.5 text-[12px] space-y-0.5">
+                <Row label="Subtotal (MRP)" value={fmt(totals.subtotal)} />
+                <Row label="Discount" value={`− ${fmt(totals.discount_total)}`} />
+                <Row label="Taxable Amount" value={fmt(totals.taxable)} bold />
+                <Row label="CGST" value={fmt(cgst)} />
+                <Row label="SGST" value={fmt(sgst)} />
+                <Row label="Round Off" value={(roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff))} />
+                <div className="border-t border-border mt-1 pt-1 flex items-baseline justify-between">
+                  <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-sans">
+                    Grand Total
                   </span>
-                  <span className="font-mono font-bold text-xl text-primary tracking-tighter tabular-nums bg-primary/5 px-2.5 py-0.5 rounded-xl border border-primary/10 shadow-elegant-glow">
+                  <span className="font-bold text-lg text-primary tabular-nums">
                     ₹{fmt(finalTotal)}
                   </span>
                 </div>
@@ -789,45 +822,38 @@ const CreateOrder = () => {
           </div>
         </div>
 
-        {/* Dynamic A4 Standardized Print Template Footer */}
-        <div className="hidden print:block p-4 text-[11px] border-t border-border/80 mt-12 bg-white text-black font-sans">
-          <div className="grid grid-cols-3 gap-6 pt-4">
+        {/* Print-only footer */}
+        <div className="hidden print:block px-3 py-4 text-[11px] border-t border-border">
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <div className="font-bold uppercase tracking-wider text-[10px] text-black mb-1">Standard Terms & Directives</div>
-              <div className="text-neutral-500 text-[10px] leading-relaxed">
-                Goods once evaluated and registered under this ledger allocation will not be rescinded. E. & O.E.
+              <div className="font-semibold mb-8">Terms & Conditions</div>
+              <div className="text-muted-foreground">
+                Goods once sold will not be taken back. E. & O.E.
               </div>
             </div>
-            <div className="text-center flex flex-col justify-end">
-              <div className="border-t border-neutral-300 pt-1 text-[10px] font-medium text-neutral-600 uppercase">Authorized Consignee Signature</div>
+            <div className="text-center">
+              <div className="mt-12 border-t border-border pt-1">Receiver's Signature</div>
             </div>
-            <div className="text-right flex flex-col justify-end">
-              <div className="border-t border-neutral-300 pt-1 text-[10px] font-bold text-neutral-900 uppercase">For Viswanath Automobiles Pvt. Ltd.</div>
+            <div className="text-right">
+              <div className="mt-12 border-t border-border pt-1">For Viswanath Automobiles Pvt. Ltd.</div>
             </div>
           </div>
         </div>
       </div>
-
-      <style>{`
-        @media print {
-          @page { size: A4; margin: 8mm; }
-          body { background: white !important; color: black !important; }
-          .invoice-entry { font-size: 11px; padding: 0 !important; max-w-full !important; }
-          input { border: none !important; background: transparent !important; padding: 0 !important; }
-          .glass { backdrop-filter: none !important; background: transparent !important; }
-        }
-        :root { --invoice-bg: 60 30% 96%; }
-        .dark { --invoice-bg: 240 8% 12%; }
-      `}</style>
     </div>
+
+    <style>{`
+      :root { --invoice-bg: 60 30% 96%; }
+      .dark { --invoice-bg: 240 8% 12%; }
+    `}</style>
+  </div>
   );
 };
 
-// Internal Scoped Sub-Component
-const TotalsRow = ({ label, value, bold }: TotalsRowProps) => (
-  <div className="flex items-baseline justify-between py-0.5">
-    <span className="text-muted-foreground/90 font-sans">{label}</span>
-    <span className={cn("tabular-nums font-mono text-foreground", bold ? "font-bold text-primary" : "")}>{value}</span>
+const Row = ({ label, value, bold }: { label: string; value: string; bold?: boolean }) => (
+  <div className="flex items-baseline justify-between">
+    <span className="text-muted-foreground">{label}</span>
+    <span className={`tabular-nums ${bold ? "font-semibold" : ""}`}>{value}</span>
   </div>
 );
 
