@@ -139,7 +139,7 @@ const Parties = () => {
   );
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in-up">
+    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in-up">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground font-medium">Business</p>
@@ -174,48 +174,64 @@ const Parties = () => {
           <p className="text-sm text-muted-foreground mt-1">Add your first party to use discount automation in the calculator.</p>
         </div>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((p) => (
-            <div
-              key={p.id}
-              className="rounded-2xl p-5 bg-card border border-border shadow-soft hover:shadow-elegant transition-smooth hover:-translate-y-0.5"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="font-display font-semibold truncate">{p.name}</h3>
-                  {p.address && <p className="text-xs text-muted-foreground truncate mt-0.5">{p.address}</p>}
-                </div>
-                <Badge
-                  variant="outline"
-                  className={
-                    p.discount_type === "RD"
-                      ? "border-primary/30 text-primary bg-primary/5"
-                      : "border-accent/30 text-accent bg-accent/5"
-                  }
-                >
-                  {p.discount_type}
-                </Badge>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Default</p>
-                  <p className="font-semibold tabular-nums">{p.default_discount}%</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Agreed</p>
-                  <p className="font-semibold tabular-nums">{p.agreed_discount}%</p>
-                </div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => openEdit(p)} className="flex-1">
-                  <Pencil className="h-3.5 w-3.5" /> Edit
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => handleDelete(p)} className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          ))}
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 border-b border-border">
+                <tr>
+                  <th className="text-left py-3 px-4 font-semibold">Name</th>
+                  <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Address</th>
+                  <th className="text-left py-3 px-4 font-semibold">Default %</th>
+                  <th className="text-left py-3 px-4 font-semibold">Agreed %</th>
+                  <th className="text-left py-3 px-4 font-semibold hidden lg:table-cell">Type</th>
+                  <th className="text-right py-3 px-4 font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((p) => (
+                  <tr key={p.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="py-3 px-4 font-medium">
+                      {p.name}
+                      <div className="block md:hidden text-xs text-muted-foreground mt-1">
+                        {p.address ? `${p.address.substring(0, 40)}${p.address.length > 40 ? "…" : ""}` : "—"}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-muted-foreground hidden md:table-cell">
+                      {p.address ? p.address : "—"}
+                    </td>
+                    <td className="py-3 px-4 tabular-nums font-medium">
+                      {p.default_discount}%
+                    </td>
+                    <td className="py-3 px-4 tabular-nums font-medium">
+                      {p.agreed_discount}%
+                    </td>
+                    <td className="py-3 px-4 hidden lg:table-cell">
+                      <Badge
+                        variant="outline"
+                        className={
+                          p.discount_type === "RD"
+                            ? "border-primary/30 text-primary bg-primary/5"
+                            : "border-accent/30 text-accent bg-accent/5"
+                        }
+                      >
+                        {p.discount_type}
+                      </Badge>
+                    </td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => openEdit(p)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleDelete(p)} className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
