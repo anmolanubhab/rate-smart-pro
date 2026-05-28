@@ -96,6 +96,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div className="min-h-screen flex w-full bg-background gradient-mesh">
+      <CommandMenu />
       {/* Global Command Palette Popup Overlay */}
       <CommandMenu open={openCommand} setOpen={setOpenCommand} />
 
