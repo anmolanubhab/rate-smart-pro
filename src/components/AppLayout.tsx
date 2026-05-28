@@ -1,238 +1,152 @@
-import { ReactNode, useState } from "react";
-import { NavLink, useLocation, Navigate } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Calculator,
-  History,
-  User,
-  LogOut,
-  Moon,
-  Sun,
-  Sparkles,
-  Users,
-  ShoppingCart,
-  PlusSquare,
-  Package,
-  Boxes,
-  BarChart3,
-  Search,
-  Settings as SettingsIcon,
-} from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/hooks/useTheme";
+import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { Command } from "cmdk";
+import { Search, Clock, ArrowRight } from "lucide-react";
+import { flatNav } from "@/components/AppLayout";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 
-// CORRECTED IMPORT: Default export ko bina curly braces aur bina extension ke import kiya hai
-import CommandMenu from "@/components/CommandMenu";
+interface CommandMenuProps {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}
 
-type NavItem = { to: string; label: string; icon: any };
-type NavGroup = { label?: string; items: NavItem[] };
+export default function CommandMenu({ open, setOpen }: CommandMenuProps) {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [recentPages, setRecentPages] = useState<{ to: string; label: string }[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-const navGroups: NavGroup[] = [
-  {
-    label: "Overview",
-    items: [
-      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/calculator", label: "RD Calculator", icon: Calculator },
-    ],
-  },
-  {
-    label: "Orders",
-    items: [
-      { to: "/orders", label: "Orders", icon: ShoppingCart },
-      { to: "/orders/new", label: "Create Order", icon: PlusSquare },
-      { to: "/pending", label: "Pending Orders", icon: Boxes },
-      { to: "/dispatch", label: "Dispatch", icon: Package },
-    ],
-  },
-  {
-    label: "Catalog",
-    items: [
-      { to: "/parties", label: "Parties", icon: Users },
-      { to: "/products", label: "Products", icon: Package },
-      { to: "/inventory", label: "Inventory", icon: Boxes },
-    ],
-  },
-  {
-    label: "Insights",
-    items: [
-      { to: "/history", label: "History", icon: History },
-      { to: "/reports", label: "Reports", icon: BarChart3 },
-    ],
-  },
-  {
-    label: "Account",
-    items: [
-      { to: "/profile", label: "Profile", icon: User },
-      { to: "/settings", label: "Settings", icon: SettingsIcon },
-    ],
-  },
-];
+  // Load recently visited items from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("rd_recent_pages");
+    if (saved) {
+      try {
+        setRecentPages(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse recent pages", e);
+      }
+    }
+  }, [open]);
 
-const flatNav = navGroups.flatMap((g) => g.items);
+  // Global Ctrl+K / Cmd+K shortcut toggle ke liye
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setOpen(!open);
+      }
+    };
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, [open, setOpen]);
 
-const mobileNav: NavItem[] = [
-  { to: "/dashboard", label: "Home", icon: LayoutDashboard },
-  { to: "/orders/new", label: "Order", icon: PlusSquare },
-  { to: "/orders", label: "Orders", icon: ShoppingCart },
-  { to: "/calculator", label: "RD", icon: Calculator },
-  { to: "/parties", label: "Parties", icon: Users },
-];
+  // Agar dropdown ke bahar click ho to use close karne ke liye
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
 
-export const AppLayout = ({ children }: { children: ReactNode }) => {
-  const { user, loading, signOut } = useAuth();
-  const { theme, toggle } = useTheme();
-  const location = useLocation();
-  const [openCommand, setOpenCommand] = useState(false);
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, setOpen]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-      </div>
-    );
-  }
+  const handleSelect = (to: string, label: string) => {
+    setOpen(false);
+    setSearch("");
+    
+    const updatedRecents = [
+      { to, label },
+      ...recentPages.filter((item) => item.to !== to),
+    ].slice(0, 3);
+    
+    setRecentPages(updatedRecents);
+    localStorage.setItem("rd_recent_pages", JSON.stringify(updatedRecents));
+    
+    navigate(to);
+  };
 
-  if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
-
+  // CRITICAL FIX: Jab open na ho, tab hum null return nahi karenge balki layout hidden rakhenge
+  // Taaki state events parent element se attach reh sakein.
   return (
-    <div className="min-h-screen flex w-full bg-background gradient-mesh">
-      {/* Global Command Palette Popup Container */}
-      <CommandMenu open={openCommand} setOpen={setOpenCommand} />
-
-      {/* Desktop Sidebar Layout */}
-      <aside className="no-print hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-        <div className="p-6 border-b border-sidebar-border">
-          <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl gradient-primary flex items-center justify-center shadow-glow">
-              <Sparkles className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="font-display font-bold text-base text-white leading-tight">RD Calculator</h1>
-              <p className="text-xs text-sidebar-foreground/60">Pro · Spare Parts</p>
-            </div>
-          </div>
+    <div
+      ref={containerRef}
+      className={cn(
+        "absolute left-3 right-3 top-[105px] z-50 overflow-hidden rounded-xl border border-border bg-card/95 backdrop-blur-md shadow-2xl transition-all duration-200 origin-top",
+        open 
+          ? "opacity-100 scale-100 pointer-events-auto visible" 
+          : "opacity-0 scale-95 pointer-events-none invisible"
+      )}
+    >
+      <Command label="Global Navigation" className="flex flex-col h-full">
+        {/* Dropdown ke andar ka Search Input bar */}
+        <div className="flex items-center gap-3 px-3 border-b border-border bg-transparent">
+          <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-60" />
+          <Command.Input
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Type page name..."
+            className="flex h-10 w-full bg-transparent py-2 text-xs outline-none placeholder:text-muted-foreground/50 text-foreground"
+          />
+          <kbd className="hidden sm:inline-flex h-4 select-none items-center rounded border border-border bg-muted px-1 font-mono text-[9px] text-muted-foreground">
+            ESC
+          </kbd>
         </div>
 
-        {/* Search Pages Input Button Trigger */}
-        <div className="px-3 pt-4 pb-2">
-          <button
-            onClick={() => setOpenCommand(true)}
-            onMouseDown={(e) => {
-              e.preventDefault(); // Mouse se click ya select karte hi instantly dropdown khulega
-              setOpenCommand(true);
-            }}
-            className="flex items-center justify-between w-full px-3 py-2 text-xs rounded-lg border border-sidebar-border/60 bg-sidebar-accent/20 text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 transition-all duration-150 group outline-none"
-          >
-            <div className="flex items-center gap-2">
-              <Search className="h-3.5 w-3.5 stroke-[2.5]" />
-              <span className="font-medium">Search pages...</span>
-            </div>
-            <kbd className="pointer-events-none inline-flex h-4 select-none items-center gap-0.5 rounded border border-sidebar-border bg-sidebar-accent/60 px-1.5 font-mono text-[9px] font-medium text-sidebar-foreground/40 group-hover:text-sidebar-foreground/70">
-              <span className="text-[10px]">⌘</span>K
-            </kbd>
-          </button>
-        </div>
+        <Command.List className="max-h-[240px] overflow-y-auto p-1 space-y-0.5 scrollbar-thin">
+          <Command.Empty className="py-4 text-center text-xs text-muted-foreground">
+            No pages found.
+          </Command.Empty>
 
-        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
-          {navGroups.map((group) => (
-            <div key={group.label} className="space-y-1">
-              {group.label && (
-                <p className="px-3 pt-2 text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
-                  {group.label}
-                </p>
-              )}
-              {group.items.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={to === "/orders"}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-smooth",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-primary shadow-soft"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                    )
-                  }
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-
-        <div className="p-4 border-t border-sidebar-border space-y-2">
-          <Button variant="ghost" size="sm" onClick={toggle} className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent">
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            <span className="ml-2">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-          </Button>
-          <Button variant="ghost" size="sm" onClick={signOut} className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent">
-            <LogOut className="h-4 w-4" />
-            <span className="ml-2">Sign out</span>
-          </Button>
-        </div>
-      </aside>
-
-      {/* Main Content Framework Layout Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile Navbar Header */}
-        <header className="no-print md:hidden flex items-center justify-between p-4 border-b border-border bg-card/80 backdrop-blur sticky top-0 z-30">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-white" />
-            </div>
-            <span className="font-display font-bold">RD Calculator</span>
-          </div>
-          <div className="flex items-center gap-1">
-            {/* Mobile search header icon triggers click & selection instantly */}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => setOpenCommand(true)}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                setOpenCommand(true);
-              }}
-              aria-label="Open search menu"
+          {/* Recent Activity Items */}
+          {recentPages.length > 0 && !search && (
+            <Command.Group
+              heading={
+                <span className="flex items-center gap-1 px-2 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/60 font-bold">
+                  Recent
+                </span>
+              }
             >
-              <Search className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={toggle}>
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-          </div>
-        </header>
+              {recentPages.map((page) => (
+                <Command.Item
+                  key={`recent-${page.to}`}
+                  value={page.label}
+                  onSelect={() => handleSelect(page.to, page.label)}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-foreground/80 cursor-pointer data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground transition-colors"
+                >
+                  <span>{page.label}</span>
+                  <ArrowRight className="h-3 w-3 opacity-40" />
+                </Command.Item>
+              ))}
+              <div className="h-px bg-border my-1" />
+            </Command.Group>
+          )}
 
-        <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-auto">{children}</main>
-
-        {/* Mobile Screen Bottom Sticky Links */}
-        <nav className="no-print md:hidden fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border z-40">
-          <div className="grid grid-cols-5">
-            {mobileNav.map(({ to, label, icon: Icon }) => (
-              <NavLink
+          {/* All Available Dashboard Pages */}
+          <Command.Group
+            heading={
+              <span className="px-2 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/60 font-bold">
+                Pages
+              </span>
+            }
+          >
+            {flatNav.map(({ to, label, icon: Icon }) => (
+              <Command.Item
                 key={to}
-                to={to}
-                end={to === "/orders"}
-                className={({ isActive }) =>
-                  cn(
-                    "flex flex-col items-center gap-1 py-3 text-xs transition-smooth",
-                    isActive ? "text-primary" : "text-muted-foreground"
-                  )
-                }
+                value={label}
+                onSelect={() => handleSelect(to, label)}
+                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs text-foreground/80 cursor-pointer data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground transition-colors"
               >
-                <Icon className="h-5 w-5" />
-                {label}
-              </NavLink>
+                <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="flex-1 truncate">{label}</span>
+              </Command.Item>
             ))}
-          </div>
-        </nav>
-      </div>
+          </Command.Group>
+        </Command.List>
+      </Command>
     </div>
   );
-};
-
-export { flatNav };
+}
