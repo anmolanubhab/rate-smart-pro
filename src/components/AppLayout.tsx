@@ -22,7 +22,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import CommandMenu from "@/components/CommandMenu";
+import { CommandMenu } from "@/components/CommandMenu.tsx"; // Vercel build fix ke liye explicit extension add kiya hai
+
 type NavItem = { to: string; label: string; icon: any };
 type NavGroup = { label?: string; items: NavItem[] };
 
@@ -77,7 +78,6 @@ const mobileNav: NavItem[] = [
   { to: "/parties", label: "Parties", icon: Users },
 ];
 
-// 1. TOP EXPORT: Component ko proper named export ke sath define kiya gaya hai
 export const AppLayout = ({ children }: { children: ReactNode }) => {
   const { user, loading, signOut } = useAuth();
   const { theme, toggle } = useTheme();
@@ -96,8 +96,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div className="min-h-screen flex w-full bg-background gradient-mesh">
-      <CommandMenu />
-      {/* Global Command Palette Popup Overlay */}
+      {/* Global Command Palette Dropdown Popup */}
       <CommandMenu open={openCommand} setOpen={setOpenCommand} />
 
       {/* Desktop Sidebar */}
@@ -114,11 +113,15 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
           </div>
         </div>
 
-        {/* Global Page Search Layout Trigger Input */}
+        {/* Search Input Button Box (Sidebar) */}
         <div className="px-3 pt-4 pb-2">
           <button
             onClick={() => setOpenCommand(true)}
-            className="flex items-center justify-between w-full px-3 py-2 text-xs rounded-lg border border-sidebar-border/60 bg-sidebar-accent/20 text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 transition-all duration-150 group"
+            onMouseDown={(e) => {
+              e.preventDefault(); // Mouse click/select hote hi turant trigger hoga
+              setOpenCommand(true);
+            }}
+            className="flex items-center justify-between w-full px-3 py-2 text-xs rounded-lg border border-sidebar-border/60 bg-sidebar-accent/20 text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 transition-all duration-150 group outline-none"
           >
             <div className="flex items-center gap-2">
               <Search className="h-3.5 w-3.5 stroke-[2.5]" />
@@ -172,9 +175,9 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
         </div>
       </aside>
 
-      {/* Main Content Container Section */}
+      {/* Main Framework View Section */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile Header Structure */}
+        {/* Mobile Header Layout */}
         <header className="no-print md:hidden flex items-center justify-between p-4 border-b border-border bg-card/80 backdrop-blur sticky top-0 z-30">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center">
@@ -183,7 +186,17 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
             <span className="font-display font-bold">RD Calculator</span>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={() => setOpenCommand(true)} aria-label="Open search palette">
+            {/* Mobile icon trigger click and mouse events */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setOpenCommand(true)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setOpenCommand(true);
+              }}
+              aria-label="Open search palette"
+            >
               <Search className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" onClick={toggle}>
@@ -194,7 +207,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
 
         <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-auto">{children}</main>
 
-        {/* Mobile Bottom Bar Nav Links */}
+        {/* Mobile Bottom Navigation Layout */}
         <nav className="no-print md:hidden fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border z-40">
           <div className="grid grid-cols-5">
             {mobileNav.map(({ to, label, icon: Icon }) => (
@@ -220,5 +233,4 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   );
 };
 
-// 2. BOTTOM EXPORT: Pure flat routing array structural reference list exported safely
 export { flatNav };
