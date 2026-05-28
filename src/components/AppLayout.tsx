@@ -22,8 +22,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { CommandMenu } from "@/components/CommandMenu";
-
+import CommandMenu from "@/components/CommandMenu";
 type NavItem = { to: string; label: string; icon: any };
 type NavGroup = { label?: string; items: NavItem[] };
 
