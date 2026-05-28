@@ -2,7 +2,21 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Command } from "cmdk";
 import { Search, Clock, ArrowRight } from "lucide-react";
-import { flatNav } from "@/components/AppLayout";
+const flatNav = [
+  { to: "/dashboard", label: "Dashboard" },
+  { to: "/calculator", label: "RD Calculator" },
+  { to: "/orders", label: "Orders" },
+  { to: "/orders/new", label: "Create Order" },
+  { to: "/pending", label: "Pending Orders" },
+  { to: "/dispatch", label: "Dispatch" },
+  { to: "/parties", label: "Parties" },
+  { to: "/products", label: "Products" },
+  { to: "/inventory", label: "Inventory" },
+  { to: "/history", label: "History" },
+  { to: "/reports", label: "Reports" },
+  { to: "/profile", label: "Profile" },
+  { to: "/settings", label: "Settings" },
+];
 import { cn } from "@/lib/utils";
 
 interface CommandMenuProps {
