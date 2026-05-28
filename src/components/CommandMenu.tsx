@@ -1,60 +1,33 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Command } from "cmdk";
-import {
-  Search,
-  ArrowRight,
-  LayoutDashboard,
-  Calculator,
-  ShoppingCart,
-  PlusSquare,
-  Boxes,
-  Package,
-  Users,
-  BarChart3,
-  History,
-  User,
-  Settings,
-} from "lucide-react";
 
-import { cn } from "@/lib/utils";
-
-const flatNav = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/calculator", label: "RD Calculator", icon: Calculator },
-  { to: "/orders", label: "Orders", icon: ShoppingCart },
-  { to: "/orders/new", label: "Create Order", icon: PlusSquare },
-  { to: "/pending", label: "Pending Orders", icon: Boxes },
-  { to: "/dispatch", label: "Dispatch", icon: Package },
-  { to: "/parties", label: "Parties", icon: Users },
-  { to: "/products", label: "Products", icon: Package },
-  { to: "/inventory", label: "Inventory", icon: Boxes },
-  { to: "/history", label: "History", icon: History },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
-  { to: "/profile", label: "Profile", icon: User },
-  { to: "/settings", label: "Settings", icon: Settings },
+const pages = [
+  { label: "Dashboard", to: "/dashboard" },
+  { label: "RD Calculator", to: "/calculator" },
+  { label: "Orders", to: "/orders" },
+  { label: "Create Order", to: "/orders/new" },
+  { label: "Pending Orders", to: "/pending" },
+  { label: "Dispatch", to: "/dispatch" },
+  { label: "Parties", to: "/parties" },
+  { label: "Products", to: "/products" },
+  { label: "Inventory", to: "/inventory" },
+  { label: "History", to: "/history" },
+  { label: "Reports", to: "/reports" },
+  { label: "Profile", to: "/profile" },
+  { label: "Settings", to: "/settings" },
 ];
 
-interface CommandMenuProps {
-  open: boolean;
-  setOpen: (open: boolean) => void;
-}
-
-export default function CommandMenu({
-  open,
-  setOpen,
-}: CommandMenuProps) {
+export default function CommandMenu() {
   const navigate = useNavigate();
 
-  const [search, setSearch] = useState("");
-
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
-        setOpen(!open);
+        setOpen((prev) => !prev);
       }
 
       if (e.key === "Escape") {
@@ -67,77 +40,79 @@ export default function CommandMenu({
     return () => {
       document.removeEventListener("keydown", down);
     };
-  }, [open, setOpen]);
+  }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
+  const filtered = pages.filter((page) =>
+    page.label.toLowerCase().includes(query.toLowerCase())
+  );
 
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [open, setOpen]);
-
-  const handleSelect = (to: string) => {
-    navigate(to);
-    setOpen(false);
-    setSearch("");
-  };
+  if (!open) return null;
 
   return (
     <div
-      ref={containerRef}
-      className={cn(
-        "fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/40 transition-all",
-        open ? "visible opacity-100" : "invisible opacity-0"
-      )}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.4)",
+        zIndex: 9999,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-start",
+        paddingTop: "100px",
+      }}
     >
-      <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-        <Command className="flex flex-col">
-          <div className="flex items-center gap-2 border-b px-4">
-            <Search className="h-4 w-4 text-muted-foreground" />
+      <div
+        style={{
+          width: "500px",
+          background: "white",
+          borderRadius: "12px",
+          overflow: "hidden",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+        }}
+      >
+        <input
+          autoFocus
+          type="text"
+          placeholder="Search pages..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "16px",
+            border: "none",
+            outline: "none",
+            fontSize: "16px",
+            borderBottom: "1px solid #eee",
+          }}
+        />
 
-            <Command.Input
-              value={search}
-              onValueChange={setSearch}
-              placeholder="Search pages..."
-              className="flex h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-          </div>
-
-          <Command.List className="max-h-[320px] overflow-y-auto p-2">
-            <Command.Empty className="py-6 text-center text-sm text-muted-foreground">
-              No pages found.
-            </Command.Empty>
-
-            <Command.Group heading="Pages">
-              {flatNav.map(({ to, label, icon: Icon }) => (
-                <Command.Item
-                  key={to}
-                  value={label}
-                  onSelect={() => handleSelect(to)}
-                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm cursor-pointer hover:bg-muted transition"
-                >
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-
-                  <span className="flex-1">{label}</span>
-
-                  <ArrowRight className="h-4 w-4 opacity-40" />
-                </Command.Item>
-              ))}
-            </Command.Group>
-          </Command.List>
-        </Command>
+        <div
+          style={{
+            maxHeight: "300px",
+            overflowY: "auto",
+          }}
+        >
+          {filtered.map((page) => (
+            <button
+              key={page.to}
+              onClick={() => {
+                navigate(page.to);
+                setOpen(false);
+              }}
+              style={{
+                width: "100%",
+                padding: "14px 16px",
+                border: "none",
+                background: "white",
+                textAlign: "left",
+                cursor: "pointer",
+                borderBottom: "1px solid #f3f3f3",
+              }}
+            >
+              {page.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
