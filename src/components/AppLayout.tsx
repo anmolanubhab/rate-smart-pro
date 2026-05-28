@@ -22,7 +22,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { CommandMenu } from "@/components/CommandMenu.tsx"; // Vercel build fix ke liye explicit extension add kiya hai
+
+// CORRECTED IMPORT: Default export ko bina curly braces aur bina extension ke import kiya hai
+import CommandMenu from "@/components/CommandMenu";
 
 type NavItem = { to: string; label: string; icon: any };
 type NavGroup = { label?: string; items: NavItem[] };
@@ -96,10 +98,10 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div className="min-h-screen flex w-full bg-background gradient-mesh">
-      {/* Global Command Palette Dropdown Popup */}
+      {/* Global Command Palette Popup Container */}
       <CommandMenu open={openCommand} setOpen={setOpenCommand} />
 
-      {/* Desktop Sidebar */}
+      {/* Desktop Sidebar Layout */}
       <aside className="no-print hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-2.5">
@@ -113,12 +115,12 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
           </div>
         </div>
 
-        {/* Search Input Button Box (Sidebar) */}
+        {/* Search Pages Input Button Trigger */}
         <div className="px-3 pt-4 pb-2">
           <button
             onClick={() => setOpenCommand(true)}
             onMouseDown={(e) => {
-              e.preventDefault(); // Mouse click/select hote hi turant trigger hoga
+              e.preventDefault(); // Mouse se click ya select karte hi instantly dropdown khulega
               setOpenCommand(true);
             }}
             className="flex items-center justify-between w-full px-3 py-2 text-xs rounded-lg border border-sidebar-border/60 bg-sidebar-accent/20 text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/80 transition-all duration-150 group outline-none"
@@ -175,9 +177,9 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
         </div>
       </aside>
 
-      {/* Main Framework View Section */}
+      {/* Main Content Framework Layout Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile Header Layout */}
+        {/* Mobile Navbar Header */}
         <header className="no-print md:hidden flex items-center justify-between p-4 border-b border-border bg-card/80 backdrop-blur sticky top-0 z-30">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center">
@@ -186,7 +188,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
             <span className="font-display font-bold">RD Calculator</span>
           </div>
           <div className="flex items-center gap-1">
-            {/* Mobile icon trigger click and mouse events */}
+            {/* Mobile search header icon triggers click & selection instantly */}
             <Button 
               variant="ghost" 
               size="icon" 
@@ -195,7 +197,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
                 e.preventDefault();
                 setOpenCommand(true);
               }}
-              aria-label="Open search palette"
+              aria-label="Open search menu"
             >
               <Search className="h-4 w-4" />
             </Button>
@@ -207,7 +209,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
 
         <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-auto">{children}</main>
 
-        {/* Mobile Bottom Navigation Layout */}
+        {/* Mobile Screen Bottom Sticky Links */}
         <nav className="no-print md:hidden fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border z-40">
           <div className="grid grid-cols-5">
             {mobileNav.map(({ to, label, icon: Icon }) => (
