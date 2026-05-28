@@ -41,7 +41,6 @@ const navGroups: NavGroup[] = [
       { to: "/orders/new", label: "Create Order", icon: PlusSquare },
       { to: "/pending", label: "Pending Orders", icon: Boxes },
       { to: "/dispatch", label: "Dispatch", icon: Package },
-      { to: "/excel-import", label: "Excel Import", icon: FileSpreadsheet },
     ],
   },
   {
