@@ -1,334 +1,230 @@
-import { ReactNode } from "react";
-import { NavLink, useLocation, Navigate } from "react-router-dom";
+// CommandMenu.tsx - Updated version
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
 import {
   LayoutDashboard,
   Calculator,
-  History,
-  User,
-  LogOut,
-  Moon,
-  Sun,
-  Users,
   ShoppingCart,
   PlusSquare,
-  Package,
   Boxes,
+  Package,
+  Users,
+  History,
   BarChart3,
+  User,
   Settings as SettingsIcon,
   Search,
+  ChevronRight,
 } from "lucide-react";
 
-import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/hooks/useTheme";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+interface CommandMenuProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  triggerRef?: React.RefObject<HTMLElement>;
+}
 
-import CommandMenu from "@/components/CommandMenu";
-import rdProLogo from "/rdpro-logo.png";
+export default function CommandMenu({ open, onOpenChange, triggerRef }: CommandMenuProps) {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
 
-type NavItem = {
-  to: string;
-  label: string;
-  icon: any;
-};
+  // Calculate position when menu opens or window resizes
+  useEffect(() => {
+    if (open && triggerRef?.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
+  }, [open, triggerRef]);
 
-type NavGroup = {
-  label?: string;
-  items: NavItem[];
-};
+  // Update position on scroll/resize
+  useEffect(() => {
+    if (!open) return;
 
-const navGroups: NavGroup[] = [
-  {
-    label: "Overview",
-    items: [
-      {
-        to: "/dashboard",
-        label: "Dashboard",
-        icon: LayoutDashboard,
-      },
-      {
-        to: "/calculator",
-        label: "RD Calculator",
-        icon: Calculator,
-      },
-    ],
-  },
+    const updatePosition = () => {
+      if (triggerRef?.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        setPosition({
+          top: rect.bottom + window.scrollY,
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        });
+      }
+    };
 
-  {
-    label: "Orders",
-    items: [
-      {
-        to: "/orders",
-        label: "Orders",
-        icon: ShoppingCart,
-      },
-      {
-        to: "/orders/new",
-        label: "Create Order",
-        icon: PlusSquare,
-      },
-      {
-        to: "/pending",
-        label: "Pending Orders",
-        icon: Boxes,
-      },
-      {
-        to: "/dispatch",
-        label: "Dispatch",
-        icon: Package,
-      },
-    ],
-  },
+    window.addEventListener("scroll", updatePosition);
+    window.addEventListener("resize", updatePosition);
+    
+    return () => {
+      window.removeEventListener("scroll", updatePosition);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [open, triggerRef]);
 
-  {
-    label: "Catalog",
-    items: [
-      {
-        to: "/parties",
-        label: "Parties",
-        icon: Users,
-      },
-      {
-        to: "/products",
-        label: "Products",
-        icon: Package,
-      },
-      {
-        to: "/inventory",
-        label: "Inventory",
-        icon: Boxes,
-      },
-    ],
-  },
-
-  {
-    label: "Insights",
-    items: [
-      {
-        to: "/history",
-        label: "History",
-        icon: History,
-      },
-      {
-        to: "/reports",
-        label: "Reports",
-        icon: BarChart3,
-      },
-    ],
-  },
-
-  {
-    label: "Account",
-    items: [
-      {
-        to: "/profile",
-        label: "Profile",
-        icon: User,
-      },
-      {
-        to: "/settings",
-        label: "Settings",
-        icon: SettingsIcon,
-      },
-    ],
-  },
-];
-
-export default function AppLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const { user, loading, signOut } = useAuth();
-  const { theme, toggle } = useTheme();
-  const location = useLocation();
-
-  // Function to trigger CommandMenu - Using document for reliable event handling
-  const triggerCommandMenu = () => {
-    const event = new KeyboardEvent("keydown", {
-      key: "k",
-      ctrlKey: true,
-      bubbles: true,
-      cancelable: true,
-    });
-    document.dispatchEvent(event);
+  const handleSelect = (path: string) => {
+    navigate(path);
+    onOpenChange(false);
+    setSearch("");
   };
 
-  // Detect platform for correct keyboard shortcut display
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-  const shortcutKey = isMac ? "⌘K" : "Ctrl+K";
+  const quickActions = [
+    {
+      label: "Create New Order",
+      path: "/orders/new",
+      icon: PlusSquare,
+      shortcut: "⌘N",
+    },
+    {
+      label: "View Dashboard",
+      path: "/dashboard",
+      icon: LayoutDashboard,
+      shortcut: "⌘D",
+    },
+    {
+      label: "Open Calculator",
+      path: "/calculator",
+      icon: Calculator,
+      shortcut: "⌘R",
+    },
+    {
+      label: "Check Inventory",
+      path: "/inventory",
+      icon: Boxes,
+      shortcut: "⌘I",
+    },
+  ];
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        Loading...
-      </div>
-    );
-  }
+  const navigationItems = [
+    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard, group: "Main Navigation" },
+    { label: "RD Calculator", path: "/calculator", icon: Calculator, group: "Main Navigation" },
+    { label: "Orders", path: "/orders", icon: ShoppingCart, group: "Orders" },
+    { label: "Create Order", path: "/orders/new", icon: PlusSquare, group: "Orders" },
+    { label: "Pending Orders", path: "/pending", icon: Boxes, group: "Orders" },
+    { label: "Dispatch", path: "/dispatch", icon: Package, group: "Orders" },
+    { label: "Parties", path: "/parties", icon: Users, group: "Catalog" },
+    { label: "Products", path: "/products", icon: Package, group: "Catalog" },
+    { label: "Inventory", path: "/inventory", icon: Boxes, group: "Catalog" },
+    { label: "History", path: "/history", icon: History, group: "Insights" },
+    { label: "Reports", path: "/reports", icon: BarChart3, group: "Insights" },
+    { label: "Profile", path: "/profile", icon: User, group: "Account" },
+    { label: "Settings", path: "/settings", icon: SettingsIcon, group: "Account" },
+  ];
 
-  if (!user) {
-    return (
-      <Navigate
-        to="/auth"
-        state={{ from: location }}
-        replace
-      />
-    );
-  }
+  // Group navigation items by category
+  const groupedItems = navigationItems.reduce((acc, item) => {
+    if (!acc[item.group]) acc[item.group] = [];
+    acc[item.group].push(item);
+    return acc;
+  }, {} as Record<string, typeof navigationItems>);
+
+  if (!open) return null;
 
   return (
-    <div className="min-h-screen flex w-full bg-background gradient-mesh">
-      <CommandMenu />
-
-      <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-        {/* Logo Section with Image and Hover Effect */}
-        <div className="p-6 border-b border-sidebar-border">
-          <div className="flex items-center gap-3 group cursor-default">
-            {/* Logo Image */}
-            <div className="h-10 w-10 flex items-center justify-center transition-transform duration-200 group-hover:scale-105">
-              <img
-                src={rdProLogo}
-                alt="RD Pro"
-                className="h-10 w-10 object-contain"
-              />
-            </div>
-            
-            {/* Text Section with Hover Effect */}
-            <div>
-              <h1 className="font-bold text-white text-lg tracking-tight transition-colors duration-200 group-hover:text-primary">
-                RD Pro
-              </h1>
-              
-              {/* Hover Effect: Shows full name on hover, SPMS normally */}
-              <div className="relative">
-                <p className="text-[11px] text-sidebar-foreground/50 leading-tight transition-all duration-300 group-hover:opacity-0 group-hover:translate-y-1">
-                  SPMS
-                </p>
-                <p className="text-[11px] text-primary/80 leading-tight absolute top-0 left-0 opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-0 whitespace-nowrap">
-                  Sale Purchase<br />Management System
-                </p>
-              </div>
-            </div>
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40"
+        onClick={() => onOpenChange(false)}
+      />
+      
+      {/* Dropdown Command Menu */}
+      <div
+        className="fixed z-50 animate-in fade-in zoom-in-95 duration-200"
+        style={{
+          top: position.top + 4,
+          left: position.left,
+          width: position.width,
+          minWidth: "280px",
+        }}
+      >
+        <Command
+          className="rounded-lg border shadow-xl bg-popover text-popover-foreground overflow-hidden"
+          shouldFilter={false}
+        >
+          <div className="flex items-center border-b px-3">
+            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+            <CommandInput
+              placeholder="Search pages and actions..."
+              value={search}
+              onValueChange={setSearch}
+              className="flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            />
           </div>
-        </div>
 
-        {/* 🔍 Vercel-Style Find Button - Opens Command Menu */}
-        <div className="px-4 py-3">
-          <button
-            onClick={triggerCommandMenu}
-            className="
-              w-full
-              flex
-              items-center
-              justify-between
-              rounded-lg
-              border
-              border-sidebar-border
-              bg-sidebar-accent/10
-              px-3
-              py-2
-              text-sm
-              text-sidebar-foreground/70
-              hover:bg-sidebar-accent/20
-              hover:text-sidebar-foreground
-              transition-all
-              duration-200
-              group
-            "
-          >
-            <span className="flex items-center gap-2">
-              <Search className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-              <span>Find...</span>
-            </span>
-            <kbd className="
-              hidden
-              sm:inline-flex
-              items-center
-              rounded
-              border
-              border-sidebar-border
-              bg-sidebar-background
-              px-1.5
-              py-0.5
-              text-xs
-              font-mono
-              text-sidebar-foreground/60
-              group-hover:text-sidebar-foreground
-              group-hover:border-sidebar-foreground/20
-              transition-all
-              duration-200
-            ">
-              {shortcutKey}
-            </kbd>
-          </button>
-        </div>
+          <CommandList className="max-h-[400px] overflow-y-auto">
+            <CommandEmpty>No results found.</CommandEmpty>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
-          {navGroups.map((group) => (
-            <div key={group.label}>
-              {group.label && (
-                <p className="px-3 py-2 text-[10px] uppercase text-sidebar-foreground/40 tracking-wider">
-                  {group.label}
-                </p>
-              )}
-              {group.items.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
-                    )
-                  }
-                >
-                  <Icon className={cn(
-                    "h-4 w-4 transition-transform duration-200",
-                    "group-hover:scale-110"
-                  )} />
-                  {label}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-
-        {/* Footer Actions */}
-        <div className="p-4 border-t border-sidebar-border space-y-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggle}
-            className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground transition-all duration-200 hover:translate-x-0.5"
-          >
-            {theme === "dark" ? (
-              <Sun className="h-4 w-4 transition-transform duration-200 group-hover:rotate-90" />
-            ) : (
-              <Moon className="h-4 w-4 transition-transform duration-200 group-hover:rotate-12" />
+            {/* Quick Actions - only show when search is empty */}
+            {!search && (
+              <>
+                <CommandGroup heading="Quick Actions">
+                  {quickActions.map((action) => (
+                    <CommandItem
+                      key={action.label}
+                      onSelect={() => handleSelect(action.path)}
+                      className="flex items-center justify-between cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <action.icon className="h-4 w-4" />
+                        <span>{action.label}</span>
+                      </div>
+                      {action.shortcut && (
+                        <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+                          {action.shortcut}
+                        </kbd>
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+                <CommandSeparator />
+              </>
             )}
-            <span className="ml-2">
-              {theme === "dark" ? "Light mode" : "Dark mode"}
-            </span>
-          </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={signOut}
-            className="w-full justify-start text-sidebar-foreground/70 hover:text-red-400 transition-all duration-200 hover:translate-x-0.5"
-          >
-            <LogOut className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-            <span className="ml-2">Sign out</span>
-          </Button>
-        </div>
-      </aside>
-
-      <main className="flex-1 p-4 md:p-8 overflow-auto">
-        {children}
-      </main>
-    </div>
+            {/* Filtered Navigation Items */}
+            {Object.entries(groupedItems).map(([group, items]) => {
+              const filteredItems = items.filter(item =>
+                search === "" ||
+                item.label.toLowerCase().includes(search.toLowerCase()) ||
+                (item.group && item.group.toLowerCase().includes(search.toLowerCase()))
+              );
+              
+              if (filteredItems.length === 0) return null;
+              
+              return (
+                <CommandGroup key={group} heading={group}>
+                  {filteredItems.map((item) => (
+                    <CommandItem
+                      key={item.label}
+                      onSelect={() => handleSelect(item.path)}
+                      className="cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-2">
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </div>
+                        <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              );
+            })}
+          </CommandList>
+        </Command>
+      </div>
+    </>
   );
 }
