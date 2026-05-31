@@ -1,4 +1,4 @@
-// CommandMenu.tsx - Overlay/Expand on Find box
+// CommandMenu.tsx - Matching sidebar colors
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -155,7 +155,7 @@ export default function CommandMenu({
         }}
       />
       
-      {/* Overlay Command Menu - Exactly on top of Find box */}
+      {/* Overlay Command Menu - Matching sidebar colors */}
       <div
         className="fixed z-50 animate-in fade-in duration-150"
         style={{
@@ -165,26 +165,37 @@ export default function CommandMenu({
         }}
       >
         <Command
-          className="rounded-lg border shadow-xl bg-popover text-popover-foreground overflow-hidden"
+          className="rounded-lg shadow-xl overflow-hidden"
+          style={{
+            backgroundColor: "hsl(var(--sidebar))",
+            borderColor: "hsl(var(--sidebar-border))",
+            color: "hsl(var(--sidebar-foreground))",
+          }}
           shouldFilter={false}
         >
-          {/* Search input - blends with Find box */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b bg-sidebar-accent/5">
-            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+          {/* Search input - matches sidebar button style */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
+            <Search className="h-4 w-4 shrink-0" style={{ color: "hsl(var(--sidebar-foreground) / 0.5)" }} />
             <CommandInput
               ref={inputRef}
               placeholder="Search pages and actions..."
               value={searchValue}
               onValueChange={onSearchChange}
               className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              style={{ color: "hsl(var(--sidebar-foreground))" }}
             />
-            <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono text-muted-foreground bg-background">
+            <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono" 
+              style={{ 
+                borderColor: "hsl(var(--sidebar-border))",
+                color: "hsl(var(--sidebar-foreground) / 0.6)",
+                backgroundColor: "hsl(var(--sidebar-background))"
+              }}>
               ESC
             </kbd>
           </div>
 
           <CommandList className="max-h-[400px] overflow-y-auto">
-            <CommandEmpty className="py-6 text-center text-sm">
+            <CommandEmpty className="py-6 text-center text-sm" style={{ color: "hsl(var(--sidebar-foreground) / 0.6)" }}>
               No results found.
             </CommandEmpty>
 
@@ -196,21 +207,32 @@ export default function CommandMenu({
                     <CommandItem
                       key={action.label}
                       onSelect={() => handleSelect(action.path)}
-                      className="flex items-center justify-between cursor-pointer"
+                      className="flex items-center justify-between cursor-pointer transition-colors duration-200"
+                      style={{ color: "hsl(var(--sidebar-foreground))" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "hsl(var(--sidebar-accent) / 0.5)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
                     >
                       <div className="flex items-center gap-2">
-                        <action.icon className="h-4 w-4" />
+                        <action.icon className="h-4 w-4" style={{ color: "hsl(var(--sidebar-foreground) / 0.7)" }} />
                         <span>{action.label}</span>
                       </div>
                       {action.shortcut && (
-                        <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+                        <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono"
+                          style={{ 
+                            borderColor: "hsl(var(--sidebar-border))",
+                            color: "hsl(var(--sidebar-foreground) / 0.5)"
+                          }}>
                           {action.shortcut}
                         </kbd>
                       )}
                     </CommandItem>
                   ))}
                 </CommandGroup>
-                <CommandSeparator />
+                <CommandSeparator style={{ backgroundColor: "hsl(var(--sidebar-border))" }} />
               </>
             )}
 
@@ -230,11 +252,18 @@ export default function CommandMenu({
                     <CommandItem
                       key={item.label}
                       onSelect={() => handleSelect(item.path)}
-                      className="cursor-pointer group"
+                      className="cursor-pointer group transition-colors duration-200"
+                      style={{ color: "hsl(var(--sidebar-foreground))" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "hsl(var(--sidebar-accent) / 0.5)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
                     >
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-2">
-                          <item.icon className="h-4 w-4" />
+                          <item.icon className="h-4 w-4" style={{ color: "hsl(var(--sidebar-foreground) / 0.7)" }} />
                           <span>{item.label}</span>
                         </div>
                         <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
