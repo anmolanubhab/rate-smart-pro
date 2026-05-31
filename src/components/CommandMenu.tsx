@@ -1,4 +1,4 @@
-// CommandMenu.tsx - Final Fixed Version (Syntax OK)
+// CommandMenu.tsx - Popup BELOW Find button with SOLID BLACK background
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -32,14 +32,14 @@ export default function CommandMenu({
   onSearchChange 
 }: CommandMenuProps) {
   const navigate = useNavigate();
-  const [position, setPosition] = useState({ bottom: 0, left: 0, width: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
 
-  // Calculate position to open ABOVE the Find button
+  // Calculate position to open BELOW the Find button
   useEffect(() => {
     if (open && triggerRef?.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       setPosition({
-        bottom: window.innerHeight - rect.top + window.scrollY + 8,
+        top: rect.bottom + window.scrollY + 4, // 4px gap below Find button
         left: rect.left + window.scrollX,
         width: rect.width,
       });
@@ -54,7 +54,7 @@ export default function CommandMenu({
       if (triggerRef?.current) {
         const rect = triggerRef.current.getBoundingClientRect();
         setPosition({
-          bottom: window.innerHeight - rect.top + window.scrollY + 8,
+          top: rect.bottom + window.scrollY + 4,
           left: rect.left + window.scrollX,
           width: rect.width,
         });
@@ -158,27 +158,27 @@ export default function CommandMenu({
         }}
       />
       
-      {/* Popup - Positioned ABOVE the Find button */}
+      {/* Popup - Positioned BELOW the Find button with SOLID BLACK background */}
       <div
-        className="fixed z-[9999] animate-in fade-in slide-in-from-bottom-2 duration-200"
+        className="fixed z-[9999] animate-in fade-in slide-in-from-top-2 duration-200"
         style={{
-          bottom: position.bottom,
+          top: position.top,
           left: position.left,
           width: position.width,
         }}
       >
         <div
-          className="rounded-lg shadow-xl overflow-hidden"
+          className="rounded-lg shadow-2xl overflow-hidden"
           style={{
-            backgroundColor: "hsl(var(--sidebar))",
-            border: "1px solid hsl(var(--sidebar-border))",
+            backgroundColor: "#000000", // SOLID BLACK
+            border: "1px solid #27272a",
           }}
         >
           {/* Results */}
           <div 
             className="max-h-[400px] overflow-y-auto"
             style={{ 
-              backgroundColor: "hsl(var(--sidebar))",
+              backgroundColor: "#000000", // SOLID BLACK
             }}
           >
             {/* Show quick actions only when no search */}
@@ -188,7 +188,7 @@ export default function CommandMenu({
                   <div 
                     className="text-xs font-semibold mb-2 px-2"
                     style={{ 
-                      color: "hsl(var(--sidebar-foreground) / 0.5)",
+                      color: "#a1a1aa",
                       letterSpacing: "0.05em",
                     }}
                   >
@@ -199,23 +199,23 @@ export default function CommandMenu({
                       key={action.label}
                       onClick={() => handleSelect(action.path)}
                       className="flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors duration-150"
-                      style={{ color: "hsl(var(--sidebar-foreground))" }}
+                      style={{ color: "#f4f4f5" }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = "hsl(var(--sidebar-accent) / 0.5)";
+                        e.currentTarget.style.backgroundColor = "#27272a";
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.backgroundColor = "transparent";
                       }}
                     >
                       <div className="flex items-center gap-2">
-                        <action.icon className="h-4 w-4" style={{ color: "hsl(var(--sidebar-foreground) / 0.7)" }} />
+                        <action.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
                         <span className="text-sm">{action.label}</span>
                       </div>
                       {action.shortcut && (
                         <kbd className="hidden sm:inline-flex items-center rounded px-1.5 py-0.5 text-xs font-mono"
                           style={{ 
-                            border: "1px solid hsl(var(--sidebar-border))",
-                            color: "hsl(var(--sidebar-foreground) / 0.5)",
+                            border: "1px solid #3f3f46",
+                            color: "#a1a1aa",
                             backgroundColor: "transparent",
                           }}>
                           {action.shortcut}
@@ -224,13 +224,13 @@ export default function CommandMenu({
                     </div>
                   ))}
                 </div>
-                <div style={{ height: "1px", backgroundColor: "hsl(var(--sidebar-border))", margin: "4px 0" }} />
+                <div style={{ height: "1px", backgroundColor: "#27272a", margin: "4px 0" }} />
               </>
             )}
 
             {/* Search Results */}
             {searchValue && !hasResults && (
-              <div className="py-6 text-center text-sm" style={{ color: "hsl(var(--sidebar-foreground) / 0.6)" }}>
+              <div className="py-6 text-center text-sm" style={{ color: "#a1a1aa" }}>
                 No results found for "{searchValue}"
               </div>
             )}
@@ -241,7 +241,7 @@ export default function CommandMenu({
                 <div 
                   className="text-xs font-semibold mb-2 px-2"
                   style={{ 
-                    color: "hsl(var(--sidebar-foreground) / 0.5)",
+                    color: "#a1a1aa",
                     letterSpacing: "0.05em",
                   }}
                 >
@@ -252,16 +252,16 @@ export default function CommandMenu({
                     key={item.label}
                     onClick={() => handleSelect(item.path)}
                     className="flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors duration-150 group"
-                    style={{ color: "hsl(var(--sidebar-foreground))" }}
+                    style={{ color: "#f4f4f5" }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "hsl(var(--sidebar-accent) / 0.5)";
+                      e.currentTarget.style.backgroundColor = "#27272a";
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.backgroundColor = "transparent";
                     }}
                   >
                     <div className="flex items-center gap-2">
-                      <item.icon className="h-4 w-4" style={{ color: "hsl(var(--sidebar-foreground) / 0.7)" }} />
+                      <item.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
                       <span className="text-sm">{item.label}</span>
                     </div>
                     <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
