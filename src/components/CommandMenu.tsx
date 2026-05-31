@@ -1,15 +1,6 @@
-// CommandMenu.tsx - Updated version (Popup ABOVE the search box)
+// CommandMenu.tsx - Final Fixed Version (Syntax OK)
 import { useEffect, useState } from "react";
-import { useNavigate } useNavigate } from "react-router-dom";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
+import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Calculator,
@@ -43,12 +34,12 @@ export default function CommandMenu({
   const navigate = useNavigate();
   const [position, setPosition] = useState({ bottom: 0, left: 0, width: 0 });
 
-  // Calculate position when menu opens or window resizes (ABOVE the trigger)
+  // Calculate position to open ABOVE the Find button
   useEffect(() => {
     if (open && triggerRef?.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       setPosition({
-        bottom: window.innerHeight - rect.top + window.scrollY,
+        bottom: window.innerHeight - rect.top + window.scrollY + 8,
         left: rect.left + window.scrollX,
         width: rect.width,
       });
@@ -63,7 +54,7 @@ export default function CommandMenu({
       if (triggerRef?.current) {
         const rect = triggerRef.current.getBoundingClientRect();
         setPosition({
-          bottom: window.innerHeight - rect.top + window.scrollY,
+          bottom: window.innerHeight - rect.top + window.scrollY + 8,
           left: rect.left + window.scrollX,
           width: rect.width,
         });
@@ -82,7 +73,7 @@ export default function CommandMenu({
   const handleSelect = (path: string) => {
     navigate(path);
     onOpenChange(false);
-    onSearchChange(""); // Clear search when selecting
+    onSearchChange("");
   };
 
   const quickActions = [
@@ -128,110 +119,158 @@ export default function CommandMenu({
     { label: "Settings", path: "/settings", icon: SettingsIcon, group: "Account" },
   ];
 
-  // Group navigation items by category
-  const groupedItems = navigationItems.reduce((acc, item) => {
-    if (!acc[item.group]) acc[item.group] = [];
-    acc[item.group].push(item);
-    return acc;
-  }, {} as Record<string, typeof navigationItems>);
+  // Filter navigation items based on search
+  const getFilteredItems = () => {
+    if (!searchValue) return [];
+    
+    return navigationItems.filter(item =>
+      item.label.toLowerCase().includes(searchValue.toLowerCase()) ||
+      item.group.toLowerCase().includes(searchValue.toLowerCase())
+    );
+  };
+
+  // Group filtered items by category
+  const getGroupedFilteredItems = () => {
+    const filtered = getFilteredItems();
+    const grouped: Record<string, typeof navigationItems> = {};
+    
+    filtered.forEach(item => {
+      if (!grouped[item.group]) grouped[item.group] = [];
+      grouped[item.group].push(item);
+    });
+    
+    return grouped;
+  };
 
   if (!open) return null;
+
+  const filteredItems = getGroupedFilteredItems();
+  const hasResults = Object.keys(filteredItems).length > 0;
 
   return (
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40"
+        className="fixed inset-0 z-[9998]"
         onClick={() => {
           onOpenChange(false);
           onSearchChange("");
         }}
       />
       
-      {/* Dropdown Command Menu - Positioned ABOVE the search box */}
+      {/* Popup - Positioned ABOVE the Find button */}
       <div
-        className="fixed z-50 animate-in fade-in zoom-in-95 duration-200"
+        className="fixed z-[9999] animate-in fade-in slide-in-from-bottom-2 duration-200"
         style={{
-          bottom: position.bottom + 8, // 8px gap from the top of search box
+          bottom: position.bottom,
           left: position.left,
           width: position.width,
-          minWidth: "280px",
-          maxHeight: "500px",
         }}
       >
-        <Command
-          className="rounded-lg border shadow-xl bg-popover text-popover-foreground overflow-hidden"
-          shouldFilter={false}
+        <div
+          className="rounded-lg shadow-xl overflow-hidden"
+          style={{
+            backgroundColor: "hsl(var(--sidebar))",
+            border: "1px solid hsl(var(--sidebar-border))",
+          }}
         >
-          {/* NO search icon here - removed completely */}
-          <CommandInput
-            placeholder="Search pages and actions..."
-            value={searchValue}
-            onValueChange={onSearchChange}
-            className="h-10 border-b rounded-none px-3 text-sm focus:outline-none focus:ring-0"
-          />
-
-          <CommandList className="max-h-[400px] overflow-y-auto">
-            <CommandEmpty>No results found.</CommandEmpty>
-
-            {/* Quick Actions - only show when search is empty */}
+          {/* Results */}
+          <div 
+            className="max-h-[400px] overflow-y-auto"
+            style={{ 
+              backgroundColor: "hsl(var(--sidebar))",
+            }}
+          >
+            {/* Show quick actions only when no search */}
             {!searchValue && (
               <>
-                <CommandGroup heading="Quick Actions">
+                <div style={{ padding: "8px 12px" }}>
+                  <div 
+                    className="text-xs font-semibold mb-2 px-2"
+                    style={{ 
+                      color: "hsl(var(--sidebar-foreground) / 0.5)",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    QUICK ACTIONS
+                  </div>
                   {quickActions.map((action) => (
-                    <CommandItem
+                    <div
                       key={action.label}
-                      onSelect={() => handleSelect(action.path)}
-                      className="flex items-center justify-between cursor-pointer"
+                      onClick={() => handleSelect(action.path)}
+                      className="flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors duration-150"
+                      style={{ color: "hsl(var(--sidebar-foreground))" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "hsl(var(--sidebar-accent) / 0.5)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
                     >
                       <div className="flex items-center gap-2">
-                        <action.icon className="h-4 w-4" />
-                        <span>{action.label}</span>
+                        <action.icon className="h-4 w-4" style={{ color: "hsl(var(--sidebar-foreground) / 0.7)" }} />
+                        <span className="text-sm">{action.label}</span>
                       </div>
                       {action.shortcut && (
-                        <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+                        <kbd className="hidden sm:inline-flex items-center rounded px-1.5 py-0.5 text-xs font-mono"
+                          style={{ 
+                            border: "1px solid hsl(var(--sidebar-border))",
+                            color: "hsl(var(--sidebar-foreground) / 0.5)",
+                            backgroundColor: "transparent",
+                          }}>
                           {action.shortcut}
                         </kbd>
                       )}
-                    </CommandItem>
+                    </div>
                   ))}
-                </CommandGroup>
-                <CommandSeparator />
+                </div>
+                <div style={{ height: "1px", backgroundColor: "hsl(var(--sidebar-border))", margin: "4px 0" }} />
               </>
             )}
 
-            {/* Filtered Navigation Items */}
-            {Object.entries(groupedItems).map(([group, items]) => {
-              const filteredItems = items.filter(item =>
-                searchValue === "" ||
-                item.label.toLowerCase().includes(searchValue.toLowerCase()) ||
-                (item.group && item.group.toLowerCase().includes(searchValue.toLowerCase()))
-              );
-              
-              if (filteredItems.length === 0) return null;
-              
-              return (
-                <CommandGroup key={group} heading={group}>
-                  {filteredItems.map((item) => (
-                    <CommandItem
-                      key={item.label}
-                      onSelect={() => handleSelect(item.path)}
-                      className="cursor-pointer group"
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2">
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.label}</span>
-                        </div>
-                        <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              );
-            })}
-          </CommandList>
-        </Command>
+            {/* Search Results */}
+            {searchValue && !hasResults && (
+              <div className="py-6 text-center text-sm" style={{ color: "hsl(var(--sidebar-foreground) / 0.6)" }}>
+                No results found for "{searchValue}"
+              </div>
+            )}
+
+            {/* Navigation Items - Filtered */}
+            {Object.entries(filteredItems).map(([group, items]) => (
+              <div key={group} style={{ padding: "8px 12px" }}>
+                <div 
+                  className="text-xs font-semibold mb-2 px-2"
+                  style={{ 
+                    color: "hsl(var(--sidebar-foreground) / 0.5)",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  {group.toUpperCase()}
+                </div>
+                {items.map((item) => (
+                  <div
+                    key={item.label}
+                    onClick={() => handleSelect(item.path)}
+                    className="flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors duration-150 group"
+                    style={{ color: "hsl(var(--sidebar-foreground))" }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "hsl(var(--sidebar-accent) / 0.5)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <item.icon className="h-4 w-4" style={{ color: "hsl(var(--sidebar-foreground) / 0.7)" }} />
+                      <span className="text-sm">{item.label}</span>
+                    </div>
+                    <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </>
   );
