@@ -1,4 +1,4 @@
-// AppLayout.tsx - Updated with search state management
+// AppLayout.tsx - Complete updated version
 import { ReactNode, useRef, useState, useEffect } from "react";
 import { NavLink, useLocation, Navigate } from "react-router-dom";
 import {
@@ -142,7 +142,6 @@ export default function AppLayout({
   
   // Command menu state and refs
   const searchButtonRef = useRef<HTMLButtonElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
 
@@ -154,7 +153,6 @@ export default function AppLayout({
         e.preventDefault();
         setCommandMenuOpen(true);
         setSearchValue("");
-        // Focus will be handled by the CommandInput auto-focus
       }
       // Close on Escape
       if (e.key === "Escape" && commandMenuOpen) {
@@ -165,15 +163,6 @@ export default function AppLayout({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [commandMenuOpen]);
-
-  // Auto-focus search input when command menu opens
-  useEffect(() => {
-    if (commandMenuOpen && searchInputRef.current) {
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 50);
-    }
   }, [commandMenuOpen]);
 
   // Detect platform for correct keyboard shortcut display
@@ -199,8 +188,8 @@ export default function AppLayout({
   }
 
   return (
-    <div className="min-h-screen flex w-full bg-background gradient-mesh">
-      {/* Command Menu Dropdown - Opens ABOVE the search box */}
+    <div className="min-h-screen flex w-full bg-background gradient-mesh relative">
+      {/* Command Menu Dropdown - Rendered at root level */}
       <CommandMenu 
         open={commandMenuOpen} 
         onOpenChange={setCommandMenuOpen}
@@ -209,7 +198,7 @@ export default function AppLayout({
         onSearchChange={setSearchValue}
       />
 
-      <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
+      <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border relative z-10">
         {/* Logo Section with Image and Hover Effect */}
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-3 group cursor-default">
@@ -241,7 +230,7 @@ export default function AppLayout({
           </div>
         </div>
 
-        {/* 🔍 Vercel-Style Find Button - The ONLY search box */}
+        {/* 🔍 Vercel-Style Find Button */}
         <div className="px-4 py-3">
           <button
             ref={searchButtonRef}
@@ -360,7 +349,7 @@ export default function AppLayout({
         </div>
       </aside>
 
-      <main className="flex-1 p-4 md:p-8 overflow-auto">
+      <main className="flex-1 p-4 md:p-8 overflow-auto relative z-0">
         {children}
       </main>
     </div>
