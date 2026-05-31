@@ -1,5 +1,5 @@
-// CommandMenu.tsx - Popup BELOW Find button with SOLID BLACK background
-import { useEffect, useState } from "react";
+// CommandMenu.tsx - With Scroll and Focus
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -33,18 +33,79 @@ export default function CommandMenu({
 }: CommandMenuProps) {
   const navigate = useNavigate();
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const itemsRef = useRef<(HTMLDivElement | null)[]>([]);
+  
+  // Get all menu items for keyboard navigation
+  const getAllItems = () => {
+    const items: { label: string; path: string; icon: any; shortcut?: string }[] = [];
+    
+    if (!searchValue) {
+      items.push(...quickActions);
+    }
+    
+    const filtered = getFilteredItems();
+    items.push(...filtered);
+    
+    return items;
+  };
 
   // Calculate position to open BELOW the Find button
   useEffect(() => {
     if (open && triggerRef?.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       setPosition({
-        top: rect.bottom + window.scrollY + 4, // 4px gap below Find button
+        top: rect.bottom + window.scrollY + 4,
         left: rect.left + window.scrollX,
         width: rect.width,
       });
+      
+      // Reset selected index when opening
+      setSelectedIndex(-1);
     }
   }, [open, triggerRef]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const items = getAllItems();
+      
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          setSelectedIndex(prev => 
+            prev < items.length - 1 ? prev + 1 : prev
+          );
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setSelectedIndex(prev => prev > 0 ? prev - 1 : -1);
+          break;
+        case 'Enter':
+          e.preventDefault();
+          if (selectedIndex >= 0 && selectedIndex < items.length) {
+            const item = items[selectedIndex];
+            handleSelect('path' in item ? item.path : item.path);
+          }
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, selectedIndex, searchValue]);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    if (selectedIndex >= 0 && itemsRef.current[selectedIndex]) {
+      itemsRef.current[selectedIndex]?.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth',
+      });
+    }
+  }, [selectedIndex]);
 
   // Update position on scroll/resize
   useEffect(() => {
@@ -74,6 +135,7 @@ export default function CommandMenu({
     navigate(path);
     onOpenChange(false);
     onSearchChange("");
+    setSelectedIndex(-1);
   };
 
   const quickActions = [
@@ -146,6 +208,9 @@ export default function CommandMenu({
 
   const filteredItems = getGroupedFilteredItems();
   const hasResults = Object.keys(filteredItems).length > 0;
+  
+  // Build flat list for keyboard navigation
+  let itemCounter = 0;
 
   return (
     <>
@@ -158,7 +223,7 @@ export default function CommandMenu({
         }}
       />
       
-      {/* Popup - Positioned BELOW the Find button with SOLID BLACK background */}
+      {/* Popup - Positioned BELOW Find button */}
       <div
         className="fixed z-[9999] animate-in fade-in slide-in-from-top-2 duration-200"
         style={{
@@ -170,18 +235,19 @@ export default function CommandMenu({
         <div
           className="rounded-lg shadow-2xl overflow-hidden"
           style={{
-            backgroundColor: "#000000", // SOLID BLACK
+            backgroundColor: "#000000",
             border: "1px solid #27272a",
           }}
         >
-          {/* Results */}
+          {/* Scrollable Results */}
           <div 
-            className="max-h-[400px] overflow-y-auto"
+            className="overflow-y-auto"
             style={{ 
-              backgroundColor: "#000000", // SOLID BLACK
+              backgroundColor: "#000000",
+              maxHeight: "500px",
             }}
           >
-            {/* Show quick actions only when no search */}
+            {/* Quick Actions */}
             {!searchValue && (
               <>
                 <div style={{ padding: "8px 12px" }}>
@@ -194,41 +260,54 @@ export default function CommandMenu({
                   >
                     QUICK ACTIONS
                   </div>
-                  {quickActions.map((action) => (
-                    <div
-                      key={action.label}
-                      onClick={() => handleSelect(action.path)}
-                      className="flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors duration-150"
-                      style={{ color: "#f4f4f5" }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = "#27272a";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = "transparent";
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <action.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                        <span className="text-sm">{action.label}</span>
+                  {quickActions.map((action, idx) => {
+                    const isSelected = selectedIndex === itemCounter;
+                    const ref = (el: HTMLDivElement | null) => {
+                      itemsRef.current[itemCounter] = el;
+                    };
+                    itemCounter++;
+                    return (
+                      <div
+                        key={action.label}
+                        ref={ref}
+                        onClick={() => handleSelect(action.path)}
+                        className="flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors duration-150"
+                        style={{ 
+                          color: "#f4f4f5",
+                          backgroundColor: isSelected ? "#27272a" : "transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#27272a";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <action.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
+                          <span className="text-sm">{action.label}</span>
+                        </div>
+                        {action.shortcut && (
+                          <kbd className="hidden sm:inline-flex items-center rounded px-1.5 py-0.5 text-xs font-mono"
+                            style={{ 
+                              border: "1px solid #3f3f46",
+                              color: "#a1a1aa",
+                              backgroundColor: "transparent",
+                            }}>
+                            {action.shortcut}
+                          </kbd>
+                        )}
                       </div>
-                      {action.shortcut && (
-                        <kbd className="hidden sm:inline-flex items-center rounded px-1.5 py-0.5 text-xs font-mono"
-                          style={{ 
-                            border: "1px solid #3f3f46",
-                            color: "#a1a1aa",
-                            backgroundColor: "transparent",
-                          }}>
-                          {action.shortcut}
-                        </kbd>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div style={{ height: "1px", backgroundColor: "#27272a", margin: "4px 0" }} />
               </>
             )}
 
-            {/* Search Results */}
+            {/* Search Results - Empty State */}
             {searchValue && !hasResults && (
               <div className="py-6 text-center text-sm" style={{ color: "#a1a1aa" }}>
                 No results found for "{searchValue}"
@@ -247,26 +326,39 @@ export default function CommandMenu({
                 >
                   {group.toUpperCase()}
                 </div>
-                {items.map((item) => (
-                  <div
-                    key={item.label}
-                    onClick={() => handleSelect(item.path)}
-                    className="flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors duration-150 group"
-                    style={{ color: "#f4f4f5" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#27272a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <item.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                      <span className="text-sm">{item.label}</span>
+                {items.map((item) => {
+                  const isSelected = selectedIndex === itemCounter;
+                  const ref = (el: HTMLDivElement | null) => {
+                    itemsRef.current[itemCounter] = el;
+                  };
+                  itemCounter++;
+                  return (
+                    <div
+                      key={item.label}
+                      ref={ref}
+                      onClick={() => handleSelect(item.path)}
+                      className="flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors duration-150 group"
+                      style={{ 
+                        color: "#f4f4f5",
+                        backgroundColor: isSelected ? "#27272a" : "transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#27272a";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <item.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
+                        <span className="text-sm">{item.label}</span>
+                      </div>
+                      <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
-                    <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ))}
           </div>
