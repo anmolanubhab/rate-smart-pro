@@ -16,6 +16,7 @@ import {
   Boxes,
   BarChart3,
   Settings as SettingsIcon,
+  Search,
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
@@ -144,6 +145,17 @@ export default function AppLayout({
 
   const location = useLocation();
 
+  // Function to trigger CommandMenu
+  const triggerCommandMenu = () => {
+    const event = new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -184,6 +196,56 @@ export default function AppLayout({
               </p>
             </div>
           </div>
+        </div>
+
+        {/* 🔍 VERCEL-STYLE FIND BUTTON - ADDED HERE */}
+        <div className="px-4 py-3">
+          <button
+            onClick={triggerCommandMenu}
+            className="
+              w-full
+              flex
+              items-center
+              justify-between
+              rounded-lg
+              border
+              border-sidebar-border
+              bg-sidebar-accent/10
+              px-3
+              py-2
+              text-sm
+              text-sidebar-foreground/70
+              hover:bg-sidebar-accent/20
+              hover:text-sidebar-foreground
+              transition-all
+              duration-200
+              group
+            "
+          >
+            <span className="flex items-center gap-2">
+              <Search className="h-4 w-4" />
+              <span>Find...</span>
+            </span>
+
+            <kbd className="
+              hidden
+              sm:inline-flex
+              items-center
+              rounded
+              border
+              border-sidebar-border
+              bg-sidebar-background
+              px-1.5
+              py-0.5
+              text-xs
+              font-mono
+              text-sidebar-foreground/60
+              group-hover:text-sidebar-foreground
+              transition-colors
+            ">
+              F
+            </kbd>
+          </button>
         </div>
 
         <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
