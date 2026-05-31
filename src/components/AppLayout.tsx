@@ -189,7 +189,7 @@ export default function AppLayout({
             </div>
             <div>
               <h1 className="font-bold text-white">RD Pro</h1>
-              <p className="text-xs text-sidebar-foreground/60">Pro · Spare Parts</p>
+              <p className="text-xs text-sidebar-foreground/60">Sale Purchase Managment System</p>
             </div>
           </div>
         </div>
