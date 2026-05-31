@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+// src/components/CommandMenu.tsx
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  CommandDialog,
+  Command,
   CommandEmpty,
   CommandGroup,
   CommandInput,
@@ -24,6 +25,7 @@ import {
   User,
   Settings,
   Star,
+  Search,
 } from "lucide-react";
 
 // All existing routes preserved
@@ -75,9 +77,16 @@ const quickActions = [
   },
 ];
 
-export default function CommandMenu() {
+interface CommandMenuProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  triggerRef?: React.RefObject<HTMLElement>;
+}
+
+export default function CommandMenu({ open, onOpenChange, triggerRef }: CommandMenuProps) {
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
   
   // Recent pages state with localStorage
   const [recentPages, setRecentPages] = useState<string[]>(() => {
@@ -94,11 +103,47 @@ export default function CommandMenu() {
     localStorage.setItem("recentPages", JSON.stringify(recentPages));
   }, [recentPages]);
 
+  // Calculate position when menu opens
+  useEffect(() => {
+    if (open && triggerRef?.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
+  }, [open, triggerRef]);
+
+  // Update position on scroll/resize
+  useEffect(() => {
+    if (!open) return;
+
+    const updatePosition = () => {
+      if (triggerRef?.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        setPosition({
+          top: rect.bottom + window.scrollY,
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        });
+      }
+    };
+
+    window.addEventListener("scroll", updatePosition);
+    window.addEventListener("resize", updatePosition);
+    
+    return () => {
+      window.removeEventListener("scroll", updatePosition);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [open, triggerRef]);
+
   // Add to recent pages
   const addToRecent = (to: string) => {
     setRecentPages((prev) => {
       const filtered = prev.filter((item) => item !== to);
-      return [to, ...filtered].slice(0, 5); // Keep last 5
+      return [to, ...filtered].slice(0, 5);
     });
   };
 
@@ -108,7 +153,8 @@ export default function CommandMenu() {
     if (page) {
       navigate(to);
       addToRecent(to);
-      setOpen(false);
+      onOpenChange(false);
+      setSearch("");
     }
   };
 
@@ -117,168 +163,200 @@ export default function CommandMenu() {
     const to = action();
     navigate(to);
     addToRecent(to);
-    setOpen(false);
+    onOpenChange(false);
+    setSearch("");
   };
-
-  // Keyboard shortcut to open command menu
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        setOpen((prev) => !prev);
-      }
-    };
-
-    document.addEventListener("keydown", down);
-    return () => document.removeEventListener("keydown", down);
-  }, []);
 
   // Get recent page objects
   const recentPageObjects = recentPages
     .map((to) => pages.find((page) => page.to === to))
     .filter((page): page is typeof pages[0] => page !== undefined);
 
-  // Filter pages by category (excluding recent pages from main)
-  const actionPages = pages.filter(
-    (page) => page.category === "actions"
-  );
-  
-  const mainPages = pages.filter(
-    (page) => 
-      page.category === "main" && 
-      !recentPages.includes(page.to)
-  );
+  // Filter pages based on search
+  const filterPages = (pageList: typeof pages) => {
+    if (!search) return pageList;
+    return pageList.filter(page => 
+      page.label.toLowerCase().includes(search.toLowerCase())
+    );
+  };
 
-  const toolsPages = pages.filter((page) => page.category === "tools");
-  const settingsPages = pages.filter((page) => page.category === "settings");
+  // Filter pages by category
+  const actionPages = filterPages(pages.filter(page => page.category === "actions"));
+  const mainPages = filterPages(pages.filter(page => 
+    page.category === "main" && !recentPages.includes(page.to)
+  ));
+  const toolsPages = filterPages(pages.filter(page => page.category === "tools"));
+  const settingsPages = filterPages(pages.filter(page => page.category === "settings"));
+
+  if (!open) return null;
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search pages and actions..." />
-      <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
-        
-        {/* Quick Actions Section */}
-        <CommandGroup heading="Quick Actions">
-          {quickActions.map((action) => (
-            <CommandItem
-              key={action.label}
-              onSelect={() => handleQuickAction(action.action)}
-              className="flex items-center justify-between"
-            >
-              <div className="flex items-center gap-2">
-                <action.icon className="h-4 w-4" />
-                <div className="flex flex-col">
-                  <span>{action.label}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {action.description}
-                  </span>
-                </div>
-              </div>
-              {action.shortcut && (
-                <kbd className="ml-auto text-xs text-muted-foreground">
-                  {action.shortcut}
-                </kbd>
-              )}
-            </CommandItem>
-          ))}
-        </CommandGroup>
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40"
+        onClick={() => {
+          onOpenChange(false);
+          setSearch("");
+        }}
+      />
+      
+      {/* Dropdown Command Menu */}
+      <div
+        className="fixed z-50 animate-in fade-in zoom-in-95 duration-200"
+        style={{
+          top: position.top + 4,
+          left: position.left,
+          width: position.width,
+          minWidth: "280px",
+        }}
+      >
+        <Command
+          className="rounded-lg border shadow-xl bg-popover text-popover-foreground overflow-hidden"
+          shouldFilter={false}
+        >
+          <div className="flex items-center border-b px-3">
+            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+            <CommandInput
+              placeholder="Search pages and actions..."
+              value={search}
+              onValueChange={setSearch}
+              className="flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
 
-        {/* Recent Pages Section */}
-        {recentPageObjects.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Recent Pages">
-              {recentPageObjects.map((page) => (
-                <CommandItem
-                  key={page.to}
-                  onSelect={() => handleNavigate(page.to)}
-                  className="flex items-center gap-2"
-                >
-                  <Star className="h-4 w-4 text-yellow-500" />
-                  <span>{page.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
+          <CommandList className="max-h-[400px] overflow-y-auto">
+            <CommandEmpty>No results found.</CommandEmpty>
+            
+            {/* Quick Actions Section - only show when no search */}
+            {!search && (
+              <>
+                <CommandGroup heading="Quick Actions">
+                  {quickActions.map((action) => (
+                    <CommandItem
+                      key={action.label}
+                      onSelect={() => handleQuickAction(action.action)}
+                      className="flex items-center justify-between cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <action.icon className="h-4 w-4" />
+                        <div className="flex flex-col">
+                          <span>{action.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {action.description}
+                          </span>
+                        </div>
+                      </div>
+                      {action.shortcut && (
+                        <kbd className="ml-auto text-xs text-muted-foreground hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 font-mono">
+                          {action.shortcut}
+                        </kbd>
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
 
-        {/* Actions Section - Create Order will appear here */}
-        {actionPages.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Actions">
-              {actionPages.map((page) => (
-                <CommandItem
-                  key={page.to}
-                  onSelect={() => handleNavigate(page.to)}
-                  className="flex items-center gap-2"
-                >
-                  <page.icon className="h-4 w-4" />
-                  <span>{page.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
+            {/* Recent Pages Section */}
+            {!search && recentPageObjects.length > 0 && (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading="Recent Pages">
+                  {recentPageObjects.map((page) => (
+                    <CommandItem
+                      key={page.to}
+                      onSelect={() => handleNavigate(page.to)}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <Star className="h-4 w-4 text-yellow-500" />
+                      <span>{page.label}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
 
-        {/* Main Navigation */}
-        {mainPages.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Main Navigation">
-              {mainPages.map((page) => (
-                <CommandItem
-                  key={page.to}
-                  onSelect={() => handleNavigate(page.to)}
-                  className="flex items-center gap-2"
-                >
-                  <page.icon className="h-4 w-4" />
-                  <span>{page.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
+            {/* Actions Section */}
+            {actionPages.length > 0 && (
+              <>
+                {(search || (!search && actionPages.length > 0)) && (
+                  <CommandSeparator />
+                )}
+                <CommandGroup heading="Actions">
+                  {actionPages.map((page) => (
+                    <CommandItem
+                      key={page.to}
+                      onSelect={() => handleNavigate(page.to)}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <page.icon className="h-4 w-4" />
+                      <span>{page.label}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
 
-        {/* Tools */}
-        {toolsPages.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Tools">
-              {toolsPages.map((page) => (
-                <CommandItem
-                  key={page.to}
-                  onSelect={() => handleNavigate(page.to)}
-                  className="flex items-center gap-2"
-                >
-                  <page.icon className="h-4 w-4" />
-                  <span>{page.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
+            {/* Main Navigation */}
+            {mainPages.length > 0 && (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading="Main Navigation">
+                  {mainPages.map((page) => (
+                    <CommandItem
+                      key={page.to}
+                      onSelect={() => handleNavigate(page.to)}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <page.icon className="h-4 w-4" />
+                      <span>{page.label}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
 
-        {/* Settings */}
-        {settingsPages.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Settings">
-              {settingsPages.map((page) => (
-                <CommandItem
-                  key={page.to}
-                  onSelect={() => handleNavigate(page.to)}
-                  className="flex items-center gap-2"
-                >
-                  <page.icon className="h-4 w-4" />
-                  <span>{page.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
-      </CommandList>
-    </CommandDialog>
+            {/* Tools */}
+            {toolsPages.length > 0 && (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading="Tools">
+                  {toolsPages.map((page) => (
+                    <CommandItem
+                      key={page.to}
+                      onSelect={() => handleNavigate(page.to)}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <page.icon className="h-4 w-4" />
+                      <span>{page.label}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
+
+            {/* Settings */}
+            {settingsPages.length > 0 && (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading="Settings">
+                  {settingsPages.map((page) => (
+                    <CommandItem
+                      key={page.to}
+                      onSelect={() => handleNavigate(page.to)}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <page.icon className="h-4 w-4" />
+                      <span>{page.label}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
+          </CommandList>
+        </Command>
+      </div>
+    </>
   );
 }
