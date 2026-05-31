@@ -8,7 +8,6 @@ import {
   LogOut,
   Moon,
   Sun,
-  Sparkles,
   Users,
   ShoppingCart,
   PlusSquare,
@@ -25,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 import CommandMenu from "@/components/CommandMenu";
+import rdProLogo from "/rdpro-logo.png"; // ← Add your logo in public folder
 
 type NavItem = {
   to: string;
@@ -48,7 +48,7 @@ const navGroups: NavGroup[] = [
       },
       {
         to: "/calculator",
-        label: "RD Pro",
+        label: "RD Calculator",
         icon: Calculator,
       },
     ],
@@ -181,15 +181,24 @@ export default function AppLayout({
       <CommandMenu />
 
       <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-        {/* Logo Section */}
+        {/* Logo Section with Image */}
         <div className="p-6 border-b border-sidebar-border">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl gradient-primary flex items-center justify-center">
-              <Sparkles className="h-5 w-5 text-white" />
+          <div className="flex items-center gap-3">
+            {/* Sparkles replaced with Image Logo */}
+            <div className="h-10 w-10 flex items-center justify-center">
+              <img
+                src={rdProLogo}
+                alt="RD Pro"
+                className="h-10 w-10 object-contain"
+              />
             </div>
             <div>
-              <h1 className="font-bold text-white">RD Pro</h1>
-              <p className="text-xs text-sidebar-foreground/60">Sale Purchase Managment System</p>
+              <h1 className="font-bold text-white text-lg tracking-tight">
+                RD Pro
+              </h1>
+              <p className="text-[11px] text-sidebar-foreground/50 leading-tight">
+                Sale Purchase<br />Management System
+              </p>
             </div>
           </div>
         </div>
