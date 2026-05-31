@@ -1,4 +1,4 @@
-// CommandMenu.tsx - Matching sidebar colors
+// CommandMenu.tsx - Solid background fix
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -155,7 +155,7 @@ export default function CommandMenu({
         }}
       />
       
-      {/* Overlay Command Menu - Matching sidebar colors */}
+      {/* Overlay Command Menu - SOLID background */}
       <div
         className="fixed z-50 animate-in fade-in duration-150"
         style={{
@@ -168,38 +168,51 @@ export default function CommandMenu({
           className="rounded-lg shadow-xl overflow-hidden"
           style={{
             backgroundColor: "hsl(var(--sidebar))",
-            borderColor: "hsl(var(--sidebar-border))",
-            color: "hsl(var(--sidebar-foreground))",
+            border: "1px solid hsl(var(--sidebar-border))",
           }}
           shouldFilter={false}
         >
-          {/* Search input - matches sidebar button style */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
+          {/* Search input section */}
+          <div 
+            className="flex items-center gap-2 px-3 py-2"
+            style={{ 
+              borderBottom: "1px solid hsl(var(--sidebar-border))",
+              backgroundColor: "hsl(var(--sidebar))"
+            }}
+          >
             <Search className="h-4 w-4 shrink-0" style={{ color: "hsl(var(--sidebar-foreground) / 0.5)" }} />
             <CommandInput
               ref={inputRef}
               placeholder="Search pages and actions..."
               value={searchValue}
               onValueChange={onSearchChange}
-              className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              style={{ color: "hsl(var(--sidebar-foreground))" }}
-            />
-            <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono" 
+              className="h-8 w-full bg-transparent text-sm outline-none"
               style={{ 
-                borderColor: "hsl(var(--sidebar-border))",
+                color: "hsl(var(--sidebar-foreground))",
+                backgroundColor: "transparent"
+              }}
+            />
+            <kbd 
+              className="hidden sm:inline-flex items-center rounded px-1.5 py-0.5 text-xs font-mono" 
+              style={{ 
+                border: "1px solid hsl(var(--sidebar-border))",
                 color: "hsl(var(--sidebar-foreground) / 0.6)",
                 backgroundColor: "hsl(var(--sidebar-background))"
-              }}>
+              }}
+            >
               ESC
             </kbd>
           </div>
 
-          <CommandList className="max-h-[400px] overflow-y-auto">
+          <CommandList 
+            className="max-h-[400px] overflow-y-auto"
+            style={{ backgroundColor: "hsl(var(--sidebar))" }}
+          >
             <CommandEmpty className="py-6 text-center text-sm" style={{ color: "hsl(var(--sidebar-foreground) / 0.6)" }}>
               No results found.
             </CommandEmpty>
 
-            {/* Quick Actions - only show when search is empty */}
+            {/* Quick Actions */}
             {!searchValue && (
               <>
                 <CommandGroup heading="Quick Actions">
@@ -207,8 +220,11 @@ export default function CommandMenu({
                     <CommandItem
                       key={action.label}
                       onSelect={() => handleSelect(action.path)}
-                      className="flex items-center justify-between cursor-pointer transition-colors duration-200"
-                      style={{ color: "hsl(var(--sidebar-foreground))" }}
+                      className="flex items-center justify-between cursor-pointer transition-colors duration-150"
+                      style={{ 
+                        color: "hsl(var(--sidebar-foreground))",
+                        backgroundColor: "transparent"
+                      }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.backgroundColor = "hsl(var(--sidebar-accent) / 0.5)";
                       }}
@@ -221,10 +237,11 @@ export default function CommandMenu({
                         <span>{action.label}</span>
                       </div>
                       {action.shortcut && (
-                        <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono"
+                        <kbd className="hidden sm:inline-flex items-center rounded px-1.5 py-0.5 text-xs font-mono"
                           style={{ 
-                            borderColor: "hsl(var(--sidebar-border))",
-                            color: "hsl(var(--sidebar-foreground) / 0.5)"
+                            border: "1px solid hsl(var(--sidebar-border))",
+                            color: "hsl(var(--sidebar-foreground) / 0.5)",
+                            backgroundColor: "transparent"
                           }}>
                           {action.shortcut}
                         </kbd>
@@ -236,7 +253,7 @@ export default function CommandMenu({
               </>
             )}
 
-            {/* Filtered Navigation Items */}
+            {/* Navigation Items */}
             {Object.entries(groupedItems).map(([group, items]) => {
               const filteredItems = items.filter(item =>
                 searchValue === "" ||
@@ -252,8 +269,11 @@ export default function CommandMenu({
                     <CommandItem
                       key={item.label}
                       onSelect={() => handleSelect(item.path)}
-                      className="cursor-pointer group transition-colors duration-200"
-                      style={{ color: "hsl(var(--sidebar-foreground))" }}
+                      className="cursor-pointer group transition-colors duration-150"
+                      style={{ 
+                        color: "hsl(var(--sidebar-foreground))",
+                        backgroundColor: "transparent"
+                      }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.backgroundColor = "hsl(var(--sidebar-accent) / 0.5)";
                       }}
