@@ -1,4 +1,4 @@
-// AppLayout.tsx - Complete updated version
+// AppLayout.tsx - Updated with search state management
 import { ReactNode, useRef, useState, useEffect } from "react";
 import { NavLink, useLocation, Navigate } from "react-router-dom";
 import {
@@ -142,7 +142,9 @@ export default function AppLayout({
   
   // Command menu state and refs
   const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
 
   // Handle keyboard shortcut (Ctrl+K / Cmd+K)
   useEffect(() => {
@@ -151,15 +153,27 @@ export default function AppLayout({
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
         setCommandMenuOpen(true);
+        setSearchValue("");
+        // Focus will be handled by the CommandInput auto-focus
       }
       // Close on Escape
       if (e.key === "Escape" && commandMenuOpen) {
         setCommandMenuOpen(false);
+        setSearchValue("");
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [commandMenuOpen]);
+
+  // Auto-focus search input when command menu opens
+  useEffect(() => {
+    if (commandMenuOpen && searchInputRef.current) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+    }
   }, [commandMenuOpen]);
 
   // Detect platform for correct keyboard shortcut display
@@ -186,11 +200,13 @@ export default function AppLayout({
 
   return (
     <div className="min-h-screen flex w-full bg-background gradient-mesh">
-      {/* Command Menu Dropdown */}
+      {/* Command Menu Dropdown - Opens ABOVE the search box */}
       <CommandMenu 
         open={commandMenuOpen} 
         onOpenChange={setCommandMenuOpen}
         triggerRef={searchButtonRef}
+        searchValue={searchValue}
+        onSearchChange={setSearchValue}
       />
 
       <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
@@ -225,11 +241,14 @@ export default function AppLayout({
           </div>
         </div>
 
-        {/* 🔍 Vercel-Style Find Button - Opens Command Menu */}
+        {/* 🔍 Vercel-Style Find Button - The ONLY search box */}
         <div className="px-4 py-3">
           <button
             ref={searchButtonRef}
-            onClick={() => setCommandMenuOpen(true)}
+            onClick={() => {
+              setCommandMenuOpen(true);
+              setSearchValue("");
+            }}
             className={`
               w-full
               flex
