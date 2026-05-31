@@ -48,7 +48,7 @@ const navGroups: NavGroup[] = [
       },
       {
         to: "/calculator",
-        label: "RD Calculator",
+        label: "RD Pro",
         icon: Calculator,
       },
     ],
@@ -188,7 +188,7 @@ export default function AppLayout({
               <Sparkles className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="font-bold text-white">RD Calculator</h1>
+              <h1 className="font-bold text-white">RD Pro</h1>
               <p className="text-xs text-sidebar-foreground/60">Pro · Spare Parts</p>
             </div>
           </div>
