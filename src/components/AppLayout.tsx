@@ -140,12 +140,10 @@ export default function AppLayout({
   children: ReactNode;
 }) {
   const { user, loading, signOut } = useAuth();
-
   const { theme, toggle } = useTheme();
-
   const location = useLocation();
 
-  // Function to trigger CommandMenu
+  // Function to trigger CommandMenu - Using document for reliable event handling
   const triggerCommandMenu = () => {
     const event = new KeyboardEvent("keydown", {
       key: "k",
@@ -153,8 +151,12 @@ export default function AppLayout({
       bubbles: true,
       cancelable: true,
     });
-    window.dispatchEvent(event);
+    document.dispatchEvent(event);
   };
+
+  // Detect platform for correct keyboard shortcut display
+  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+  const shortcutKey = isMac ? "⌘K" : "Ctrl+K";
 
   if (loading) {
     return (
@@ -176,29 +178,23 @@ export default function AppLayout({
 
   return (
     <div className="min-h-screen flex w-full bg-background gradient-mesh">
-
       <CommandMenu />
 
       <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
+        {/* Logo Section */}
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <div className="h-9 w-9 rounded-xl gradient-primary flex items-center justify-center">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
-
             <div>
-              <h1 className="font-bold text-white">
-                RD Calculator
-              </h1>
-
-              <p className="text-xs text-sidebar-foreground/60">
-                Pro · Spare Parts
-              </p>
+              <h1 className="font-bold text-white">RD Calculator</h1>
+              <p className="text-xs text-sidebar-foreground/60">Pro · Spare Parts</p>
             </div>
           </div>
         </div>
 
-        {/* 🔍 VERCEL-STYLE FIND BUTTON - ADDED HERE */}
+        {/* 🔍 Vercel-Style Find Button - Opens Command Menu */}
         <div className="px-4 py-3">
           <button
             onClick={triggerCommandMenu}
@@ -226,7 +222,6 @@ export default function AppLayout({
               <Search className="h-4 w-4" />
               <span>Find...</span>
             </span>
-
             <kbd className="
               hidden
               sm:inline-flex
@@ -243,60 +238,56 @@ export default function AppLayout({
               group-hover:text-sidebar-foreground
               transition-colors
             ">
-              F
+              {shortcutKey}
             </kbd>
           </button>
         </div>
 
+        {/* Navigation */}
         <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
           {navGroups.map((group) => (
             <div key={group.label}>
               {group.label && (
-                <p className="px-3 py-2 text-[10px] uppercase text-sidebar-foreground/40">
+                <p className="px-3 py-2 text-[10px] uppercase text-sidebar-foreground/40 tracking-wider">
                   {group.label}
                 </p>
               )}
-
-              {group.items.map(
-                ({ to, label, icon: Icon }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    className={({ isActive }) =>
-                      cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm",
-                        isActive
-                          ? "bg-sidebar-accent text-sidebar-primary"
-                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
-                      )
-                    }
-                  >
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </NavLink>
-                )
-              )}
+              {group.items.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                      isActive
+                        ? "bg-sidebar-accent text-sidebar-primary"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </NavLink>
+              ))}
             </div>
           ))}
         </nav>
 
+        {/* Footer Actions */}
         <div className="p-4 border-t border-sidebar-border space-y-2">
           <Button
             variant="ghost"
             size="sm"
             onClick={toggle}
-            className="w-full justify-start"
+            className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground"
           >
             {theme === "dark" ? (
               <Sun className="h-4 w-4" />
             ) : (
               <Moon className="h-4 w-4" />
             )}
-
             <span className="ml-2">
-              {theme === "dark"
-                ? "Light mode"
-                : "Dark mode"}
+              {theme === "dark" ? "Light mode" : "Dark mode"}
             </span>
           </Button>
 
@@ -304,13 +295,10 @@ export default function AppLayout({
             variant="ghost"
             size="sm"
             onClick={signOut}
-            className="w-full justify-start"
+            className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground"
           >
             <LogOut className="h-4 w-4" />
-
-            <span className="ml-2">
-              Sign out
-            </span>
+            <span className="ml-2">Sign out</span>
           </Button>
         </div>
       </aside>
