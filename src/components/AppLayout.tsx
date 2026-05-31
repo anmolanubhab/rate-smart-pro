@@ -1,4 +1,4 @@
-// AppLayout.tsx - Simplified (removed searchInputRef)
+// AppLayout.tsx - Find box as INPUT field for cursor focus
 import { ReactNode, useRef, useState, useEffect } from "react";
 import { NavLink, useLocation, Navigate } from "react-router-dom";
 import {
@@ -84,7 +84,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const { theme, toggle } = useTheme();
   const location = useLocation();
   
-  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
 
@@ -93,17 +93,25 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
+        searchInputRef.current?.focus();
         setCommandMenuOpen(true);
-        setSearchValue("");
       }
       if (e.key === "Escape" && commandMenuOpen) {
         setCommandMenuOpen(false);
         setSearchValue("");
+        searchInputRef.current?.blur();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [commandMenuOpen]);
+
+  // Auto focus when command menu opens
+  useEffect(() => {
+    if (commandMenuOpen) {
+      searchInputRef.current?.focus();
+    }
   }, [commandMenuOpen]);
 
   const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -122,7 +130,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <CommandMenu 
         open={commandMenuOpen} 
         onOpenChange={setCommandMenuOpen}
-        triggerRef={searchButtonRef}
+        triggerRef={searchInputRef}
         searchValue={searchValue}
         onSearchChange={setSearchValue}
       />
@@ -149,23 +157,44 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
 
+        {/* 🔍 Find Box - Now an INPUT field with cursor */}
         <div className="px-4 py-3">
-          <button
-            ref={searchButtonRef}
-            onClick={() => {
-              setCommandMenuOpen(true);
-              setSearchValue("");
-            }}
-            className={`w-full flex items-center justify-between rounded-lg border border-sidebar-border bg-sidebar-accent/10 px-3 py-2 text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/20 hover:text-sidebar-foreground transition-all duration-200 group ${commandMenuOpen ? 'bg-sidebar-accent/20 ring-2 ring-primary/50' : ''}`}
-          >
-            <span className="flex items-center gap-2">
-              <Search className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-              <span>Find...</span>
-            </span>
-            <kbd className="hidden sm:inline-flex items-center rounded border border-sidebar-border bg-sidebar-background px-1.5 py-0.5 text-xs font-mono text-sidebar-foreground/60 group-hover:text-sidebar-foreground group-hover:border-sidebar-foreground/20 transition-all duration-200">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-sidebar-foreground/50" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Find..."
+              value={searchValue}
+              onChange={(e) => {
+                setSearchValue(e.target.value);
+                setCommandMenuOpen(true);
+              }}
+              onFocus={() => setCommandMenuOpen(true)}
+              className={`
+                w-full
+                pl-9 pr-12
+                py-2
+                rounded-lg
+                border
+                border-sidebar-border
+                bg-sidebar-accent/10
+                text-sm
+                text-sidebar-foreground
+                placeholder:text-sidebar-foreground/50
+                focus:outline-none
+                focus:ring-2
+                focus:ring-primary/50
+                focus:border-transparent
+                transition-all
+                duration-200
+                ${commandMenuOpen ? 'bg-sidebar-accent/20 ring-2 ring-primary/50' : ''}
+              `}
+            />
+            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center rounded border border-sidebar-border bg-sidebar-background px-1.5 py-0.5 text-xs font-mono text-sidebar-foreground/60">
               {shortcutKey}
             </kbd>
-          </button>
+          </div>
         </div>
 
         <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
@@ -180,6 +209,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <NavLink
                   key={to}
                   to={to}
+                  onClick={() => setCommandMenuOpen(false)}
                   className={({ isActive }) =>
                     cn(
                       "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200",
