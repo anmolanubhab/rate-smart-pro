@@ -1,6 +1,6 @@
-// CommandMenu.tsx - Updated version (Popup ABOVE the search box)
+// CommandMenu.tsx - Fixed version
 import { useEffect, useState } from "react";
-import { useNavigate } useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Command,
   CommandEmpty,
@@ -43,7 +43,7 @@ export default function CommandMenu({
   const navigate = useNavigate();
   const [position, setPosition] = useState({ bottom: 0, left: 0, width: 0 });
 
-  // Calculate position when menu opens or window resizes (ABOVE the trigger)
+  // Calculate position when menu opens (ABOVE the trigger)
   useEffect(() => {
     if (open && triggerRef?.current) {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -82,7 +82,7 @@ export default function CommandMenu({
   const handleSelect = (path: string) => {
     navigate(path);
     onOpenChange(false);
-    onSearchChange(""); // Clear search when selecting
+    onSearchChange("");
   };
 
   const quickActions = [
@@ -152,7 +152,7 @@ export default function CommandMenu({
       <div
         className="fixed z-50 animate-in fade-in zoom-in-95 duration-200"
         style={{
-          bottom: position.bottom + 8, // 8px gap from the top of search box
+          bottom: position.bottom + 8,
           left: position.left,
           width: position.width,
           minWidth: "280px",
@@ -163,7 +163,6 @@ export default function CommandMenu({
           className="rounded-lg border shadow-xl bg-popover text-popover-foreground overflow-hidden"
           shouldFilter={false}
         >
-          {/* NO search icon here - removed completely */}
           <CommandInput
             placeholder="Search pages and actions..."
             value={searchValue}
