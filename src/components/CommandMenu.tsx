@@ -1,5 +1,5 @@
-// CommandMenu.tsx - Fixed version
-import { useEffect, useState } from "react";
+// CommandMenu.tsx - Overlay/Expand on Find box
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Command,
@@ -23,6 +23,7 @@ import {
   User,
   Settings as SettingsIcon,
   ChevronRight,
+  Search,
 } from "lucide-react";
 
 interface CommandMenuProps {
@@ -41,17 +42,23 @@ export default function CommandMenu({
   onSearchChange 
 }: CommandMenuProps) {
   const navigate = useNavigate();
-  const [position, setPosition] = useState({ bottom: 0, left: 0, width: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Calculate position when menu opens (ABOVE the trigger)
+  // Calculate position to OVERLAY exactly on the Find button
   useEffect(() => {
     if (open && triggerRef?.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       setPosition({
-        bottom: window.innerHeight - rect.top + window.scrollY,
+        top: rect.top + window.scrollY,
         left: rect.left + window.scrollX,
         width: rect.width,
       });
+      
+      // Focus the input when opened
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
     }
   }, [open, triggerRef]);
 
@@ -63,7 +70,7 @@ export default function CommandMenu({
       if (triggerRef?.current) {
         const rect = triggerRef.current.getBoundingClientRect();
         setPosition({
-          bottom: window.innerHeight - rect.top + window.scrollY,
+          top: rect.top + window.scrollY,
           left: rect.left + window.scrollX,
           width: rect.width,
         });
@@ -139,7 +146,7 @@ export default function CommandMenu({
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop - only for clicking outside */}
       <div
         className="fixed inset-0 z-40"
         onClick={() => {
@@ -148,30 +155,38 @@ export default function CommandMenu({
         }}
       />
       
-      {/* Dropdown Command Menu - Positioned ABOVE the search box */}
+      {/* Overlay Command Menu - Exactly on top of Find box */}
       <div
-        className="fixed z-50 animate-in fade-in zoom-in-95 duration-200"
+        className="fixed z-50 animate-in fade-in duration-150"
         style={{
-          bottom: position.bottom + 8,
+          top: position.top,
           left: position.left,
           width: position.width,
-          minWidth: "280px",
-          maxHeight: "500px",
         }}
       >
         <Command
           className="rounded-lg border shadow-xl bg-popover text-popover-foreground overflow-hidden"
           shouldFilter={false}
         >
-          <CommandInput
-            placeholder="Search pages and actions..."
-            value={searchValue}
-            onValueChange={onSearchChange}
-            className="h-10 border-b rounded-none px-3 text-sm focus:outline-none focus:ring-0"
-          />
+          {/* Search input - blends with Find box */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b bg-sidebar-accent/5">
+            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+            <CommandInput
+              ref={inputRef}
+              placeholder="Search pages and actions..."
+              value={searchValue}
+              onValueChange={onSearchChange}
+              className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <kbd className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono text-muted-foreground bg-background">
+              ESC
+            </kbd>
+          </div>
 
           <CommandList className="max-h-[400px] overflow-y-auto">
-            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandEmpty className="py-6 text-center text-sm">
+              No results found.
+            </CommandEmpty>
 
             {/* Quick Actions - only show when search is empty */}
             {!searchValue && (
