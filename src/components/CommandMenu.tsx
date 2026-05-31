@@ -1,4 +1,4 @@
-// CommandMenu.tsx - Fixed with proper scroll
+// CommandMenu.tsx - Final Version with Input Focus Support
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -19,7 +19,7 @@ import {
 interface CommandMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  triggerRef?: React.RefObject<HTMLElement>;
+  triggerRef?: React.RefObject<HTMLInputElement>;
   searchValue: string;
   onSearchChange: (value: string) => void;
 }
@@ -35,7 +35,6 @@ export default function CommandMenu({
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const itemsRef = useRef<(HTMLDivElement | null)[]>([]);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   const quickActions = [
     {
@@ -86,38 +85,19 @@ export default function CommandMenu({
     
     if (!searchValue) {
       items.push(...quickActions);
+      items.push(...navigationItems);
+    } else {
+      const filtered = navigationItems.filter(item =>
+        item.label.toLowerCase().includes(searchValue.toLowerCase()) ||
+        item.group.toLowerCase().includes(searchValue.toLowerCase())
+      );
+      items.push(...filtered);
     }
-    
-    const filtered = getFilteredItems();
-    items.push(...filtered);
     
     return items;
   };
 
-  // Filter navigation items based on search
-  const getFilteredItems = () => {
-    if (!searchValue) return [];
-    
-    return navigationItems.filter(item =>
-      item.label.toLowerCase().includes(searchValue.toLowerCase()) ||
-      item.group.toLowerCase().includes(searchValue.toLowerCase())
-    );
-  };
-
-  // Group filtered items by category
-  const getGroupedFilteredItems = () => {
-    const filtered = getFilteredItems();
-    const grouped: Record<string, typeof navigationItems> = {};
-    
-    filtered.forEach(item => {
-      if (!grouped[item.group]) grouped[item.group] = [];
-      grouped[item.group].push(item);
-    });
-    
-    return grouped;
-  };
-
-  // Calculate position to open BELOW the Find button
+  // Calculate position to open BELOW the input field
   useEffect(() => {
     if (open && triggerRef?.current) {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -126,7 +106,6 @@ export default function CommandMenu({
         left: rect.left + window.scrollX,
         width: rect.width,
       });
-      
       setSelectedIndex(-1);
     }
   }, [open, triggerRef]);
@@ -155,6 +134,11 @@ export default function CommandMenu({
             const item = items[selectedIndex];
             handleSelect(item.path);
           }
+          break;
+        case 'Escape':
+          e.preventDefault();
+          onOpenChange(false);
+          onSearchChange("");
           break;
       }
     };
@@ -204,12 +188,28 @@ export default function CommandMenu({
     setSelectedIndex(-1);
   };
 
+  // Filter and group items for search
+  const getGroupedFilteredItems = () => {
+    if (!searchValue) return {};
+    
+    const filtered = navigationItems.filter(item =>
+      item.label.toLowerCase().includes(searchValue.toLowerCase()) ||
+      item.group.toLowerCase().includes(searchValue.toLowerCase())
+    );
+    
+    const grouped: Record<string, typeof navigationItems> = {};
+    filtered.forEach(item => {
+      if (!grouped[item.group]) grouped[item.group] = [];
+      grouped[item.group].push(item);
+    });
+    
+    return grouped;
+  };
+
   if (!open) return null;
 
   const filteredItems = getGroupedFilteredItems();
   const hasResults = Object.keys(filteredItems).length > 0;
-  
-  // Build flat list for keyboard navigation
   let itemCounter = 0;
 
   return (
@@ -223,9 +223,9 @@ export default function CommandMenu({
         }}
       />
       
-      {/* Popup - Positioned BELOW Find button */}
+      {/* Popup - Positioned BELOW input field */}
       <div
-        className="fixed z-[9999]"
+        className="fixed z-[9999] animate-in fade-in slide-in-from-top-2 duration-200"
         style={{
           top: position.top,
           left: position.left,
@@ -239,19 +239,19 @@ export default function CommandMenu({
             border: "1px solid #27272a",
           }}
         >
-          {/* Scrollable Results - FIXED HEIGHT */}
+          {/* Scrollable Results */}
           <div 
-            ref={scrollContainerRef}
             className="overflow-y-auto"
             style={{ 
               backgroundColor: "#000000",
               maxHeight: "400px",
-              minHeight: "200px",
+              minHeight: "auto",
             }}
           >
-            {/* Quick Actions - Show all 4 */}
+            {/* No Search - Show All Items */}
             {!searchValue && (
               <>
+                {/* Quick Actions Section */}
                 <div style={{ padding: "8px 12px" }}>
                   <div 
                     className="text-xs font-semibold mb-2 px-2"
@@ -305,9 +305,10 @@ export default function CommandMenu({
                     );
                   })}
                 </div>
+                
                 <div style={{ height: "1px", backgroundColor: "#27272a", margin: "4px 0" }} />
                 
-                {/* Full Navigation - All items when no search */}
+                {/* Orders Section */}
                 <div style={{ padding: "8px 12px" }}>
                   <div 
                     className="text-xs font-semibold mb-2 px-2"
@@ -318,78 +319,44 @@ export default function CommandMenu({
                   >
                     ORDERS
                   </div>
-                  <div
-                    onClick={() => handleSelect("/orders")}
-                    className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
-                    style={{ color: "#f4f4f5" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#27272a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <ShoppingCart className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                      <span className="text-sm">Orders</span>
-                    </div>
-                    <ChevronRight className="h-3 w-3" />
-                  </div>
-                  <div
-                    onClick={() => handleSelect("/orders/new")}
-                    className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
-                    style={{ color: "#f4f4f5" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#27272a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <PlusSquare className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                      <span className="text-sm">Create Order</span>
-                    </div>
-                    <ChevronRight className="h-3 w-3" />
-                  </div>
-                  <div
-                    onClick={() => handleSelect("/pending")}
-                    className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
-                    style={{ color: "#f4f4f5" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#27272a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Boxes className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                      <span className="text-sm">Pending Orders</span>
-                    </div>
-                    <ChevronRight className="h-3 w-3" />
-                  </div>
-                  <div
-                    onClick={() => handleSelect("/dispatch")}
-                    className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
-                    style={{ color: "#f4f4f5" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#27272a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Package className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                      <span className="text-sm">Dispatch</span>
-                    </div>
-                    <ChevronRight className="h-3 w-3" />
-                  </div>
+                  {navigationItems.filter(i => i.group === "Orders").map((item) => {
+                    const isSelected = selectedIndex === itemCounter;
+                    const ref = (el: HTMLDivElement | null) => {
+                      itemsRef.current[itemCounter] = el;
+                    };
+                    itemCounter++;
+                    return (
+                      <div
+                        key={item.label}
+                        ref={ref}
+                        onClick={() => handleSelect(item.path)}
+                        className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
+                        style={{ 
+                          color: "#f4f4f5",
+                          backgroundColor: isSelected ? "#27272a" : "transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#27272a";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <item.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
+                          <span className="text-sm">{item.label}</span>
+                        </div>
+                        <ChevronRight className="h-3 w-3" style={{ opacity: 0.3 }} />
+                      </div>
+                    );
+                  })}
                 </div>
                 
                 <div style={{ height: "1px", backgroundColor: "#27272a", margin: "4px 0" }} />
                 
+                {/* Catalog Section */}
                 <div style={{ padding: "8px 12px" }}>
                   <div 
                     className="text-xs font-semibold mb-2 px-2"
@@ -400,57 +367,87 @@ export default function CommandMenu({
                   >
                     CATALOG
                   </div>
-                  <div
-                    onClick={() => handleSelect("/parties")}
-                    className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
-                    style={{ color: "#f4f4f5" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#27272a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
+                  {navigationItems.filter(i => i.group === "Catalog").map((item) => {
+                    const isSelected = selectedIndex === itemCounter;
+                    const ref = (el: HTMLDivElement | null) => {
+                      itemsRef.current[itemCounter] = el;
+                    };
+                    itemCounter++;
+                    return (
+                      <div
+                        key={item.label}
+                        ref={ref}
+                        onClick={() => handleSelect(item.path)}
+                        className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
+                        style={{ 
+                          color: "#f4f4f5",
+                          backgroundColor: isSelected ? "#27272a" : "transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#27272a";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <item.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
+                          <span className="text-sm">{item.label}</span>
+                        </div>
+                        <ChevronRight className="h-3 w-3" style={{ opacity: 0.3 }} />
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                <div style={{ height: "1px", backgroundColor: "#27272a", margin: "4px 0" }} />
+                
+                {/* Insights & Account Section */}
+                <div style={{ padding: "8px 12px" }}>
+                  <div 
+                    className="text-xs font-semibold mb-2 px-2"
+                    style={{ 
+                      color: "#a1a1aa",
+                      letterSpacing: "0.05em",
                     }}
                   >
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                      <span className="text-sm">Parties</span>
-                    </div>
-                    <ChevronRight className="h-3 w-3" />
+                    MORE
                   </div>
-                  <div
-                    onClick={() => handleSelect("/products")}
-                    className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
-                    style={{ color: "#f4f4f5" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#27272a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Package className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                      <span className="text-sm">Products</span>
-                    </div>
-                    <ChevronRight className="h-3 w-3" />
-                  </div>
-                  <div
-                    onClick={() => handleSelect("/inventory")}
-                    className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
-                    style={{ color: "#f4f4f5" }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#27272a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Boxes className="h-4 w-4" style={{ color: "#a1a1aa" }} />
-                      <span className="text-sm">Inventory</span>
-                    </div>
-                    <ChevronRight className="h-3 w-3" />
-                  </div>
+                  {navigationItems.filter(i => i.group === "Insights" || i.group === "Account").map((item) => {
+                    const isSelected = selectedIndex === itemCounter;
+                    const ref = (el: HTMLDivElement | null) => {
+                      itemsRef.current[itemCounter] = el;
+                    };
+                    itemCounter++;
+                    return (
+                      <div
+                        key={item.label}
+                        ref={ref}
+                        onClick={() => handleSelect(item.path)}
+                        className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
+                        style={{ 
+                          color: "#f4f4f5",
+                          backgroundColor: isSelected ? "#27272a" : "transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#27272a";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <item.icon className="h-4 w-4" style={{ color: "#a1a1aa" }} />
+                          <span className="text-sm">{item.label}</span>
+                        </div>
+                        <ChevronRight className="h-3 w-3" style={{ opacity: 0.3 }} />
+                      </div>
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -485,7 +482,7 @@ export default function CommandMenu({
                       key={item.label}
                       ref={ref}
                       onClick={() => handleSelect(item.path)}
-                      className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150 group"
+                      className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors duration-150"
                       style={{ 
                         color: "#f4f4f5",
                         backgroundColor: isSelected ? "#27272a" : "transparent",
