@@ -135,6 +135,7 @@ const Dashboard = () => {
       </header>
 
       <InventoryWidgets />
+      <ErpDashboardCards />
 
       {/* Filters */}
       <div className="rounded-2xl bg-card border border-border shadow-soft p-4 grid md:grid-cols-4 gap-3">
