@@ -64,6 +64,18 @@ const App = () => (
               <Route path="/reports" element={<AppLayout><Reports /></AppLayout>} />
               <Route path="/settings" element={<AppLayout><Settings /></AppLayout>} />
               <Route path="/profile" element={<AppLayout><Profile /></AppLayout>} />
+              <Route path="/accounts/ledgers" element={<AppLayout><LedgerAccounts /></AppLayout>} />
+              <Route path="/accounts/vouchers" element={<AppLayout><VoucherCenter /></AppLayout>} />
+              <Route path="/accounts/day-book" element={<AppLayout><DayBook /></AppLayout>} />
+              <Route path="/accounts/cash-book" element={<AppLayout><CashBook /></AppLayout>} />
+              <Route path="/accounts/bank-book" element={<AppLayout><BankBook /></AppLayout>} />
+              <Route path="/accounts/trial-balance" element={<AppLayout><TrialBalance /></AppLayout>} />
+              <Route path="/accounts/profit-loss" element={<AppLayout><ProfitLoss /></AppLayout>} />
+              <Route path="/accounts/balance-sheet" element={<AppLayout><BalanceSheet /></AppLayout>} />
+              <Route path="/accounts/receivables" element={<AppLayout><Receivables /></AppLayout>} />
+              <Route path="/accounts/payables" element={<AppLayout><Payables /></AppLayout>} />
+              <Route path="/gst/summary" element={<AppLayout><GstSummary /></AppLayout>} />
+              <Route path="/admin/audit-logs" element={<AppLayout><AuditLogs /></AppLayout>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
