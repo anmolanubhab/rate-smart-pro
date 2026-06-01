@@ -28,8 +28,8 @@ import {
   PieChart,
   ShieldCheck,
   ClipboardList,
+  ChevronDown, // sub-menu indicator ke liye arrow icon
 } from "lucide-react";
-
 
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -43,6 +43,7 @@ type NavItem = {
   to: string;
   label: string;
   icon: any;
+  subItems?: { to: string; label: string }[]; // Sub-menu items ke liye type definition
 };
 
 type NavGroup = {
@@ -86,7 +87,22 @@ const navGroups: NavGroup[] = [
     label: "Accounts",
     items: [
       { to: "/accounts/ledgers", label: "Ledger Accounts", icon: BookOpen },
-      { to: "/accounts/vouchers", label: "Voucher Center", icon: Receipt },
+      { 
+        to: "/accounts/vouchers", 
+        label: "Voucher Center", 
+        icon: Receipt,
+        // Yahan saare voucher sub-menus add kar diye hain
+        subItems: [
+          { to: "/accounts/vouchers/sales", label: "Sales" },
+          { to: "/accounts/vouchers/purchase", label: "Purchase" },
+          { to: "/accounts/vouchers/receipt", label: "Receipt" },
+          { to: "/accounts/vouchers/payment", label: "Payment" },
+          { to: "/accounts/vouchers/journal", label: "Journal" },
+          { to: "/accounts/vouchers/contra", label: "Contra" },
+          { to: "/accounts/vouchers/debit-note", label: "Debit Note" },
+          { to: "/accounts/vouchers/credit-note", label: "Credit Note" },
+        ]
+      },
       { to: "/accounts/day-book", label: "Day Book", icon: ClipboardList },
       { to: "/accounts/cash-book", label: "Cash Book", icon: Wallet },
       { to: "/accounts/bank-book", label: "Bank Book", icon: Landmark },
@@ -126,6 +142,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
+  
+  // Voucher sub-menu ko open/close control karne ke liye state
+  const [voucherMenuOpen, setVoucherMenuOpen] = useState(false);
+
+  // Agar current URL kisi voucher sub-menu ka hai, toh menu ko auto-open rakhein
+  useEffect(() => {
+    if (location.pathname.includes("/accounts/vouchers")) {
+      setVoucherMenuOpen(true);
+    }
+  }, [location.pathname]);
 
   // Handle keyboard shortcut (Ctrl+K / Cmd+K)
   useEffect(() => {
@@ -244,24 +270,79 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                   {group.label}
                 </p>
               )}
-              {group.items.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  onClick={() => setCommandMenuOpen(false)}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
-                    )
-                  }
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </NavLink>
-              ))}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const hasSubItems = !!item.subItems;
+
+                if (hasSubItems) {
+                  return (
+                    <div key={item.to} className="space-y-1">
+                      {/* Parent Button for Voucher Center */}
+                      <button
+                        onClick={() => setVoucherMenuOpen(!voucherMenuOpen)}
+                        className={cn(
+                          "flex items-center justify-between w-full px-3 py-2 rounded-lg text-sm transition-all duration-200 text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                          location.pathname.includes(item.to) && "bg-sidebar-accent/30 text-sidebar-foreground font-medium"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className="h-4 w-4" />
+                          {item.label}
+                        </div>
+                        <ChevronDown 
+                          className={cn(
+                            "h-3.5 w-3.5 transition-transform duration-200 text-sidebar-foreground/40",
+                            voucherMenuOpen && "transform rotate-180 text-sidebar-foreground"
+                          )} 
+                        />
+                      </button>
+
+                      {/* Sub-menu container */}
+                      {voucherMenuOpen && (
+                        <div className="pl-6 space-y-1 transition-all duration-200 border-l border-sidebar-border/50 ml-5 mt-1">
+                          {item.subItems?.map((sub) => (
+                            <NavLink
+                              key={sub.to}
+                              to={sub.to}
+                              onClick={() => setCommandMenuOpen(false)}
+                              className={({ isActive }) =>
+                                cn(
+                                  "flex items-center px-3 py-1.5 rounded-md text-xs transition-all duration-200",
+                                  isActive
+                                    ? "bg-sidebar-accent text-sidebar-primary font-medium"
+                                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground hover:translate-x-0.5"
+                                )
+                              }
+                            >
+                              {sub.label}
+                            </NavLink>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // Default single NavLink items
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setCommandMenuOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200",
+                        isActive
+                          ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
+                      )
+                    }
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </NavLink>
+                );
+              })}
             </div>
           ))}
         </nav>
