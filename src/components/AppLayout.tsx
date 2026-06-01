@@ -83,6 +83,33 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: "Accounts",
+    items: [
+      { to: "/accounts/ledgers", label: "Ledger Accounts", icon: BookOpen },
+      { to: "/accounts/vouchers", label: "Voucher Center", icon: Receipt },
+      { to: "/accounts/day-book", label: "Day Book", icon: ClipboardList },
+      { to: "/accounts/cash-book", label: "Cash Book", icon: Wallet },
+      { to: "/accounts/bank-book", label: "Bank Book", icon: Landmark },
+      { to: "/accounts/trial-balance", label: "Trial Balance", icon: Scale },
+      { to: "/accounts/profit-loss", label: "Profit & Loss", icon: PieChart },
+      { to: "/accounts/balance-sheet", label: "Balance Sheet", icon: FileSpreadsheet },
+      { to: "/accounts/receivables", label: "Receivables", icon: ArrowUpRight },
+      { to: "/accounts/payables", label: "Payables", icon: ArrowDownRight },
+    ],
+  },
+  {
+    label: "GST",
+    items: [
+      { to: "/gst/summary", label: "GST Summary", icon: FileSpreadsheet },
+    ],
+  },
+  {
+    label: "Administration",
+    items: [
+      { to: "/admin/audit-logs", label: "Audit Logs", icon: ShieldCheck },
+    ],
+  },
+  {
     label: "Account",
     items: [
       { to: "/profile", label: "Profile", icon: User },
