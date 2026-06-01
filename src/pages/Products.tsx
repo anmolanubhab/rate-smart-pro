@@ -1,5 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useState, useCallback } from "react";
 import {
   Plus, Pencil, Trash2, Package, Search,
   AlertTriangle, Upload, ArrowUpDown, ArrowUp, ArrowDown,
@@ -62,7 +61,7 @@ const PRODUCT_COLUMNS = `
   barcode
 `.trim();
 
-// ─── Server-side fetch with pagination, search, sort ────────────────────────
+// ─── Server-side fetch with pagination, search, sort ─────────────────────────
 
 async function fetchProductsPage(
   userId: string,
@@ -97,7 +96,7 @@ async function fetchProductsPage(
   };
 }
 
-// ─── Sort header component ───────────────────────────────────────────────────
+// ─── Sort header ──────────────────────────────────────────────────────────────
 
 const SortHeader = ({
   label,
@@ -134,7 +133,7 @@ const SortHeader = ({
   );
 };
 
-// ─── Skeleton row ────────────────────────────────────────────────────────────
+// ─── Skeleton rows ────────────────────────────────────────────────────────────
 
 const SkeletonRow = ({ index }: { index: number }) => (
   <tr className="border-t border-border animate-pulse" style={{ opacity: 1 - index * 0.07 }}>
@@ -146,12 +145,12 @@ const SkeletonRow = ({ index }: { index: number }) => (
   </tr>
 );
 
-// ─── Main component ──────────────────────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────────
 
 const Products = () => {
   const { user } = useAuth();
 
-  // Data state
+  // Data
   const [items, setItems] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -160,7 +159,7 @@ const Products = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-  // Search
+  // Search + debounce
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
 
@@ -174,10 +173,7 @@ const Products = () => {
   const [saving, setSaving] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
-  // Virtualizer scroll parent
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  // ── Load data ──────────────────────────────────────────────────────────────
+  // ── Load ──────────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -207,12 +203,12 @@ const Products = () => {
     load();
   }, [load]);
 
-  // Reset to page 1 when search or sort changes
+  // Reset to page 1 on new search / sort
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, sort]);
 
-  // ── Sorting ────────────────────────────────────────────────────────────────
+  // ── Sorting ───────────────────────────────────────────────────────────────
 
   const handleSort = (column: SortColumn) => {
     setSort((prev) =>
@@ -222,7 +218,7 @@ const Products = () => {
     );
   };
 
-  // ── Dialog helpers ─────────────────────────────────────────────────────────
+  // ── Dialog helpers ────────────────────────────────────────────────────────
 
   const openNew = () => {
     setEditing(null);
@@ -293,16 +289,7 @@ const Products = () => {
     load();
   };
 
-  // ── Virtualizer (for large in-page sets) ──────────────────────────────────
-
-  const rowVirtualizer = useVirtualizer({
-    count: loading ? 10 : items.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 45,
-    overscan: 20,
-  });
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in-up">
@@ -316,7 +303,6 @@ const Products = () => {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {/* Search */}
           <div className="relative flex-1 md:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -343,14 +329,9 @@ const Products = () => {
 
       <ProductImport open={importOpen} onOpenChange={setImportOpen} onImported={load} />
 
-      {/* Grid */}
+      {/* ERP Grid */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden flex flex-col">
-        {/* Sticky table head + scrollable body */}
-        <div
-          ref={parentRef}
-          className="overflow-auto"
-          style={{ maxHeight: "calc(100vh - 320px)", minHeight: 200 }}
-        >
+        <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 320px)", minHeight: 200 }}>
           <table className="w-full text-sm border-separate border-spacing-0">
             <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
@@ -375,96 +356,66 @@ const Products = () => {
                     <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                     <p className="font-display font-semibold">No products found</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      {search ? "Try a different search term." : "Add your first spare part to start."}
+                      {search
+                        ? "Try a different search term."
+                        : "Add your first spare part to start."}
                     </p>
                   </td>
                 </tr>
               ) : (
-                // Virtualizer: only visible rows rendered
-                <>
-                  {/* Spacer before visible rows */}
-                  {rowVirtualizer.getVirtualItems()[0]?.start > 0 && (
-                    <tr>
-                      <td
-                        colSpan={9}
-                        style={{ height: rowVirtualizer.getVirtualItems()[0].start }}
-                      />
+                items.map((p) => {
+                  const low = Number(p.stock) <= Number(p.low_stock_threshold);
+                  const out = Number(p.stock) <= 0;
+                  return (
+                    <tr
+                      key={p.id}
+                      className="border-t border-border hover:bg-muted/30 transition-colors"
+                    >
+                      <td className="px-4 py-2.5 font-mono text-xs">{p.part_number}</td>
+                      <td className="px-4 py-2.5 font-medium">{p.name}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{p.vehicle_model || "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge variant="outline" className="capitalize">{p.category}</Badge>
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        ₹{Number(p.mrp).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                        ₹{Number(p.dealer_rate).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        <span
+                          className={
+                            out
+                              ? "text-destructive font-semibold"
+                              : low
+                              ? "text-amber-500 font-semibold"
+                              : ""
+                          }
+                        >
+                          {Number(p.stock)}
+                        </span>
+                        {(low || out) && (
+                          <AlertTriangle className="inline-block h-3.5 w-3.5 ml-1 -mt-0.5 text-amber-500" />
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{p.gst_pct}%</td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => remove(p)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
                     </tr>
-                  )}
-
-                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                    const p = items[virtualRow.index];
-                    if (!p) return null;
-                    const low = Number(p.stock) <= Number(p.low_stock_threshold);
-                    const out = Number(p.stock) <= 0;
-
-                    return (
-                      <tr
-                        key={p.id}
-                        data-index={virtualRow.index}
-                        ref={rowVirtualizer.measureElement}
-                        className="border-t border-border hover:bg-muted/30 transition-colors"
-                      >
-                        <td className="px-4 py-2.5 font-mono text-xs">{p.part_number}</td>
-                        <td className="px-4 py-2.5 font-medium">{p.name}</td>
-                        <td className="px-4 py-2.5 text-muted-foreground">{p.vehicle_model || "—"}</td>
-                        <td className="px-4 py-2.5">
-                          <Badge variant="outline" className="capitalize">{p.category}</Badge>
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">
-                          ₹{Number(p.mrp).toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                          ₹{Number(p.dealer_rate).toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">
-                          <span
-                            className={
-                              out
-                                ? "text-destructive font-semibold"
-                                : low
-                                ? "text-amber-500 font-semibold"
-                                : ""
-                            }
-                          >
-                            {Number(p.stock)}
-                          </span>
-                          {(low || out) && (
-                            <AlertTriangle className="inline-block h-3.5 w-3.5 ml-1 -mt-0.5 text-amber-500" />
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">{p.gst_pct}%</td>
-                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => remove(p)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                  {/* Spacer after visible rows */}
-                  {(() => {
-                    const vItems = rowVirtualizer.getVirtualItems();
-                    const lastItem = vItems[vItems.length - 1];
-                    const remainingHeight = lastItem
-                      ? rowVirtualizer.getTotalSize() - lastItem.end
-                      : 0;
-                    return remainingHeight > 0 ? (
-                      <tr>
-                        <td colSpan={9} style={{ height: remainingHeight }} />
-                      </tr>
-                    ) : null;
-                  })()}
-                </>
+                  );
+                })
               )}
             </tbody>
           </table>
