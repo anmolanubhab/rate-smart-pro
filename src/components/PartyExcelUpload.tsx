@@ -196,7 +196,7 @@ function PartyExcelUpload({ open, onOpenChange, userId, onImported }: Props) {
           credit_limit: r.credit_limit || 0,
           outstanding_balance: r.outstanding_balance || 0,
           default_discount: r.default_discount || 0,
-          discount_type: "RD",
+          discount_type: "RD" as const,
           agreed_discount: r.agreed_discount || 0,
           notes: r.notes || null,
         };
