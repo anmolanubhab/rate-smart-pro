@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import {
   Plus, Pencil, Trash2, Package, Search,
   AlertTriangle, Upload, ArrowUpDown, ArrowUp, ArrowDown,
-  RefreshCw,
+  RefreshCw, Download,
 } from "lucide-react";
 import ProductImport from "@/components/ProductImport";
 import { ProductsPagination } from "@/components/ProductsPagination";
@@ -172,6 +172,7 @@ const Products = () => {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
@@ -207,6 +208,76 @@ const Products = () => {
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, sort]);
+
+  // ── Export all (CSV) ──────────────────────────────────────────────────────
+
+  const exportAll = async () => {
+    if (!user) return;
+    setExporting(true);
+    toast.info("Exporting… please wait");
+    try {
+      // Fetch all matching records (no range limit) with current search + sort
+      let query = supabase
+        .from("products")
+        .select(PRODUCT_COLUMNS)
+        .eq("user_id", user.id)
+        .order(sort.column, { ascending: sort.direction === "asc" });
+
+      if (debouncedSearch.trim()) {
+        const q = `%${debouncedSearch.trim()}%`;
+        query = query.or(
+          `part_number.ilike.${q},name.ilike.${q},vehicle_model.ilike.${q},barcode.ilike.${q}`
+        );
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const rows = (data as Product[]) ?? [];
+
+      // Build CSV
+      const headers = [
+        "Part Number", "Name", "Vehicle Model", "Category",
+        "MRP (₹)", "Dealer Rate (₹)", "Stock", "Low Stock Threshold",
+        "GST %", "Barcode", "Status",
+      ];
+
+      const escape = (v: string | number | null | undefined) => {
+        const s = v == null ? "" : String(v);
+        return s.includes(",") || s.includes('"') || s.includes("\n")
+          ? `"${s.replace(/"/g, '""')}"`
+          : s;
+      };
+
+      const csvLines = [
+        headers.join(","),
+        ...rows.map((p) =>
+          [
+            p.part_number, p.name, p.vehicle_model || "",
+            p.category, p.mrp, p.dealer_rate, p.stock,
+            p.low_stock_threshold, p.gst_pct, p.barcode || "", p.status,
+          ]
+            .map(escape)
+            .join(",")
+        ),
+      ];
+
+      const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const ts = new Date().toISOString().slice(0, 10);
+      a.download = `products_export_${ts}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${rows.length.toLocaleString()} products`);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // ── Sorting ───────────────────────────────────────────────────────────────
 
@@ -317,6 +388,10 @@ const Products = () => {
           </div>
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="h-4 w-4" /> Import Products
+          </Button>
+          <Button variant="outline" onClick={exportAll} disabled={exporting}>
+            <Download className="h-4 w-4" />
+            {exporting ? "Exporting…" : "Export CSV"}
           </Button>
           <Button
             onClick={openNew}
