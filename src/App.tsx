@@ -23,6 +23,18 @@ import Settings from "./pages/Settings";
 import PendingOrders from "./pages/PendingOrders";
 import Dispatch from "./pages/Dispatch";
 import NotFound from "./pages/NotFound";
+import LedgerAccounts from "./pages/accounts/LedgerAccounts";
+import VoucherCenter from "./pages/accounts/VoucherCenter";
+import DayBook from "./pages/accounts/DayBook";
+import CashBook from "./pages/accounts/CashBook";
+import BankBook from "./pages/accounts/BankBook";
+import TrialBalance from "./pages/accounts/TrialBalance";
+import ProfitLoss from "./pages/accounts/ProfitLoss";
+import BalanceSheet from "./pages/accounts/BalanceSheet";
+import Receivables from "./pages/accounts/Receivables";
+import Payables from "./pages/accounts/Payables";
+import GstSummary from "./pages/gst/GstSummary";
+import AuditLogs from "./pages/admin/AuditLogs";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +64,18 @@ const App = () => (
               <Route path="/reports" element={<AppLayout><Reports /></AppLayout>} />
               <Route path="/settings" element={<AppLayout><Settings /></AppLayout>} />
               <Route path="/profile" element={<AppLayout><Profile /></AppLayout>} />
+              <Route path="/accounts/ledgers" element={<AppLayout><LedgerAccounts /></AppLayout>} />
+              <Route path="/accounts/vouchers" element={<AppLayout><VoucherCenter /></AppLayout>} />
+              <Route path="/accounts/day-book" element={<AppLayout><DayBook /></AppLayout>} />
+              <Route path="/accounts/cash-book" element={<AppLayout><CashBook /></AppLayout>} />
+              <Route path="/accounts/bank-book" element={<AppLayout><BankBook /></AppLayout>} />
+              <Route path="/accounts/trial-balance" element={<AppLayout><TrialBalance /></AppLayout>} />
+              <Route path="/accounts/profit-loss" element={<AppLayout><ProfitLoss /></AppLayout>} />
+              <Route path="/accounts/balance-sheet" element={<AppLayout><BalanceSheet /></AppLayout>} />
+              <Route path="/accounts/receivables" element={<AppLayout><Receivables /></AppLayout>} />
+              <Route path="/accounts/payables" element={<AppLayout><Payables /></AppLayout>} />
+              <Route path="/gst/summary" element={<AppLayout><GstSummary /></AppLayout>} />
+              <Route path="/admin/audit-logs" element={<AppLayout><AuditLogs /></AppLayout>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

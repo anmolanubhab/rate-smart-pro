@@ -93,7 +93,7 @@ const Parties = () => {
         name: form.name.trim(),
         address: form.address.trim() || null,
         default_discount: parseFloat(form.default_discount) || 0,
-        discount_type: "RD",
+        discount_type: "RD" as const,
         agreed_discount: parseFloat(form.agreed_discount) || 0,
         phone: form.phone.trim() || null,
         gst: form.gst.trim() || null,
