@@ -28,6 +28,8 @@ import {
   PieChart,
   ShieldCheck,
   ClipboardList,
+} from "lucide-react";
+
 
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
