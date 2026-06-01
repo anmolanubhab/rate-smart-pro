@@ -216,24 +216,36 @@ const Products = () => {
     setExporting(true);
     toast.info("Exporting… please wait");
     try {
-      // Fetch all matching records (no range limit) with current search + sort
-      let query = supabase
-        .from("products")
-        .select(PRODUCT_COLUMNS)
-        .eq("user_id", user.id)
-        .order(sort.column, { ascending: sort.direction === "asc" });
+      // Fetch ALL records in batches of 1000 (Supabase max per request)
+      const BATCH = 1000;
+      const rows: Product[] = [];
+      let from = 0;
+      let hasMore = true;
 
-      if (debouncedSearch.trim()) {
-        const q = `%${debouncedSearch.trim()}%`;
-        query = query.or(
-          `part_number.ilike.${q},name.ilike.${q},vehicle_model.ilike.${q},barcode.ilike.${q}`
-        );
+      while (hasMore) {
+        let query = supabase
+          .from("products")
+          .select(PRODUCT_COLUMNS)
+          .eq("user_id", user.id)
+          .order(sort.column, { ascending: sort.direction === "asc" })
+          .range(from, from + BATCH - 1);
+
+        if (debouncedSearch.trim()) {
+          const q = `%${debouncedSearch.trim()}%`;
+          query = query.or(
+            `part_number.ilike.${q},name.ilike.${q},vehicle_model.ilike.${q},barcode.ilike.${q}`
+          );
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const batch = (data as Product[]) ?? [];
+        rows.push(...batch);
+
+        hasMore = batch.length === BATCH;
+        from += BATCH;
       }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      const rows = (data as Product[]) ?? [];
 
       // Build CSV
       const headers = [
