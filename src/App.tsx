@@ -23,6 +23,18 @@ import Settings from "./pages/Settings";
 import PendingOrders from "./pages/PendingOrders";
 import Dispatch from "./pages/Dispatch";
 import NotFound from "./pages/NotFound";
+import LedgerAccounts from "./pages/accounts/LedgerAccounts";
+import VoucherCenter from "./pages/accounts/VoucherCenter";
+import DayBook from "./pages/accounts/DayBook";
+import CashBook from "./pages/accounts/CashBook";
+import BankBook from "./pages/accounts/BankBook";
+import TrialBalance from "./pages/accounts/TrialBalance";
+import ProfitLoss from "./pages/accounts/ProfitLoss";
+import BalanceSheet from "./pages/accounts/BalanceSheet";
+import Receivables from "./pages/accounts/Receivables";
+import Payables from "./pages/accounts/Payables";
+import GstSummary from "./pages/gst/GstSummary";
+import AuditLogs from "./pages/admin/AuditLogs";
 
 const queryClient = new QueryClient();
 
