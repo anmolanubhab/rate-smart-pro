@@ -17,7 +17,17 @@ import {
   BarChart3,
   Settings as SettingsIcon,
   Search,
-} from "lucide-react";
+  BookOpen,
+  FileSpreadsheet,
+  Receipt,
+  Scale,
+  Wallet,
+  Landmark,
+  ArrowUpRight,
+  ArrowDownRight,
+  PieChart,
+  ShieldCheck,
+  ClipboardList,
 
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
