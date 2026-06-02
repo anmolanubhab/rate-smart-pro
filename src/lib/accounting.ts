@@ -84,7 +84,7 @@ export async function fetchVouchers(userId: string, opts: { type?: string; from?
     .order("voucher_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(opts.limit ?? 200);
-  if (opts.type && opts.type !== "All") q = q.eq("voucher_type", opts.type);
+  if (opts.type && opts.type !== "All") q = q.eq("voucher_type", opts.type as any);
   if (opts.from) q = q.gte("voucher_date", opts.from);
   if (opts.to) q = q.lte("voucher_date", opts.to);
   const { data, error } = await q;
