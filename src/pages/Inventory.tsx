@@ -64,7 +64,7 @@ async function fetchInventoryPage(
   const { data, error, count } = await query;
   if (error) throw error;
 
-  return { items: (data as Product[]) ?? [], total: count ?? 0 };
+  return { items: ((data ?? []) as unknown as Product[]), total: count ?? 0 };
 }
 
 // Fetch summary counts separately (cheap, always full scope)
