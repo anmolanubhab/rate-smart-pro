@@ -14,6 +14,7 @@ interface Props {
   columns: MockColumn[];
   rows: Record<string, any>[];
   footer?: ReactNode;
+  samplePending?: boolean;
 }
 
 const fmtInr = (n: number) =>
@@ -26,7 +27,7 @@ const toneClass = (t?: MockKpi["tone"]) =>
     : "text-foreground";
 
 export default function MockTablePage({
-  eyebrow, title, description, actions, kpis, columns, rows, footer,
+  eyebrow, title, description, actions, kpis, columns, rows, footer, samplePending = false,
 }: Props) {
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in-up">
@@ -39,9 +40,11 @@ export default function MockTablePage({
         {actions && <div className="flex gap-2 flex-wrap">{actions}</div>}
       </header>
 
-      <Badge variant="outline" className="border-amber-500/30 text-amber-600 bg-amber-500/5">
-        Sample data — backend wiring pending
-      </Badge>
+      {samplePending && (
+        <Badge variant="outline" className="border-amber-500/30 text-amber-600 bg-amber-500/5">
+          Sample data — backend wiring pending
+        </Badge>
+      )}
 
       {kpis && kpis.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
