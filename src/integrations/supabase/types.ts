@@ -14,6 +14,44 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_groups: {
+        Row: {
+          created_at: string
+          id: string
+          is_system: boolean
+          name: string
+          nature: Database["public"]["Enums"]["account_nature"]
+          parent_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          name: string
+          nature: Database["public"]["Enums"]["account_nature"]
+          parent_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          name?: string
+          nature?: Database["public"]["Enums"]["account_nature"]
+          parent_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_groups_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "account_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calculations: {
         Row: {
           after_rd: number
@@ -303,6 +341,62 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      ledger_accounts: {
+        Row: {
+          created_at: string
+          group_id: string | null
+          id: string
+          is_system: boolean
+          ledger_type: Database["public"]["Enums"]["ledger_type"]
+          name: string
+          notes: string | null
+          opening_balance: number
+          opening_balance_type: Database["public"]["Enums"]["dr_cr"]
+          party_id: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          group_id?: string | null
+          id?: string
+          is_system?: boolean
+          ledger_type: Database["public"]["Enums"]["ledger_type"]
+          name: string
+          notes?: string | null
+          opening_balance?: number
+          opening_balance_type?: Database["public"]["Enums"]["dr_cr"]
+          party_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          group_id?: string | null
+          id?: string
+          is_system?: boolean
+          ledger_type?: Database["public"]["Enums"]["ledger_type"]
+          name?: string
+          notes?: string | null
+          opening_balance?: number
+          opening_balance_type?: Database["public"]["Enums"]["dr_cr"]
+          party_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_accounts_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "account_groups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       order_activity_logs: {
         Row: {
@@ -756,21 +850,147 @@ export type Database = {
         }
         Relationships: []
       }
+      voucher_items: {
+        Row: {
+          cr_amount: number
+          created_at: string
+          dr_amount: number
+          id: string
+          ledger_id: string
+          narration: string | null
+          position: number
+          user_id: string
+          voucher_id: string
+        }
+        Insert: {
+          cr_amount?: number
+          created_at?: string
+          dr_amount?: number
+          id?: string
+          ledger_id: string
+          narration?: string | null
+          position?: number
+          user_id: string
+          voucher_id: string
+        }
+        Update: {
+          cr_amount?: number
+          created_at?: string
+          dr_amount?: number
+          id?: string
+          ledger_id?: string
+          narration?: string | null
+          position?: number
+          user_id?: string
+          voucher_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voucher_items_ledger_id_fkey"
+            columns: ["ledger_id"]
+            isOneToOne: false
+            referencedRelation: "ledger_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voucher_items_voucher_id_fkey"
+            columns: ["voucher_id"]
+            isOneToOne: false
+            referencedRelation: "vouchers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vouchers: {
+        Row: {
+          created_at: string
+          id: string
+          narration: string | null
+          reference_id: string | null
+          reference_type: string | null
+          status: Database["public"]["Enums"]["voucher_status"]
+          total_amount: number
+          updated_at: string
+          user_id: string
+          voucher_date: string
+          voucher_number: string
+          voucher_type: Database["public"]["Enums"]["voucher_type"]
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          narration?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+          status?: Database["public"]["Enums"]["voucher_status"]
+          total_amount?: number
+          updated_at?: string
+          user_id: string
+          voucher_date?: string
+          voucher_number: string
+          voucher_type: Database["public"]["Enums"]["voucher_type"]
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          narration?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+          status?: Database["public"]["Enums"]["voucher_status"]
+          total_amount?: number
+          updated_at?: string
+          user_id?: string
+          voucher_date?: string
+          voucher_number?: string
+          voucher_type?: Database["public"]["Enums"]["voucher_type"]
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      ensure_party_ledger: {
+        Args: { _party_id: string; _user_id: string }
+        Returns: string
+      }
       next_dispatch_number: { Args: { _user_id: string }; Returns: string }
       next_order_number: { Args: { _user_id: string }; Returns: string }
+      next_voucher_number: {
+        Args: {
+          _type: Database["public"]["Enums"]["voucher_type"]
+          _user_id: string
+        }
+        Returns: string
+      }
       recompute_order: { Args: { _order_id: string }; Returns: undefined }
       recompute_order_item: {
         Args: { _order_item_id: string }
         Returns: undefined
       }
+      seed_accounting_defaults: {
+        Args: { _user_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
+      account_nature: "asset" | "liability" | "income" | "expense" | "capital"
       discount_type: "RD" | "CD"
+      dr_cr: "dr" | "cr"
+      ledger_type:
+        | "cash"
+        | "bank"
+        | "customer"
+        | "supplier"
+        | "expense"
+        | "income"
+        | "gst_input"
+        | "gst_output"
+        | "asset"
+        | "liability"
+        | "capital"
+        | "system"
       order_status:
         | "draft"
         | "confirmed"
@@ -779,6 +999,16 @@ export type Database = {
         | "pending"
         | "partial"
       product_category: "spare" | "lubricant" | "accessory" | "other"
+      voucher_status: "draft" | "posted" | "cancelled"
+      voucher_type:
+        | "sales"
+        | "purchase"
+        | "receipt"
+        | "payment"
+        | "journal"
+        | "contra"
+        | "credit_note"
+        | "debit_note"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -906,7 +1136,23 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      account_nature: ["asset", "liability", "income", "expense", "capital"],
       discount_type: ["RD", "CD"],
+      dr_cr: ["dr", "cr"],
+      ledger_type: [
+        "cash",
+        "bank",
+        "customer",
+        "supplier",
+        "expense",
+        "income",
+        "gst_input",
+        "gst_output",
+        "asset",
+        "liability",
+        "capital",
+        "system",
+      ],
       order_status: [
         "draft",
         "confirmed",
@@ -916,6 +1162,17 @@ export const Constants = {
         "partial",
       ],
       product_category: ["spare", "lubricant", "accessory", "other"],
+      voucher_status: ["draft", "posted", "cancelled"],
+      voucher_type: [
+        "sales",
+        "purchase",
+        "receipt",
+        "payment",
+        "journal",
+        "contra",
+        "credit_note",
+        "debit_note",
+      ],
     },
   },
 } as const
