@@ -1,37 +1,50 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
+import { useAuth } from "@/hooks/useAuth";
+import { fetchVouchers, fmtInr } from "@/lib/accounting";
 
-const rows = [
-  { time: "09:42", number: "SAL-0241", type: "Sales", party: "Sharma Auto Spares", dr: 18450, cr: 0 },
-  { time: "10:15", number: "RCT-0118", type: "Receipt", party: "Sharma Auto Spares", dr: 0, cr: 18450 },
-  { time: "11:30", number: "PUR-0092", type: "Purchase", party: "MGM Distributors", dr: 0, cr: 64200 },
-  { time: "12:05", number: "PMT-0077", type: "Payment", party: "MGM Distributors", dr: 30000, cr: 0 },
-  { time: "14:20", number: "CNT-0021", type: "Contra", party: "HDFC ↔ Cash", dr: 25000, cr: 25000 },
-  { time: "16:48", number: "JNL-0034", type: "Journal", party: "Round-off", dr: 2400, cr: 2400 },
-];
+const labels: Record<string, string> = {
+  sales: "Sales", purchase: "Purchase", receipt: "Receipt", payment: "Payment",
+  journal: "Journal", contra: "Contra", credit_note: "Credit Note", debit_note: "Debit Note",
+};
 
 export default function DayBook() {
   useEffect(() => { document.title = "Day Book — RD Pro"; }, []);
-  const totDr = rows.reduce((s, r) => s + r.dr, 0);
-  const totCr = rows.reduce((s, r) => s + r.cr, 0);
+  const { user } = useAuth();
+  const { data = [], isLoading } = useQuery({
+    queryKey: ["daybook", user?.id],
+    enabled: !!user?.id,
+    queryFn: () => fetchVouchers(user!.id, { limit: 500 }),
+  });
+
+  const rows = useMemo(() => data.map((v) => ({
+    date: v.voucher_date,
+    number: v.voucher_number,
+    type: labels[v.voucher_type] ?? v.voucher_type,
+    narration: v.narration ?? "—",
+    amount: v.total_amount,
+  })), [data]);
+
+  const total = data.reduce((s, v) => s + Number(v.total_amount || 0), 0);
+
   return (
     <MockTablePage
       eyebrow="Accounts · Books"
       title="Day Book"
-      description="Chronological list of every voucher posted today. Mock data."
+      description={isLoading ? "Loading…" : "Chronological list of all posted vouchers."}
       kpis={[
-        { label: "Entries", value: rows.length },
-        { label: "Total Debit", value: `₹ ${totDr.toLocaleString("en-IN")}`, tone: "success" },
-        { label: "Total Credit", value: `₹ ${totCr.toLocaleString("en-IN")}`, tone: "warning" },
-        { label: "Date", value: "01 Jun 2026" },
+        { label: "Vouchers", value: data.length },
+        { label: "Total Value", value: `₹ ${fmtInr(total)}`, tone: "success" },
+        { label: "Today", value: data.filter(v => v.voucher_date === new Date().toISOString().slice(0, 10)).length },
+        { label: "Range", value: data.length ? `${data[data.length - 1].voucher_date} → ${data[0].voucher_date}` : "—" },
       ]}
       columns={[
-        { key: "time", label: "Time" },
+        { key: "date", label: "Date" },
         { key: "number", label: "Voucher #" },
         { key: "type", label: "Type" },
-        { key: "party", label: "Particulars" },
-        { key: "dr", label: "Debit", align: "right", format: "currency" },
-        { key: "cr", label: "Credit", align: "right", format: "currency" },
+        { key: "narration", label: "Narration" },
+        { key: "amount", label: "Amount", align: "right", format: "currency" },
       ]}
       rows={rows}
     />

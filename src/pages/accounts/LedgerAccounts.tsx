@@ -1,41 +1,82 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Plus, Download } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import MockTablePage from "@/components/accounts/MockTablePage";
-
-const rows = [
-  { name: "Cash in Hand", type: "Cash", opening: 50000, balance: 78500, status: "Active", status_tone: "success" },
-  { name: "HDFC Bank — 4521", type: "Bank", opening: 250000, balance: 412300, status: "Active", status_tone: "success" },
-  { name: "Sales Account", type: "Income", opening: 0, balance: 1284500, status: "Active", status_tone: "success" },
-  { name: "Purchase Account", type: "Expense", opening: 0, balance: 845200, status: "Active", status_tone: "success" },
-  { name: "GST Payable", type: "Duties & Taxes", opening: 0, balance: 64200, status: "Active", status_tone: "warning" },
-  { name: "Sundry Debtors", type: "Current Asset", opening: 180000, balance: 312400, status: "Active", status_tone: "success" },
-  { name: "Sundry Creditors", type: "Current Liability", opening: 95000, balance: 145800, status: "Active", status_tone: "success" },
-  { name: "Capital Account", type: "Capital", opening: 500000, balance: 500000, status: "Active", status_tone: "default" },
-];
+import { useAuth } from "@/hooks/useAuth";
+import { backfillAccounting, fetchLedgersWithBalance, seedAccounts, fmtInr } from "@/lib/accounting";
 
 export default function LedgerAccounts() {
   useEffect(() => { document.title = "Ledger Accounts — RD Pro"; }, []);
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [syncing, setSyncing] = useState(false);
+
+  const { data: ledgers = [], isLoading } = useQuery({
+    queryKey: ["ledgers", user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      await seedAccounts(user!.id);
+      return fetchLedgersWithBalance(user!.id);
+    },
+  });
+
+  const handleSync = async () => {
+    if (!user?.id) return;
+    setSyncing(true);
+    try {
+      const r = await backfillAccounting(user.id);
+      toast.success(`Synced ${r.parties} parties · posted ${r.ordersPosted} sales vouchers`);
+      qc.invalidateQueries({ queryKey: ["ledgers"] });
+      qc.invalidateQueries({ queryKey: ["vouchers"] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Sync failed");
+    } finally { setSyncing(false); }
+  };
+
+  const rows = useMemo(() => ledgers.map((l) => {
+    const bal = l.balance ?? 0;
+    return {
+      name: l.name,
+      type: l.ledger_type,
+      group: l.group?.name ?? "—",
+      opening: l.opening_balance,
+      balance: Math.abs(bal),
+      side: bal >= 0 ? "Dr" : "Cr",
+      status: l.is_system ? "System" : "Active",
+      status_tone: l.is_system ? "default" : "success",
+    };
+  }), [ledgers]);
+
+  const receivables = ledgers.filter(l => l.ledger_type === "customer").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
+  const payables = ledgers.filter(l => l.ledger_type === "supplier").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
+  const cashBank = ledgers.filter(l => l.ledger_type === "cash" || l.ledger_type === "bank").reduce((s, l) => s + (l.balance ?? 0), 0);
+
   return (
     <MockTablePage
       eyebrow="Accounts"
       title="Ledger Accounts"
-      description="Chart of accounts with running balances. Mock data shown — connect to backend when ready."
-      actions={<>
-        <Button variant="outline"><Download className="h-4 w-4" /> Export</Button>
-        <Button className="gradient-primary text-white border-0"><Plus className="h-4 w-4" /> New Ledger</Button>
-      </>}
+      description={isLoading ? "Loading…" : "Chart of accounts with running balances computed from posted vouchers."}
+      actions={
+        <Button variant="outline" onClick={handleSync} disabled={syncing}>
+          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          Sync from existing data
+        </Button>
+      }
       kpis={[
-        { label: "Total Ledgers", value: rows.length },
-        { label: "Receivables", value: "₹ 3,12,400", tone: "success" },
-        { label: "Payables", value: "₹ 1,45,800", tone: "warning" },
-        { label: "Cash + Bank", value: "₹ 4,90,800", tone: "success" },
+        { label: "Total Ledgers", value: ledgers.length },
+        { label: "Receivables", value: `₹ ${fmtInr(receivables)}`, tone: "success" },
+        { label: "Payables", value: `₹ ${fmtInr(payables)}`, tone: "warning" },
+        { label: "Cash + Bank", value: `₹ ${fmtInr(cashBank)}`, tone: cashBank >= 0 ? "success" : "danger" },
       ]}
       columns={[
         { key: "name", label: "Ledger Name" },
-        { key: "type", label: "Account Type" },
+        { key: "type", label: "Type" },
+        { key: "group", label: "Group" },
         { key: "opening", label: "Opening", align: "right", format: "currency" },
-        { key: "balance", label: "Current Balance", align: "right", format: "currency" },
+        { key: "balance", label: "Balance", align: "right", format: "currency" },
+        { key: "side", label: "Dr/Cr", align: "center" },
         { key: "status", label: "Status", format: "badge" },
       ]}
       rows={rows}
