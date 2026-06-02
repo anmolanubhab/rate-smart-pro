@@ -1,38 +1,49 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
-
-const rows = [
-  { section: "Revenue", ledger: "Sales", amount: 1284500 },
-  { section: "Revenue", ledger: "Other Income", amount: 12500 },
-  { section: "Cost of Goods Sold", ledger: "Purchases", amount: -845200 },
-  { section: "Cost of Goods Sold", ledger: "Opening Stock", amount: -120000 },
-  { section: "Cost of Goods Sold", ledger: "Closing Stock", amount: 845600 },
-  { section: "Indirect Expenses", ledger: "Rent", amount: -35000 },
-  { section: "Indirect Expenses", ledger: "Salaries", amount: -68000 },
-  { section: "Indirect Expenses", ledger: "Utilities", amount: -15950 },
-];
+import { useAuth } from "@/hooks/useAuth";
+import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 
 export default function ProfitLoss() {
   useEffect(() => { document.title = "Profit & Loss — RD Pro"; }, []);
-  const gross = 1284500 + 12500 - 845200 - 120000 + 845600;
-  const net = gross - 35000 - 68000 - 15950;
+  const { user } = useAuth();
+  const { data: ledgers = [], isLoading } = useQuery({
+    queryKey: ["pnl", user?.id],
+    enabled: !!user?.id,
+    queryFn: () => fetchLedgersWithBalance(user!.id),
+  });
+
+  const data = useMemo(() => {
+    const nature = (l: any) => l.group?.nature;
+    const income = ledgers.filter(l => nature(l) === "income").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
+    const expense = ledgers.filter(l => nature(l) === "expense").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
+    const rows: any[] = [];
+    ledgers.filter(l => nature(l) === "expense" && (l.balance ?? 0) !== 0).forEach(l => {
+      rows.push({ side: "Expense", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "warning" });
+    });
+    ledgers.filter(l => nature(l) === "income" && (l.balance ?? 0) !== 0).forEach(l => {
+      rows.push({ side: "Income", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "success" });
+    });
+    return { rows, income, expense, profit: income - expense };
+  }, [ledgers]);
+
   return (
     <MockTablePage
       eyebrow="Accounts · Financial"
       title="Profit & Loss"
-      description="Income vs expenditure for the period 01 Apr 2026 – 01 Jun 2026. Mock data."
+      description={isLoading ? "Loading…" : "Income vs Expense, computed live from posted vouchers."}
       kpis={[
-        { label: "Revenue", value: "₹ 12,97,000", tone: "success" },
-        { label: "COGS", value: "₹ 1,19,600", tone: "warning" },
-        { label: "Gross Profit", value: `₹ ${gross.toLocaleString("en-IN")}`, tone: "success" },
-        { label: "Net Profit", value: `₹ ${net.toLocaleString("en-IN")}`, tone: net >= 0 ? "success" : "danger" },
+        { label: "Total Income", value: `₹ ${fmtInr(data.income)}`, tone: "success" },
+        { label: "Total Expense", value: `₹ ${fmtInr(data.expense)}`, tone: "warning" },
+        { label: data.profit >= 0 ? "Net Profit" : "Net Loss", value: `₹ ${fmtInr(Math.abs(data.profit))}`, tone: data.profit >= 0 ? "success" : "danger" },
+        { label: "Lines", value: data.rows.length },
       ]}
       columns={[
-        { key: "section", label: "Section" },
-        { key: "ledger", label: "Ledger" },
+        { key: "side", label: "Side", format: "badge" },
+        { key: "item", label: "Particulars" },
         { key: "amount", label: "Amount", align: "right", format: "currency" },
       ]}
-      rows={rows}
+      rows={data.rows}
     />
   );
 }

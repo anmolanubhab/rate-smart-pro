@@ -1,34 +1,53 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
-
-const rows = [
-  { party: "MGM Distributors", bill: "BILL-0092", date: "2026-05-15", days: 17, amount: 64200, status: "Due Soon", status_tone: "warning" },
-  { party: "Bosch India", bill: "BILL-0088", date: "2026-04-22", days: 40, amount: 38500, status: "Overdue", status_tone: "danger" },
-  { party: "Lubricants Co.", bill: "BILL-0091", date: "2026-05-28", days: 4, amount: 22100, status: "Current", status_tone: "success" },
-  { party: "Tyre House", bill: "BILL-0090", date: "2026-05-24", days: 8, amount: 21000, status: "Current", status_tone: "success" },
-];
+import { useAuth } from "@/hooks/useAuth";
+import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 
 export default function Payables() {
   useEffect(() => { document.title = "Outstanding Payables — RD Pro"; }, []);
+  const { user } = useAuth();
+  const { data: ledgers = [], isLoading } = useQuery({
+    queryKey: ["payables", user?.id],
+    enabled: !!user?.id,
+    queryFn: () => fetchLedgersWithBalance(user!.id),
+  });
+
+  const rows = useMemo(() => {
+    return ledgers
+      .filter(l => l.ledger_type === "supplier" && (l.balance ?? 0) < 0)
+      .map(l => ({
+        supplier: l.name,
+        group: l.group?.name ?? "—",
+        amount: Math.abs(l.balance ?? 0),
+        status: "Outstanding",
+        status_tone: "warning",
+      }));
+  }, [ledgers]);
+
   const total = rows.reduce((s, r) => s + r.amount, 0);
-  const overdue = rows.filter(r => r.status === "Overdue").reduce((s, r) => s + r.amount, 0);
+
   return (
     <MockTablePage
       eyebrow="Accounts · Outstanding"
       title="Outstanding Payables"
-      description="Supplier-wise pending bills with ageing. Mock data."
+      description={
+        isLoading
+          ? "Loading…"
+          : rows.length === 0
+            ? "No supplier ledgers with a credit balance. Once Purchase vouchers are recorded against suppliers, they will appear here."
+            : "Supplier-wise outstanding from posted vouchers."
+      }
       kpis={[
-        { label: "Total Payable", value: `₹ ${total.toLocaleString("en-IN")}`, tone: "warning" },
-        { label: "Overdue", value: `₹ ${overdue.toLocaleString("en-IN")}`, tone: "danger" },
-        { label: "Bills", value: rows.length },
-        { label: "Avg Days", value: Math.round(rows.reduce((s, r) => s + r.days, 0) / rows.length) },
+        { label: "Total Payable", value: `₹ ${fmtInr(total)}`, tone: "warning" },
+        { label: "Suppliers", value: rows.length },
+        { label: "Supplier Ledgers", value: ledgers.filter(l => l.ledger_type === "supplier").length },
+        { label: "As On", value: new Date().toLocaleDateString("en-IN") },
       ]}
       columns={[
-        { key: "party", label: "Supplier" },
-        { key: "bill", label: "Bill #" },
-        { key: "date", label: "Date" },
-        { key: "days", label: "Days", align: "right", format: "number" },
-        { key: "amount", label: "Amount", align: "right", format: "currency" },
+        { key: "supplier", label: "Supplier" },
+        { key: "group", label: "Group" },
+        { key: "amount", label: "Outstanding", align: "right", format: "currency" },
         { key: "status", label: "Status", format: "badge" },
       ]}
       rows={rows}

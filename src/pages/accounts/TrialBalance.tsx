@@ -1,32 +1,41 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
-
-const rows = [
-  { ledger: "Cash in Hand", group: "Cash", dr: 61050, cr: 0 },
-  { ledger: "HDFC Bank — 4521", group: "Bank", dr: 412300, cr: 0 },
-  { ledger: "Sundry Debtors", group: "Current Asset", dr: 312400, cr: 0 },
-  { ledger: "Inventory", group: "Current Asset", dr: 845600, cr: 0 },
-  { ledger: "Sundry Creditors", group: "Current Liability", dr: 0, cr: 145800 },
-  { ledger: "GST Payable", group: "Duties & Taxes", dr: 0, cr: 64200 },
-  { ledger: "Capital Account", group: "Capital", dr: 0, cr: 500000 },
-  { ledger: "Sales Account", group: "Income", dr: 0, cr: 1284500 },
-  { ledger: "Purchase Account", group: "Expense", dr: 845200, cr: 0 },
-  { ledger: "Direct Expenses", group: "Expense", dr: 118950, cr: 0 },
-];
-const totDr = rows.reduce((s, r) => s + r.dr, 0);
-const totCr = rows.reduce((s, r) => s + r.cr, 0);
+import { useAuth } from "@/hooks/useAuth";
+import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 
 export default function TrialBalance() {
   useEffect(() => { document.title = "Trial Balance — RD Pro"; }, []);
+  const { user } = useAuth();
+  const { data: ledgers = [], isLoading } = useQuery({
+    queryKey: ["trial-balance", user?.id],
+    enabled: !!user?.id,
+    queryFn: () => fetchLedgersWithBalance(user!.id),
+  });
+
+  const { rows, totDr, totCr } = useMemo(() => {
+    let totDr = 0, totCr = 0;
+    const rows = ledgers
+      .filter(l => (l.balance ?? 0) !== 0)
+      .map(l => {
+        const bal = l.balance ?? 0;
+        const dr = bal > 0 ? bal : 0;
+        const cr = bal < 0 ? -bal : 0;
+        totDr += dr; totCr += cr;
+        return { ledger: l.name, group: l.group?.name ?? "—", dr, cr };
+      });
+    return { rows, totDr, totCr };
+  }, [ledgers]);
+
   return (
     <MockTablePage
       eyebrow="Accounts · Financial"
       title="Trial Balance"
-      description="Closing balances of all ledgers as of 01 Jun 2026. Mock data."
+      description={isLoading ? "Loading…" : "Closing balances of all ledgers, computed live from posted vouchers."}
       kpis={[
-        { label: "Total Debit", value: `₹ ${totDr.toLocaleString("en-IN")}`, tone: "success" },
-        { label: "Total Credit", value: `₹ ${totCr.toLocaleString("en-IN")}`, tone: "warning" },
-        { label: "Difference", value: `₹ ${(totDr - totCr).toLocaleString("en-IN")}`, tone: totDr === totCr ? "success" : "danger" },
+        { label: "Total Debit", value: `₹ ${fmtInr(totDr)}`, tone: "success" },
+        { label: "Total Credit", value: `₹ ${fmtInr(totCr)}`, tone: "warning" },
+        { label: "Difference", value: `₹ ${fmtInr(totDr - totCr)}`, tone: Math.abs(totDr - totCr) < 1 ? "success" : "danger" },
         { label: "Ledgers", value: rows.length },
       ]}
       columns={[
