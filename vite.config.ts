@@ -17,7 +17,8 @@ export default defineConfig(({ mode }) => ({
     react(),
     mode === "development" && componentTagger(),
     VitePWA({
-      registerType: "prompt",
+      registerType: "autoUpdate",
+      devOptions: { enabled: false },
       includeAssets: ["rdpro-logo.png"],
       manifest: {
         name: "RD Pro",
@@ -41,6 +42,15 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/~oauth/],
+        maximumFileSizeToCacheInBytes: 5242880,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: { cacheName: "html", networkTimeoutSeconds: 3 },
+          },
+        ],
       },
     }),
   ].filter(Boolean),
@@ -52,5 +62,21 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
+  },
+  build: {
+    chunkSizeWarningLimit: 1024,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("xlsx") || id.includes("jspdf") || id.includes("html2canvas")) return "vendor-export";
+          if (id.includes("@supabase")) return "vendor-supabase";
+          if (id.includes("@tanstack")) return "vendor-query";
+          if (id.includes("@radix-ui")) return "vendor-radix";
+          if (id.includes("recharts") || id.includes("d3-")) return "vendor-recharts";
+          if (id.includes("react-dom") || id.includes("react-router") || id.includes("scheduler") || id.includes("/react/")) return "vendor-react";
+        },
+      },
+    },
   },
 }));
