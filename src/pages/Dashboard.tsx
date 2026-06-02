@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Calculator as CalcIcon, TrendingUp, Activity, ArrowRight, Sparkles,
@@ -14,9 +14,17 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import InventoryWidgets from "@/components/InventoryWidgets";
-import ErpDashboardCards from "@/components/ErpDashboardCards";
+
+const InventoryWidgets = lazy(() => import("@/components/InventoryWidgets"));
+const ErpDashboardCards = lazy(() => import("@/components/ErpDashboardCards"));
+const BusinessHealthLayer = lazy(() => import("@/components/dashboard/BusinessHealthLayer"));
+const OperationsLayer = lazy(() => import("@/components/dashboard/OperationsLayer"));
+const AccountingLayer = lazy(() => import("@/components/dashboard/AccountingLayer"));
+const BusinessTrendCharts = lazy(() => import("@/components/dashboard/BusinessTrendCharts"));
+const RecentActivityFeed = lazy(() => import("@/components/dashboard/RecentActivityFeed"));
+const OnlineCommercePlaceholders = lazy(() => import("@/components/dashboard/OnlineCommercePlaceholders"));
 
 type Calc = {
   id: string;
@@ -127,15 +135,43 @@ const Dashboard = () => {
         <div>
           <p className="text-sm text-muted-foreground font-medium">Welcome back</p>
           <h1 className="font-display text-3xl md:text-4xl font-bold mt-1">{user?.email?.split("@")[0]}</h1>
-          <p className="text-muted-foreground mt-1">Business analytics across your calculations.</p>
+          <p className="text-muted-foreground mt-1">Business Health Control Center.</p>
         </div>
         <Button asChild className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant">
           <Link to="/calculator"><CalcIcon className="h-4 w-4" /> New calculation</Link>
         </Button>
       </header>
 
-      <InventoryWidgets />
-      <ErpDashboardCards />
+      <Suspense fallback={<SectionFallback />}>
+        <BusinessHealthLayer />
+      </Suspense>
+
+      <Suspense fallback={<SectionFallback />}>
+        <OperationsLayer />
+      </Suspense>
+
+      <Suspense fallback={<SectionFallback />}>
+        <InventoryWidgets />
+      </Suspense>
+
+      <Suspense fallback={<SectionFallback />}>
+        <AccountingLayer />
+      </Suspense>
+
+      <Suspense fallback={<SectionFallback />}>
+        <ErpDashboardCards />
+      </Suspense>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="font-display text-xl font-bold">Charts</h2>
+          <p className="text-sm text-muted-foreground">Business trends and existing RD analytics.</p>
+        </div>
+
+        <Suspense fallback={<ChartsFallback />}>
+          <BusinessTrendCharts />
+        </Suspense>
+      </section>
 
       {/* Filters */}
       <div className="rounded-2xl bg-card border border-border shadow-soft p-4 grid md:grid-cols-4 gap-3">
@@ -224,6 +260,14 @@ const Dashboard = () => {
         </ChartCard>
       </div>
 
+      <Suspense fallback={<SectionFallback />}>
+        <RecentActivityFeed />
+      </Suspense>
+
+      <Suspense fallback={<SectionFallback />}>
+        <OnlineCommercePlaceholders />
+      </Suspense>
+
       {/* Recent */}
       <section className="rounded-2xl bg-card border border-border shadow-soft p-6">
         <div className="flex items-center justify-between mb-4">
@@ -296,6 +340,23 @@ const ChartCard = ({ title, subtitle, children, wide }: { title: string; subtitl
 const Empty = () => (
   <div className="h-[240px] flex items-center justify-center text-sm text-muted-foreground">
     No data yet for selected filters.
+  </div>
+);
+
+const SectionFallback = () => (
+  <div className="rounded-2xl bg-card border border-border shadow-soft p-6">
+    <Skeleton className="h-4 w-48" />
+    <Skeleton className="h-3 w-80 mt-2" />
+    <Skeleton className="h-24 w-full mt-5" />
+  </div>
+);
+
+const ChartsFallback = () => (
+  <div className="grid lg:grid-cols-2 gap-4">
+    <SectionFallback />
+    <SectionFallback />
+    <SectionFallback />
+    <SectionFallback />
   </div>
 );
 
