@@ -91,7 +91,7 @@ async function fetchProductsPage(
   if (error) throw error;
 
   return {
-    items: (data as Product[]) ?? [],
+    items: ((data ?? []) as unknown as Product[]),
     total: count ?? 0,
   };
 }
@@ -240,7 +240,7 @@ const Products = () => {
         const { data, error } = await query;
         if (error) throw error;
 
-        const batch = (data as Product[]) ?? [];
+        const batch = ((data ?? []) as unknown as Product[]);
         rows.push(...batch);
 
         hasMore = batch.length === BATCH;

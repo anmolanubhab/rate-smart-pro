@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -9,34 +10,49 @@ import AppLayout from "@/components/AppLayout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
-import Calculator from "./pages/Calculator";
-import History from "./pages/History";
-import Parties from "./pages/Parties";
-import Profile from "./pages/Profile";
-import Products from "./pages/Products";
-import Orders from "./pages/Orders";
-import CreateOrder from "./pages/CreateOrder";
-import ExcelImport from "./pages/ExcelImport";
-import Inventory from "./pages/Inventory";
-import Reports from "./pages/Reports";
-import Settings from "./pages/Settings";
-import PendingOrders from "./pages/PendingOrders";
-import Dispatch from "./pages/Dispatch";
 import NotFound from "./pages/NotFound";
-import LedgerAccounts from "./pages/accounts/LedgerAccounts";
-import VoucherCenter from "./pages/accounts/VoucherCenter";
-import DayBook from "./pages/accounts/DayBook";
-import CashBook from "./pages/accounts/CashBook";
-import BankBook from "./pages/accounts/BankBook";
-import TrialBalance from "./pages/accounts/TrialBalance";
-import ProfitLoss from "./pages/accounts/ProfitLoss";
-import BalanceSheet from "./pages/accounts/BalanceSheet";
-import Receivables from "./pages/accounts/Receivables";
-import Payables from "./pages/accounts/Payables";
-import GstSummary from "./pages/gst/GstSummary";
-import AuditLogs from "./pages/admin/AuditLogs";
+
+// Lazy-loaded routes (split heavy modules into separate chunks)
+const Calculator = lazy(() => import("./pages/Calculator"));
+const History = lazy(() => import("./pages/History"));
+const Parties = lazy(() => import("./pages/Parties"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Products = lazy(() => import("./pages/Products"));
+const Orders = lazy(() => import("./pages/Orders"));
+const CreateOrder = lazy(() => import("./pages/CreateOrder"));
+const ExcelImport = lazy(() => import("./pages/ExcelImport"));
+const Inventory = lazy(() => import("./pages/Inventory"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Settings = lazy(() => import("./pages/Settings"));
+const PendingOrders = lazy(() => import("./pages/PendingOrders"));
+const Dispatch = lazy(() => import("./pages/Dispatch"));
+
+const LedgerAccounts = lazy(() => import("./pages/accounts/LedgerAccounts"));
+const VoucherCenter = lazy(() => import("./pages/accounts/VoucherCenter"));
+const DayBook = lazy(() => import("./pages/accounts/DayBook"));
+const CashBook = lazy(() => import("./pages/accounts/CashBook"));
+const BankBook = lazy(() => import("./pages/accounts/BankBook"));
+const TrialBalance = lazy(() => import("./pages/accounts/TrialBalance"));
+const ProfitLoss = lazy(() => import("./pages/accounts/ProfitLoss"));
+const BalanceSheet = lazy(() => import("./pages/accounts/BalanceSheet"));
+const Receivables = lazy(() => import("./pages/accounts/Receivables"));
+const Payables = lazy(() => import("./pages/accounts/Payables"));
+const GstSummary = lazy(() => import("./pages/gst/GstSummary"));
+const AuditLogs = lazy(() => import("./pages/admin/AuditLogs"));
 
 const queryClient = new QueryClient();
+
+const RouteFallback = () => (
+  <div className="flex items-center justify-center min-h-[40vh] text-sm text-muted-foreground">
+    Loading…
+  </div>
+);
+
+const L = (el: React.ReactNode) => (
+  <AppLayout>
+    <Suspense fallback={<RouteFallback />}>{el}</Suspense>
+  </AppLayout>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -50,32 +66,32 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/dashboard" element={<AppLayout><Dashboard /></AppLayout>} />
-              <Route path="/calculator" element={<AppLayout><Calculator /></AppLayout>} />
-              <Route path="/history" element={<AppLayout><History /></AppLayout>} />
-              <Route path="/parties" element={<AppLayout><Parties /></AppLayout>} />
-              <Route path="/products" element={<AppLayout><Products /></AppLayout>} />
-              <Route path="/orders" element={<AppLayout><Orders /></AppLayout>} />
-              <Route path="/orders/new" element={<AppLayout><CreateOrder /></AppLayout>} />
-              <Route path="/orders/edit/:id" element={<AppLayout><CreateOrder /></AppLayout>} />
-              <Route path="/pending" element={<AppLayout><PendingOrders /></AppLayout>} />
-              <Route path="/dispatch" element={<AppLayout><Dispatch /></AppLayout>} />
-              <Route path="/excel-import" element={<AppLayout><ExcelImport /></AppLayout>} />
-              <Route path="/inventory" element={<AppLayout><Inventory /></AppLayout>} />
-              <Route path="/reports" element={<AppLayout><Reports /></AppLayout>} />
-              <Route path="/settings" element={<AppLayout><Settings /></AppLayout>} />
-              <Route path="/profile" element={<AppLayout><Profile /></AppLayout>} />
-              <Route path="/accounts/ledgers" element={<AppLayout><LedgerAccounts /></AppLayout>} />
-              <Route path="/accounts/vouchers" element={<AppLayout><VoucherCenter /></AppLayout>} />
-              <Route path="/accounts/day-book" element={<AppLayout><DayBook /></AppLayout>} />
-              <Route path="/accounts/cash-book" element={<AppLayout><CashBook /></AppLayout>} />
-              <Route path="/accounts/bank-book" element={<AppLayout><BankBook /></AppLayout>} />
-              <Route path="/accounts/trial-balance" element={<AppLayout><TrialBalance /></AppLayout>} />
-              <Route path="/accounts/profit-loss" element={<AppLayout><ProfitLoss /></AppLayout>} />
-              <Route path="/accounts/balance-sheet" element={<AppLayout><BalanceSheet /></AppLayout>} />
-              <Route path="/accounts/receivables" element={<AppLayout><Receivables /></AppLayout>} />
-              <Route path="/accounts/payables" element={<AppLayout><Payables /></AppLayout>} />
-              <Route path="/gst/summary" element={<AppLayout><GstSummary /></AppLayout>} />
-              <Route path="/admin/audit-logs" element={<AppLayout><AuditLogs /></AppLayout>} />
+              <Route path="/calculator" element={L(<Calculator />)} />
+              <Route path="/history" element={L(<History />)} />
+              <Route path="/parties" element={L(<Parties />)} />
+              <Route path="/products" element={L(<Products />)} />
+              <Route path="/orders" element={L(<Orders />)} />
+              <Route path="/orders/new" element={L(<CreateOrder />)} />
+              <Route path="/orders/edit/:id" element={L(<CreateOrder />)} />
+              <Route path="/pending" element={L(<PendingOrders />)} />
+              <Route path="/dispatch" element={L(<Dispatch />)} />
+              <Route path="/excel-import" element={L(<ExcelImport />)} />
+              <Route path="/inventory" element={L(<Inventory />)} />
+              <Route path="/reports" element={L(<Reports />)} />
+              <Route path="/settings" element={L(<Settings />)} />
+              <Route path="/profile" element={L(<Profile />)} />
+              <Route path="/accounts/ledgers" element={L(<LedgerAccounts />)} />
+              <Route path="/accounts/vouchers" element={L(<VoucherCenter />)} />
+              <Route path="/accounts/day-book" element={L(<DayBook />)} />
+              <Route path="/accounts/cash-book" element={L(<CashBook />)} />
+              <Route path="/accounts/bank-book" element={L(<BankBook />)} />
+              <Route path="/accounts/trial-balance" element={L(<TrialBalance />)} />
+              <Route path="/accounts/profit-loss" element={L(<ProfitLoss />)} />
+              <Route path="/accounts/balance-sheet" element={L(<BalanceSheet />)} />
+              <Route path="/accounts/receivables" element={L(<Receivables />)} />
+              <Route path="/accounts/payables" element={L(<Payables />)} />
+              <Route path="/gst/summary" element={L(<GstSummary />)} />
+              <Route path="/admin/audit-logs" element={L(<AuditLogs />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

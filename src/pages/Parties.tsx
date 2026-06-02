@@ -95,7 +95,7 @@ async function fetchPartiesPage(
 
   const { data, error, count } = await q;
   if (error) throw error;
-  return { items: (data as Party[]) ?? [], total: count ?? 0 };
+  return { items: ((data ?? []) as unknown as Party[]), total: count ?? 0 };
 }
 
 async function fetchSummaryCounts(userId: string) {
@@ -318,7 +318,7 @@ const Parties = () => {
         }
         const { data, error } = await q;
         if (error) throw error;
-        const batch = (data as Party[]) ?? [];
+        const batch = ((data ?? []) as unknown as Party[]);
         rows.push(...batch);
         hasMore = batch.length === BATCH;
         from += BATCH;
