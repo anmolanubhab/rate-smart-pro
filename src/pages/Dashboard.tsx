@@ -137,9 +137,6 @@ const Dashboard = () => {
           <h1 className="font-display text-3xl md:text-4xl font-bold mt-1">{user?.email?.split("@")[0]}</h1>
           <p className="text-muted-foreground mt-1">Business Health Control Center.</p>
         </div>
-        <Button asChild className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant">
-          <Link to="/calculator"><CalcIcon className="h-4 w-4" /> New calculation</Link>
-        </Button>
       </header>
 
       <Suspense fallback={<SectionFallback />}>
