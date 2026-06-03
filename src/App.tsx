@@ -96,6 +96,10 @@ const App = () => (
               <Route path="/accounts/payables" element={L(<Payables />)} />
               <Route path="/gst/summary" element={L(<GstSummary />)} />
               <Route path="/admin/audit-logs" element={L(<AuditLogs />)} />
+              <Route path="/setup/business" element={L(<BusinessWizard />)} />
+              <Route path="/settings/business-profile" element={L(<BusinessProfile />)} />
+              <Route path="/settings/team" element={L(<Team />)} />
+              <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
