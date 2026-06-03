@@ -123,6 +123,7 @@ const navGroups: NavGroup[] = [
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, loading, signOut } = useAuth();
+  const { business, loading: bizLoading } = useBusiness();
   const { theme, toggle } = useTheme();
   const location = useLocation();
   
