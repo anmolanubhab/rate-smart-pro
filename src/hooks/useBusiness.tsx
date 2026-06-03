@@ -46,11 +46,10 @@ export function useBusiness() {
     enabled: !!user,
     queryFn: async () => {
       const { data: member, error: e1 } = await supabase
-        .from("business_members")
+        .from("business_users")
         .select("business_id, role")
         .eq("user_id", user!.id)
-        .eq("status", "active")
-        .order("joined_at", { ascending: true })
+        .order("created_at", { ascending: true })
         .limit(1)
         .maybeSingle();
       if (e1) throw e1;
