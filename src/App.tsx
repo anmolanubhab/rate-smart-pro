@@ -39,6 +39,10 @@ const Receivables = lazy(() => import("./pages/accounts/Receivables"));
 const Payables = lazy(() => import("./pages/accounts/Payables"));
 const GstSummary = lazy(() => import("./pages/gst/GstSummary"));
 const AuditLogs = lazy(() => import("./pages/admin/AuditLogs"));
+const BusinessWizard = lazy(() => import("./pages/setup/BusinessWizard"));
+const BusinessProfile = lazy(() => import("./pages/settings/BusinessProfile"));
+const Team = lazy(() => import("./pages/settings/Team"));
+const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
 
 const queryClient = new QueryClient();
 
