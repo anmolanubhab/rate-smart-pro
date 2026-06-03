@@ -38,10 +38,10 @@ export default function Team() {
     enabled: !!business,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("business_members")
-        .select("id, user_id, role, status, invited_email, joined_at")
+        .from("business_users")
+        .select("id, user_id, role, created_at")
         .eq("business_id", business!.id)
-        .order("joined_at", { ascending: true });
+        .order("created_at", { ascending: true });
       if (error) throw error;
       return data;
     },
@@ -51,11 +51,10 @@ export default function Team() {
 
   const addMember = async () => {
     if (!business || !inviteUserId.trim()) { toast.error("Enter a user ID"); return; }
-    const { error } = await supabase.from("business_members").insert({
+    const { error } = await supabase.from("business_users").insert({
       business_id: business.id,
       user_id: inviteUserId.trim(),
       role: inviteRole,
-      status: "active",
     });
     if (error) { toast.error(error.message); return; }
     await logAudit({ business_id: business.id, action: "TEAM_ADD", entity_type: "business_member", new_value: { user_id: inviteUserId, role: inviteRole } });
@@ -65,7 +64,7 @@ export default function Team() {
   };
 
   const changeRole = async (id: string, newRole: BusinessRole) => {
-    const { error } = await supabase.from("business_members").update({ role: newRole }).eq("id", id);
+    const { error } = await supabase.from("business_users").update({ role: newRole }).eq("id", id);
     if (error) { toast.error(error.message); return; }
     await logAudit({ business_id: business?.id, action: "TEAM_ROLE_CHANGE", entity_type: "business_member", entity_id: id, new_value: { role: newRole } });
     qc.invalidateQueries({ queryKey: ["business-members"] });
@@ -73,7 +72,7 @@ export default function Team() {
 
   const remove = async (id: string) => {
     if (!confirm("Remove this member?")) return;
-    const { error } = await supabase.from("business_members").delete().eq("id", id);
+    const { error } = await supabase.from("business_users").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     await logAudit({ business_id: business?.id, action: "TEAM_REMOVE", entity_type: "business_member", entity_id: id });
     qc.invalidateQueries({ queryKey: ["business-members"] });
@@ -110,7 +109,7 @@ export default function Team() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>User ID</TableHead><TableHead>Role</TableHead><TableHead>Status</TableHead><TableHead>Joined</TableHead><TableHead></TableHead>
+                <TableHead>User ID</TableHead><TableHead>Role</TableHead><TableHead>Added</TableHead><TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -125,8 +124,7 @@ export default function Team() {
                       </Select>
                     ) : m.role}
                   </TableCell>
-                  <TableCell>{m.status}</TableCell>
-                  <TableCell className="text-xs">{new Date(m.joined_at).toLocaleDateString()}</TableCell>
+                  <TableCell className="text-xs">{new Date(m.created_at).toLocaleDateString()}</TableCell>
                   <TableCell>
                     {canManage && m.role !== "owner" && (
                       <Button size="sm" variant="ghost" onClick={() => remove(m.id)}>Remove</Button>
