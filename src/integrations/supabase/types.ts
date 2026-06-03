@@ -52,6 +52,200 @@ export type Database = {
           },
         ]
       }
+      audit_logs: {
+        Row: {
+          action: string
+          business_id: string | null
+          created_at: string
+          device: string | null
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          ip: string | null
+          new_value: Json | null
+          old_value: Json | null
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          business_id?: string | null
+          created_at?: string
+          device?: string | null
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          ip?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          business_id?: string | null
+          created_at?: string
+          device?: string | null
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          ip?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      business_members: {
+        Row: {
+          business_id: string
+          id: string
+          invited_by: string | null
+          invited_email: string | null
+          joined_at: string
+          role: Database["public"]["Enums"]["business_role"]
+          status: string
+          user_id: string
+        }
+        Insert: {
+          business_id: string
+          id?: string
+          invited_by?: string | null
+          invited_email?: string | null
+          joined_at?: string
+          role?: Database["public"]["Enums"]["business_role"]
+          status?: string
+          user_id: string
+        }
+        Update: {
+          business_id?: string
+          id?: string
+          invited_by?: string | null
+          invited_email?: string | null
+          joined_at?: string
+          role?: Database["public"]["Enums"]["business_role"]
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_members_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      businesses: {
+        Row: {
+          address: string | null
+          bank_account_number: string | null
+          bank_branch: string | null
+          bank_ifsc: string | null
+          bank_name: string | null
+          business_name: string
+          business_type: string | null
+          city: string | null
+          composition_scheme: boolean
+          created_at: string
+          default_gst_pct: number
+          district: string | null
+          email: string | null
+          firm_name: string | null
+          fy_start_month: number
+          gst_enabled: boolean
+          gst_number: string | null
+          id: string
+          industry_segment: string | null
+          invoice_prefix: string | null
+          invoice_terms: string | null
+          logo_url: string | null
+          mobile: string | null
+          msme_number: string | null
+          owner_id: string
+          owner_name: string | null
+          pan_number: string | null
+          pincode: string | null
+          setup_completed: boolean
+          state: string | null
+          tan_number: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          address?: string | null
+          bank_account_number?: string | null
+          bank_branch?: string | null
+          bank_ifsc?: string | null
+          bank_name?: string | null
+          business_name: string
+          business_type?: string | null
+          city?: string | null
+          composition_scheme?: boolean
+          created_at?: string
+          default_gst_pct?: number
+          district?: string | null
+          email?: string | null
+          firm_name?: string | null
+          fy_start_month?: number
+          gst_enabled?: boolean
+          gst_number?: string | null
+          id?: string
+          industry_segment?: string | null
+          invoice_prefix?: string | null
+          invoice_terms?: string | null
+          logo_url?: string | null
+          mobile?: string | null
+          msme_number?: string | null
+          owner_id: string
+          owner_name?: string | null
+          pan_number?: string | null
+          pincode?: string | null
+          setup_completed?: boolean
+          state?: string | null
+          tan_number?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          address?: string | null
+          bank_account_number?: string | null
+          bank_branch?: string | null
+          bank_ifsc?: string | null
+          bank_name?: string | null
+          business_name?: string
+          business_type?: string | null
+          city?: string | null
+          composition_scheme?: boolean
+          created_at?: string
+          default_gst_pct?: number
+          district?: string | null
+          email?: string | null
+          firm_name?: string | null
+          fy_start_month?: number
+          gst_enabled?: boolean
+          gst_number?: string | null
+          id?: string
+          industry_segment?: string | null
+          invoice_prefix?: string | null
+          invoice_terms?: string | null
+          logo_url?: string | null
+          mobile?: string | null
+          msme_number?: string | null
+          owner_id?: string
+          owner_name?: string | null
+          pan_number?: string | null
+          pincode?: string | null
+          setup_completed?: boolean
+          state?: string | null
+          tan_number?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
       calculations: {
         Row: {
           after_rd: number
@@ -901,6 +1095,66 @@ export type Database = {
           },
         ]
       }
+      voucher_number_series: {
+        Row: {
+          branch: string | null
+          business_id: string | null
+          created_at: string
+          fy_start_month: number
+          fy_token: string | null
+          id: string
+          is_default: boolean
+          mode: string
+          next_number: number
+          padding: number
+          prefix: string
+          reset_yearly: boolean
+          series_name: string
+          suffix: string
+          updated_at: string
+          user_id: string
+          voucher_type: Database["public"]["Enums"]["voucher_type"]
+        }
+        Insert: {
+          branch?: string | null
+          business_id?: string | null
+          created_at?: string
+          fy_start_month?: number
+          fy_token?: string | null
+          id?: string
+          is_default?: boolean
+          mode?: string
+          next_number?: number
+          padding?: number
+          prefix?: string
+          reset_yearly?: boolean
+          series_name?: string
+          suffix?: string
+          updated_at?: string
+          user_id: string
+          voucher_type: Database["public"]["Enums"]["voucher_type"]
+        }
+        Update: {
+          branch?: string | null
+          business_id?: string | null
+          created_at?: string
+          fy_start_month?: number
+          fy_token?: string | null
+          id?: string
+          is_default?: boolean
+          mode?: string
+          next_number?: number
+          padding?: number
+          prefix?: string
+          reset_yearly?: boolean
+          series_name?: string
+          suffix?: string
+          updated_at?: string
+          user_id?: string
+          voucher_type?: Database["public"]["Enums"]["voucher_type"]
+        }
+        Relationships: []
+      }
       vouchers: {
         Row: {
           created_at: string
@@ -951,10 +1205,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      current_business_id: { Args: never; Returns: string }
       ensure_party_ledger: {
         Args: { _party_id: string; _user_id: string }
         Returns: string
       }
+      has_business_role: {
+        Args: {
+          _business_id: string
+          _roles: Database["public"]["Enums"]["business_role"][]
+        }
+        Returns: boolean
+      }
+      is_business_member: { Args: { _business_id: string }; Returns: boolean }
       next_dispatch_number: { Args: { _user_id: string }; Returns: string }
       next_order_number: { Args: { _user_id: string }; Returns: string }
       next_voucher_number: {
@@ -976,6 +1239,13 @@ export type Database = {
     }
     Enums: {
       account_nature: "asset" | "liability" | "income" | "expense" | "capital"
+      business_role:
+        | "owner"
+        | "admin"
+        | "manager"
+        | "accountant"
+        | "operator"
+        | "viewer"
       discount_type: "RD" | "CD"
       dr_cr: "dr" | "cr"
       ledger_type:
@@ -1137,6 +1407,14 @@ export const Constants = {
   public: {
     Enums: {
       account_nature: ["asset", "liability", "income", "expense", "capital"],
+      business_role: [
+        "owner",
+        "admin",
+        "manager",
+        "accountant",
+        "operator",
+        "viewer",
+      ],
       discount_type: ["RD", "CD"],
       dr_cr: ["dr", "cr"],
       ledger_type: [
