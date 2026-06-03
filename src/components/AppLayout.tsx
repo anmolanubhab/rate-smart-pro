@@ -168,6 +168,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return <Navigate to="/auth" state={{ from: location }} replace />;
   }
 
+  // Business setup gate
+  if (bizLoading) {
+    return <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">Loading workspace…</div>;
+  }
+  if ((!business || !business.setup_completed) && location.pathname !== "/setup/business") {
+    return <Navigate to="/setup/business" replace />;
+  }
+
   return (
     <OfflinePage>
       <div className="min-h-screen flex w-full bg-background gradient-mesh">
