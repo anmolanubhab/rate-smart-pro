@@ -60,7 +60,7 @@ export default function BusinessWizard() {
 
   useEffect(() => { document.title = "Business Setup — RD Pro"; }, []);
   useEffect(() => {
-    if (business) setForm((f) => ({ ...f, ...(business as never) }));
+    if (business) setForm((f) => ({ ...f, ...(business as unknown as Partial<Form>) }));
   }, [business]);
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) =>
