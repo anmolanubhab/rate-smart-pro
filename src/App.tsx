@@ -39,6 +39,10 @@ const Receivables = lazy(() => import("./pages/accounts/Receivables"));
 const Payables = lazy(() => import("./pages/accounts/Payables"));
 const GstSummary = lazy(() => import("./pages/gst/GstSummary"));
 const AuditLogs = lazy(() => import("./pages/admin/AuditLogs"));
+const BusinessWizard = lazy(() => import("./pages/setup/BusinessWizard"));
+const BusinessProfile = lazy(() => import("./pages/settings/BusinessProfile"));
+const Team = lazy(() => import("./pages/settings/Team"));
+const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
 
 const queryClient = new QueryClient();
 
@@ -92,6 +96,10 @@ const App = () => (
               <Route path="/accounts/payables" element={L(<Payables />)} />
               <Route path="/gst/summary" element={L(<GstSummary />)} />
               <Route path="/admin/audit-logs" element={L(<AuditLogs />)} />
+              <Route path="/setup/business" element={L(<BusinessWizard />)} />
+              <Route path="/settings/business-profile" element={L(<BusinessProfile />)} />
+              <Route path="/settings/team" element={L(<Team />)} />
+              <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

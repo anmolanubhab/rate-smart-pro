@@ -32,6 +32,7 @@ import {
 
 
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -116,12 +117,16 @@ const navGroups: NavGroup[] = [
     items: [
       { to: "/profile", label: "Profile", icon: User },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
+      { to: "/settings/business-profile", label: "Business Profile", icon: Landmark },
+      { to: "/settings/team", label: "Team & Roles", icon: Users },
+      { to: "/settings/voucher-numbering", label: "Voucher Numbering", icon: Receipt },
     ],
   },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, loading, signOut } = useAuth();
+  const { business, loading: bizLoading } = useBusiness();
   const { theme, toggle } = useTheme();
   const location = useLocation();
   
@@ -164,6 +169,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) {
     return <Navigate to="/auth" state={{ from: location }} replace />;
+  }
+
+  // Business setup gate
+  if (bizLoading) {
+    return <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">Loading workspace…</div>;
+  }
+  if ((!business || !business.setup_completed) && location.pathname !== "/setup/business") {
+    return <Navigate to="/setup/business" replace />;
   }
 
   return (
