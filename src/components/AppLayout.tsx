@@ -1,6 +1,6 @@
 // AppLayout.tsx - Find box as INPUT field for cursor focus
 import { ReactNode, useRef, useState, useEffect } from "react";
-import { NavLink, useLocation, Navigate } from "react-router-dom";
+import { NavLink, useLocation, Navigate, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Calculator,
@@ -28,11 +28,13 @@ import {
   PieChart,
   ShieldCheck,
   ClipboardList,
+  Building2,
+  Repeat,
 } from "lucide-react";
 
 
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness } from "@/hooks/useBusiness";
+import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -118,6 +120,7 @@ const navGroups: NavGroup[] = [
       { to: "/profile", label: "Profile", icon: User },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
       { to: "/settings/business-profile", label: "Business Profile", icon: Landmark },
+      { to: "/settings/company-users", label: "Company Users", icon: Users },
       { to: "/settings/team", label: "Team & Roles", icon: Users },
       { to: "/settings/voucher-numbering", label: "Voucher Numbering", icon: Receipt },
     ],
@@ -126,10 +129,11 @@ const navGroups: NavGroup[] = [
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, loading, signOut } = useAuth();
-  const { business, loading: bizLoading } = useBusiness();
+  const { business, role, loading: bizLoading } = useBusiness();
   const { theme, toggle } = useTheme();
   const location = useLocation();
-  
+  const navigate = useNavigate();
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
@@ -171,13 +175,26 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return <Navigate to="/auth" state={{ from: location }} replace />;
   }
 
-  // Business setup gate
+  // Company gate: must have an active, completed company
   if (bizLoading) {
     return <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">Loading workspace…</div>;
   }
-  if ((!business || !business.setup_completed) && location.pathname !== "/setup/business") {
+  if (!business) {
+    return <Navigate to="/companies" replace />;
+  }
+  if (!business.setup_completed) {
     return <Navigate to="/setup/business" replace />;
   }
+
+  const switchCompany = () => {
+    setActiveBusinessId(null);
+    navigate("/companies");
+  };
+
+  const fyStart = business.fy_start_month ?? 4;
+  const now = new Date();
+  const fyYear = (now.getMonth() + 1) >= fyStart ? now.getFullYear() : now.getFullYear() - 1;
+  const fyLabel = `FY ${String(fyYear).slice(-2)}-${String(fyYear + 1).slice(-2)}`;
 
   return (
     <OfflinePage>
@@ -211,6 +228,29 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
           </div>
+
+          {/* Active Company Card */}
+          <div className="px-4 pt-4">
+            <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/20 p-3">
+              <div className="flex items-start gap-2">
+                <Building2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] uppercase tracking-wide text-sidebar-foreground/40">Company</p>
+                  <p className="text-sm font-semibold text-white truncate" title={business.business_name}>{business.business_name}</p>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-sidebar-foreground/60">
+                    {business.business_type && <span className="truncate">{business.business_type}</span>}
+                    <span>•</span>
+                    <span>{fyLabel}</span>
+                  </div>
+                  <div className="text-[10px] text-primary/80 capitalize mt-0.5">Role: {role ?? "—"}</div>
+                </div>
+              </div>
+              <Button size="sm" variant="ghost" onClick={switchCompany} className="w-full mt-2 h-7 text-xs text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent/40">
+                <Repeat className="h-3 w-3 mr-1.5" />Switch Company
+              </Button>
+            </div>
+          </div>
+
 
           {/* 🔍 Find Box - Now an INPUT field with cursor */}
           <div className="px-4 py-3">

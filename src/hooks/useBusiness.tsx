@@ -1,9 +1,10 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 export type BusinessRole =
-  | "owner" | "admin" | "manager" | "accountant" | "operator" | "viewer";
+  | "owner" | "admin" | "manager" | "accountant" | "operator" | "salesman" | "viewer";
 
 export type Business = {
   id: string;
@@ -37,7 +38,21 @@ export type Business = {
   invoice_prefix: string | null;
   invoice_terms: string | null;
   setup_completed: boolean;
+  created_at?: string;
 };
+
+const ACTIVE_KEY = "rdpro.activeBusinessId";
+
+export function getActiveBusinessId(): string | null {
+  try { return localStorage.getItem(ACTIVE_KEY); } catch { return null; }
+}
+export function setActiveBusinessId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(ACTIVE_KEY, id);
+    else localStorage.removeItem(ACTIVE_KEY);
+    window.dispatchEvent(new Event("rdpro:active-business-changed"));
+  } catch { /* noop */ }
+}
 
 export function useBusiness() {
   const { user } = useAuth();
@@ -45,30 +60,46 @@ export function useBusiness() {
     queryKey: ["current-business", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data: member, error: e1 } = await supabase
+      const { data: memberships, error: e1 } = await supabase
         .from("business_users")
-        .select("business_id, role")
+        .select("business_id, role, created_at")
         .eq("user_id", user!.id)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .eq("status", "active")
+        .order("created_at", { ascending: true });
       if (e1) throw e1;
-      if (!member) return { business: null as Business | null, role: null as BusinessRole | null };
+      if (!memberships || memberships.length === 0) {
+        return { business: null as Business | null, role: null as BusinessRole | null, memberships: [] };
+      }
+
+      const activeId = getActiveBusinessId();
+      const chosen =
+        memberships.find((m) => m.business_id === activeId) ?? memberships[0];
+
       const { data: biz, error: e2 } = await supabase
         .from("businesses")
         .select("*")
-        .eq("id", member.business_id)
+        .eq("id", chosen.business_id)
         .maybeSingle();
       if (e2) throw e2;
       return {
         business: (biz ?? null) as Business | null,
-        role: member.role as BusinessRole,
+        role: chosen.role as BusinessRole,
+        memberships,
       };
     },
   });
+
+  // Refetch when active business changes
+  useEffect(() => {
+    const handler = () => { q.refetch(); };
+    window.addEventListener("rdpro:active-business-changed", handler);
+    return () => window.removeEventListener("rdpro:active-business-changed", handler);
+  }, [q]);
+
   return {
     business: q.data?.business ?? null,
     role: q.data?.role ?? null,
+    memberships: q.data?.memberships ?? [],
     loading: q.isLoading,
     refetch: q.refetch,
   };
@@ -80,6 +111,7 @@ const PERMS: Record<BusinessRole, string[]> = {
   manager:    ["voucher.create", "voucher.edit", "voucher.cancel", "data.export"],
   accountant: ["voucher.create", "voucher.edit", "audit.view", "data.export"],
   operator:   ["voucher.create", "data.export"],
+  salesman:   ["voucher.create", "data.export"],
   viewer:     ["data.export"],
 };
 

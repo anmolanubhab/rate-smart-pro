@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness } from "@/hooks/useBusiness";
+import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,14 +63,17 @@ export default function BusinessWizard() {
   const { business, refetch } = useBusiness();
   const nav = useNavigate();
   const qc = useQueryClient();
+  const [params] = useSearchParams();
+  const isNew = params.get("new") === "1";
+  const editing = !isNew && business; // editing existing company only when not creating new
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Form>(empty);
 
   useEffect(() => { document.title = "Business Setup — RD Pro"; }, []);
   useEffect(() => {
-    if (business) setForm((f) => ({ ...f, ...(business as unknown as Partial<Form>) }));
-  }, [business]);
+    if (editing) setForm((f) => ({ ...f, ...(business as unknown as Partial<Form>) }));
+  }, [editing, business]);
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -84,53 +87,43 @@ export default function BusinessWizard() {
     }
     setSaving(true);
     try {
-      if (business) {
-        console.log("Updating business", business.id);
+      if (editing) {
         const { error } = await supabase.from("businesses")
-          .update({ ...form, setup_completed: complete || business.setup_completed })
-          .eq("id", business.id);
-        if (error) {
-          console.error("UPDATE businesses failed:", error);
-          throw new Error(`UPDATE businesses failed: ${error.message} (code: ${error.code})`);
-        }
-        console.log("Business updated successfully");
-        await logAudit({ business_id: business.id, action: "BUSINESS_UPDATE", entity_type: "business", entity_id: business.id, new_value: form });
+          .update({ ...form, setup_completed: complete || business!.setup_completed })
+          .eq("id", business!.id);
+        if (error) throw new Error(`UPDATE businesses failed: ${error.message} (code: ${error.code})`);
+        await logAudit({ business_id: business!.id, action: "BUSINESS_UPDATE", entity_type: "business", entity_id: business!.id, new_value: form });
       } else {
         const businessId = crypto.randomUUID();
-        console.log("Creating business", { businessId, userId: user.id });
         const { error } = await supabase.from("businesses").insert({
           id: businessId,
           ...form,
           owner_id: user.id,
           setup_completed: complete,
         });
-        if (error) {
-          console.error("INSERT businesses failed:", error);
-          throw new Error(`INSERT businesses failed: ${error.message} (code: ${error.code})`);
-        }
-        console.log("Business created successfully", businessId);
+        if (error) throw new Error(`INSERT businesses failed: ${error.message} (code: ${error.code})`);
 
-        console.log("Creating owner membership in business_users", { businessId, userId: user.id });
         const { error: mErr } = await supabase.from("business_users").insert({
           business_id: businessId,
           user_id: user.id,
           role: "owner",
+          full_name: form.owner_name || null,
+          email: form.email || null,
+          mobile: form.mobile || null,
         });
         if (mErr) {
-          console.error("INSERT business_users failed:", mErr);
           await supabase.from("businesses").delete().eq("id", businessId);
           throw new Error(`INSERT business_users failed: ${mErr.message} (code: ${mErr.code})`);
         }
-        console.log("Owner membership created successfully");
 
-        console.log("Creating audit log");
-        await logAudit({ business_id: businessId, action: "BUSINESS_CREATE", entity_type: "business", entity_id: businessId, new_value: form });
-        console.log("Audit log created");
+        await logAudit({ business_id: businessId, action: "COMPANY_CREATED", entity_type: "business", entity_id: businessId, new_value: form });
+        if (complete) setActiveBusinessId(businessId);
       }
       await qc.invalidateQueries({ queryKey: ["current-business"] });
+      await qc.invalidateQueries({ queryKey: ["company-list"] });
       await refetch();
       toast.success(complete ? "Setup completed" : "Progress saved");
-      if (complete) nav("/dashboard");
+      if (complete) nav(editing ? "/dashboard" : "/companies");
     } catch (e: unknown) {
       console.error(e);
       toast.error(errorMessage(e));
@@ -142,12 +135,15 @@ export default function BusinessWizard() {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-6">
-        <header>
-          <p className="text-sm text-muted-foreground">Welcome</p>
-          <h1 className="font-display text-3xl font-bold mt-1">Set up your business</h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            We need a few details before you can use RD Pro. You can update these later from Settings.
-          </p>
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">{editing ? "Edit company" : "New company"}</p>
+            <h1 className="font-display text-3xl font-bold mt-1">{editing ? "Update business details" : "Set up your business"}</h1>
+            <p className="text-sm text-muted-foreground mt-2">
+              We need a few details before you can use RD Pro. You can update these later from Settings.
+            </p>
+          </div>
+          <button onClick={() => nav("/companies")} className="text-xs text-muted-foreground hover:text-foreground underline">← Companies</button>
         </header>
 
         <div className="flex gap-2 flex-wrap">

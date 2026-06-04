@@ -100,28 +100,61 @@ export type Database = {
       business_users: {
         Row: {
           business_id: string
-          id: string
-          role: string
-          user_id: string
           created_at: string
+          department: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          invited_by: string | null
+          invited_email: string | null
+          joined_at: string
+          mobile: string | null
+          notes: string | null
+          role: Database["public"]["Enums"]["business_role"]
+          status: string
+          updated_at: string
+          user_id: string
+          username: string | null
         }
         Insert: {
           business_id: string
-          id?: string
-          role?: string
-          user_id: string
           created_at?: string
+          department?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          invited_by?: string | null
+          invited_email?: string | null
+          joined_at?: string
+          mobile?: string | null
+          notes?: string | null
+          role?: Database["public"]["Enums"]["business_role"]
+          status?: string
+          updated_at?: string
+          user_id: string
+          username?: string | null
         }
         Update: {
           business_id?: string
-          id?: string
-          role?: string
-          user_id?: string
           created_at?: string
+          department?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          invited_by?: string | null
+          invited_email?: string | null
+          joined_at?: string
+          mobile?: string | null
+          notes?: string | null
+          role?: Database["public"]["Enums"]["business_role"]
+          status?: string
+          updated_at?: string
+          user_id?: string
+          username?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "business_users_business_id_fkey"
+            foreignKeyName: "business_members_business_id_fkey"
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
@@ -1237,6 +1270,7 @@ export type Database = {
         | "accountant"
         | "operator"
         | "viewer"
+        | "salesman"
       discount_type: "RD" | "CD"
       dr_cr: "dr" | "cr"
       ledger_type:
@@ -1405,6 +1439,7 @@ export const Constants = {
         "accountant",
         "operator",
         "viewer",
+        "salesman",
       ],
       discount_type: ["RD", "CD"],
       dr_cr: ["dr", "cr"],
