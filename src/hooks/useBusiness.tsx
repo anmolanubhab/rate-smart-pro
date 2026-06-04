@@ -90,15 +90,11 @@ export function useBusiness() {
   });
 
   // Refetch when active business changes
-  if (typeof window !== "undefined") {
-    (window as unknown as { __rdproBoundActiveBiz?: boolean }).__rdproBoundActiveBiz ||
-      (() => {
-        window.addEventListener("rdpro:active-business-changed", () => {
-          q.refetch();
-        });
-        (window as unknown as { __rdproBoundActiveBiz?: boolean }).__rdproBoundActiveBiz = true;
-      })();
-  }
+  useEffect(() => {
+    const handler = () => { q.refetch(); };
+    window.addEventListener("rdpro:active-business-changed", handler);
+    return () => window.removeEventListener("rdpro:active-business-changed", handler);
+  }, [q]);
 
   return {
     business: q.data?.business ?? null,
