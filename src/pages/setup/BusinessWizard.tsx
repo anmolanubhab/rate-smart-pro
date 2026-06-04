@@ -63,14 +63,17 @@ export default function BusinessWizard() {
   const { business, refetch } = useBusiness();
   const nav = useNavigate();
   const qc = useQueryClient();
+  const [params] = useSearchParams();
+  const isNew = params.get("new") === "1";
+  const editing = !isNew && business; // editing existing company only when not creating new
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Form>(empty);
 
   useEffect(() => { document.title = "Business Setup — RD Pro"; }, []);
   useEffect(() => {
-    if (business) setForm((f) => ({ ...f, ...(business as unknown as Partial<Form>) }));
-  }, [business]);
+    if (editing) setForm((f) => ({ ...f, ...(business as unknown as Partial<Form>) }));
+  }, [editing, business]);
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
