@@ -12,7 +12,6 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
-// Lazy-loaded routes (split heavy modules into separate chunks)
 const Calculator = lazy(() => import("./pages/Calculator"));
 const History = lazy(() => import("./pages/History"));
 const Parties = lazy(() => import("./pages/Parties"));
@@ -42,20 +41,25 @@ const AuditLogs = lazy(() => import("./pages/admin/AuditLogs"));
 const BusinessWizard = lazy(() => import("./pages/setup/BusinessWizard"));
 const BusinessProfile = lazy(() => import("./pages/settings/BusinessProfile"));
 const Team = lazy(() => import("./pages/settings/Team"));
+const CompanyUsers = lazy(() => import("./pages/settings/CompanyUsers"));
 const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
+const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 
 const queryClient = new QueryClient();
 
 const RouteFallback = () => (
-  <div className="flex items-center justify-center min-h-[40vh] text-sm text-muted-foreground">
-    Loading…
-  </div>
+  <div className="flex items-center justify-center min-h-[40vh] text-sm text-muted-foreground">Loading…</div>
 );
 
 const L = (el: React.ReactNode) => (
   <AppLayout>
     <Suspense fallback={<RouteFallback />}>{el}</Suspense>
   </AppLayout>
+);
+
+// Bare route (no AppLayout) — for pre-company screens
+const B = (el: React.ReactNode) => (
+  <Suspense fallback={<RouteFallback />}>{el}</Suspense>
 );
 
 const App = () => (
@@ -69,6 +73,8 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/companies" element={B(<CompanySelection />)} />
+              <Route path="/setup/business" element={B(<BusinessWizard />)} />
               <Route path="/dashboard" element={<AppLayout><Dashboard /></AppLayout>} />
               <Route path="/calculator" element={L(<Calculator />)} />
               <Route path="/history" element={L(<History />)} />
@@ -96,9 +102,9 @@ const App = () => (
               <Route path="/accounts/payables" element={L(<Payables />)} />
               <Route path="/gst/summary" element={L(<GstSummary />)} />
               <Route path="/admin/audit-logs" element={L(<AuditLogs />)} />
-              <Route path="/setup/business" element={L(<BusinessWizard />)} />
               <Route path="/settings/business-profile" element={L(<BusinessProfile />)} />
               <Route path="/settings/team" element={L(<Team />)} />
+              <Route path="/settings/company-users" element={L(<CompanyUsers />)} />
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
