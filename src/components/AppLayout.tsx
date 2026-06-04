@@ -1,6 +1,6 @@
 // AppLayout.tsx - Find box as INPUT field for cursor focus
 import { ReactNode, useRef, useState, useEffect } from "react";
-import { NavLink, useLocation, Navigate } from "react-router-dom";
+import { NavLink, useLocation, Navigate, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Calculator,
@@ -28,11 +28,13 @@ import {
   PieChart,
   ShieldCheck,
   ClipboardList,
+  Building2,
+  Repeat,
 } from "lucide-react";
 
 
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness } from "@/hooks/useBusiness";
+import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
