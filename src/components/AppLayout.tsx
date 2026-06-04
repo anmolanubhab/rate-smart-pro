@@ -120,6 +120,7 @@ const navGroups: NavGroup[] = [
       { to: "/profile", label: "Profile", icon: User },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
       { to: "/settings/business-profile", label: "Business Profile", icon: Landmark },
+      { to: "/settings/company-users", label: "Company Users", icon: Users },
       { to: "/settings/team", label: "Team & Roles", icon: Users },
       { to: "/settings/voucher-numbering", label: "Voucher Numbering", icon: Receipt },
     ],
