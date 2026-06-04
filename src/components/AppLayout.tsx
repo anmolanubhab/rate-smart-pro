@@ -129,10 +129,11 @@ const navGroups: NavGroup[] = [
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, loading, signOut } = useAuth();
-  const { business, loading: bizLoading } = useBusiness();
+  const { business, role, loading: bizLoading } = useBusiness();
   const { theme, toggle } = useTheme();
   const location = useLocation();
-  
+  const navigate = useNavigate();
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
@@ -174,13 +175,26 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return <Navigate to="/auth" state={{ from: location }} replace />;
   }
 
-  // Business setup gate
+  // Company gate: must have an active, completed company
   if (bizLoading) {
     return <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">Loading workspace…</div>;
   }
-  if ((!business || !business.setup_completed) && location.pathname !== "/setup/business") {
+  if (!business) {
+    return <Navigate to="/companies" replace />;
+  }
+  if (!business.setup_completed) {
     return <Navigate to="/setup/business" replace />;
   }
+
+  const switchCompany = () => {
+    setActiveBusinessId(null);
+    navigate("/companies");
+  };
+
+  const fyStart = business.fy_start_month ?? 4;
+  const now = new Date();
+  const fyYear = (now.getMonth() + 1) >= fyStart ? now.getFullYear() : now.getFullYear() - 1;
+  const fyLabel = `FY ${String(fyYear).slice(-2)}-${String(fyYear + 1).slice(-2)}`;
 
   return (
     <OfflinePage>
