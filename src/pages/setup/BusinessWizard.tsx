@@ -87,53 +87,43 @@ export default function BusinessWizard() {
     }
     setSaving(true);
     try {
-      if (business) {
-        console.log("Updating business", business.id);
+      if (editing) {
         const { error } = await supabase.from("businesses")
-          .update({ ...form, setup_completed: complete || business.setup_completed })
-          .eq("id", business.id);
-        if (error) {
-          console.error("UPDATE businesses failed:", error);
-          throw new Error(`UPDATE businesses failed: ${error.message} (code: ${error.code})`);
-        }
-        console.log("Business updated successfully");
-        await logAudit({ business_id: business.id, action: "BUSINESS_UPDATE", entity_type: "business", entity_id: business.id, new_value: form });
+          .update({ ...form, setup_completed: complete || business!.setup_completed })
+          .eq("id", business!.id);
+        if (error) throw new Error(`UPDATE businesses failed: ${error.message} (code: ${error.code})`);
+        await logAudit({ business_id: business!.id, action: "BUSINESS_UPDATE", entity_type: "business", entity_id: business!.id, new_value: form });
       } else {
         const businessId = crypto.randomUUID();
-        console.log("Creating business", { businessId, userId: user.id });
         const { error } = await supabase.from("businesses").insert({
           id: businessId,
           ...form,
           owner_id: user.id,
           setup_completed: complete,
         });
-        if (error) {
-          console.error("INSERT businesses failed:", error);
-          throw new Error(`INSERT businesses failed: ${error.message} (code: ${error.code})`);
-        }
-        console.log("Business created successfully", businessId);
+        if (error) throw new Error(`INSERT businesses failed: ${error.message} (code: ${error.code})`);
 
-        console.log("Creating owner membership in business_users", { businessId, userId: user.id });
         const { error: mErr } = await supabase.from("business_users").insert({
           business_id: businessId,
           user_id: user.id,
           role: "owner",
+          full_name: form.owner_name || null,
+          email: form.email || null,
+          mobile: form.mobile || null,
         });
         if (mErr) {
-          console.error("INSERT business_users failed:", mErr);
           await supabase.from("businesses").delete().eq("id", businessId);
           throw new Error(`INSERT business_users failed: ${mErr.message} (code: ${mErr.code})`);
         }
-        console.log("Owner membership created successfully");
 
-        console.log("Creating audit log");
-        await logAudit({ business_id: businessId, action: "BUSINESS_CREATE", entity_type: "business", entity_id: businessId, new_value: form });
-        console.log("Audit log created");
+        await logAudit({ business_id: businessId, action: "COMPANY_CREATED", entity_type: "business", entity_id: businessId, new_value: form });
+        if (complete) setActiveBusinessId(businessId);
       }
       await qc.invalidateQueries({ queryKey: ["current-business"] });
+      await qc.invalidateQueries({ queryKey: ["company-list"] });
       await refetch();
       toast.success(complete ? "Setup completed" : "Progress saved");
-      if (complete) nav("/dashboard");
+      if (complete) nav(editing ? "/dashboard" : "/companies");
     } catch (e: unknown) {
       console.error(e);
       toast.error(errorMessage(e));
