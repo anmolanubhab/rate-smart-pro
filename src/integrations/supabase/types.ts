@@ -97,31 +97,40 @@ export type Database = {
         }
         Relationships: []
       }
-      business_users: {
+      business_members: {
         Row: {
           business_id: string
           id: string
-          role: string
+          invited_by: string | null
+          invited_email: string | null
+          joined_at: string
+          role: Database["public"]["Enums"]["business_role"]
+          status: string
           user_id: string
-          created_at: string
         }
         Insert: {
           business_id: string
           id?: string
-          role?: string
+          invited_by?: string | null
+          invited_email?: string | null
+          joined_at?: string
+          role?: Database["public"]["Enums"]["business_role"]
+          status?: string
           user_id: string
-          created_at?: string
         }
         Update: {
           business_id?: string
           id?: string
-          role?: string
+          invited_by?: string | null
+          invited_email?: string | null
+          joined_at?: string
+          role?: Database["public"]["Enums"]["business_role"]
+          status?: string
           user_id?: string
-          created_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "business_users_business_id_fkey"
+            foreignKeyName: "business_members_business_id_fkey"
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
