@@ -135,12 +135,15 @@ export default function BusinessWizard() {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-6">
-        <header>
-          <p className="text-sm text-muted-foreground">Welcome</p>
-          <h1 className="font-display text-3xl font-bold mt-1">Set up your business</h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            We need a few details before you can use RD Pro. You can update these later from Settings.
-          </p>
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">{editing ? "Edit company" : "New company"}</p>
+            <h1 className="font-display text-3xl font-bold mt-1">{editing ? "Update business details" : "Set up your business"}</h1>
+            <p className="text-sm text-muted-foreground mt-2">
+              We need a few details before you can use RD Pro. You can update these later from Settings.
+            </p>
+          </div>
+          <button onClick={() => nav("/companies")} className="text-xs text-muted-foreground hover:text-foreground underline">← Companies</button>
         </header>
 
         <div className="flex gap-2 flex-wrap">
