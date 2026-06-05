@@ -165,6 +165,56 @@ const Dispatch = () => {
         </div>
       </div>
 
+      {(cfg.enable_packing_slip || cfg.enable_box_packing || cfg.enable_case_number) && order && (
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold"><Package className="h-4 w-4" /> Packing</div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {cfg.enable_packing_slip && (
+              <div className="flex items-center gap-2">
+                <Switch checked={autoPackingSlip} onCheckedChange={setAutoPackingSlip} />
+                <Label className="text-sm">Auto-generate packing slip #</Label>
+              </div>
+            )}
+            {cfg.enable_box_packing && (
+              <div>
+                <Label className="text-xs">Box Count</Label>
+                <Input type="number" min={0} value={boxCount} onChange={(e) => setBoxCount(+e.target.value)} className="mt-1" />
+              </div>
+            )}
+            {cfg.enable_case_number && (
+              <div>
+                <Label className="text-xs">Case Count</Label>
+                <Input type="number" min={0} value={caseCount} onChange={(e) => setCaseCount(+e.target.value)} className="mt-1" />
+              </div>
+            )}
+            <div className="md:col-span-4">
+              <Label className="text-xs">Packing Remarks</Label>
+              <Textarea rows={2} value={packingRemarks} onChange={(e) => setPackingRemarks(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(cfg.enable_transport_details || cfg.enable_eway_details) && order && (
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold"><Truck className="h-4 w-4" /> Transport</div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {cfg.enable_transport_details && (<>
+              <div><Label className="text-xs">Transporter</Label><Input value={transporter} onChange={(e) => setTransporter(e.target.value)} className="mt-1" /></div>
+              <div><Label className="text-xs">LR Number</Label><Input value={lrNumber} onChange={(e) => setLrNumber(e.target.value)} className="mt-1" /></div>
+              <div><Label className="text-xs">Vehicle Number</Label><Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" /></div>
+            </>)}
+            {cfg.enable_eway_details && (
+              <div><Label className="text-xs">E-Way Bill #</Label><Input value={ewayNumber} onChange={(e) => setEwayNumber(e.target.value)} className="mt-1" /></div>
+            )}
+            <div className="md:col-span-4">
+              <Label className="text-xs">Dispatch Remarks</Label>
+              <Textarea rows={2} value={dispatchRemarks} onChange={(e) => setDispatchRemarks(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {order && (
         <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-soft">
           <div className="overflow-x-auto">
