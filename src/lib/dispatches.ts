@@ -40,11 +40,31 @@ export async function createDispatch(input: {
   dispatchDate: string;
   notes?: string | null;
   items: DispatchItemInput[];
+  packing?: {
+    box_count?: number;
+    case_count?: number;
+    packing_remarks?: string | null;
+    auto_packing_slip?: boolean;
+  };
+  transport?: {
+    transporter?: string | null;
+    lr_number?: string | null;
+    vehicle_number?: string | null;
+    eway_number?: string | null;
+    dispatch_remarks?: string | null;
+  };
 }) {
   const items = input.items.filter((i) => Number(i.dispatched_qty) > 0);
   if (!items.length) throw new Error("Enter dispatch quantity for at least one item");
 
   const dispatch_number = await nextDispatchNumber(input.userId);
+  let packing_slip_number: string | null = null;
+  if (input.packing?.auto_packing_slip) {
+    const { data, error } = await supabase.rpc("next_packing_slip_number", { _user_id: input.userId });
+    if (error) throw error;
+    packing_slip_number = data as string;
+  }
+
   const { data: dispatch, error } = await supabase.from("dispatches").insert({
     user_id: input.userId,
     order_id: input.orderId,
@@ -52,7 +72,16 @@ export async function createDispatch(input: {
     dispatch_number,
     dispatch_date: input.dispatchDate,
     notes: input.notes ?? null,
-  }).select().single();
+    packing_slip_number,
+    box_count: input.packing?.box_count ?? 0,
+    case_count: input.packing?.case_count ?? 0,
+    packing_remarks: input.packing?.packing_remarks ?? null,
+    transporter: input.transport?.transporter ?? null,
+    lr_number: input.transport?.lr_number ?? null,
+    vehicle_number: input.transport?.vehicle_number ?? null,
+    eway_number: input.transport?.eway_number ?? null,
+    dispatch_remarks: input.transport?.dispatch_remarks ?? null,
+  } as any).select().single();
   if (error) throw error;
 
   const rows = items.map((it) => ({
