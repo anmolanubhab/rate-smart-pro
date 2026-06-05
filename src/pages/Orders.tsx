@@ -25,9 +25,14 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
-  fetchOrders, fetchOrderItems, fetchActivityLogs, deleteOrder, cancelOrder, duplicateOrder, logActivity,
+  fetchOrders, fetchOrderItems, fetchActivityLogs, deleteOrder, cancelOrder, duplicateOrder, logActivity, setOrderStatus,
   Order, OrderItem, ActivityLog,
 } from "@/lib/orders";
+import { generateInvoiceFromOrder } from "@/lib/salesInvoices";
+import { useBusiness } from "@/hooks/useBusiness";
+import { fetchSalesConfig } from "@/lib/salesConfig";
+import { supabase } from "@/integrations/supabase/client";
+import { logAudit } from "@/lib/audit";
 
 const statusColor: Record<string, string> = {
   draft: "border-muted-foreground/30 text-muted-foreground bg-muted/40",
