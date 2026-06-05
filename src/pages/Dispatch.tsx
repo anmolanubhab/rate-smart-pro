@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import { Truck, Save } from "lucide-react";
+import { Truck, Save, Package } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { fetchOrders, fetchOrderItems, Order, OrderItem } from "@/lib/orders";
 import { createDispatch, fetchDispatches } from "@/lib/dispatches";
 import { fetchProducts, Product } from "@/lib/products";
+import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 
 const Dispatch = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderId, setOrderId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
@@ -23,15 +27,34 @@ const Dispatch = () => {
   const [notes, setNotes] = useState("");
   const [recent, setRecent] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
+  const [cfg, setCfg] = useState<SalesConfig>({ business_id: "", ...DEFAULT_SALES_CONFIG });
+
+  // packing
+  const [autoPackingSlip, setAutoPackingSlip] = useState(true);
+  const [boxCount, setBoxCount] = useState(0);
+  const [caseCount, setCaseCount] = useState(0);
+  const [packingRemarks, setPackingRemarks] = useState("");
+
+  // transport
+  const [transporter, setTransporter] = useState("");
+  const [lrNumber, setLrNumber] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [ewayNumber, setEwayNumber] = useState("");
+  const [dispatchRemarks, setDispatchRemarks] = useState("");
 
   const reload = () => {
     if (!user) return;
-    fetchOrders(user.id).then((rows) => setOrders(rows.filter((o) => ["pending", "partial", "confirmed"].includes(o.status)))).catch((e) => toast.error(e.message));
+    fetchOrders(user.id).then((rows) => setOrders(rows.filter((o) => ["pending", "partial", "confirmed", "approved"].includes(o.status)))).catch((e) => toast.error(e.message));
     fetchDispatches(user.id).then(setRecent).catch(() => {});
     fetchProducts(user.id).then(setProducts).catch(() => {});
   };
 
-  useEffect(() => { document.title = "Dispatch — Spare Parts OMS"; reload(); /* eslint-disable-next-line */ }, [user]);
+  useEffect(() => {
+    document.title = "Dispatch — RD Pro";
+    reload();
+    if (business) fetchSalesConfig(business.id).then(setCfg).catch(() => {});
+    /* eslint-disable-next-line */
+  }, [user, business?.id]);
 
   const order = useMemo(() => orders.find((o) => o.id === orderId) || null, [orders, orderId]);
   const productByPart = useMemo(() => {
