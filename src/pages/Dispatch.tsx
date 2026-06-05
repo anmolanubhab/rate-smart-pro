@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import { Truck, Save } from "lucide-react";
+import { Truck, Save, Package } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { fetchOrders, fetchOrderItems, Order, OrderItem } from "@/lib/orders";
 import { createDispatch, fetchDispatches } from "@/lib/dispatches";
 import { fetchProducts, Product } from "@/lib/products";
+import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 
 const Dispatch = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderId, setOrderId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
@@ -23,15 +27,34 @@ const Dispatch = () => {
   const [notes, setNotes] = useState("");
   const [recent, setRecent] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
+  const [cfg, setCfg] = useState<SalesConfig>({ business_id: "", ...DEFAULT_SALES_CONFIG });
+
+  // packing
+  const [autoPackingSlip, setAutoPackingSlip] = useState(true);
+  const [boxCount, setBoxCount] = useState(0);
+  const [caseCount, setCaseCount] = useState(0);
+  const [packingRemarks, setPackingRemarks] = useState("");
+
+  // transport
+  const [transporter, setTransporter] = useState("");
+  const [lrNumber, setLrNumber] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [ewayNumber, setEwayNumber] = useState("");
+  const [dispatchRemarks, setDispatchRemarks] = useState("");
 
   const reload = () => {
     if (!user) return;
-    fetchOrders(user.id).then((rows) => setOrders(rows.filter((o) => ["pending", "partial", "confirmed"].includes(o.status)))).catch((e) => toast.error(e.message));
+    fetchOrders(user.id).then((rows) => setOrders(rows.filter((o) => ["pending", "partial", "confirmed", "approved"].includes(o.status)))).catch((e) => toast.error(e.message));
     fetchDispatches(user.id).then(setRecent).catch(() => {});
     fetchProducts(user.id).then(setProducts).catch(() => {});
   };
 
-  useEffect(() => { document.title = "Dispatch — Spare Parts OMS"; reload(); /* eslint-disable-next-line */ }, [user]);
+  useEffect(() => {
+    document.title = "Dispatch — RD Pro";
+    reload();
+    if (business) fetchSalesConfig(business.id).then(setCfg).catch(() => {});
+    /* eslint-disable-next-line */
+  }, [user, business?.id]);
 
   const order = useMemo(() => orders.find((o) => o.id === orderId) || null, [orders, orderId]);
   const productByPart = useMemo(() => {
@@ -74,9 +97,26 @@ const Dispatch = () => {
     if (!lines.length) { toast.error("Enter at least one dispatch qty"); return; }
     try {
       setSaving(true);
-      await createDispatch({ userId: user.id, orderId, partyId: order.party_id, dispatchDate, notes, items: lines });
+      await createDispatch({
+        userId: user.id, orderId, partyId: order.party_id, dispatchDate, notes, items: lines,
+        packing: cfg.enable_packing_slip ? {
+          auto_packing_slip: autoPackingSlip,
+          box_count: cfg.enable_box_packing ? boxCount : 0,
+          case_count: cfg.enable_case_number ? caseCount : 0,
+          packing_remarks: packingRemarks || null,
+        } : undefined,
+        transport: (cfg.enable_transport_details || cfg.enable_eway_details) ? {
+          transporter: cfg.enable_transport_details ? (transporter || null) : null,
+          lr_number: cfg.enable_transport_details ? (lrNumber || null) : null,
+          vehicle_number: cfg.enable_transport_details ? (vehicleNumber || null) : null,
+          eway_number: cfg.enable_eway_details ? (ewayNumber || null) : null,
+          dispatch_remarks: dispatchRemarks || null,
+        } : undefined,
+      });
       toast.success("Dispatch saved · stock & pending updated");
       setOrderId(""); setItems([]); setQtys({}); setNotes("");
+      setBoxCount(0); setCaseCount(0); setPackingRemarks("");
+      setTransporter(""); setLrNumber(""); setVehicleNumber(""); setEwayNumber(""); setDispatchRemarks("");
       reload();
     } catch (e: any) {
       toast.error(e.message);
@@ -124,6 +164,56 @@ const Dispatch = () => {
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1" />
         </div>
       </div>
+
+      {(cfg.enable_packing_slip || cfg.enable_box_packing || cfg.enable_case_number) && order && (
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold"><Package className="h-4 w-4" /> Packing</div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {cfg.enable_packing_slip && (
+              <div className="flex items-center gap-2">
+                <Switch checked={autoPackingSlip} onCheckedChange={setAutoPackingSlip} />
+                <Label className="text-sm">Auto-generate packing slip #</Label>
+              </div>
+            )}
+            {cfg.enable_box_packing && (
+              <div>
+                <Label className="text-xs">Box Count</Label>
+                <Input type="number" min={0} value={boxCount} onChange={(e) => setBoxCount(+e.target.value)} className="mt-1" />
+              </div>
+            )}
+            {cfg.enable_case_number && (
+              <div>
+                <Label className="text-xs">Case Count</Label>
+                <Input type="number" min={0} value={caseCount} onChange={(e) => setCaseCount(+e.target.value)} className="mt-1" />
+              </div>
+            )}
+            <div className="md:col-span-4">
+              <Label className="text-xs">Packing Remarks</Label>
+              <Textarea rows={2} value={packingRemarks} onChange={(e) => setPackingRemarks(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(cfg.enable_transport_details || cfg.enable_eway_details) && order && (
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold"><Truck className="h-4 w-4" /> Transport</div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {cfg.enable_transport_details && (<>
+              <div><Label className="text-xs">Transporter</Label><Input value={transporter} onChange={(e) => setTransporter(e.target.value)} className="mt-1" /></div>
+              <div><Label className="text-xs">LR Number</Label><Input value={lrNumber} onChange={(e) => setLrNumber(e.target.value)} className="mt-1" /></div>
+              <div><Label className="text-xs">Vehicle Number</Label><Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} className="mt-1" /></div>
+            </>)}
+            {cfg.enable_eway_details && (
+              <div><Label className="text-xs">E-Way Bill #</Label><Input value={ewayNumber} onChange={(e) => setEwayNumber(e.target.value)} className="mt-1" /></div>
+            )}
+            <div className="md:col-span-4">
+              <Label className="text-xs">Dispatch Remarks</Label>
+              <Textarea rows={2} value={dispatchRemarks} onChange={(e) => setDispatchRemarks(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {order && (
         <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-soft">

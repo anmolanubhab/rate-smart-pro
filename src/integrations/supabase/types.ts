@@ -395,37 +395,64 @@ export type Database = {
       }
       dispatches: {
         Row: {
+          box_count: number | null
+          case_count: number | null
           created_at: string
           dispatch_date: string
           dispatch_number: string
+          dispatch_remarks: string | null
+          eway_number: string | null
           id: string
+          lr_number: string | null
           notes: string | null
           order_id: string
+          packing_remarks: string | null
+          packing_slip_number: string | null
           party_id: string | null
+          transporter: string | null
           updated_at: string
           user_id: string
+          vehicle_number: string | null
         }
         Insert: {
+          box_count?: number | null
+          case_count?: number | null
           created_at?: string
           dispatch_date?: string
           dispatch_number: string
+          dispatch_remarks?: string | null
+          eway_number?: string | null
           id?: string
+          lr_number?: string | null
           notes?: string | null
           order_id: string
+          packing_remarks?: string | null
+          packing_slip_number?: string | null
           party_id?: string | null
+          transporter?: string | null
           updated_at?: string
           user_id: string
+          vehicle_number?: string | null
         }
         Update: {
+          box_count?: number | null
+          case_count?: number | null
           created_at?: string
           dispatch_date?: string
           dispatch_number?: string
+          dispatch_remarks?: string | null
+          eway_number?: string | null
           id?: string
+          lr_number?: string | null
           notes?: string | null
           order_id?: string
+          packing_remarks?: string | null
+          packing_slip_number?: string | null
           party_id?: string | null
+          transporter?: string | null
           updated_at?: string
           user_id?: string
+          vehicle_number?: string | null
         }
         Relationships: [
           {
@@ -774,18 +801,25 @@ export type Database = {
       }
       orders: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
           billing_address: string | null
           cancelled_at: string | null
           cancelled_reason: string | null
           cd_total: number
           created_at: string
           deleted_at: string | null
+          delivery_address: string | null
           discount_total: number
           dispatched_total_qty: number
+          eway_number: string | null
           grand_total: number
           gst_total: number
           id: string
+          invoice_id: string | null
+          invoiced_at: string | null
           last_dispatch_date: string | null
+          lr_number: string | null
           mode: Database["public"]["Enums"]["discount_type"] | null
           notes: string | null
           order_date: string
@@ -804,23 +838,32 @@ export type Database = {
           source_type: string
           status: Database["public"]["Enums"]["order_status"]
           subtotal: number
+          transporter: string | null
           updated_at: string
           updated_by: string | null
           user_id: string
+          vehicle_number: string | null
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
           billing_address?: string | null
           cancelled_at?: string | null
           cancelled_reason?: string | null
           cd_total?: number
           created_at?: string
           deleted_at?: string | null
+          delivery_address?: string | null
           discount_total?: number
           dispatched_total_qty?: number
+          eway_number?: string | null
           grand_total?: number
           gst_total?: number
           id?: string
+          invoice_id?: string | null
+          invoiced_at?: string | null
           last_dispatch_date?: string | null
+          lr_number?: string | null
           mode?: Database["public"]["Enums"]["discount_type"] | null
           notes?: string | null
           order_date?: string
@@ -839,23 +882,32 @@ export type Database = {
           source_type?: string
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
+          transporter?: string | null
           updated_at?: string
           updated_by?: string | null
           user_id: string
+          vehicle_number?: string | null
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
           billing_address?: string | null
           cancelled_at?: string | null
           cancelled_reason?: string | null
           cd_total?: number
           created_at?: string
           deleted_at?: string | null
+          delivery_address?: string | null
           discount_total?: number
           dispatched_total_qty?: number
+          eway_number?: string | null
           grand_total?: number
           gst_total?: number
           id?: string
+          invoice_id?: string | null
+          invoiced_at?: string | null
           last_dispatch_date?: string | null
+          lr_number?: string | null
           mode?: Database["public"]["Enums"]["discount_type"] | null
           notes?: string | null
           order_date?: string
@@ -874,9 +926,11 @@ export type Database = {
           source_type?: string
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
+          transporter?: string | null
           updated_at?: string
           updated_by?: string | null
           user_id?: string
+          vehicle_number?: string | null
         }
         Relationships: [
           {
@@ -1041,6 +1095,212 @@ export type Database = {
           updated_at?: string
           user_id?: string
           vehicle_model?: string | null
+        }
+        Relationships: []
+      }
+      sales_config: {
+        Row: {
+          business_id: string
+          created_at: string
+          enable_batch_tracking: boolean
+          enable_box_packing: boolean
+          enable_case_number: boolean
+          enable_dispatch_module: boolean
+          enable_eway_details: boolean
+          enable_invoice_approval: boolean
+          enable_multi_warehouse: boolean
+          enable_order_approval: boolean
+          enable_packing_slip: boolean
+          enable_partial_dispatch: boolean
+          enable_sales_order: boolean
+          enable_salesman_tracking: boolean
+          enable_transport_details: boolean
+          id: string
+          stock_reduction_point: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          enable_batch_tracking?: boolean
+          enable_box_packing?: boolean
+          enable_case_number?: boolean
+          enable_dispatch_module?: boolean
+          enable_eway_details?: boolean
+          enable_invoice_approval?: boolean
+          enable_multi_warehouse?: boolean
+          enable_order_approval?: boolean
+          enable_packing_slip?: boolean
+          enable_partial_dispatch?: boolean
+          enable_sales_order?: boolean
+          enable_salesman_tracking?: boolean
+          enable_transport_details?: boolean
+          id?: string
+          stock_reduction_point?: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          enable_batch_tracking?: boolean
+          enable_box_packing?: boolean
+          enable_case_number?: boolean
+          enable_dispatch_module?: boolean
+          enable_eway_details?: boolean
+          enable_invoice_approval?: boolean
+          enable_multi_warehouse?: boolean
+          enable_order_approval?: boolean
+          enable_packing_slip?: boolean
+          enable_partial_dispatch?: boolean
+          enable_sales_order?: boolean
+          enable_salesman_tracking?: boolean
+          enable_transport_details?: boolean
+          id?: string
+          stock_reduction_point?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sales_invoice_items: {
+        Row: {
+          created_at: string
+          description: string | null
+          discount_pct: number
+          gst_pct: number
+          id: string
+          invoice_id: string
+          mrp: number
+          net_rate: number
+          part_number: string | null
+          position: number
+          product_id: string | null
+          qty: number
+          rate: number
+          total: number
+          user_id: string
+          vehicle_model: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          discount_pct?: number
+          gst_pct?: number
+          id?: string
+          invoice_id: string
+          mrp?: number
+          net_rate?: number
+          part_number?: string | null
+          position?: number
+          product_id?: string | null
+          qty?: number
+          rate?: number
+          total?: number
+          user_id: string
+          vehicle_model?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          discount_pct?: number
+          gst_pct?: number
+          id?: string
+          invoice_id?: string
+          mrp?: number
+          net_rate?: number
+          part_number?: string | null
+          position?: number
+          product_id?: string | null
+          qty?: number
+          rate?: number
+          total?: number
+          user_id?: string
+          vehicle_model?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "sales_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_invoices: {
+        Row: {
+          billing_address: string | null
+          business_id: string | null
+          created_at: string
+          discount_total: number
+          grand_total: number
+          gst_total: number
+          id: string
+          invoice_date: string
+          invoice_number: string
+          notes: string | null
+          order_id: string | null
+          party_id: string | null
+          party_name: string | null
+          party_snapshot: Json | null
+          remarks: string | null
+          salesman: string | null
+          shipping_address: string | null
+          shipping_charges: number
+          status: string
+          subtotal: number
+          updated_at: string
+          user_id: string
+          voucher_id: string | null
+        }
+        Insert: {
+          billing_address?: string | null
+          business_id?: string | null
+          created_at?: string
+          discount_total?: number
+          grand_total?: number
+          gst_total?: number
+          id?: string
+          invoice_date?: string
+          invoice_number: string
+          notes?: string | null
+          order_id?: string | null
+          party_id?: string | null
+          party_name?: string | null
+          party_snapshot?: Json | null
+          remarks?: string | null
+          salesman?: string | null
+          shipping_address?: string | null
+          shipping_charges?: number
+          status?: string
+          subtotal?: number
+          updated_at?: string
+          user_id: string
+          voucher_id?: string | null
+        }
+        Update: {
+          billing_address?: string | null
+          business_id?: string | null
+          created_at?: string
+          discount_total?: number
+          grand_total?: number
+          gst_total?: number
+          id?: string
+          invoice_date?: string
+          invoice_number?: string
+          notes?: string | null
+          order_id?: string | null
+          party_id?: string | null
+          party_name?: string | null
+          party_snapshot?: Json | null
+          remarks?: string | null
+          salesman?: string | null
+          shipping_address?: string | null
+          shipping_charges?: number
+          status?: string
+          subtotal?: number
+          updated_at?: string
+          user_id?: string
+          voucher_id?: string | null
         }
         Relationships: []
       }
@@ -1243,7 +1503,9 @@ export type Database = {
       }
       is_business_member: { Args: { _business_id: string }; Returns: boolean }
       next_dispatch_number: { Args: { _user_id: string }; Returns: string }
+      next_invoice_number: { Args: { _user_id: string }; Returns: string }
       next_order_number: { Args: { _user_id: string }; Returns: string }
+      next_packing_slip_number: { Args: { _user_id: string }; Returns: string }
       next_voucher_number: {
         Args: {
           _type: Database["public"]["Enums"]["voucher_type"]
@@ -1293,6 +1555,9 @@ export type Database = {
         | "completed"
         | "pending"
         | "partial"
+        | "approved"
+        | "invoiced"
+        | "closed"
       product_category: "spare" | "lubricant" | "accessory" | "other"
       voucher_status: "draft" | "posted" | "cancelled"
       voucher_type:
@@ -1464,6 +1729,9 @@ export const Constants = {
         "completed",
         "pending",
         "partial",
+        "approved",
+        "invoiced",
+        "closed",
       ],
       product_category: ["spare", "lubricant", "accessory", "other"],
       voucher_status: ["draft", "posted", "cancelled"],

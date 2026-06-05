@@ -44,6 +44,8 @@ const Team = lazy(() => import("./pages/settings/Team"));
 const CompanyUsers = lazy(() => import("./pages/settings/CompanyUsers"));
 const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
+const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
+const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 
 const queryClient = new QueryClient();
 
@@ -106,6 +108,8 @@ const App = () => (
               <Route path="/settings/team" element={L(<Team />)} />
               <Route path="/settings/company-users" element={L(<CompanyUsers />)} />
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
+              <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
+              <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

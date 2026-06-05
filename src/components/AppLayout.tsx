@@ -64,12 +64,13 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Orders",
+    label: "Sales",
     items: [
       { to: "/orders", label: "Orders", icon: ShoppingCart },
       { to: "/orders/new", label: "Create Order", icon: PlusSquare },
       { to: "/pending", label: "Pending Orders", icon: Boxes },
       { to: "/dispatch", label: "Dispatch", icon: Package },
+      { to: "/sales/invoices", label: "Sales Invoices", icon: Receipt },
     ],
   },
   {
@@ -123,6 +124,7 @@ const navGroups: NavGroup[] = [
       { to: "/settings/company-users", label: "Company Users", icon: Users },
       { to: "/settings/team", label: "Team & Roles", icon: Users },
       { to: "/settings/voucher-numbering", label: "Voucher Numbering", icon: Receipt },
+      { to: "/settings/sales-config", label: "Sales Configuration", icon: SettingsIcon },
     ],
   },
 ];

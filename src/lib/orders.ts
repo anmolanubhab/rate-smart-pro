@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type OrderStatus = "draft" | "confirmed" | "cancelled" | "completed" | "pending" | "partial";
+export type OrderStatus = "draft" | "confirmed" | "cancelled" | "completed" | "pending" | "partial" | "approved" | "invoiced" | "closed";
 export type OrderSource = "manual" | "excel" | "pending-generated";
 
 export interface OrderItem {

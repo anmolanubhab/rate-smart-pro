@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   Plus, ShoppingCart, Search, MoreHorizontal, Eye, Pencil, Trash2, Ban,
   Copy, Printer, Download, X, FileText, Filter, ArrowUpDown, Loader2, History as HistoryIcon,
+  CheckCircle2, FilePlus2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,9 +25,14 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
-  fetchOrders, fetchOrderItems, fetchActivityLogs, deleteOrder, cancelOrder, duplicateOrder, logActivity,
+  fetchOrders, fetchOrderItems, fetchActivityLogs, deleteOrder, cancelOrder, duplicateOrder, logActivity, setOrderStatus,
   Order, OrderItem, ActivityLog,
 } from "@/lib/orders";
+import { generateInvoiceFromOrder } from "@/lib/salesInvoices";
+import { useBusiness } from "@/hooks/useBusiness";
+import { fetchSalesConfig } from "@/lib/salesConfig";
+import { supabase } from "@/integrations/supabase/client";
+import { logAudit } from "@/lib/audit";
 
 const statusColor: Record<string, string> = {
   draft: "border-muted-foreground/30 text-muted-foreground bg-muted/40",
@@ -35,12 +41,16 @@ const statusColor: Record<string, string> = {
   partial: "border-blue-500/40 text-blue-600 bg-blue-500/10",
   cancelled: "border-destructive/40 text-destructive bg-destructive/10",
   completed: "border-emerald-500/40 text-emerald-600 bg-emerald-500/10",
+  approved: "border-violet-500/40 text-violet-600 bg-violet-500/10",
+  invoiced: "border-teal-500/40 text-teal-600 bg-teal-500/10",
+  closed: "border-slate-500/40 text-slate-600 bg-slate-500/10",
 };
 
 type SortKey = "latest" | "amount" | "pending" | "party";
 
 const Orders = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
   const nav = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -154,6 +164,48 @@ const Orders = () => {
   const onPrint = (o: Order) => {
     nav(`/orders/edit/${o.id}?print=1`);
   };
+
+  const onApprove = async (o: Order) => {
+    if (!user) return;
+    setBusy(o.id);
+    try {
+      await supabase.from("orders").update({
+        status: "approved",
+        approved_at: new Date().toISOString(),
+        approved_by: user.id,
+      } as any).eq("id", o.id);
+      await logAudit({
+        business_id: business?.id ?? null, action: "ORDER_APPROVED",
+        entity_type: "order", entity_id: o.id, new_value: { order_number: o.order_number },
+      });
+      toast.success(`Order ${o.order_number} approved`);
+      await reload();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setBusy(null); }
+  };
+
+  const onGenerateInvoice = async (o: Order) => {
+    if (!user) return;
+    setBusy(o.id);
+    try {
+      const cfg = business ? await fetchSalesConfig(business.id) : null;
+      const inv = await generateInvoiceFromOrder({
+        userId: user.id,
+        businessId: business?.id ?? null,
+        orderId: o.id,
+        requireApproval: !!cfg?.enable_order_approval,
+      });
+      await logAudit({
+        business_id: business?.id ?? null, action: "INVOICE_GENERATED",
+        entity_type: "sales_invoice", entity_id: inv.id,
+        new_value: { invoice_number: inv.invoice_number, order_number: o.order_number },
+      });
+      toast.success(`Invoice ${inv.invoice_number} generated`);
+      nav("/sales/invoices");
+    } catch (e: any) { toast.error(e.message); }
+    finally { setBusy(null); }
+  };
+
 
   const bulkDelete = async () => {
     if (!selected.size || !user) return;
@@ -314,7 +366,17 @@ const Orders = () => {
                                 {busy === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuContent align="end" className="w-52">
+                              {!isCancelled && o.status !== "invoiced" && o.status !== "closed" && o.status !== "approved" && o.status !== "completed" && (
+                                <DropdownMenuItem onClick={() => onApprove(o)} className="text-violet-600">
+                                  <CheckCircle2 className="h-4 w-4 mr-2" /> Approve order
+                                </DropdownMenuItem>
+                              )}
+                              {!isCancelled && o.status !== "invoiced" && o.status !== "closed" && (
+                                <DropdownMenuItem onClick={() => onGenerateInvoice(o)} className="text-teal-600">
+                                  <FilePlus2 className="h-4 w-4 mr-2" /> Generate Invoice
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => onDuplicate(o)} className="text-purple-600">
                                 <Copy className="h-4 w-4 mr-2" /> Duplicate
                               </DropdownMenuItem>
