@@ -97,9 +97,26 @@ const Dispatch = () => {
     if (!lines.length) { toast.error("Enter at least one dispatch qty"); return; }
     try {
       setSaving(true);
-      await createDispatch({ userId: user.id, orderId, partyId: order.party_id, dispatchDate, notes, items: lines });
+      await createDispatch({
+        userId: user.id, orderId, partyId: order.party_id, dispatchDate, notes, items: lines,
+        packing: cfg.enable_packing_slip ? {
+          auto_packing_slip: autoPackingSlip,
+          box_count: cfg.enable_box_packing ? boxCount : 0,
+          case_count: cfg.enable_case_number ? caseCount : 0,
+          packing_remarks: packingRemarks || null,
+        } : undefined,
+        transport: (cfg.enable_transport_details || cfg.enable_eway_details) ? {
+          transporter: cfg.enable_transport_details ? (transporter || null) : null,
+          lr_number: cfg.enable_transport_details ? (lrNumber || null) : null,
+          vehicle_number: cfg.enable_transport_details ? (vehicleNumber || null) : null,
+          eway_number: cfg.enable_eway_details ? (ewayNumber || null) : null,
+          dispatch_remarks: dispatchRemarks || null,
+        } : undefined,
+      });
       toast.success("Dispatch saved · stock & pending updated");
       setOrderId(""); setItems([]); setQtys({}); setNotes("");
+      setBoxCount(0); setCaseCount(0); setPackingRemarks("");
+      setTransporter(""); setLrNumber(""); setVehicleNumber(""); setEwayNumber(""); setDispatchRemarks("");
       reload();
     } catch (e: any) {
       toast.error(e.message);
