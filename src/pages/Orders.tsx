@@ -35,6 +35,9 @@ const statusColor: Record<string, string> = {
   partial: "border-blue-500/40 text-blue-600 bg-blue-500/10",
   cancelled: "border-destructive/40 text-destructive bg-destructive/10",
   completed: "border-emerald-500/40 text-emerald-600 bg-emerald-500/10",
+  approved: "border-violet-500/40 text-violet-600 bg-violet-500/10",
+  invoiced: "border-teal-500/40 text-teal-600 bg-teal-500/10",
+  closed: "border-slate-500/40 text-slate-600 bg-slate-500/10",
 };
 
 type SortKey = "latest" | "amount" | "pending" | "party";
