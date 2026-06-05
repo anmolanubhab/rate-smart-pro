@@ -50,6 +50,7 @@ type SortKey = "latest" | "amount" | "pending" | "party";
 
 const Orders = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
   const nav = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
