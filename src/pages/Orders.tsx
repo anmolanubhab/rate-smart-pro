@@ -165,6 +165,48 @@ const Orders = () => {
     nav(`/orders/edit/${o.id}?print=1`);
   };
 
+  const onApprove = async (o: Order) => {
+    if (!user) return;
+    setBusy(o.id);
+    try {
+      await supabase.from("orders").update({
+        status: "approved",
+        approved_at: new Date().toISOString(),
+        approved_by: user.id,
+      } as any).eq("id", o.id);
+      await logAudit({
+        business_id: business?.id ?? null, action: "ORDER_APPROVED",
+        entity_type: "order", entity_id: o.id, new_value: { order_number: o.order_number },
+      });
+      toast.success(`Order ${o.order_number} approved`);
+      await reload();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setBusy(null); }
+  };
+
+  const onGenerateInvoice = async (o: Order) => {
+    if (!user) return;
+    setBusy(o.id);
+    try {
+      const cfg = business ? await fetchSalesConfig(business.id) : null;
+      const inv = await generateInvoiceFromOrder({
+        userId: user.id,
+        businessId: business?.id ?? null,
+        orderId: o.id,
+        requireApproval: !!cfg?.enable_order_approval,
+      });
+      await logAudit({
+        business_id: business?.id ?? null, action: "INVOICE_GENERATED",
+        entity_type: "sales_invoice", entity_id: inv.id,
+        new_value: { invoice_number: inv.invoice_number, order_number: o.order_number },
+      });
+      toast.success(`Invoice ${inv.invoice_number} generated`);
+      nav("/sales/invoices");
+    } catch (e: any) { toast.error(e.message); }
+    finally { setBusy(null); }
+  };
+
+
   const bulkDelete = async () => {
     if (!selected.size || !user) return;
     if (!confirm(`Delete ${selected.size} order(s) permanently?`)) return;
