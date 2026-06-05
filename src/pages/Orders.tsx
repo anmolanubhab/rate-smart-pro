@@ -366,7 +366,17 @@ const Orders = () => {
                                 {busy === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuContent align="end" className="w-52">
+                              {!isCancelled && o.status !== "invoiced" && o.status !== "closed" && o.status !== "approved" && o.status !== "completed" && (
+                                <DropdownMenuItem onClick={() => onApprove(o)} className="text-violet-600">
+                                  <CheckCircle2 className="h-4 w-4 mr-2" /> Approve order
+                                </DropdownMenuItem>
+                              )}
+                              {!isCancelled && o.status !== "invoiced" && o.status !== "closed" && (
+                                <DropdownMenuItem onClick={() => onGenerateInvoice(o)} className="text-teal-600">
+                                  <FilePlus2 className="h-4 w-4 mr-2" /> Generate Invoice
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => onDuplicate(o)} className="text-purple-600">
                                 <Copy className="h-4 w-4 mr-2" /> Duplicate
                               </DropdownMenuItem>
