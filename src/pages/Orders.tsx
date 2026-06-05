@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   Plus, ShoppingCart, Search, MoreHorizontal, Eye, Pencil, Trash2, Ban,
   Copy, Printer, Download, X, FileText, Filter, ArrowUpDown, Loader2, History as HistoryIcon,
+  CheckCircle2, FilePlus2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
