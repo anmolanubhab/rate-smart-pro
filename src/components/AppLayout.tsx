@@ -124,6 +124,7 @@ const navGroups: NavGroup[] = [
       { to: "/settings/company-users", label: "Company Users", icon: Users },
       { to: "/settings/team", label: "Team & Roles", icon: Users },
       { to: "/settings/voucher-numbering", label: "Voucher Numbering", icon: Receipt },
+      { to: "/settings/sales-config", label: "Sales Configuration", icon: SettingsIcon },
     ],
   },
 ];
