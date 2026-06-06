@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, Printer, Search, BarChart3 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,8 @@ const inr = (n: number) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { ma
 
 const Reports = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
+  const businessId = business?.id ?? null;
   const [orders, setOrders] = useState<Order[]>([]);
   const [dispatches, setDispatches] = useState<any[]>([]);
   const [pending, setPending] = useState<any[]>([]);
@@ -39,17 +42,20 @@ const Reports = () => {
     fetchDispatches(user.id).then(setDispatches).catch(() => {});
     fetchProducts(user.id).then(setProducts).catch(() => {});
     fetchParties(user.id).then(setParties).catch(() => {});
-    supabase.from("order_items")
+    let pq = supabase.from("order_items")
       .select("*, orders!inner(id, order_number, order_date, party_id, party_name, status, user_id)")
-      .eq("user_id", user.id).gt("pending_qty", 0)
-      .then(({ data }) => setPending((data || []).filter((r: any) => !["draft", "cancelled"].includes(r.orders?.status))));
-    supabase.from("inventory_movements" as any)
+      .eq("user_id", user.id).gt("pending_qty", 0);
+    if (businessId) pq = pq.eq("business_id", businessId);
+    pq.then(({ data }) => setPending((data || []).filter((r: any) => !["draft", "cancelled"].includes(r.orders?.status))));
+
+    let mq = supabase.from("inventory_movements" as any)
       .select("*, products(part_number, name)")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
-      .limit(1000)
-      .then(({ data }) => setMovements((data as any[]) || []));
-  }, [user]);
+      .limit(1000);
+    if (businessId) mq = mq.eq("business_id", businessId);
+    mq.then(({ data }) => setMovements((data as any[]) || []));
+  }, [user, businessId]);
 
   const inRange = (d: string | null) => {
     if (!d) return true;

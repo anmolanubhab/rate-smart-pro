@@ -221,6 +221,7 @@ const Calculator = () => {
     try {
       const { error } = await supabase.from("calculations").insert({
         user_id: user.id,
+        business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
         bill_amount: calc.bill,
         bill_discount: calc.bDisc,
         required_discount: calc.rDisc,
