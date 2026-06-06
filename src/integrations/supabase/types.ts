@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       account_groups: {
         Row: {
+          business_id: string | null
           created_at: string
           id: string
           is_system: boolean
@@ -25,6 +26,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           id?: string
           is_system?: boolean
@@ -34,6 +36,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           id?: string
           is_system?: boolean
@@ -165,6 +168,7 @@ export type Database = {
       businesses: {
         Row: {
           address: string | null
+          archived_at: string | null
           bank_account_number: string | null
           bank_branch: string | null
           bank_ifsc: string | null
@@ -200,6 +204,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          archived_at?: string | null
           bank_account_number?: string | null
           bank_branch?: string | null
           bank_ifsc?: string | null
@@ -235,6 +240,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          archived_at?: string | null
           bank_account_number?: string | null
           bank_branch?: string | null
           bank_ifsc?: string | null
@@ -276,6 +282,7 @@ export type Database = {
           bill_amount: number
           bill_discount: number
           bill_on_mrp: number
+          business_id: string | null
           cd_discount: number | null
           created_at: string
           id: string
@@ -295,6 +302,7 @@ export type Database = {
           bill_amount: number
           bill_discount: number
           bill_on_mrp: number
+          business_id?: string | null
           cd_discount?: number | null
           created_at?: string
           id?: string
@@ -314,6 +322,7 @@ export type Database = {
           bill_amount?: number
           bill_discount?: number
           bill_on_mrp?: number
+          business_id?: string | null
           cd_discount?: number | null
           created_at?: string
           id?: string
@@ -347,6 +356,7 @@ export type Database = {
       }
       dispatch_items: {
         Row: {
+          business_id: string | null
           created_at: string
           dispatch_id: string
           dispatched_qty: number
@@ -357,6 +367,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           dispatch_id: string
           dispatched_qty?: number
@@ -367,6 +378,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           dispatch_id?: string
           dispatched_qty?: number
@@ -396,6 +408,7 @@ export type Database = {
       dispatches: {
         Row: {
           box_count: number | null
+          business_id: string | null
           case_count: number | null
           created_at: string
           dispatch_date: string
@@ -416,6 +429,7 @@ export type Database = {
         }
         Insert: {
           box_count?: number | null
+          business_id?: string | null
           case_count?: number | null
           created_at?: string
           dispatch_date?: string
@@ -436,6 +450,7 @@ export type Database = {
         }
         Update: {
           box_count?: number | null
+          business_id?: string | null
           case_count?: number | null
           created_at?: string
           dispatch_date?: string
@@ -473,6 +488,7 @@ export type Database = {
       }
       inventory_adjustments: {
         Row: {
+          business_id: string | null
           created_at: string
           delta: number
           id: string
@@ -481,6 +497,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           delta: number
           id?: string
@@ -489,6 +506,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           delta?: number
           id?: string
@@ -508,6 +526,7 @@ export type Database = {
       }
       inventory_import_logs: {
         Row: {
+          business_id: string | null
           created_at: string
           errors: Json | null
           failed_count: number
@@ -520,6 +539,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           errors?: Json | null
           failed_count?: number
@@ -532,6 +552,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           errors?: Json | null
           failed_count?: number
@@ -547,6 +568,7 @@ export type Database = {
       }
       inventory_movements: {
         Row: {
+          business_id: string | null
           created_at: string
           id: string
           movement_type: string
@@ -560,6 +582,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           id?: string
           movement_type: string
@@ -573,6 +596,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           id?: string
           movement_type?: string
@@ -589,6 +613,7 @@ export type Database = {
       }
       ledger_accounts: {
         Row: {
+          business_id: string | null
           created_at: string
           group_id: string | null
           id: string
@@ -604,6 +629,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           group_id?: string | null
           id?: string
@@ -619,6 +645,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           group_id?: string | null
           id?: string
@@ -646,6 +673,7 @@ export type Database = {
       order_activity_logs: {
         Row: {
           action: string
+          business_id: string | null
           created_at: string
           description: string | null
           id: string
@@ -656,6 +684,7 @@ export type Database = {
         }
         Insert: {
           action: string
+          business_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -666,6 +695,7 @@ export type Database = {
         }
         Update: {
           action?: string
+          business_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -678,6 +708,7 @@ export type Database = {
       }
       order_import_logs: {
         Row: {
+          business_id: string | null
           created_at: string
           errors: Json | null
           failed_count: number
@@ -691,6 +722,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           errors?: Json | null
           failed_count?: number
@@ -704,6 +736,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           errors?: Json | null
           failed_count?: number
@@ -720,6 +753,7 @@ export type Database = {
       }
       order_items: {
         Row: {
+          business_id: string | null
           created_at: string
           description: string | null
           discount_pct: number
@@ -741,6 +775,7 @@ export type Database = {
           vehicle_model: string | null
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           description?: string | null
           discount_pct?: number
@@ -762,6 +797,7 @@ export type Database = {
           vehicle_model?: string | null
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           description?: string | null
           discount_pct?: number
@@ -804,6 +840,7 @@ export type Database = {
           approved_at: string | null
           approved_by: string | null
           billing_address: string | null
+          business_id: string | null
           cancelled_at: string | null
           cancelled_reason: string | null
           cd_total: number
@@ -848,6 +885,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           billing_address?: string | null
+          business_id?: string | null
           cancelled_at?: string | null
           cancelled_reason?: string | null
           cd_total?: number
@@ -892,6 +930,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           billing_address?: string | null
+          business_id?: string | null
           cancelled_at?: string | null
           cancelled_reason?: string | null
           cd_total?: number
@@ -948,6 +987,7 @@ export type Database = {
           agreed_discount: number
           beat: string | null
           billing_address: string | null
+          business_id: string | null
           created_at: string
           credit_limit: number
           default_discount: number
@@ -967,6 +1007,7 @@ export type Database = {
           agreed_discount?: number
           beat?: string | null
           billing_address?: string | null
+          business_id?: string | null
           created_at?: string
           credit_limit?: number
           default_discount?: number
@@ -986,6 +1027,7 @@ export type Database = {
           agreed_discount?: number
           beat?: string | null
           billing_address?: string | null
+          business_id?: string | null
           created_at?: string
           credit_limit?: number
           default_discount?: number
@@ -1004,6 +1046,7 @@ export type Database = {
       }
       party_discounts: {
         Row: {
+          business_id: string | null
           created_at: string
           discount: number
           id: string
@@ -1012,6 +1055,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           discount?: number
           id?: string
@@ -1020,6 +1064,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           discount?: number
           id?: string
@@ -1047,6 +1092,7 @@ export type Database = {
       products: {
         Row: {
           barcode: string | null
+          business_id: string | null
           category: Database["public"]["Enums"]["product_category"]
           created_at: string
           dealer_rate: number
@@ -1064,6 +1110,7 @@ export type Database = {
         }
         Insert: {
           barcode?: string | null
+          business_id?: string | null
           category?: Database["public"]["Enums"]["product_category"]
           created_at?: string
           dealer_rate?: number
@@ -1081,6 +1128,7 @@ export type Database = {
         }
         Update: {
           barcode?: string | null
+          business_id?: string | null
           category?: Database["public"]["Enums"]["product_category"]
           created_at?: string
           dealer_rate?: number
@@ -1163,6 +1211,7 @@ export type Database = {
       }
       sales_invoice_items: {
         Row: {
+          business_id: string | null
           created_at: string
           description: string | null
           discount_pct: number
@@ -1181,6 +1230,7 @@ export type Database = {
           vehicle_model: string | null
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           description?: string | null
           discount_pct?: number
@@ -1199,6 +1249,7 @@ export type Database = {
           vehicle_model?: string | null
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           description?: string | null
           discount_pct?: number
@@ -1330,6 +1381,7 @@ export type Database = {
       }
       voucher_items: {
         Row: {
+          business_id: string | null
           cr_amount: number
           created_at: string
           dr_amount: number
@@ -1341,6 +1393,7 @@ export type Database = {
           voucher_id: string
         }
         Insert: {
+          business_id?: string | null
           cr_amount?: number
           created_at?: string
           dr_amount?: number
@@ -1352,6 +1405,7 @@ export type Database = {
           voucher_id: string
         }
         Update: {
+          business_id?: string | null
           cr_amount?: number
           created_at?: string
           dr_amount?: number
@@ -1441,6 +1495,7 @@ export type Database = {
       }
       vouchers: {
         Row: {
+          business_id: string | null
           created_at: string
           id: string
           narration: string | null
@@ -1455,6 +1510,7 @@ export type Database = {
           voucher_type: Database["public"]["Enums"]["voucher_type"]
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
           id?: string
           narration?: string | null
@@ -1469,6 +1525,7 @@ export type Database = {
           voucher_type: Database["public"]["Enums"]["voucher_type"]
         }
         Update: {
+          business_id?: string | null
           created_at?: string
           id?: string
           narration?: string | null
@@ -1489,6 +1546,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _user_default_business: { Args: { _user_id: string }; Returns: string }
       current_business_id: { Args: never; Returns: string }
       ensure_party_ledger: {
         Args: { _party_id: string; _user_id: string }
