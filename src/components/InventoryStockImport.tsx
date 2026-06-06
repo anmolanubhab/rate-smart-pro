@@ -141,6 +141,7 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
         // Log movement (atomic per-row)
         await supabase.from("inventory_movements" as any).insert({
           user_id: userId,
+          business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
           product_id: r.matched!.id,
           movement_type: "import",
           qty: after - before,
@@ -151,6 +152,7 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
         });
         await supabase.from("inventory_adjustments").insert({
           user_id: userId,
+          business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
           product_id: r.matched!.id,
           delta: after - before,
           reason: `Excel import (${mode}) — ${fileName}`,

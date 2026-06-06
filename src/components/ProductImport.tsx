@@ -297,6 +297,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
     for (const r of valid) {
       const payload = {
         user_id: user.id,
+        business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
         part_number: r.part_number,
         name: r.name,
         vehicle_model: r.vehicle_model || null,
