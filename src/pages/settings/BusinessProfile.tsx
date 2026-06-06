@@ -32,9 +32,13 @@ export default function BusinessProfile() {
   const save = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase.from("businesses").update(form as never).eq("id", business.id);
+      // id, owner_id, created_at, archived_at जैसे read-only fields हटा दो
+      const { id, owner_id, created_at, archived_at, setup_completed, ...editableFields } = form as Record<string, unknown>;
+      void id; void owner_id; void created_at; void archived_at; void setup_completed;
+
+      const { error } = await supabase.from("businesses").update(editableFields as never).eq("id", business.id);
       if (error) throw error;
-      await logAudit({ business_id: business.id, action: "BUSINESS_UPDATE", entity_type: "business", entity_id: business.id, new_value: form });
+      await logAudit({ business_id: business.id, action: "BUSINESS_UPDATE", entity_type: "business", entity_id: business.id, new_value: editableFields });
       toast.success("Profile updated");
       await refetch();
     } catch (e: unknown) {
