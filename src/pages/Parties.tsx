@@ -9,6 +9,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,7 +76,7 @@ const emptyForm = {
 // ─── Server fetch ─────────────────────────────────────────────────────────────
 
 async function fetchPartiesPage(
-  userId: string, page: number, pageSize: number,
+  userId: string, businessId: string | null, page: number, pageSize: number,
   search: string, sort: SortState
 ): Promise<{ items: Party[]; total: number }> {
   const from = (page - 1) * pageSize;
@@ -88,6 +89,8 @@ async function fetchPartiesPage(
     .order(sort.column, { ascending: sort.direction === "asc" })
     .range(from, to);
 
+  if (businessId) q = q.eq("business_id", businessId);
+
   if (search.trim()) {
     const s = `%${search.trim()}%`;
     q = q.or(`name.ilike.${s},phone.ilike.${s},gst.ilike.${s},address.ilike.${s}`);
@@ -98,11 +101,13 @@ async function fetchPartiesPage(
   return { items: ((data ?? []) as unknown as Party[]), total: count ?? 0 };
 }
 
-async function fetchSummaryCounts(userId: string) {
-  const { data, error } = await supabase
+async function fetchSummaryCounts(userId: string, businessId: string | null) {
+  let q = supabase
     .from("parties")
     .select("outstanding_balance, credit_limit")
     .eq("user_id", userId);
+  if (businessId) q = q.eq("business_id", businessId);
+  const { data, error } = await q;
   if (error) throw error;
   const all = data ?? [];
   return {
@@ -169,6 +174,8 @@ const SkeletonRow = ({ index }: { index: number }) => (
 
 const Parties = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
+  const businessId = business?.id ?? null;
   const [parties, setParties]   = useState<Party[]>([]);
   const [total, setTotal]       = useState(0);
   const [loading, setLoading]   = useState(true);
@@ -188,15 +195,13 @@ const Parties = () => {
   const [form, setForm]         = useState(emptyForm);
   const [saving, setSaving]     = useState(false);
 
-  // ── Load ──────────────────────────────────────────────────────────────────
-
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
       const [pageResult, counts] = await Promise.all([
-        fetchPartiesPage(user.id, page, pageSize, debouncedSearch, sort),
-        fetchSummaryCounts(user.id),
+        fetchPartiesPage(user.id, businessId, page, pageSize, debouncedSearch, sort),
+        fetchSummaryCounts(user.id, businessId),
       ]);
       setParties(pageResult.items);
       setTotal(pageResult.total);
@@ -206,7 +211,7 @@ const Parties = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, page, pageSize, debouncedSearch, sort]);
+  }, [user, businessId, page, pageSize, debouncedSearch, sort]);
 
   useEffect(() => { document.title = "Parties — RD-Pro"; }, []);
   useEffect(() => { load(); }, [load]);
@@ -260,6 +265,7 @@ const Parties = () => {
     try {
       const payload = {
         user_id: user.id,
+        business_id: businessId,
         name: form.name.trim(),
         address: form.address.trim() || null,
         default_discount: parseFloat(form.default_discount) || 0,
@@ -312,6 +318,7 @@ const Parties = () => {
       while (hasMore) {
         let q = supabase.from("parties").select(PARTY_COLS).eq("user_id", user.id)
           .order(sort.column, { ascending: sort.direction === "asc" }).range(from, from + BATCH - 1);
+        if (businessId) q = q.eq("business_id", businessId);
         if (debouncedSearch.trim()) {
           const s = `%${debouncedSearch.trim()}%`;
           q = q.or(`name.ilike.${s},phone.ilike.${s},gst.ilike.${s}`);

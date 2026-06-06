@@ -10,6 +10,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,6 +66,7 @@ const PRODUCT_COLUMNS = `
 
 async function fetchProductsPage(
   userId: string,
+  businessId: string | null,
   page: number,
   pageSize: number,
   search: string,
@@ -79,6 +81,8 @@ async function fetchProductsPage(
     .eq("user_id", userId)
     .order(sort.column, { ascending: sort.direction === "asc" })
     .range(from, to);
+
+  if (businessId) query = query.eq("business_id", businessId);
 
   if (search.trim()) {
     const q = `%${search.trim()}%`;
@@ -149,6 +153,8 @@ const SkeletonRow = ({ index }: { index: number }) => (
 
 const Products = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
+  const businessId = business?.id ?? null;
 
   // Data
   const [items, setItems] = useState<Product[]>([]);
@@ -182,6 +188,7 @@ const Products = () => {
     try {
       const { items: data, total: count } = await fetchProductsPage(
         user.id,
+        businessId,
         page,
         pageSize,
         debouncedSearch,
@@ -194,7 +201,7 @@ const Products = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, page, pageSize, debouncedSearch, sort]);
+  }, [user, businessId, page, pageSize, debouncedSearch, sort]);
 
   useEffect(() => {
     document.title = "Products — Spare Parts OMS";
@@ -229,6 +236,8 @@ const Products = () => {
           .eq("user_id", user.id)
           .order(sort.column, { ascending: sort.direction === "asc" })
           .range(from, from + BATCH - 1);
+
+        if (businessId) query = query.eq("business_id", businessId);
 
         if (debouncedSearch.trim()) {
           const q = `%${debouncedSearch.trim()}%`;
@@ -335,6 +344,7 @@ const Products = () => {
     try {
       const payload = {
         user_id: user.id,
+        business_id: businessId,
         part_number: form.part_number.trim(),
         name: form.name.trim(),
         vehicle_model: form.vehicle_model.trim() || null,
