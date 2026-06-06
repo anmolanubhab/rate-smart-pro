@@ -1547,11 +1547,18 @@ export type Database = {
     }
     Functions: {
       _user_default_business: { Args: { _user_id: string }; Returns: string }
-      current_business_id: { Args: never; Returns: string }
-      ensure_party_ledger: {
-        Args: { _party_id: string; _user_id: string }
-        Returns: string
+      archive_business: { Args: { _business_id: string }; Returns: undefined }
+      business_transaction_count: {
+        Args: { _business_id: string }
+        Returns: number
       }
+      current_business_id: { Args: never; Returns: string }
+      ensure_party_ledger:
+        | { Args: { _party_id: string; _user_id: string }; Returns: string }
+        | {
+            Args: { _business_id?: string; _party_id: string; _user_id: string }
+            Returns: string
+          }
       has_business_role: {
         Args: {
           _business_id: string
@@ -1576,10 +1583,13 @@ export type Database = {
         Args: { _order_item_id: string }
         Returns: undefined
       }
-      seed_accounting_defaults: {
-        Args: { _user_id: string }
-        Returns: undefined
-      }
+      seed_accounting_defaults:
+        | { Args: { _user_id: string }; Returns: undefined }
+        | {
+            Args: { _business_id?: string; _user_id: string }
+            Returns: undefined
+          }
+      unarchive_business: { Args: { _business_id: string }; Returns: undefined }
     }
     Enums: {
       account_nature: "asset" | "liability" | "income" | "expense" | "capital"
