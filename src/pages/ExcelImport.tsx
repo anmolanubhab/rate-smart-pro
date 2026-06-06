@@ -143,14 +143,15 @@ const ExcelImport = () => {
           if (itemsWithDisp.length) {
             const { data: inserted } = await supabase.from("order_items").select("id, part_number, dispatched_qty, net_rate").eq("order_id", saved.id);
             const dispNum = `DSP-${Date.now()}`;
+            const biz = (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null);
             const { data: d } = await supabase.from("dispatches").insert({
-              user_id: user.id, order_id: saved.id, party_id: party.id,
+              user_id: user.id, business_id: biz, order_id: saved.id, party_id: party.id,
               dispatch_number: dispNum, dispatch_date: orderDate, notes: "Opening pending import",
             }).select().single();
             if (d && inserted) {
               const dRows = inserted
                 .filter((row) => Number(row.dispatched_qty) > 0)
-                .map((row) => ({ user_id: user.id, dispatch_id: d.id, order_item_id: row.id, dispatched_qty: Number(row.dispatched_qty), rate: Number(row.net_rate), total: +(Number(row.dispatched_qty) * Number(row.net_rate)).toFixed(2) }));
+                .map((row) => ({ user_id: user.id, business_id: biz, dispatch_id: d.id, order_item_id: row.id, dispatched_qty: Number(row.dispatched_qty), rate: Number(row.net_rate), total: +(Number(row.dispatched_qty) * Number(row.net_rate)).toFixed(2) }));
               if (dRows.length) await supabase.from("dispatch_items").insert(dRows);
               // reset order_items.dispatched_qty (trigger will recompute from dispatch_items)
               await supabase.from("order_items").update({ dispatched_qty: 0 }).eq("order_id", saved.id);

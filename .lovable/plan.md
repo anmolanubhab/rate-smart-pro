@@ -1,84 +1,77 @@
-# RD-Pro Trading & Distribution ERP — Implementation Plan
+# Multi-Company Isolation Fix
 
-This is a large scope (Sales OTC, Purchase P2P, Voucher upgrade, Approvals, Security, Audit). Building it in one shot is high-risk. I'll split into 6 sequential phases, each independently shippable and non-destructive to the current ERP.
+## Problem
+Tables are filtered only by `user_id`. When a user owns/joins multiple companies, every company opens the same dataset because every row belongs to the same user. We need to scope all operational data by `business_id`.
 
-Before starting Phase A, I need 3 decisions (see "Decisions needed" below).
+## Approach
 
----
+### Phase 1 — Schema: add `business_id` everywhere
 
-## Phase A — Sales Order Lifecycle + Sales Configuration
-Extend the existing `orders` table (already has draft/pending/partial/completed/cancelled) with the new lifecycle.
+Add nullable `business_id uuid` column to these tables (backfill, then NOT NULL + index):
 
-- New columns on `orders`: `approved_at`, `approved_by`, `invoiced_at`, `invoice_id`, `delivery_address`, `transport_*`, `eway_*`.
-- New enum values added to `order_status`: `approved`, `invoiced`, `closed` (keep existing).
-- New table `sales_config` (per business): toggles for Approval, Packing Slip, Box/Case, Transport, E-Way, Salesman, Multi-warehouse, Batch, Partial Dispatch, Invoice Approval.
-- Orders page: add Approve / Cancel / Generate Invoice actions, status pill reflects full flow, fields conditionally rendered from `sales_config`.
-- New `/settings/sales-config` page.
+- `orders`, `order_items`
+- `dispatches`, `dispatch_items`
+- `products`, `parties`
+- `vouchers`, `voucher_items`
+- `ledger_accounts`, `account_groups`
+- `sales_invoices`, `sales_invoice_items` (already have business_id nullable — make NOT NULL)
+- `inventory_movements`, `inventory_adjustments`
+- `order_activity_logs`, `order_import_logs`, `inventory_import_logs`
+- `calculations`, `party_discounts`
 
-## Phase B — Packing + Dispatch Enhancements
-Extend existing `dispatches` table.
+**Backfill rule**: for each row, set `business_id = (first active business_users row for that user_id, ordered by joined_at asc)`. For users with no business membership, create a default business from their profile (or leave NULL and let app force wizard).
 
-- New columns: `packing_slip_number`, `box_count`, `case_count`, `packing_remarks`, `transporter`, `lr_number`, `vehicle_number`, `eway_number`, `dispatch_remarks`.
-- `next_packing_slip_number()` RPC.
-- Dispatch form gains Packing tab + Transport tab (both gated by sales_config).
-- Partial dispatch already supported by `pending_qty`; surface "Balance" column.
+### Phase 2 — RLS rewrite
 
-## Phase C — Sales Invoice
-New `sales_invoices` + `sales_invoice_items` tables, generated **only** from an approved Sales Order.
+Replace `auth.uid() = user_id` policies with:
 
-- "Generate Invoice" button on order → creates invoice, auto-fetches party/items/discounts/GST, marks order `invoiced`.
-- Auto-posts existing `orders_autopost_sales` logic moves from order-completion to invoice-creation. (Order completion no longer auto-posts to vouchers.)
-- Stock reduction moves from dispatch trigger to invoice-post trigger (configurable — default: keep current dispatch-reduces-stock, invoice just bills).
-- New `/sales/invoices` list + print/PDF reusing existing `InvoicePrint`.
-- Sales Register report (filter on existing `vouchers` of type `sales`).
+```sql
+USING (business_id IS NOT NULL AND public.is_business_member(business_id))
+WITH CHECK (business_id IS NOT NULL AND public.is_business_member(business_id) AND user_id = auth.uid())
+```
 
-## Phase D — Purchase Order → GRN → Purchase Invoice
-All new, mirrors Sales.
+This way any active member of the business can read/write its data; inserts still stamp `user_id` to track who created the row. Role-gated mutations (delete vouchers, edit business, etc.) keep `has_business_role(...)` checks.
 
-- Tables: `purchase_orders`, `purchase_order_items`, `goods_receipts`, `goods_receipt_items`, `purchase_invoices`, `purchase_invoice_items`, `purchase_config`.
-- RPCs: `next_po_number`, `next_grn_number`, `next_pi_number` (use existing `voucher_number_series` framework where possible).
-- Triggers: GRN approval → stock+ + inventory_movement; PI post → creditor ledger Cr + Purchase Dr + GST Input Dr (auto voucher).
-- Pages: `/purchase/orders`, `/purchase/grn`, `/purchase/invoices`, `/settings/purchase-config`.
+### Phase 3 — Active business context in app
 
-## Phase E — Voucher Center Upgrade (Receipt/Payment/Contra/Journal)
-Voucher Center scope-down + entry forms.
+- `useBusiness` already exposes `business.id`. Add a hard requirement: **no query runs without `business_id`**.
+- New helper `useActiveBusinessId()` that throws/returns null while loading.
+- Refactor every `supabase.from(...).select(...).eq("user_id", user.id)` to also `.eq("business_id", businessId)`. Same for inserts — every insert payload includes `business_id`.
+- Update React Query keys to include `businessId` so caches separate per company. Add a global `queryClient.clear()` (or per-key invalidation) when active business changes.
+- Files affected (broad — touch operational pages/libs):
+  - `src/lib/orders.ts`, `src/lib/dispatches.ts`, `src/lib/parties.ts`, `src/lib/products.ts`, `src/lib/salesInvoices.ts`, `src/lib/salesConfig.ts`, `src/lib/accounting.ts`, `src/lib/invoice.ts`, `src/lib/audit.ts`
+  - `src/pages/Dashboard.tsx`, `src/pages/Orders.tsx`, `src/pages/PendingOrders.tsx`, `src/pages/Dispatch.tsx`, `src/pages/Products.tsx`, `src/pages/Parties.tsx`, `src/pages/Inventory.tsx`, `src/pages/Reports.tsx`, `src/pages/CreateOrder.tsx`, `src/pages/History.tsx`, `src/pages/ExcelImport.tsx`
+  - `src/pages/accounts/*` (Ledger, Vouchers, Cash, Bank, Daybook, Receivables, Payables, TrialBalance, P&L, BalanceSheet)
+  - `src/pages/sales/Invoices.tsx`, `src/pages/gst/GstSummary.tsx`
+  - `src/components/dashboard/*`, `src/components/InventoryWidgets.tsx`, `src/components/ErpDashboardCards.tsx`, `src/components/CommandMenu.tsx`, etc.
 
-- Remove Sales/Purchase from Voucher Center filter (they're now driven by invoices).
-- New full entry forms for Receipt & Payment with party outstanding fetch + bill-wise adjustment grid (Against Ref / Advance / On Account).
-- Contra & Journal: simple Dr/Cr line entry.
-- Posts via existing `vouchers` + `voucher_items` (already balance-validated).
+### Phase 4 — Triggers / RPCs
 
-## Phase F — Approvals + Security + Audit
-- New `approval_requests` table (entity_type, entity_id, requested_by, status, decided_by, decided_at, reason).
-- `/approvals` center: tabs SO / PO / Invoices / Vouchers, role-gated (manager/owner/super_admin).
-- New `accounting_security` table per business: allow_edit, allow_delete, require_approval_edit/delete, freeze_date, period_lock_until.
-- Edit/Delete actions on financial docs check security settings → either block, route to approval, or proceed.
-- Extend `audit_logs` usage: every action on orders/dispatches/invoices/vouchers writes old_value/new_value/reason via existing `logAudit()`.
+Update auto-post triggers (`orders_autopost_sales`, `sales_invoice_autopost`, `dispatch_items_stock_sync`, `parties_create_ledger`, `ensure_party_ledger`, `seed_accounting_defaults`) to propagate `NEW.business_id` into the rows they create (vouchers, voucher_items, ledger_accounts, account_groups, inventory_movements). `seed_accounting_defaults` becomes per-business instead of per-user.
 
----
+`next_invoice_number`, `next_order_number`, `next_dispatch_number`, `next_packing_slip_number`, `next_voucher_number` get `_business_id` arg and scope `MAX(...)` by business.
 
-## Technical notes
-- All new tables: `business_id` + `user_id`, RLS via `is_business_member`/`has_business_role`, GRANTs to authenticated + service_role.
-- All numbering uses `voucher_number_series` (extend enum: `sales_order`, `packing_slip`, `purchase_order`, `grn`, `purchase_invoice`).
-- UI: reuse `MockTablePage` pattern for lists, `useBusiness().can(role, perm)` for action gating, existing design tokens (no new color classes).
-- Non-destructive: existing Orders→Dispatch flow keeps working until user enables new toggles in sales_config.
+### Phase 5 — Company Selection card actions
 
----
+In `src/pages/companies/CompanySelection.tsx`, replace the single "Open" affordance with a dropdown menu containing:
+- Open Company → existing flow
+- Edit Company → `/settings/business?id=…` (existing BusinessProfile page; ensure it loads the chosen biz)
+- Manage Users → `/settings/company-users?id=…`
+- Company Settings → `/settings/sales-config?id=…`
+- Archive Company → soft-delete (`businesses.archived_at`) when transaction count = 0 it can hard-delete, otherwise force archive
 
-## Decisions needed before I start
+Add `archived_at timestamptz` column to `businesses`; filter archived from selection list by default with a "Show archived" toggle.
 
-1. **Phase order / scope of this turn**
-   - (a) Just Phase A (Sales Order lifecycle + config) — smallest safe slice, ~1 migration + 3 files
-   - (b) Phases A + B + C (full Sales OTC: order → packing/dispatch → invoice) — recommended foundation
-   - (c) All 6 phases now — large, higher risk
+### Phase 6 — Verification
 
-2. **Invoice vs Order auto-posting**
-   - (a) Keep existing trigger: order completion auto-posts sales voucher; invoice is just a print doc
-   - (b) Move auto-posting to invoice generation; order completion no longer posts (cleaner, matches your spec)
+- Create two companies, add one order in each, confirm dashboards/orders/products are isolated.
+- Sign out / sign in, switch via Company Selection, verify caches reset.
 
-3. **Stock reduction point**
-   - (a) Stock reduces on **dispatch** (current behavior)
-   - (b) Stock reduces on **invoice** posting
-   - (c) Configurable per business in sales_config
+## Risks / Notes
+- Migration is large and irreversible-ish; backfill must be correct. Users with multiple existing companies but data created before this change will have all their data attached to the **oldest** business (`joined_at ASC`). They can re-assign manually if needed — we'll surface that caveat to the user.
+- Volume of code edits is large (~30+ files). Will batch.
+- Will not touch unrelated modules (Calculator, Auth, Profile, etc.).
 
-Reply with picks (e.g. "1b, 2b, 3a") and I'll start Phase A migration.
+## Decision needed
+1. Backfill rule for existing data — attach to **oldest business per user** (recommended) vs. require manual mapping?
+2. Run all phases in this turn, or split (Phase 1+2+4 SQL first, then Phase 3 app refactor, then Phase 5 UI)?

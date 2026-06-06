@@ -1,5 +1,6 @@
-// Accounting helpers — all queries are user-scoped via RLS.
+// Accounting helpers — all queries are user + business scoped via RLS + business_id filter.
 import { supabase } from "@/integrations/supabase/client";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 export type LedgerRow = {
   id: string;
@@ -12,7 +13,7 @@ export type LedgerRow = {
   is_system: boolean;
   status: string;
   group?: { name: string; nature: string } | null;
-  balance?: number;       // signed: positive = Dr, negative = Cr
+  balance?: number;
   total_dr?: number;
   total_cr?: number;
 };
@@ -39,25 +40,29 @@ export type VoucherItemRow = {
   narration: string | null;
 };
 
-// Ensure default groups + system ledgers exist for the user.
 export async function seedAccounts(userId: string) {
-  const { error } = await supabase.rpc("seed_accounting_defaults", { _user_id: userId });
+  const biz = getActiveBusinessIdSync();
+  const { error } = await supabase.rpc("seed_accounting_defaults", { _user_id: userId, _business_id: biz } as any);
   if (error) throw error;
 }
 
-// Fetch every ledger with running balance computed from voucher_items + opening.
 export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow[]> {
-  const { data: ledgers, error } = await supabase
+  const biz = getActiveBusinessIdSync();
+  let lq = supabase
     .from("ledger_accounts")
     .select("id, name, ledger_type, group_id, party_id, opening_balance, opening_balance_type, is_system, status, group:account_groups(name, nature)")
     .eq("user_id", userId)
     .order("name");
+  if (biz) lq = lq.eq("business_id", biz);
+  const { data: ledgers, error } = await lq;
   if (error) throw error;
 
-  const { data: items, error: e2 } = await supabase
+  let iq = supabase
     .from("voucher_items")
     .select("ledger_id, dr_amount, cr_amount")
     .eq("user_id", userId);
+  if (biz) iq = iq.eq("business_id", biz);
+  const { data: items, error: e2 } = await iq;
   if (e2) throw e2;
 
   const agg = new Map<string, { dr: number; cr: number }>();
@@ -77,6 +82,7 @@ export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow
 }
 
 export async function fetchVouchers(userId: string, opts: { type?: string; from?: string; to?: string; limit?: number } = {}) {
+  const biz = getActiveBusinessIdSync();
   let q = supabase
     .from("vouchers")
     .select("id, voucher_number, voucher_type, voucher_date, narration, total_amount, status, reference_id, reference_type")
@@ -84,6 +90,7 @@ export async function fetchVouchers(userId: string, opts: { type?: string; from?
     .order("voucher_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(opts.limit ?? 200);
+  if (biz) q = q.eq("business_id", biz);
   if (opts.type && opts.type !== "All") q = q.eq("voucher_type", opts.type as any);
   if (opts.from) q = q.gte("voucher_date", opts.from);
   if (opts.to) q = q.lte("voucher_date", opts.to);
@@ -94,44 +101,49 @@ export async function fetchVouchers(userId: string, opts: { type?: string; from?
 
 export async function fetchVoucherItems(userId: string, voucherIds: string[]) {
   if (voucherIds.length === 0) return [];
-  const { data, error } = await supabase
+  const biz = getActiveBusinessIdSync();
+  let q = supabase
     .from("voucher_items")
     .select("id, voucher_id, ledger_id, dr_amount, cr_amount, position, narration")
     .eq("user_id", userId)
     .in("voucher_id", voucherIds);
+  if (biz) q = q.eq("business_id", biz);
+  const { data, error } = await q;
   if (error) throw error;
   return (data ?? []) as VoucherItemRow[];
 }
 
-// One-off backfill: create ledgers for existing parties and post sales vouchers
-// for already-completed orders that don't yet have a voucher.
 export async function backfillAccounting(userId: string) {
   await seedAccounts(userId);
+  const biz = getActiveBusinessIdSync();
 
-  // 1) Party ledgers
-  const { data: parties } = await supabase.from("parties").select("id").eq("user_id", userId);
+  let pq = supabase.from("parties").select("id").eq("user_id", userId);
+  if (biz) pq = pq.eq("business_id", biz);
+  const { data: parties } = await pq;
   for (const p of parties ?? []) {
-    await supabase.rpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id });
+    await supabase.rpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id, _business_id: biz } as any);
   }
 
-  // 2) Re-post completed orders by toggling status (cheap way to re-trigger).
-  //    We only touch orders that don't have a voucher yet.
-  const { data: orders } = await supabase
+  let oq = supabase
     .from("orders")
     .select("id, status")
     .eq("user_id", userId)
     .eq("status", "completed");
-  const { data: existing } = await supabase
+  if (biz) oq = oq.eq("business_id", biz);
+  const { data: orders } = await oq;
+
+  let vq = supabase
     .from("vouchers")
     .select("reference_id")
     .eq("user_id", userId)
     .eq("reference_type", "order");
+  if (biz) vq = vq.eq("business_id", biz);
+  const { data: existing } = await vq;
   const posted = new Set((existing ?? []).map((v: any) => v.reference_id));
 
   let count = 0;
   for (const o of orders ?? []) {
     if (posted.has(o.id)) continue;
-    // Touch status to fire trigger.
     await supabase.from("orders").update({ status: "partial" }).eq("id", o.id);
     await supabase.from("orders").update({ status: "completed" }).eq("id", o.id);
     count += 1;

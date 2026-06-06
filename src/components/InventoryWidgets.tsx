@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Boxes, AlertTriangle, Clock, Truck, Users } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchProducts } from "@/lib/products";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,8 @@ const inr = (n: number) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { ma
 
 export default function InventoryWidgets() {
   const { user } = useAuth();
+  const { business } = useBusiness();
+  const businessId = business?.id ?? null;
   const [stockValue, setStockValue] = useState(0);
   const [lowCount, setLowCount] = useState(0);
   const [pendingOrders, setPendingOrders] = useState(0);
@@ -24,27 +27,30 @@ export default function InventoryWidgets() {
       setLowCount(ps.filter((p) => Number(p.stock) <= Number(p.low_stock_threshold)).length);
     });
 
-    supabase.from("orders").select("id,status", { count: "exact", head: false })
-      .eq("user_id", user.id).in("status", ["pending", "partial"])
-      .then(({ count }) => setPendingOrders(count || 0));
+    let oq = supabase.from("orders").select("id,status", { count: "exact", head: false })
+      .eq("user_id", user.id).in("status", ["pending", "partial"]);
+    if (businessId) oq = oq.eq("business_id", businessId);
+    oq.then(({ count }) => setPendingOrders(count || 0));
 
-    supabase.from("dispatches").select("id", { count: "exact", head: true })
-      .eq("user_id", user.id).eq("dispatch_date", today)
-      .then(({ count }) => setDispatchToday(count || 0));
+    let dq = supabase.from("dispatches").select("id", { count: "exact", head: true })
+      .eq("user_id", user.id).eq("dispatch_date", today);
+    if (businessId) dq = dq.eq("business_id", businessId);
+    dq.then(({ count }) => setDispatchToday(count || 0));
 
-    supabase.from("order_items")
+    let iq = supabase.from("order_items")
       .select("pending_qty, net_rate, orders!inner(party_id, party_name, status, user_id)")
-      .eq("user_id", user.id).gt("pending_qty", 0)
-      .then(({ data }) => {
-        const m = new Map<string, number>();
-        (data || []).forEach((r: any) => {
-          if (["draft", "cancelled"].includes(r.orders?.status)) return;
-          const name = r.orders?.party_name || "—";
-          m.set(name, (m.get(name) || 0) + Number(r.pending_qty) * Number(r.net_rate));
-        });
-        setTopParties(Array.from(m.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5));
+      .eq("user_id", user.id).gt("pending_qty", 0);
+    if (businessId) iq = iq.eq("business_id", businessId);
+    iq.then(({ data }) => {
+      const m = new Map<string, number>();
+      (data || []).forEach((r: any) => {
+        if (["draft", "cancelled"].includes(r.orders?.status)) return;
+        const name = r.orders?.party_name || "—";
+        m.set(name, (m.get(name) || 0) + Number(r.pending_qty) * Number(r.net_rate));
       });
-  }, [user]);
+      setTopParties(Array.from(m.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5));
+    });
+  }, [user, businessId]);
 
   const tiles = [
     { label: "Total Stock Value", value: inr(stockValue), icon: Boxes, accent: "gradient-primary" },

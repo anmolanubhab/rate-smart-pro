@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 export type OrderStatus = "draft" | "confirmed" | "cancelled" | "completed" | "pending" | "partial" | "approved" | "invoiced" | "closed";
 export type OrderSource = "manual" | "excel" | "pending-generated";
@@ -27,6 +28,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   user_id: string;
+  business_id: string | null;
   order_number: string;
   order_date: string;
   party_id: string | null;
@@ -62,9 +64,10 @@ export async function nextOrderNumber(userId: string): Promise<string> {
 }
 
 export async function fetchOrders(userId: string) {
-  const { data, error } = await supabase
-    .from("orders").select("*").eq("user_id", userId)
-    .order("created_at", { ascending: false });
+  const biz = getActiveBusinessIdSync();
+  let q = supabase.from("orders").select("*").eq("user_id", userId).order("created_at", { ascending: false });
+  if (biz) q = q.eq("business_id", biz);
+  const { data, error } = await q;
   if (error) throw error;
   return (data || []) as Order[];
 }
@@ -84,13 +87,14 @@ export async function fetchOrderItems(orderId: string) {
 }
 
 export async function fetchPendingItems(userId: string, partyId?: string) {
-  let q = supabase.from("order_items").select("*, orders!inner(id, order_number, order_date, party_id, party_name, status, user_id)")
+  const biz = getActiveBusinessIdSync();
+  let q = supabase.from("order_items").select("*, orders!inner(id, order_number, order_date, party_id, party_name, status, user_id, business_id)")
     .eq("user_id", userId)
     .gt("pending_qty", 0);
+  if (biz) q = q.eq("business_id", biz);
   const { data, error } = await q;
   if (error) throw error;
   let rows = (data || []) as any[];
-  // Exclude draft / cancelled orders
   rows = rows.filter((r) => !["draft", "cancelled"].includes(r.orders?.status));
   if (partyId) rows = rows.filter((r) => r.orders?.party_id === partyId);
   return rows;
@@ -175,6 +179,7 @@ export interface SaveOrderInput {
 }
 
 export async function saveOrder(input: SaveOrderInput): Promise<Order> {
+  const businessId = getActiveBusinessIdSync();
   const totals = computeTotals(input.items, input.shipping_charges || 0);
   let orderId = input.id;
   let orderNumber = input.order_number;
@@ -183,6 +188,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
     if (!orderNumber) orderNumber = await nextOrderNumber(input.userId);
     const { data, error } = await supabase.from("orders").insert({
       user_id: input.userId,
+      business_id: businessId,
       order_number: orderNumber,
       order_date: input.order_date,
       party_id: input.party_id,
@@ -225,7 +231,6 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
       grand_total: totals.grand_total,
     }).eq("id", orderId);
     if (error) throw error;
-    // wipe items and re-insert (simple, draft orders only)
     await supabase.from("order_items").delete().eq("order_id", orderId);
   }
 
@@ -233,6 +238,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
     const rows = input.items.map((it, idx) => ({
       order_id: orderId!,
       user_id: input.userId,
+      business_id: businessId,
       product_id: it.product_id,
       part_number: it.part_number,
       description: it.description,
@@ -253,10 +259,6 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
   return await fetchOrder(orderId!);
 }
 
-/**
- * Build a new order from accumulated pending items of a party.
- * Merges by part_number (sums qty), keeps original rate/discount from first occurrence.
- */
 export async function generatePendingOrder(userId: string, partyId: string) {
   const pending = await fetchPendingItems(userId, partyId);
   if (!pending.length) throw new Error("No pending items for this party");
@@ -290,7 +292,6 @@ export async function generatePendingOrder(userId: string, partyId: string) {
   const items = Array.from(merged.values()).map((it) => computeItem(it));
   const parents = Array.from(new Set(pending.map((p) => p.orders.id)));
 
-  // load party for snapshot
   const { data: party } = await supabase.from("parties").select("*").eq("id", partyId).maybeSingle();
 
   return await saveOrder({
@@ -376,6 +377,7 @@ export async function logActivity(input: {
 }) {
   await supabase.from("order_activity_logs" as any).insert({
     user_id: input.userId,
+    business_id: getActiveBusinessIdSync(),
     order_id: input.orderId,
     action: input.action,
     description: input.description ?? null,

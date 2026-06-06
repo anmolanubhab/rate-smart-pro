@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,6 +47,8 @@ const fmtPct = (n: number | null) => Number(n || 0).toFixed(2).replace(/\.00$/, 
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
+  const businessId = business?.id ?? null;
   const [calcs, setCalcs] = useState<Calc[]>([]);
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState("");
@@ -55,15 +58,16 @@ const Dashboard = () => {
   useEffect(() => {
     document.title = "Dashboard — RD Calculator Pro";
     if (!user) return;
-    supabase
+    let q = supabase
       .from("calculations")
       .select("*")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        setCalcs((data as Calc[]) ?? []);
-        setLoading(false);
-      });
-  }, [user]);
+      .order("created_at", { ascending: false });
+    if (businessId) q = q.eq("business_id", businessId);
+    q.then(({ data }) => {
+      setCalcs((data as Calc[]) ?? []);
+      setLoading(false);
+    });
+  }, [user, businessId]);
 
   const parties = useMemo(() => {
     const set = new Set<string>();

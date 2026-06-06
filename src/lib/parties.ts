@@ -1,16 +1,17 @@
 import { supabase } from "@/integrations/supabase/client";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 export type DiscountType = "RD" | "CD";
 
 export interface Party {
   id: string;
+  business_id?: string | null;
   name: string;
   address: string | null;
   default_discount: number;
   discount_type: DiscountType;
   agreed_discount: number;
   created_at: string;
-  // extended fields
   phone?: string | null;
   gst?: string | null;
   billing_address?: string | null;
@@ -36,11 +37,14 @@ export interface PartyDiscount {
 }
 
 export async function fetchParties(userId: string) {
-  const { data, error } = await supabase
+  const biz = getActiveBusinessIdSync();
+  let q = supabase
     .from("parties")
     .select("*")
     .eq("user_id", userId)
     .order("name", { ascending: true });
+  if (biz) q = q.eq("business_id", biz);
+  const { data, error } = await q;
   if (error) throw error;
   return (data || []) as Party[];
 }
@@ -64,10 +68,6 @@ export async function fetchPartyDiscounts(partyId: string) {
   return (data || []) as PartyDiscount[];
 }
 
-/**
- * Resolve the effective discount for a party + segment.
- * Priority: segment-specific > agreed_discount (RD) / default_discount (CD).
- */
 export function resolveDiscount(
   party: Party,
   segmentId: string | null,

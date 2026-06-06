@@ -163,6 +163,7 @@ function PartyExcelUpload({ open, onOpenChange, userId, onImported }: Props) {
 
     const toInsert = inserts.map((r) => ({
       user_id: userId,
+      business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
       name: r.name.trim(),
       phone: r.phone || null,
       gst: r.gst || null,
