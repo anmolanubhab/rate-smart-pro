@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -38,6 +38,7 @@ export type Business = {
   invoice_prefix: string | null;
   invoice_terms: string | null;
   setup_completed: boolean;
+  archived_at?: string | null;
   created_at?: string;
 };
 
@@ -56,6 +57,7 @@ export function setActiveBusinessId(id: string | null) {
 
 export function useBusiness() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const q = useQuery({
     queryKey: ["current-business", user?.id],
     enabled: !!user,
@@ -89,12 +91,15 @@ export function useBusiness() {
     },
   });
 
-  // Refetch when active business changes
+  // Refetch + clear ALL caches when active business changes — isolates per-company data.
   useEffect(() => {
-    const handler = () => { q.refetch(); };
+    const handler = () => {
+      queryClient.clear();
+      q.refetch();
+    };
     window.addEventListener("rdpro:active-business-changed", handler);
     return () => window.removeEventListener("rdpro:active-business-changed", handler);
-  }, [q]);
+  }, [q, queryClient]);
 
   return {
     business: q.data?.business ?? null,

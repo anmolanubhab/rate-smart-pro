@@ -1,8 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 export interface Dispatch {
   id: string;
   user_id: string;
+  business_id: string | null;
   order_id: string;
   party_id: string | null;
   dispatch_number: string;
@@ -24,11 +26,14 @@ export async function nextDispatchNumber(userId: string) {
 }
 
 export async function fetchDispatches(userId: string) {
-  const { data, error } = await supabase
+  const biz = getActiveBusinessIdSync();
+  let q = supabase
     .from("dispatches")
     .select("*, orders(order_number, party_name)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
+  if (biz) q = q.eq("business_id", biz);
+  const { data, error } = await q;
   if (error) throw error;
   return data as any[];
 }
@@ -54,6 +59,7 @@ export async function createDispatch(input: {
     dispatch_remarks?: string | null;
   };
 }) {
+  const businessId = getActiveBusinessIdSync();
   const items = input.items.filter((i) => Number(i.dispatched_qty) > 0);
   if (!items.length) throw new Error("Enter dispatch quantity for at least one item");
 
@@ -67,6 +73,7 @@ export async function createDispatch(input: {
 
   const { data: dispatch, error } = await supabase.from("dispatches").insert({
     user_id: input.userId,
+    business_id: businessId,
     order_id: input.orderId,
     party_id: input.partyId,
     dispatch_number,
@@ -86,6 +93,7 @@ export async function createDispatch(input: {
 
   const rows = items.map((it) => ({
     user_id: input.userId,
+    business_id: businessId,
     dispatch_id: dispatch.id,
     order_item_id: it.order_item_id,
     dispatched_qty: it.dispatched_qty,
