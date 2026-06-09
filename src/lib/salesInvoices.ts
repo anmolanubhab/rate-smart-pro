@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
-import { fetchOrder, fetchOrderItems, computeTotals } from "@/lib/orders";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { fetchOrder, fetchOrderItems, computeTotals } from "@/lib/orders";
 
 export interface SalesInvoice {
   id: string;
@@ -35,13 +35,13 @@ export async function nextInvoiceNumber(userId: string) {
 
 export async function fetchInvoices(userId: string) {
   const biz = getActiveBusinessIdSync();
-  let q = supabase
+  if (!biz) return [];
+
+  const { data, error } = await supabase
     .from("sales_invoices")
     .select("*")
-    .eq("user_id", userId)
+    .eq("business_id", biz)
     .order("created_at", { ascending: false });
-  if (biz) q = q.eq("business_id", biz);
-  const { data, error } = await q;
   if (error) throw error;
   return (data || []) as SalesInvoice[];
 }
@@ -56,6 +56,7 @@ export async function fetchInvoiceItems(invoiceId: string) {
   return data || [];
 }
 
+/** Generate an invoice from a sales order. Requires the order to exist and not already be invoiced. */
 export async function generateInvoiceFromOrder(opts: {
   userId: string;
   businessId: string | null;
@@ -70,7 +71,6 @@ export async function generateInvoiceFromOrder(opts: {
     throw new Error("Order must be approved before invoicing");
   }
 
-  const businessId = opts.businessId ?? getActiveBusinessIdSync();
   const items = await fetchOrderItems(opts.orderId);
   if (!items.length) throw new Error("Order has no items");
   const totals = computeTotals(items as any, order.shipping_charges || 0);
@@ -82,7 +82,7 @@ export async function generateInvoiceFromOrder(opts: {
     .from("sales_invoices")
     .insert({
       user_id: opts.userId,
-      business_id: businessId,
+      business_id: opts.businessId,
       invoice_number,
       invoice_date: new Date().toISOString().slice(0, 10),
       order_id: opts.orderId,
@@ -107,7 +107,6 @@ export async function generateInvoiceFromOrder(opts: {
 
   const rows = items.map((it: any, idx) => ({
     user_id: opts.userId,
-    business_id: businessId,
     invoice_id: inv.id,
     product_id: it.product_id,
     part_number: it.part_number,
@@ -128,6 +127,7 @@ export async function generateInvoiceFromOrder(opts: {
     throw e2;
   }
 
+  // Link invoice on order + mark invoiced
   await supabase
     .from("orders")
     .update({
