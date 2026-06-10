@@ -26,7 +26,7 @@ export function normalizePart(s: any): string {
 return String(s ?? "")
 .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, "")
 .replace(/\s+/g, "")
-.replace(/[-_./\]/g, "")
+.replace(/[-_.\/\\]/g, "")
 .trim()
 .toUpperCase();
 }
