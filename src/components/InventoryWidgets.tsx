@@ -10,8 +10,8 @@ const inr = (n: number) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { ma
 
 export default function InventoryWidgets() {
   const { user } = useAuth();
-  const { business } = useBusiness();
-  const businessId = business?.id ?? null;
+  const { currentBusiness } = useBusiness();  // ✅ Bug #1 fixed
+  const businessId = currentBusiness?.id ?? null;  // ✅ Bug #1 fixed
   const [stockValue, setStockValue] = useState(0);
   const [lowCount, setLowCount] = useState(0);
   const [pendingOrders, setPendingOrders] = useState(0);
@@ -22,26 +22,27 @@ export default function InventoryWidgets() {
     if (!user || !businessId) return;
     const today = new Date().toISOString().slice(0, 10);
 
-    fetchProducts(user.id).then((ps) => {
+    // ✅ Bug #2 fixed: fetchProducts(businessId) instead of fetchProducts(user.id)
+    fetchProducts(businessId).then((ps) => {
       setStockValue(ps.reduce((s, p) => s + Number(p.stock) * Number(p.dealer_rate || p.mrp), 0));
       setLowCount(ps.filter((p) => Number(p.stock) <= Number(p.low_stock_threshold)).length);
     });
 
-    // Fixed: Pending orders count with head: true
+    // Pending orders count with head: true
     supabase.from("orders")
       .select("id", { count: "exact", head: true })
       .eq("business_id", businessId)
       .in("status", ["pending", "partial"])
       .then(({ count }) => setPendingOrders(count || 0));
 
-    // Fixed: Dispatches today count with head: true
+    // Dispatches today count with head: true
     supabase.from("dispatches")
       .select("id", { count: "exact", head: true })
       .eq("business_id", businessId)
       .eq("dispatch_date", today)
       .then(({ count }) => setDispatchToday(count || 0));
 
-    // Fixed: Top parties from pending order items
+    // Top parties from pending order items
     supabase.from("order_items")
       .select(`
         pending_qty, 
