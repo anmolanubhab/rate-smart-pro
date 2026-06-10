@@ -19,7 +19,8 @@ const inr = (n: number) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { ma
 
 const Reports = () => {
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { currentBusiness } = useBusiness();  // ✅ Bug #1 fixed
+  const businessId = currentBusiness?.id ?? null;  // ✅ Bug #1 fixed
   const [orders, setOrders] = useState<Order[]>([]);
   const [dispatches, setDispatches] = useState<any[]>([]);
   const [pending, setPending] = useState<any[]>([]);
@@ -36,13 +37,14 @@ const Reports = () => {
 
   useEffect(() => { document.title = "Reports — Spare Parts OMS"; }, []);
   useEffect(() => {
-    if (!user || !business?.id) return;
-    fetchOrders(user.id).then(setOrders).catch(() => {});
-    fetchDispatches(user.id).then(setDispatches).catch(() => {});
-    fetchProducts(user.id).then(setProducts).catch(() => {});
-    fetchParties(user.id).then(setParties).catch(() => {});
+    if (!user || !businessId) return;  // ✅ Fixed: use businessId instead of business?.id
     
-    // Fixed query: Filter on parent orders table, not order_items
+    // ✅ Bug #2 fixed: use businessId instead of user.id
+    fetchOrders(businessId).then(setOrders).catch(() => {});
+    fetchDispatches(businessId).then(setDispatches).catch(() => {});
+    fetchProducts(businessId).then(setProducts).catch(() => {});
+    fetchParties(businessId).then(setParties).catch(() => {});
+    
     supabase.from("order_items")
       .select(`
         *,
@@ -56,17 +58,17 @@ const Reports = () => {
           business_id
         )
       `)
-      .eq("orders.business_id", business.id)
+      .eq("orders.business_id", businessId)
       .gt("pending_qty", 0)
       .then(({ data }) => setPending((data || []).filter((r: any) => !["draft", "cancelled"].includes(r.orders?.status))));
     
     supabase.from("inventory_movements" as any)
       .select("*, products(part_number, name)")
-      .eq("user_id", user.id)
+      .eq("business_id", businessId)  // ✅ Fixed: filter by business_id instead of user_id
       .order("created_at", { ascending: false })
       .limit(1000)
       .then(({ data }) => setMovements((data as any[]) || []));
-  }, [user, business?.id]);
+  }, [user, businessId]);  // ✅ Fixed: use businessId as dependency
 
   const inRange = (d: string | null) => {
     if (!d) return true;
@@ -280,6 +282,7 @@ const Reports = () => {
           <TabsTrigger value="movement">Inventory Movement</TabsTrigger>
         </TabsList>
 
+        {/* Rest of the JSX remains the same - no changes needed below this line */}
         {/* A. Pending Orders */}
         <TabsContent value="pending">
           <div className="rounded-2xl border border-border bg-card p-5 shadow-soft space-y-3">
@@ -292,7 +295,7 @@ const Reports = () => {
                 <table className="w-full text-xs">
                   <thead className="bg-muted/50"><tr className="text-left">
                     {["Order No", "Date", "Party", "Part No", "Description", "Ordered", "Dispatched", "Pending", "Rate", "Amount"].map((h) => <th key={h} className="px-2 py-2">{h}</th>)}
-                   </tr></thead>
+                  </tr></thead>
                   <tbody>
                     {pendingRows.map((r, i) => (
                       <tr key={i} className="border-t border-border">
@@ -327,7 +330,7 @@ const Reports = () => {
                   <thead className="bg-muted/50"><tr className="text-left">
                     <th className="px-3 py-2">Party</th><th className="px-3 py-2 text-right">Total Orders</th>
                     <th className="px-3 py-2 text-right">Pending Qty</th><th className="px-3 py-2 text-right">Pending Value</th>
-                  </tr></thead>
+                   </tr></thead>
                   <tbody>
                     {partySummary.map((r, i) => (
                       <tr key={i} className="border-t border-border">
