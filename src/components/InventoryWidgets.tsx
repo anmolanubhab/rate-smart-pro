@@ -19,7 +19,7 @@ export default function InventoryWidgets() {
   const [topParties, setTopParties] = useState<{ name: string; value: number }[]>([]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !businessId) return;
     const today = new Date().toISOString().slice(0, 10);
 
     fetchProducts(user.id).then((ps) => {
@@ -27,29 +27,43 @@ export default function InventoryWidgets() {
       setLowCount(ps.filter((p) => Number(p.stock) <= Number(p.low_stock_threshold)).length);
     });
 
-    let oq = supabase.from("orders").select("id,status", { count: "exact", head: false })
-      .eq("user_id", user.id).in("status", ["pending", "partial"]);
-    if (businessId) oq = oq.eq("business_id", businessId);
-    oq.then(({ count }) => setPendingOrders(count || 0));
+    // Fixed: Filter on orders.business_id
+    supabase.from("orders")
+      .select("id,status", { count: "exact", head: false })
+      .eq("business_id", businessId)
+      .in("status", ["pending", "partial"])
+      .then(({ count }) => setPendingOrders(count || 0));
 
-    let dq = supabase.from("dispatches").select("id", { count: "exact", head: true })
-      .eq("user_id", user.id).eq("dispatch_date", today);
-    if (businessId) dq = dq.eq("business_id", businessId);
-    dq.then(({ count }) => setDispatchToday(count || 0));
+    // Fixed: Filter on dispatches.business_id
+    supabase.from("dispatches")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", businessId)
+      .eq("dispatch_date", today)
+      .then(({ count }) => setDispatchToday(count || 0));
 
-    let iq = supabase.from("order_items")
-      .select("pending_qty, net_rate, orders!inner(party_id, party_name, status, user_id)")
-      .eq("user_id", user.id).gt("pending_qty", 0);
-    if (businessId) iq = iq.eq("business_id", businessId);
-    iq.then(({ data }) => {
-      const m = new Map<string, number>();
-      (data || []).forEach((r: any) => {
-        if (["draft", "cancelled"].includes(r.orders?.status)) return;
-        const name = r.orders?.party_name || "—";
-        m.set(name, (m.get(name) || 0) + Number(r.pending_qty) * Number(r.net_rate));
+    // Fixed: Filter on orders.business_id through the join
+    supabase.from("order_items")
+      .select(`
+        pending_qty, 
+        net_rate, 
+        orders!inner(
+          party_id, 
+          party_name, 
+          status, 
+          business_id
+        )
+      `)
+      .eq("orders.business_id", businessId)
+      .gt("pending_qty", 0)
+      .then(({ data }) => {
+        const m = new Map<string, number>();
+        (data || []).forEach((r: any) => {
+          if (["draft", "cancelled"].includes(r.orders?.status)) return;
+          const name = r.orders?.party_name || "—";
+          m.set(name, (m.get(name) || 0) + Number(r.pending_qty) * Number(r.net_rate));
+        });
+        setTopParties(Array.from(m.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5));
       });
-      setTopParties(Array.from(m.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5));
-    });
   }, [user, businessId]);
 
   const tiles = [
