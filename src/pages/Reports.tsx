@@ -41,6 +41,8 @@ const Reports = () => {
     fetchDispatches(user.id).then(setDispatches).catch(() => {});
     fetchProducts(user.id).then(setProducts).catch(() => {});
     fetchParties(user.id).then(setParties).catch(() => {});
+    
+    // Fixed query: Filter on parent orders table, not order_items
     supabase.from("order_items")
       .select(`
         *,
@@ -57,6 +59,7 @@ const Reports = () => {
       .eq("orders.business_id", business.id)
       .gt("pending_qty", 0)
       .then(({ data }) => setPending((data || []).filter((r: any) => !["draft", "cancelled"].includes(r.orders?.status))));
+    
     supabase.from("inventory_movements" as any)
       .select("*, products(part_number, name)")
       .eq("user_id", user.id)
@@ -289,7 +292,7 @@ const Reports = () => {
                 <table className="w-full text-xs">
                   <thead className="bg-muted/50"><tr className="text-left">
                     {["Order No", "Date", "Party", "Part No", "Description", "Ordered", "Dispatched", "Pending", "Rate", "Amount"].map((h) => <th key={h} className="px-2 py-2">{h}</th>)}
-                  </tr></thead>
+                   </tr></thead>
                   <tbody>
                     {pendingRows.map((r, i) => (
                       <tr key={i} className="border-t border-border">
