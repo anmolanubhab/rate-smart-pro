@@ -27,21 +27,21 @@ export default function InventoryWidgets() {
       setLowCount(ps.filter((p) => Number(p.stock) <= Number(p.low_stock_threshold)).length);
     });
 
-    // Fixed: Filter on orders.business_id
+    // Fixed: Pending orders count with head: true
     supabase.from("orders")
-      .select("id,status", { count: "exact", head: false })
+      .select("id", { count: "exact", head: true })
       .eq("business_id", businessId)
       .in("status", ["pending", "partial"])
       .then(({ count }) => setPendingOrders(count || 0));
 
-    // Fixed: Filter on dispatches.business_id
+    // Fixed: Dispatches today count with head: true
     supabase.from("dispatches")
       .select("id", { count: "exact", head: true })
       .eq("business_id", businessId)
       .eq("dispatch_date", today)
       .then(({ count }) => setDispatchToday(count || 0));
 
-    // Fixed: Filter on orders.business_id through the join
+    // Fixed: Top parties from pending order items
     supabase.from("order_items")
       .select(`
         pending_qty, 
