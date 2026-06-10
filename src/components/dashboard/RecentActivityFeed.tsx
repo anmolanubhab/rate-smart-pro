@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Boxes, Package, ShoppingCart, Truck, Users, Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,15 +58,16 @@ function ItemSkeleton() {
 
 export default function RecentActivityFeed() {
   const { user } = useAuth();
+  const { currentBusiness } = useBusiness();
 
   const salesQ = useQuery({
-    queryKey: ["activity-sales", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["activity-sales", currentBusiness?.id],
+    enabled: !!user?.id && !!currentBusiness?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
         .select("id, order_number, order_date, party_name, grand_total, status, created_at")
-        .eq("user_id", user!.id)
+        .eq("business_id", currentBusiness?.id)
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(5);
@@ -75,13 +77,13 @@ export default function RecentActivityFeed() {
   });
 
   const purchasesQ = useQuery({
-    queryKey: ["activity-purchases", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["activity-purchases", currentBusiness?.id],
+    enabled: !!user?.id && !!currentBusiness?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vouchers")
         .select("id, voucher_number, voucher_date, total_amount, status")
-        .eq("user_id", user!.id)
+        .eq("business_id", currentBusiness?.id)
         .eq("voucher_type", "purchase" as any)
         .order("voucher_date", { ascending: false })
         .order("created_at", { ascending: false })
@@ -92,13 +94,13 @@ export default function RecentActivityFeed() {
   });
 
   const partiesQ = useQuery({
-    queryKey: ["activity-parties", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["activity-parties", currentBusiness?.id],
+    enabled: !!user?.id && !!currentBusiness?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("parties")
         .select("id, name, created_at")
-        .eq("user_id", user!.id)
+        .eq("business_id", currentBusiness?.id)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
@@ -107,13 +109,13 @@ export default function RecentActivityFeed() {
   });
 
   const productsQ = useQuery({
-    queryKey: ["activity-products", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["activity-products", currentBusiness?.id],
+    enabled: !!user?.id && !!currentBusiness?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
         .select("id, part_number, name, created_at")
-        .eq("user_id", user!.id)
+        .eq("business_id", currentBusiness?.id)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
@@ -122,13 +124,13 @@ export default function RecentActivityFeed() {
   });
 
   const dispatchesQ = useQuery({
-    queryKey: ["activity-dispatches", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["activity-dispatches", currentBusiness?.id],
+    enabled: !!user?.id && !!currentBusiness?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("dispatches")
         .select("id, dispatch_number, dispatch_date, created_at, orders(order_number, party_name)")
-        .eq("user_id", user!.id)
+        .eq("business_id", currentBusiness?.id)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
@@ -137,13 +139,13 @@ export default function RecentActivityFeed() {
   });
 
   const paymentsQ = useQuery({
-    queryKey: ["activity-payments", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["activity-payments", currentBusiness?.id],
+    enabled: !!user?.id && !!currentBusiness?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vouchers")
         .select("id, voucher_number, voucher_date, total_amount, status")
-        .eq("user_id", user!.id)
+        .eq("business_id", currentBusiness?.id)
         .eq("voucher_type", "payment" as any)
         .order("voucher_date", { ascending: false })
         .order("created_at", { ascending: false })
