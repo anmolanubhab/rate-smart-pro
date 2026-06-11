@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { fetchOrders, fetchOrderItems, Order, OrderItem } from "@/lib/orders";
 import { createDispatch, fetchDispatches } from "@/lib/dispatches";
-import { fetchProducts, Product } from "@/lib/products";
+import { fetchProducts, normalizePart, Product } from "@/lib/products";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 
 const Dispatch = () => {
@@ -46,8 +46,14 @@ const Dispatch = () => {
     if (!user) return;
     fetchOrders(user.id).then((rows) => setOrders(rows.filter((o) => ["pending", "partial", "confirmed", "approved"].includes(o.status)))).catch((e) => toast.error(e.message));
     fetchDispatches(user.id).then(setRecent).catch(() => {});
+    // Always reload products — fetchProducts needs active business to be set
     fetchProducts(user.id).then(setProducts).catch(() => {});
   };
+
+  // Re-fetch products whenever business changes (business sets the active biz id sync)
+  useEffect(() => {
+    if (user && business?.id) fetchProducts(user.id).then(setProducts).catch(() => {});
+  }, [business?.id]);
 
   useEffect(() => {
     document.title = "Dispatch — RD Pro";
@@ -59,7 +65,7 @@ const Dispatch = () => {
   const order = useMemo(() => orders.find((o) => o.id === orderId) || null, [orders, orderId]);
   const productByPart = useMemo(() => {
     const m = new Map<string, Product>();
-    products.forEach((p) => m.set(p.part_number.trim().toLowerCase(), p));
+    products.forEach((p) => m.set(normalizePart(p.part_number), p));
     return m;
   }, [products]);
 
@@ -73,7 +79,7 @@ const Dispatch = () => {
   }, [orderId]);
 
   const stockOf = (it: OrderItem) => {
-    const prod = it.part_number ? productByPart.get(it.part_number.trim().toLowerCase()) : undefined;
+    const prod = it.part_number ? productByPart.get(normalizePart(it.part_number)) : undefined;
     return prod ? Number(prod.stock) : null;
   };
 
