@@ -46,6 +46,7 @@ const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"))
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
+const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
 const queryClient = new QueryClient();
 
@@ -110,6 +111,7 @@ const App = () => (
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
+              <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
