@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Truck, Save, Package } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,8 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { fetchOrders, fetchOrderItems, Order, OrderItem } from "@/lib/orders";
 import { createDispatch, fetchDispatches } from "@/lib/dispatches";
-import { fetchProducts, normalizePart, Product } from "@/lib/products";
+import { normalizePart, Product } from "@/lib/products";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
+import { supabase } from "@/integrations/supabase/client";
 
 const Dispatch = () => {
   const { user } = useAuth();
@@ -21,7 +23,6 @@ const Dispatch = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderId, setOrderId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [dispatchDate, setDispatchDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
@@ -42,18 +43,39 @@ const Dispatch = () => {
   const [ewayNumber, setEwayNumber] = useState("");
   const [dispatchRemarks, setDispatchRemarks] = useState("");
 
+  // ── Products via useQuery — directly by business_id, no localStorage race ──
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ["products-for-dispatch", business?.id],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const pageSize = 1000;
+      let from = 0;
+      const all: Product[] = [];
+      while (true) {
+        const { data, error } = await supabase
+          .from("products")
+          .select("id, part_number, name, stock")
+          .eq("business_id", business!.id)
+          .eq("status", "active")
+          .order("name", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const batch = (data || []) as Product[];
+        all.push(...batch);
+        if (batch.length < pageSize) break;
+        from += pageSize;
+      }
+      return all;
+    },
+  });
+
   const reload = () => {
     if (!user) return;
-    fetchOrders(user.id).then((rows) => setOrders(rows.filter((o) => ["pending", "partial", "confirmed", "approved"].includes(o.status)))).catch((e) => toast.error(e.message));
+    fetchOrders(user.id)
+      .then((rows) => setOrders(rows.filter((o) => ["pending", "partial", "confirmed", "approved"].includes(o.status))))
+      .catch((e) => toast.error(e.message));
     fetchDispatches(user.id).then(setRecent).catch(() => {});
-    // Always reload products — fetchProducts needs active business to be set
-    fetchProducts(user.id).then(setProducts).catch(() => {});
   };
-
-  // Re-fetch products whenever business changes (business sets the active biz id sync)
-  useEffect(() => {
-    if (user && business?.id) fetchProducts(user.id).then(setProducts).catch(() => {});
-  }, [business?.id]);
 
   useEffect(() => {
     document.title = "Dispatch — RD Pro";
@@ -63,6 +85,7 @@ const Dispatch = () => {
   }, [user, business?.id]);
 
   const order = useMemo(() => orders.find((o) => o.id === orderId) || null, [orders, orderId]);
+
   const productByPart = useMemo(() => {
     const m = new Map<string, Product>();
     products.forEach((p) => m.set(normalizePart(p.part_number), p));
