@@ -19,8 +19,8 @@ const inr = (n: number) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { ma
 
 const Reports = () => {
   const { user } = useAuth();
-  const { currentBusiness } = useBusiness();  // ✅ Bug #1 fixed
-  const businessId = currentBusiness?.id ?? null;  // ✅ Bug #1 fixed
+  const { business } = useBusiness();  // ✅ Bug #1 fixed
+  const businessId = business?.id ?? null;  // ✅ Bug #1 fixed
   const [orders, setOrders] = useState<Order[]>([]);
   const [dispatches, setDispatches] = useState<any[]>([]);
   const [pending, setPending] = useState<any[]>([]);
