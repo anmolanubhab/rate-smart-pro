@@ -58,16 +58,16 @@ function ItemSkeleton() {
 
 export default function RecentActivityFeed() {
   const { user } = useAuth();
-  const { currentBusiness } = useBusiness();
+  const { business } = useBusiness();
 
   const salesQ = useQuery({
-    queryKey: ["activity-sales", currentBusiness?.id],
-    enabled: !!user?.id && !!currentBusiness?.id,
+    queryKey: ["activity-sales", business?.id],
+    enabled: !!user?.id && !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
         .select("id, order_number, order_date, party_name, grand_total, status, created_at")
-        .eq("business_id", currentBusiness?.id)
+        .eq("business_id", business?.id)
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(5);
@@ -77,13 +77,13 @@ export default function RecentActivityFeed() {
   });
 
   const purchasesQ = useQuery({
-    queryKey: ["activity-purchases", currentBusiness?.id],
-    enabled: !!user?.id && !!currentBusiness?.id,
+    queryKey: ["activity-purchases", business?.id],
+    enabled: !!user?.id && !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vouchers")
         .select("id, voucher_number, voucher_date, total_amount, status")
-        .eq("business_id", currentBusiness?.id)
+        .eq("business_id", business?.id)
         .eq("voucher_type", "purchase" as any)
         .order("voucher_date", { ascending: false })
         .order("created_at", { ascending: false })
@@ -94,13 +94,13 @@ export default function RecentActivityFeed() {
   });
 
   const partiesQ = useQuery({
-    queryKey: ["activity-parties", currentBusiness?.id],
-    enabled: !!user?.id && !!currentBusiness?.id,
+    queryKey: ["activity-parties", business?.id],
+    enabled: !!user?.id && !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("parties")
         .select("id, name, created_at")
-        .eq("business_id", currentBusiness?.id)
+        .eq("business_id", business?.id)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
@@ -109,13 +109,13 @@ export default function RecentActivityFeed() {
   });
 
   const productsQ = useQuery({
-    queryKey: ["activity-products", currentBusiness?.id],
-    enabled: !!user?.id && !!currentBusiness?.id,
+    queryKey: ["activity-products", business?.id],
+    enabled: !!user?.id && !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
         .select("id, part_number, name, created_at")
-        .eq("business_id", currentBusiness?.id)
+        .eq("business_id", business?.id)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
@@ -124,13 +124,13 @@ export default function RecentActivityFeed() {
   });
 
   const dispatchesQ = useQuery({
-    queryKey: ["activity-dispatches", currentBusiness?.id],
-    enabled: !!user?.id && !!currentBusiness?.id,
+    queryKey: ["activity-dispatches", business?.id],
+    enabled: !!user?.id && !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("dispatches")
         .select("id, dispatch_number, dispatch_date, created_at, orders(order_number, party_name)")
-        .eq("business_id", currentBusiness?.id)
+        .eq("business_id", business?.id)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;
@@ -139,13 +139,13 @@ export default function RecentActivityFeed() {
   });
 
   const paymentsQ = useQuery({
-    queryKey: ["activity-payments", currentBusiness?.id],
-    enabled: !!user?.id && !!currentBusiness?.id,
+    queryKey: ["activity-payments", business?.id],
+    enabled: !!user?.id && !!business?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vouchers")
         .select("id, voucher_number, voucher_date, total_amount, status")
-        .eq("business_id", currentBusiness?.id)
+        .eq("business_id", business?.id)
         .eq("voucher_type", "payment" as any)
         .order("voucher_date", { ascending: false })
         .order("created_at", { ascending: false })
