@@ -5,7 +5,7 @@ import {
   Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchInvoices, cancelInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import { fetchInvoices, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -105,8 +105,9 @@ export default function InvoicesPage() {
     if (!deleteTarget) return;
     setBusy(deleteTarget.id);
     try {
-      // TODO: implement deleteInvoice(deleteTarget.id) in lib/salesInvoices.ts
-      toast.info(`Delete invoice ${deleteTarget.invoice_number} — backend not yet wired`);
+      await deleteInvoice(deleteTarget.id);
+      toast.success(`Invoice ${deleteTarget.invoice_number} deleted`);
+      refetch();
     } catch (e: any) {
       toast.error(e.message);
     } finally {
