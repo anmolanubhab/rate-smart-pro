@@ -48,7 +48,6 @@ const { data, error } = await supabase
 .order("name", { ascending: true })
 .range(from, from + pageSize - 1);
 
-```
 if (error) throw error;
 
 const batch = (data || []) as Product[];
@@ -57,7 +56,6 @@ all.push(...batch);
 if (batch.length < pageSize) break;
 
 from += pageSize;
-```
 
 }
 
