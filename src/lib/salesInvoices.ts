@@ -155,3 +155,34 @@ export async function cancelInvoice(invoiceId: string) {
     .eq("id", invoiceId);
   if (error) throw error;
 }
+
+export async function deleteInvoice(invoiceId: string) {
+  // Delete line items first (FK constraint)
+  const { error: e1 } = await supabase
+    .from("sales_invoice_items")
+    .delete()
+    .eq("invoice_id", invoiceId);
+  if (e1) throw e1;
+
+  // Reset linked order status back to "approved" if it was invoiced
+  const { data: inv } = await supabase
+    .from("sales_invoices")
+    .select("order_id")
+    .eq("id", invoiceId)
+    .single();
+
+  if (inv?.order_id) {
+    await supabase
+      .from("orders")
+      .update({ invoice_id: null, invoiced_at: null, status: "approved" } as any)
+      .eq("id", inv.order_id)
+      .eq("status", "invoiced"); // only reset if still marked invoiced
+  }
+
+  // Delete the invoice itself
+  const { error: e2 } = await supabase
+    .from("sales_invoices")
+    .delete()
+    .eq("id", invoiceId);
+  if (e2) throw e2;
+}
