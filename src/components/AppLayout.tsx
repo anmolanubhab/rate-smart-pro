@@ -112,6 +112,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Administration",
     items: [
+      { to: "/approval-center", label: "Approval Center", icon: ShieldCheck },
       { to: "/admin/audit-logs", label: "Audit Logs", icon: ShieldCheck },
     ],
   },
