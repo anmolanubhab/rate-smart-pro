@@ -10,8 +10,8 @@ const inr = (n: number) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { ma
 
 export default function InventoryWidgets() {
   const { user } = useAuth();
-  const { currentBusiness } = useBusiness();  // ✅ Bug #1 fixed
-  const businessId = currentBusiness?.id ?? null;  // ✅ Bug #1 fixed
+  const { business } = useBusiness();  // ✅ Bug #1 fixed
+  const businessId = business?.id ?? null;  // ✅ Bug #1 fixed
   const [stockValue, setStockValue] = useState(0);
   const [lowCount, setLowCount] = useState(0);
   const [pendingOrders, setPendingOrders] = useState(0);
