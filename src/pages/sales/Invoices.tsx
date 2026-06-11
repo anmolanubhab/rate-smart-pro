@@ -18,6 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { RequestDeleteDialog } from "@/components/approvals/RequestDeleteDialog";
 
 const statusTone: Record<string, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
@@ -101,20 +102,9 @@ export default function InvoicesPage() {
     }
   };
 
-  const onDeleteConfirm = async () => {
-    if (!deleteTarget) return;
-    setBusy(deleteTarget.id);
-    try {
-      await deleteInvoice(deleteTarget.id);
-      toast.success(`Invoice ${deleteTarget.invoice_number} deleted`);
-      refetch();
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setBusy(null);
-      setDeleteTarget(null);
-    }
-  };
+  // Delete is now handled by <RequestDeleteDialog /> (approval workflow).
+  // Legacy hard-delete removed: see RD-Pro Phase 1.
+  void deleteInvoice;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -328,23 +318,16 @@ export default function InvoicesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Delete confirmation ── */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Invoice?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Invoice <strong>{deleteTarget?.invoice_number}</strong> will be permanently deleted. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep Invoice</AlertDialogCancel>
-            <AlertDialogAction onClick={onDeleteConfirm} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-              Delete Invoice
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* ── Delete via approval workflow ── */}
+      <RequestDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        module="sales_invoice"
+        recordId={deleteTarget?.id ?? ""}
+        documentNo={deleteTarget?.invoice_number ?? null}
+        beforeSnapshot={deleteTarget ? (deleteTarget as unknown as Record<string, unknown>) : undefined}
+        onCompleted={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
