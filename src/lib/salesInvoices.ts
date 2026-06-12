@@ -9,6 +9,7 @@ export interface SalesInvoice {
   invoice_number: string;
   invoice_date: string;
   order_id: string | null;
+  dispatch_id: string | null;
   party_id: string | null;
   party_name: string | null;
   party_snapshot: any;
@@ -56,6 +57,176 @@ export async function fetchInvoiceItems(invoiceId: string) {
   return data || [];
 }
 
+// ─────────────────────────────────────────────────────────────
+// NEW: Generate invoice from a CONFIRMED dispatch
+// ─────────────────────────────────────────────────────────────
+/**
+ * Auto-generate a Sales Invoice from a confirmed Dispatch.
+ *
+ * Flow:
+ *   Dispatch confirmed → this function called →
+ *   Invoice created with ONLY the dispatched items/qtys →
+ *   Order status recalculated (partial / fully invoiced)
+ *
+ * @param opts.dispatchId  ID of the confirmed dispatch
+ * @param opts.userId
+ * @param opts.businessId
+ * @param opts.status      "draft" if invoice_approval required, else "posted"
+ */
+export async function generateInvoiceFromDispatch(opts: {
+  dispatchId: string;
+  userId: string;
+  businessId: string | null;
+  status?: "draft" | "posted";
+}): Promise<SalesInvoice> {
+  const invoiceStatus = opts.status ?? "posted";
+
+  // 1. Load dispatch + its items
+  const { data: dispatch, error: de } = await supabase
+    .from("dispatches")
+    .select("*, dispatch_items(*, order_items(part_number, description, vehicle_model, mrp, net_rate, discount_pct, gst_pct, product_id))")
+    .eq("id", opts.dispatchId)
+    .single();
+  if (de) throw de;
+  if (!dispatch) throw new Error("Dispatch not found");
+  if ((dispatch as any).status !== "confirmed") throw new Error("Only confirmed dispatches can be invoiced");
+  if ((dispatch as any).invoice_id) throw new Error("This dispatch already has an invoice");
+
+  // 2. Load order for party / address info
+  const order = await fetchOrder(dispatch.order_id);
+
+  // 3. Build invoice line items from dispatch_items
+  const dispatchItems: any[] = (dispatch as any).dispatch_items || [];
+  if (!dispatchItems.length) throw new Error("Dispatch has no items");
+
+  // Compute totals from dispatched qtys
+  const lineItems = dispatchItems.map((di: any) => {
+    const oi = di.order_items;
+    const net_rate = Number(di.rate ?? oi?.net_rate ?? 0);
+    const qty = Number(di.dispatched_qty);
+    const disc = Number(oi?.discount_pct ?? 0);
+    const gstPct = Number(oi?.gst_pct ?? 0);
+    const lineNet = +(net_rate * qty).toFixed(2);
+    const total = +(lineNet * (1 + gstPct / 100)).toFixed(2);
+    return {
+      product_id: oi?.product_id ?? null,
+      part_number: oi?.part_number ?? "",
+      description: oi?.description ?? "",
+      vehicle_model: oi?.vehicle_model ?? null,
+      mrp: Number(oi?.mrp ?? 0),
+      net_rate,
+      rate: net_rate,
+      qty,
+      dispatch_item_id: di.id,
+      discount_pct: disc,
+      gst_pct: gstPct,
+      // for totals computation
+      _lineNet: lineNet,
+      _gst: +(lineNet * gstPct / 100).toFixed(2),
+      total,
+    };
+  });
+
+  const subtotal = +lineItems.reduce((s, i) => s + Number(i.mrp) * Number(i.qty), 0).toFixed(2);
+  const discount_total = +lineItems.reduce((s, i) => s + (Number(i.mrp) - i.net_rate) * Number(i.qty), 0).toFixed(2);
+  const gst_total = +lineItems.reduce((s, i) => s + i._gst, 0).toFixed(2);
+  const taxable = +lineItems.reduce((s, i) => s + i._lineNet, 0).toFixed(2);
+  const grand_total = +(taxable + gst_total + (order.shipping_charges || 0)).toFixed(2);
+
+  // 4. Create invoice
+  const invoice_number = await nextInvoiceNumber(opts.userId);
+  const { data: inv, error: ie } = await supabase
+    .from("sales_invoices")
+    .insert({
+      user_id: opts.userId,
+      business_id: opts.businessId,
+      invoice_number,
+      invoice_date: (dispatch as any).dispatch_date || new Date().toISOString().slice(0, 10),
+      order_id: dispatch.order_id,
+      dispatch_id: opts.dispatchId,
+      party_id: dispatch.party_id ?? order.party_id,
+      party_name: order.party_name,
+      party_snapshot: order.party_snapshot,
+      billing_address: order.billing_address,
+      shipping_address: order.shipping_address,
+      salesman: order.salesman,
+      notes: order.notes,
+      remarks: `Auto-generated from Dispatch ${(dispatch as any).dispatch_number}`,
+      subtotal,
+      discount_total,
+      gst_total,
+      shipping_charges: order.shipping_charges || 0,
+      grand_total,
+      status: invoiceStatus,
+    })
+    .select()
+    .single();
+  if (ie) throw ie;
+
+  // 5. Insert invoice line items
+  const invRows = lineItems.map((it, idx) => ({
+    user_id: opts.userId,
+    invoice_id: inv.id,
+    product_id: it.product_id,
+    part_number: it.part_number,
+    description: it.description,
+    vehicle_model: it.vehicle_model,
+    mrp: it.mrp,
+    rate: it.net_rate,
+    qty: it.qty,
+    discount_pct: it.discount_pct,
+    net_rate: it.net_rate,
+    gst_pct: it.gst_pct,
+    total: it.total,
+    position: idx,
+  }));
+  const { error: ie2 } = await supabase.from("sales_invoice_items").insert(invRows);
+  if (ie2) {
+    await supabase.from("sales_invoices").delete().eq("id", inv.id);
+    throw ie2;
+  }
+
+  // 6. Link invoice_id back on the dispatch
+  await supabase
+    .from("dispatches")
+    .update({ invoice_id: inv.id } as any)
+    .eq("id", opts.dispatchId);
+
+  // 7. Recalculate order status
+  await recalcOrderAfterInvoice(dispatch.order_id);
+
+  return inv as SalesInvoice;
+}
+
+/**
+ * After invoicing, recalculate order's invoiced/partial/completed status.
+ */
+async function recalcOrderAfterInvoice(orderId: string) {
+  const { data: items } = await supabase
+    .from("order_items")
+    .select("qty, dispatched_qty, pending_qty")
+    .eq("order_id", orderId);
+  if (!items) return;
+
+  const totalQty = items.reduce((s, i) => s + Number(i.qty), 0);
+  const totalPending = items.reduce((s, i) => s + Number(i.pending_qty), 0);
+  const totalDispatched = items.reduce((s, i) => s + Number(i.dispatched_qty), 0);
+
+  let newStatus: string;
+  if (totalPending === 0 && totalDispatched >= totalQty) {
+    newStatus = "completed";
+  } else if (totalDispatched > 0) {
+    newStatus = "partial";
+  } else {
+    newStatus = "pending";
+  }
+
+  await supabase.from("orders").update({ status: newStatus } as any).eq("id", orderId);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Original: Generate invoice from a full Sales Order (legacy)
+// ─────────────────────────────────────────────────────────────
 /** Generate an invoice from a sales order. Requires the order to exist and not already be invoiced. */
 export async function generateInvoiceFromOrder(opts: {
   userId: string;
@@ -86,6 +257,7 @@ export async function generateInvoiceFromOrder(opts: {
       invoice_number,
       invoice_date: new Date().toISOString().slice(0, 10),
       order_id: opts.orderId,
+      dispatch_id: null,
       party_id: order.party_id,
       party_name: order.party_name,
       party_snapshot: order.party_snapshot,
@@ -148,15 +320,58 @@ export async function postInvoice(invoiceId: string) {
   if (error) throw error;
 }
 
+/**
+ * Cancel an invoice.
+ * - If invoice came from a dispatch (dispatch_id present):
+ *     → Sets dispatch status back to 'draft' (so it can be re-confirmed or cancelled)
+ *     → Clears invoice_id from dispatch
+ * - Resets order status
+ */
 export async function cancelInvoice(invoiceId: string) {
+  // Load invoice to check if dispatch-linked
+  const { data: inv, error: le } = await supabase
+    .from("sales_invoices")
+    .select("order_id, dispatch_id")
+    .eq("id", invoiceId)
+    .single();
+  if (le) throw le;
+
+  // Cancel the invoice
   const { error } = await supabase
     .from("sales_invoices")
     .update({ status: "cancelled" })
     .eq("id", invoiceId);
   if (error) throw error;
+
+  // If linked to a dispatch: revert dispatch to draft, clear its invoice_id
+  if ((inv as any)?.dispatch_id) {
+    await supabase
+      .from("dispatches")
+      .update({ status: "draft", invoice_id: null } as any)
+      .eq("id", (inv as any).dispatch_id);
+  }
+
+  // Recalc order status
+  if ((inv as any)?.order_id) {
+    await recalcOrderAfterInvoice((inv as any).order_id);
+  }
 }
 
+/**
+ * Delete an invoice permanently (for draft invoices only).
+ * - Removes line items
+ * - Reverses dispatch_items' invoiced_qty
+ * - Reverts dispatch to 'draft' if dispatch-linked
+ * - Resets order status
+ */
 export async function deleteInvoice(invoiceId: string) {
+  // Load invoice
+  const { data: inv } = await supabase
+    .from("sales_invoices")
+    .select("order_id, dispatch_id")
+    .eq("id", invoiceId)
+    .single();
+
   // Delete line items first (FK constraint)
   const { error: e1 } = await supabase
     .from("sales_invoice_items")
@@ -164,19 +379,19 @@ export async function deleteInvoice(invoiceId: string) {
     .eq("invoice_id", invoiceId);
   if (e1) throw e1;
 
-  // Reset linked order status back to "approved" if it was invoiced
-  const { data: inv } = await supabase
-    .from("sales_invoices")
-    .select("order_id")
-    .eq("id", invoiceId)
-    .single();
-
-  if (inv?.order_id) {
+  // Revert dispatch linkage
+  if ((inv as any)?.dispatch_id) {
+    await supabase
+      .from("dispatches")
+      .update({ status: "draft", invoice_id: null } as any)
+      .eq("id", (inv as any).dispatch_id);
+  } else if ((inv as any)?.order_id) {
+    // Legacy order-only invoice: reset order
     await supabase
       .from("orders")
       .update({ invoice_id: null, invoiced_at: null, status: "approved" } as any)
-      .eq("id", inv.order_id)
-      .eq("status", "invoiced"); // only reset if still marked invoiced
+      .eq("id", (inv as any).order_id)
+      .eq("status", "invoiced");
   }
 
   // Delete the invoice itself
@@ -185,4 +400,9 @@ export async function deleteInvoice(invoiceId: string) {
     .delete()
     .eq("id", invoiceId);
   if (e2) throw e2;
+
+  // Recalc order status
+  if ((inv as any)?.order_id) {
+    await recalcOrderAfterInvoice((inv as any).order_id);
+  }
 }
