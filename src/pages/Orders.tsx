@@ -50,7 +50,7 @@ type SortKey = "latest" | "amount" | "pending" | "party";
 
 const Orders = () => {
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, loading: businessLoading } = useBusiness();
   const nav = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,8 +70,9 @@ const Orders = () => {
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
   const [cancelReason, setCancelReason] = useState("");
 
+  // ── FIX: Wait for BOTH user AND business before fetching ──────────────────
   const reload = async () => {
-    if (!user) return;
+    if (!user || !business) return;
     setLoading(true);
     try { setOrders(await fetchOrders(user.id)); }
     catch (e: any) { toast.error(e.message); }
@@ -80,8 +81,18 @@ const Orders = () => {
 
   useEffect(() => {
     document.title = "Orders — Spare Parts OMS";
-    if (user) reload();
-  }, [user]);
+  }, []);
+
+  // Re-fetch whenever user or business becomes available / changes
+  useEffect(() => {
+    if (user && business) {
+      reload();
+    } else if (!businessLoading && user && !business) {
+      // User logged in but no business yet — stop loading spinner
+      setLoading(false);
+    }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [user?.id, business?.id]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -154,29 +165,21 @@ const Orders = () => {
     if (!user) return;
     setBusy(o.id);
     try {
-      const cloned = await duplicateOrder(o.id, user.id);
-      toast.success(`Duplicated as ${cloned.order_number}`);
-      nav(`/orders/edit/${cloned.id}`);
+      const clone = await duplicateOrder(o.id, user.id);
+      toast.success(`Order duplicated as ${clone.order_number}`);
+      await reload();
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(null); }
   };
 
-  const onPrint = (o: Order) => {
-    nav(`/orders/edit/${o.id}?print=1`);
-  };
-
   const onApprove = async (o: Order) => {
-    if (!user) return;
+    if (!user || !business) return;
     setBusy(o.id);
     try {
-      await supabase.from("orders").update({
-        status: "approved",
-        approved_at: new Date().toISOString(),
-        approved_by: user.id,
-      } as any).eq("id", o.id);
+      await setOrderStatus(o.id, "approved");
       await logAudit({
-        business_id: business?.id ?? null, action: "ORDER_APPROVED",
-        entity_type: "order", entity_id: o.id, new_value: { order_number: o.order_number },
+        business_id: business.id, action: "ORDER_APPROVED",
+        entity_type: "order", entity_id: o.id,
       });
       toast.success(`Order ${o.order_number} approved`);
       await reload();
@@ -185,7 +188,7 @@ const Orders = () => {
   };
 
   const onGenerateInvoice = async (o: Order) => {
-    if (!user) return;
+    if (!user || !business) return;
     setBusy(o.id);
     try {
       const cfg = business ? await fetchSalesConfig(business.id) : null;
@@ -193,363 +196,325 @@ const Orders = () => {
         userId: user.id,
         businessId: business?.id ?? null,
         orderId: o.id,
-        requireApproval: !!cfg?.enable_order_approval,
+        requireApproval: cfg?.enable_order_approval ?? false,
       });
       await logAudit({
-        business_id: business?.id ?? null, action: "INVOICE_GENERATED",
+        business_id: business.id, action: "INVOICE_GENERATED",
         entity_type: "sales_invoice", entity_id: inv.id,
-        new_value: { invoice_number: inv.invoice_number, order_number: o.order_number },
       });
       toast.success(`Invoice ${inv.invoice_number} generated`);
-      nav("/sales/invoices");
+      await reload();
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(null); }
   };
 
-
-  const bulkDelete = async () => {
-    if (!selected.size || !user) return;
-    if (!confirm(`Delete ${selected.size} order(s) permanently?`)) return;
-    try {
-      for (const id of selected) {
-        await deleteOrder(id);
-        await logActivity({ userId: user.id, orderId: id, action: "deleted", description: "Bulk delete" });
-      }
-      toast.success(`${selected.size} orders deleted`);
-      setSelected(new Set());
-      await reload();
-    } catch (e: any) { toast.error(e.message); }
-  };
-
-  const exportCSV = () => {
-    const rows = selected.size ? filtered.filter((o) => selected.has(o.id)) : filtered;
-    const header = ["Order #", "Date", "Party", "Status", "Pending Qty", "Subtotal", "Grand Total"];
-    const csv = [header.join(",")]
-      .concat(rows.map((o) =>
-        [o.order_number, o.order_date, `"${o.party_name || ""}"`, o.status, o.pending_total_qty, o.subtotal, o.grand_total].join(",")
-      )).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = `orders-${Date.now()}.csv`; a.click();
-  };
+  // Loading states
+  const isInitialLoading = loading || businessLoading;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in-up">
-      <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-        <div>
+      <header className="flex flex-col md:flex-row md:items-end gap-4">
+        <div className="flex-1">
           <p className="text-sm text-muted-foreground font-medium">Orders</p>
-          <h1 className="font-display text-3xl md:text-4xl font-bold mt-1">All Orders</h1>
-          <p className="text-muted-foreground mt-1">Manage drafts, dispatches and cancellations in one place.</p>
+          <h1 className="font-display text-3xl font-bold mt-1">All Orders</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Manage drafts, dispatches and cancellations in one place.</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <div className="relative flex-1 md:flex-none">
+        <div className="flex gap-2">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order # / party / remarks..." className="pl-9 w-full md:w-80" />
+            <Input
+              placeholder="Search order # / party / remarks..."
+              className="pl-9 w-80"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
-          <Button variant="outline" onClick={exportCSV}><Download className="h-4 w-4" /> Export</Button>
-          <Button asChild className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant">
-            <Link to="/orders/new"><Plus className="h-4 w-4" /> Create Order</Link>
+          <Button className="gradient-primary text-white border-0" onClick={() => nav("/create-order")}>
+            <Plus className="h-4 w-4" /> Create Order
+          </Button>
+          <Button variant="outline" onClick={() => {/* export */}}>
+            <Download className="h-4 w-4" /> Export
           </Button>
         </div>
       </header>
 
-      {/* Filters */}
-      <div className="flex flex-col md:flex-row md:items-center gap-3 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {["all", "draft", "pending", "partial", "completed", "cancelled"].map((s) => (
-            <Button key={s} size="sm" variant={statusFilter === s ? "default" : "outline"} onClick={() => setStatusFilter(s)} className="capitalize">
-              {s}
-            </Button>
-          ))}
-        </div>
-        <div className="md:ml-auto flex gap-2 flex-wrap items-center">
+      {/* Status filter tabs */}
+      <div className="flex flex-wrap items-center gap-2">
+        {["all", "draft", "pending", "partial", "completed", "cancelled"].map((s) => (
+          <Button
+            key={s}
+            size="sm"
+            variant={statusFilter === s ? "default" : "outline"}
+            className={statusFilter === s ? "gradient-primary text-white border-0" : ""}
+            onClick={() => setStatusFilter(s)}
+          >
+            {s.charAt(0).toUpperCase() + s.slice(1)}
+          </Button>
+        ))}
+
+        {/* Date filters */}
+        <div className="flex items-center gap-1 ml-auto">
           <Filter className="h-4 w-4 text-muted-foreground" />
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-36" />
-          <span className="text-muted-foreground text-sm">to</span>
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-36" />
+          <Input type="date" className="h-8 w-36 text-xs" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} placeholder="dd-mm-yyyy" />
+          <span className="text-muted-foreground text-xs">to</span>
+          <Input type="date" className="h-8 w-36 text-xs" value={dateTo} onChange={(e) => setDateTo(e.target.value)} placeholder="dd-mm-yyyy" />
+          {(dateFrom || dateTo) && (
+            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm"><ArrowUpDown className="h-4 w-4" /> Sort</Button>
+              <Button size="sm" variant="outline" className="h-8 gap-1">
+                <ArrowUpDown className="h-3.5 w-3.5" /> Sort
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setSortKey("latest")}>Latest</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortKey("amount")}>Highest amount</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortKey("pending")}>Pending qty</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortKey("party")}>Party name</DropdownMenuItem>
+              {(["latest", "amount", "pending", "party"] as SortKey[]).map((k) => (
+                <DropdownMenuItem key={k} onClick={() => setSortKey(k)} className={sortKey === k ? "font-medium" : ""}>
+                  {k === "latest" ? "Latest First" : k === "amount" ? "Amount (High → Low)" : k === "pending" ? "Pending Qty" : "Party Name A–Z"}
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
 
-      {/* Bulk toolbar */}
-      {selected.size > 0 && (
-        <div className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 flex items-center justify-between animate-fade-in">
-          <span className="text-sm font-medium">{selected.size} selected</span>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={exportCSV}><Download className="h-4 w-4" /> Export</Button>
-            <Button size="sm" variant="destructive" onClick={bulkDelete}><Trash2 className="h-4 w-4" /> Delete</Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}><X className="h-4 w-4" /></Button>
+      {/* Orders table */}
+      <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-soft">
+        {isInitialLoading ? (
+          <div className="p-16 text-center text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+            <p className="text-sm">Loading orders…</p>
           </div>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="rounded-2xl bg-card border border-border p-12 text-center text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading orders...
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-2xl bg-card border border-border p-12 text-center">
-          <ShoppingCart className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-          <h3 className="font-display font-semibold">No orders found</h3>
-          <p className="text-sm text-muted-foreground mt-1">Try clearing filters or create a new order.</p>
-          <Button asChild className="mt-4 gradient-primary text-white border-0">
-            <Link to="/orders/new"><Plus className="h-4 w-4" /> Create Order</Link>
-          </Button>
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
+        ) : !business ? (
+          <div className="p-16 text-center text-muted-foreground">
+            <ShoppingCart className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p className="font-medium">No company selected</p>
+            <p className="text-sm mt-1">Please select or create a company to view orders.</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-16 text-center text-muted-foreground">
+            <ShoppingCart className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p className="font-medium">No orders found</p>
+            <p className="text-sm mt-1">Try clearing filters or create a new order.</p>
+            <Button className="mt-4 gradient-primary text-white border-0" onClick={() => nav("/create-order")}>
+              <Plus className="h-4 w-4" /> Create Order
+            </Button>
+          </div>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground sticky top-0">
+              <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-3 w-10"><Checkbox checked={allSelected} onCheckedChange={toggleAll} /></th>
-                  <th className="text-left px-4 py-3">Order #</th>
-                  <th className="text-left px-4 py-3">Date</th>
-                  <th className="text-left px-4 py-3">Party</th>
-                  <th className="text-left px-4 py-3">Status</th>
-                  <th className="text-right px-4 py-3">Pending</th>
-                  <th className="text-right px-4 py-3">Subtotal</th>
-                  <th className="text-right px-4 py-3">Grand Total</th>
-                  <th className="text-right px-4 py-3 sticky right-0 bg-muted/50">Actions</th>
+                  <th className="px-3 py-3 w-8">
+                    <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
+                  </th>
+                  <th className="text-left px-3 py-3">Order #</th>
+                  <th className="text-left px-3 py-3">Date</th>
+                  <th className="text-left px-3 py-3">Party</th>
+                  <th className="text-left px-3 py-3">Status</th>
+                  <th className="text-right px-3 py-3">Pending Qty</th>
+                  <th className="text-right px-3 py-3">Amount</th>
+                  <th className="text-right px-3 py-3 sticky right-0 bg-muted/50">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((o, idx) => {
-                  const isCancelled = o.status === "cancelled";
-                  return (
-                    <tr key={o.id} className={`border-t border-border transition-colors ${
-                      idx % 2 === 0 ? "bg-background" : "bg-muted/20"
-                    } hover:bg-primary/5 ${isCancelled ? "opacity-60" : ""}`}>
-                      <td className="px-3 py-2.5"><Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggleOne(o.id)} /></td>
-                      <td className="px-4 py-2.5 font-mono text-xs cursor-pointer" onClick={() => onView(o)}>{o.order_number}</td>
-                      <td className="px-4 py-2.5">{o.order_date}</td>
-                      <td className="px-4 py-2.5 font-medium">{o.party_name || "—"}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge variant="outline" className={statusColor[o.status]}>{o.status}</Badge>
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{Number(o.pending_total_qty || 0).toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">₹{Number(o.subtotal).toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold">₹{Number(o.grand_total).toFixed(2)}</td>
-                      <td className="px-2 py-2.5 text-right sticky right-0 bg-inherit">
-                        <div className="flex items-center justify-end gap-0.5">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onView(o)}>
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>View</TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
-                                disabled={isCancelled}
-                                onClick={() => nav(`/orders/edit/${o.id}`)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Edit</TooltipContent>
-                          </Tooltip>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={busy === o.id}>
-                                {busy === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-52">
-                              {!isCancelled && o.status !== "invoiced" && o.status !== "closed" && o.status !== "approved" && o.status !== "completed" && (
-                                <DropdownMenuItem onClick={() => onApprove(o)} className="text-violet-600">
-                                  <CheckCircle2 className="h-4 w-4 mr-2" /> Approve order
-                                </DropdownMenuItem>
-                              )}
-                              {!isCancelled && o.status !== "invoiced" && o.status !== "closed" && (
-                                <DropdownMenuItem onClick={() => onGenerateInvoice(o)} className="text-teal-600">
-                                  <FilePlus2 className="h-4 w-4 mr-2" /> Generate Invoice
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem onClick={() => onDuplicate(o)} className="text-purple-600">
-                                <Copy className="h-4 w-4 mr-2" /> Duplicate
+                {filtered.map((o) => (
+                  <tr key={o.id} className="border-t border-border hover:bg-muted/30">
+                    <td className="px-3 py-2">
+                      <Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggleOne(o.id)} />
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs font-medium">
+                      <button className="hover:underline text-primary" onClick={() => onView(o)}>{o.order_number}</button>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">{o.order_date}</td>
+                    <td className="px-3 py-2">{o.party_name ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant="outline" className={statusColor[o.status] ?? ""}>{o.status}</Badge>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {Number(o.pending_total_qty) > 0
+                        ? <span className="text-amber-600 font-medium">{Number(o.pending_total_qty).toFixed(2)}</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold">₹{Number(o.grand_total).toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right sticky right-0 bg-inherit">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onView(o)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>View</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => nav(`/create-order?edit=${o.id}`)} disabled={o.status === "cancelled"}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Edit</TooltipContent>
+                        </Tooltip>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={busy === o.id}>
+                              {busy === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-52">
+                            <DropdownMenuItem onClick={() => onView(o)}><Eye className="h-4 w-4 mr-2" /> View Order</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => nav(`/create-order?edit=${o.id}`)} disabled={o.status === "cancelled"}><Pencil className="h-4 w-4 mr-2" /> Edit Order</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onDuplicate(o)}><Copy className="h-4 w-4 mr-2" /> Duplicate</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {o.status === "pending" && (
+                              <DropdownMenuItem onClick={() => onApprove(o)} className="text-violet-600">
+                                <CheckCircle2 className="h-4 w-4 mr-2" /> Approve
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => onPrint(o)}>
-                                <Printer className="h-4 w-4 mr-2" /> Print / PDF
+                            )}
+                            {(o.status === "approved" || o.status === "pending") && (
+                              <DropdownMenuItem onClick={() => onGenerateInvoice(o)} className="text-teal-600">
+                                <FilePlus2 className="h-4 w-4 mr-2" /> Generate Invoice
                               </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {!isCancelled && o.status !== "completed" && (
-                                <DropdownMenuItem onClick={() => setCancelTarget(o)} className="text-orange-600">
-                                  <Ban className="h-4 w-4 mr-2" /> Cancel order
-                                </DropdownMenuItem>
-                              )}
+                            )}
+                            <DropdownMenuSeparator />
+                            {o.status !== "cancelled" && (
+                              <DropdownMenuItem onClick={() => setCancelTarget(o)} className="text-orange-600 focus:text-orange-600">
+                                <Ban className="h-4 w-4 mr-2" /> Cancel Order
+                              </DropdownMenuItem>
+                            )}
+                            {(o.status === "draft" || o.status === "cancelled") && (
                               <DropdownMenuItem onClick={() => setDeleteTarget(o)} className="text-destructive focus:text-destructive">
-                                <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                <Trash2 className="h-4 w-4 mr-2" /> Delete Order
                               </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Delete dialog */}
+      {/* ── View Order Sheet ── */}
+      <Sheet open={!!viewOrder} onOpenChange={(o) => !o && setViewOrder(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="font-mono">{viewOrder?.order_number}</SheetTitle>
+            <SheetDescription>
+              {viewOrder?.party_name} · {viewOrder?.order_date}
+              {viewOrder && <Badge variant="outline" className={`ml-2 ${statusColor[viewOrder.status]}`}>{viewOrder.status}</Badge>}
+            </SheetDescription>
+          </SheetHeader>
+          {viewOrder && (
+            <Tabs defaultValue="items" className="mt-4">
+              <TabsList>
+                <TabsTrigger value="items">Items</TabsTrigger>
+                <TabsTrigger value="summary">Summary</TabsTrigger>
+                <TabsTrigger value="logs">Activity</TabsTrigger>
+              </TabsList>
+              <TabsContent value="items" className="mt-3">
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="text-left px-3 py-2">Part</th>
+                        <th className="text-left px-3 py-2">Description</th>
+                        <th className="text-right px-3 py-2">Qty</th>
+                        <th className="text-right px-3 py-2">Pending</th>
+                        <th className="text-right px-3 py-2">Rate</th>
+                        <th className="text-right px-3 py-2">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewItems.length === 0
+                        ? <tr><td colSpan={6} className="p-4 text-center text-muted-foreground text-xs">Loading…</td></tr>
+                        : viewItems.map((it) => (
+                          <tr key={it.id} className="border-t border-border">
+                            <td className="px-3 py-1.5 font-mono text-xs">{it.part_number}</td>
+                            <td className="px-3 py-1.5 text-xs">{it.description}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums">{Number(it.qty).toFixed(2)}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-amber-600">{Number(it.pending_qty ?? 0).toFixed(2)}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums">₹{Number(it.net_rate).toFixed(2)}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums font-medium">₹{Number(it.total).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </TabsContent>
+              <TabsContent value="summary" className="mt-3 space-y-2 text-sm">
+                {[
+                  ["Subtotal", `₹${Number(viewOrder.subtotal).toFixed(2)}`],
+                  ["Discount", `₹${Number(viewOrder.discount_total).toFixed(2)}`],
+                  ["GST", `₹${Number(viewOrder.gst_total).toFixed(2)}`],
+                  ["Grand Total", `₹${Number(viewOrder.grand_total).toFixed(2)}`],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between">
+                    <span className="text-muted-foreground">{k}</span>
+                    <span className="font-semibold tabular-nums">{v}</span>
+                  </div>
+                ))}
+              </TabsContent>
+              <TabsContent value="logs" className="mt-3">
+                {viewLogs.length === 0
+                  ? <p className="text-sm text-muted-foreground text-center py-4">No activity yet.</p>
+                  : <div className="space-y-2">
+                    {viewLogs.map((l) => (
+                      <div key={l.id} className="text-xs flex gap-2 border-l-2 border-border pl-3 py-1">
+                        <span className="font-medium capitalize">{l.action}</span>
+                        <span className="text-muted-foreground">{l.description}</span>
+                        <span className="ml-auto text-muted-foreground">{new Date(l.created_at).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>}
+              </TabsContent>
+            </Tabs>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* ── Delete confirm ── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this order permanently?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget && (
-                <div className="space-y-2 mt-2">
-                  <div className="rounded-lg border border-border p-3 bg-muted/40 text-sm">
-                    <div><span className="text-muted-foreground">Order:</span> <span className="font-mono">{deleteTarget.order_number}</span></div>
-                    <div><span className="text-muted-foreground">Party:</span> {deleteTarget.party_name || "—"}</div>
-                    <div><span className="text-muted-foreground">Total:</span> ₹{Number(deleteTarget.grand_total).toFixed(2)}</div>
-                  </div>
-                  {deleteTarget.status !== "draft" && (
-                    <p className="text-amber-600 text-xs">⚠ This order has activity. Deletion cannot be undone.</p>
-                  )}
-                </div>
-              )}
-            </AlertDialogDescription>
+            <AlertDialogTitle>Delete Order {deleteTarget?.order_number}?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone. The order will be permanently removed.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete permanently
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={onDelete}>
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Cancel dialog */}
-      <Dialog open={!!cancelTarget} onOpenChange={(o) => { if (!o) { setCancelTarget(null); setCancelReason(""); } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel order {cancelTarget?.order_number}?</DialogTitle>
-            <DialogDescription>The order stays in history with status “Cancelled”. Dispatched items remain recorded.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>Reason (optional)</Label>
-            <Textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Why are you cancelling this order?" rows={3} />
+      {/* ── Cancel confirm ── */}
+      <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Order {cancelTarget?.order_number}?</AlertDialogTitle>
+            <AlertDialogDescription>Provide a reason for cancellation.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="px-6 pb-2">
+            <Textarea rows={3} placeholder="Reason for cancellation…" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setCancelTarget(null); setCancelReason(""); }}>Keep order</Button>
-            <Button onClick={onCancel} className="bg-orange-500 hover:bg-orange-600 text-white">
-              <Ban className="h-4 w-4" /> Cancel order
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* View drawer */}
-      <Sheet open={!!viewOrder} onOpenChange={(o) => !o && setViewOrder(null)}>
-        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
-          {viewOrder && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-3 font-mono">
-                  {viewOrder.order_number}
-                  <Badge variant="outline" className={statusColor[viewOrder.status]}>{viewOrder.status}</Badge>
-                </SheetTitle>
-                <SheetDescription>{viewOrder.order_date} · {viewOrder.party_name || "No party"}</SheetDescription>
-              </SheetHeader>
-              <div className="mt-4 flex gap-2 flex-wrap">
-                <Button size="sm" onClick={() => nav(`/orders/edit/${viewOrder.id}`)}><Pencil className="h-4 w-4" /> Edit</Button>
-                <Button size="sm" variant="outline" onClick={() => onPrint(viewOrder)}><Printer className="h-4 w-4" /> Print</Button>
-                <Button size="sm" variant="outline" onClick={() => onDuplicate(viewOrder)}><Copy className="h-4 w-4" /> Duplicate</Button>
-              </div>
-              <Tabs defaultValue="items" className="mt-6">
-                <TabsList>
-                  <TabsTrigger value="items"><FileText className="h-4 w-4 mr-1" /> Items</TabsTrigger>
-                  <TabsTrigger value="summary">Summary</TabsTrigger>
-                  <TabsTrigger value="history"><HistoryIcon className="h-4 w-4 mr-1" /> History</TabsTrigger>
-                </TabsList>
-                <TabsContent value="items" className="mt-3">
-                  <div className="rounded-lg border border-border overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead className="bg-muted/50">
-                        <tr>
-                          <th className="text-left px-2 py-2">Part #</th>
-                          <th className="text-left px-2 py-2">Description</th>
-                          <th className="text-right px-2 py-2">Qty</th>
-                          <th className="text-right px-2 py-2">Disp</th>
-                          <th className="text-right px-2 py-2">Pend</th>
-                          <th className="text-right px-2 py-2">Rate</th>
-                          <th className="text-right px-2 py-2">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {viewItems.map((it) => (
-                          <tr key={it.id} className="border-t border-border">
-                            <td className="px-2 py-1.5 font-mono">{it.part_number}</td>
-                            <td className="px-2 py-1.5">{it.description}</td>
-                            <td className="px-2 py-1.5 text-right">{Number(it.qty).toFixed(2)}</td>
-                            <td className="px-2 py-1.5 text-right">{Number(it.dispatched_qty || 0).toFixed(2)}</td>
-                            <td className="px-2 py-1.5 text-right font-semibold text-amber-600">{Number(it.pending_qty || 0).toFixed(2)}</td>
-                            <td className="px-2 py-1.5 text-right">₹{Number(it.net_rate).toFixed(2)}</td>
-                            <td className="px-2 py-1.5 text-right">₹{Number(it.total).toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </TabsContent>
-                <TabsContent value="summary" className="mt-3 space-y-2 text-sm">
-                  <Row label="Subtotal" value={`₹${Number(viewOrder.subtotal).toFixed(2)}`} />
-                  <Row label="Discount" value={`₹${Number(viewOrder.discount_total).toFixed(2)}`} />
-                  <Row label="GST" value={`₹${Number(viewOrder.gst_total).toFixed(2)}`} />
-                  <Row label="Shipping" value={`₹${Number(viewOrder.shipping_charges).toFixed(2)}`} />
-                  <Row label="Grand Total" value={`₹${Number(viewOrder.grand_total).toFixed(2)}`} bold />
-                  <Row label="Pending qty" value={Number(viewOrder.pending_total_qty).toFixed(2)} />
-                  <Row label="Dispatched qty" value={Number(viewOrder.dispatched_total_qty).toFixed(2)} />
-                  <Row label="Mode" value={viewOrder.mode || "—"} />
-                  <Row label="Source" value={viewOrder.source_type} />
-                  {viewOrder.remarks && <Row label="Remarks" value={viewOrder.remarks} />}
-                  {(viewOrder as any).cancelled_reason && <Row label="Cancellation" value={(viewOrder as any).cancelled_reason} />}
-                </TabsContent>
-                <TabsContent value="history" className="mt-3">
-                  {viewLogs.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-6">No activity yet.</p>
-                  ) : (
-                    <ol className="relative border-l border-border ml-2 space-y-3">
-                      {viewLogs.map((log) => (
-                        <li key={log.id} className="ml-4">
-                          <div className="absolute w-2 h-2 bg-primary rounded-full -left-1 mt-1.5" />
-                          <p className="text-xs text-muted-foreground">{new Date(log.created_at).toLocaleString()}</p>
-                          <p className="text-sm font-medium capitalize">{log.action}</p>
-                          {log.description && <p className="text-xs text-muted-foreground">{log.description}</p>}
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep Order</AlertDialogCancel>
+            <AlertDialogAction className="bg-orange-600 hover:bg-orange-700 text-white" onClick={onCancel}>
+              Cancel Order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
-
-const Row = ({ label, value, bold }: { label: string; value: string; bold?: boolean }) => (
-  <div className={`flex justify-between border-b border-border py-1.5 ${bold ? "font-bold text-base pt-2" : ""}`}>
-    <span className="text-muted-foreground">{label}</span>
-    <span className="tabular-nums">{value}</span>
-  </div>
-);
 
 export default Orders;
