@@ -18,7 +18,6 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { RequestDeleteDialog } from "@/components/approvals/RequestDeleteDialog";
 
 const statusTone: Record<string, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
@@ -73,17 +72,13 @@ export default function InvoicesPage() {
 
   // ── Action handlers ────────────────────────────────────────────────────────
 
-  const onView = (inv: SalesInvoice) => {
-    setViewTarget(inv);
-  };
+  const onView = (inv: SalesInvoice) => setViewTarget(inv);
 
   const onEdit = (inv: SalesInvoice) => {
-    // TODO: navigate to invoice edit page, e.g. nav(`/invoices/edit/${inv.id}`)
     toast.info(`Edit invoice ${inv.invoice_number} — coming soon`);
   };
 
   const onPrint = (inv: SalesInvoice) => {
-    // TODO: open InvoicePrint dialog / trigger window.print() with invoice data
     toast.info(`Print invoice ${inv.invoice_number} — coming soon`);
   };
 
@@ -102,9 +97,21 @@ export default function InvoicesPage() {
     }
   };
 
-  // Delete is now handled by <RequestDeleteDialog /> (approval workflow).
-  // Legacy hard-delete removed: see RD-Pro Phase 1.
-  void deleteInvoice;
+  // ── FIX: Direct delete using deleteInvoice() ────────────────────────────
+  const onDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setBusy(deleteTarget.id);
+    try {
+      await deleteInvoice(deleteTarget.id);
+      toast.success(`Invoice ${deleteTarget.invoice_number} deleted`);
+      refetch();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setBusy(null);
+      setDeleteTarget(null);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -178,7 +185,7 @@ export default function InvoicesPage() {
                       {/* ── Actions cell ── */}
                       <td className="px-2 py-2.5 text-right sticky right-0 bg-inherit">
                         <div className="flex items-center justify-end gap-0.5">
-                          {/* View — always visible */}
+                          {/* View */}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onView(i)}>
@@ -188,7 +195,7 @@ export default function InvoicesPage() {
                             <TooltipContent>View</TooltipContent>
                           </Tooltip>
 
-                          {/* Edit — disabled for cancelled */}
+                          {/* Edit */}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -203,7 +210,7 @@ export default function InvoicesPage() {
                             <TooltipContent>Edit</TooltipContent>
                           </Tooltip>
 
-                          {/* More actions dropdown */}
+                          {/* More actions */}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button size="icon" variant="ghost" className="h-8 w-8" disabled={busy === i.id}>
@@ -273,7 +280,7 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* ── View Invoice Sheet (minimal summary) ── */}
+      {/* ── View Invoice Dialog ── */}
       {viewTarget && (
         <AlertDialog open onOpenChange={(o) => !o && setViewTarget(null)}>
           <AlertDialogContent className="max-w-md">
@@ -318,16 +325,29 @@ export default function InvoicesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Delete via approval workflow ── */}
-      <RequestDeleteDialog
-        open={!!deleteTarget}
-        onOpenChange={(o) => !o && setDeleteTarget(null)}
-        module="sales_invoice"
-        recordId={deleteTarget?.id ?? ""}
-        documentNo={deleteTarget?.invoice_number ?? null}
-        beforeSnapshot={deleteTarget ? (deleteTarget as unknown as Record<string, unknown>) : undefined}
-        onCompleted={() => setDeleteTarget(null)}
-      />
+      {/* ── Delete confirmation ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Invoice?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Invoice <strong>{deleteTarget?.invoice_number}</strong> will be permanently deleted.
+              {deleteTarget?.order_id && " The linked order will be reset to its previous status."}
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy === deleteTarget?.id}>Keep Invoice</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onDeleteConfirm}
+              disabled={busy === deleteTarget?.id}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {busy === deleteTarget?.id ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Deleting…</> : "Delete Invoice"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
