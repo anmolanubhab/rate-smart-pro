@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Truck, Save, Package } from "lucide-react";
+import { Truck, Save, Package, CheckCircle2, XCircle, FileText, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -11,11 +11,33 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { fetchOrders, fetchOrderItems, Order, OrderItem } from "@/lib/orders";
-import { createDispatch, fetchDispatches } from "@/lib/dispatches";
+import { createDispatch, confirmDispatch, cancelDispatch, fetchDispatches, DispatchStatus } from "@/lib/dispatches";
+import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
+
+// ─── Status badge helper ──────────────────────────────────────────────────────
+function DispatchStatusBadge({ status }: { status: DispatchStatus }) {
+  const map: Record<DispatchStatus, { label: string; cls: string }> = {
+    draft: { label: "Draft", cls: "border-amber-400/50 text-amber-600 bg-amber-50" },
+    confirmed: { label: "Confirmed", cls: "border-emerald-500/50 text-emerald-700 bg-emerald-50" },
+    cancelled: { label: "Cancelled", cls: "border-destructive/40 text-destructive bg-destructive/5" },
+  };
+  const { label, cls } = map[status] ?? map.draft;
+  return <Badge variant="outline" className={cls}>{label}</Badge>;
+}
 
 const Dispatch = () => {
   const { user } = useAuth();
@@ -30,6 +52,13 @@ const Dispatch = () => {
   const [saving, setSaving] = useState(false);
   const [cfg, setCfg] = useState<SalesConfig>({ business_id: "", ...DEFAULT_SALES_CONFIG });
 
+  // Draft dispatch just saved — waiting for Confirm
+  const [draftDispatch, setDraftDispatch] = useState<{ id: string; dispatch_number: string } | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  // Cancel dialog
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; dispatch_number: string } | null>(null);
+
   // packing
   const [autoPackingSlip, setAutoPackingSlip] = useState(true);
   const [boxCount, setBoxCount] = useState(0);
@@ -43,7 +72,7 @@ const Dispatch = () => {
   const [ewayNumber, setEwayNumber] = useState("");
   const [dispatchRemarks, setDispatchRemarks] = useState("");
 
-  // ── Products via useQuery — directly by business_id, no localStorage race ──
+  // Products
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["products-for-dispatch", business?.id],
     enabled: !!business?.id,
@@ -106,6 +135,7 @@ const Dispatch = () => {
     return prod ? Number(prod.stock) : null;
   };
 
+  // ── Step 1: Save Dispatch as Draft ──────────────────────────────────────────
   const handleSave = async () => {
     if (!user || !order) return;
     const lines = items
@@ -126,7 +156,7 @@ const Dispatch = () => {
     if (!lines.length) { toast.error("Enter at least one dispatch qty"); return; }
     try {
       setSaving(true);
-      await createDispatch({
+      const dispatch = await createDispatch({
         userId: user.id, orderId, partyId: order.party_id, dispatchDate, notes, items: lines,
         packing: cfg.enable_packing_slip ? {
           auto_packing_slip: autoPackingSlip,
@@ -142,7 +172,9 @@ const Dispatch = () => {
           dispatch_remarks: dispatchRemarks || null,
         } : undefined,
       });
-      toast.success("Dispatch saved · stock & pending updated");
+      toast.success(`Dispatch ${dispatch.dispatch_number} saved as Draft — review and Confirm to generate invoice`);
+      setDraftDispatch({ id: dispatch.id, dispatch_number: dispatch.dispatch_number });
+      // Reset form but keep the confirm panel visible
       setOrderId(""); setItems([]); setQtys({}); setNotes("");
       setBoxCount(0); setCaseCount(0); setPackingRemarks("");
       setTransporter(""); setLrNumber(""); setVehicleNumber(""); setEwayNumber(""); setDispatchRemarks("");
@@ -151,6 +183,48 @@ const Dispatch = () => {
       toast.error(e.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── Step 2: Confirm Dispatch → Auto-Invoice ─────────────────────────────────
+  const handleConfirm = async (d: { id: string; dispatch_number: string }) => {
+    if (!user || !business) return;
+    try {
+      setConfirming(true);
+      await confirmDispatch(d.id);
+      const invoice = await generateInvoiceFromDispatch({
+        dispatchId: d.id,
+        userId: user.id,
+        businessId: business.id,
+        status: cfg.enable_invoice_approval ? "draft" : "posted",
+      });
+      toast.success(
+        `✅ Dispatch ${d.dispatch_number} confirmed · Invoice ${invoice.invoice_number} auto-created`
+      );
+      setDraftDispatch(null);
+      reload();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  // ── Cancel Dispatch ─────────────────────────────────────────────────────────
+  const handleCancelDispatch = async () => {
+    if (!cancelTarget) return;
+    try {
+      const { cancelledInvoiceId } = await cancelDispatch(cancelTarget.id);
+      if (cancelledInvoiceId) {
+        toast.success(`Dispatch ${cancelTarget.dispatch_number} cancelled · linked invoice also cancelled · pending qty restored`);
+      } else {
+        toast.success(`Dispatch ${cancelTarget.dispatch_number} cancelled · pending qty restored`);
+      }
+      if (draftDispatch?.id === cancelTarget.id) setDraftDispatch(null);
+      setCancelTarget(null);
+      reload();
+    } catch (e: any) {
+      toast.error(e.message);
     }
   };
 
@@ -167,9 +241,46 @@ const Dispatch = () => {
       <header>
         <p className="text-sm text-muted-foreground font-medium">Orders</p>
         <h1 className="font-display text-3xl font-bold mt-1">Dispatch</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Stock auto-deducts on save. Movements are logged for the audit trail.</p>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Save dispatch as Draft → Confirm to auto-generate Sales Invoice. Stock deducts on save.
+        </p>
       </header>
 
+      {/* ── Pending Draft Confirmation Banner ─────────────────────────────── */}
+      {draftDispatch && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+          <div className="flex-1">
+            <p className="font-semibold text-amber-800 text-sm">
+              Dispatch {draftDispatch.dispatch_number} is saved as Draft
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Confirm to generate Sales Invoice automatically, or Cancel to reverse the dispatch.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10"
+              onClick={() => setCancelTarget(draftDispatch)}
+            >
+              <XCircle className="h-3.5 w-3.5 mr-1" />Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+              disabled={confirming}
+              onClick={() => handleConfirm(draftDispatch)}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+              {confirming ? "Generating…" : "Confirm & Invoice"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── New Dispatch Form ──────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="md:col-span-2">
           <Label>Order</Label>
@@ -290,14 +401,17 @@ const Dispatch = () => {
           </div>
           <div className="p-3 border-t border-border flex justify-end">
             <Button onClick={handleSave} disabled={saving || !items.length} className="gradient-primary text-white border-0">
-              <Save className="h-4 w-4" />Save Dispatch
+              <Save className="h-4 w-4" />Save as Draft
             </Button>
           </div>
         </div>
       )}
 
+      {/* ── Recent Dispatches ──────────────────────────────────────────────── */}
       <div>
-        <h2 className="font-display font-semibold text-lg mb-2 flex items-center gap-2"><Truck className="h-5 w-5" />Recent Dispatches</h2>
+        <h2 className="font-display font-semibold text-lg mb-2 flex items-center gap-2">
+          <Truck className="h-5 w-5" />Recent Dispatches
+        </h2>
         <div className="rounded-2xl border border-border bg-card overflow-hidden">
           {recent.length === 0 ? (
             <div className="p-6 text-center text-muted-foreground text-sm">No dispatches yet.</div>
@@ -310,7 +424,10 @@ const Dispatch = () => {
                     <th className="text-left px-3 py-2">Date</th>
                     <th className="text-left px-3 py-2">Order</th>
                     <th className="text-left px-3 py-2">Party</th>
+                    <th className="text-left px-3 py-2">Status</th>
+                    <th className="text-left px-3 py-2">Invoice</th>
                     <th className="text-left px-3 py-2">Notes</th>
+                    <th className="text-right px-3 py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -320,7 +437,44 @@ const Dispatch = () => {
                       <td className="px-3 py-1.5">{d.dispatch_date}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">{d.orders?.order_number}</td>
                       <td className="px-3 py-1.5">{d.orders?.party_name}</td>
+                      <td className="px-3 py-1.5">
+                        <DispatchStatusBadge status={(d.status as DispatchStatus) || "draft"} />
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {d.invoice_id ? (
+                          <span className="flex items-center gap-1 text-emerald-700 text-xs">
+                            <FileText className="h-3.5 w-3.5" />Invoiced
+                          </span>
+                        ) : d.status === "confirmed" ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : d.status === "cancelled" ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (
+                          /* Draft without invoice: show quick confirm */
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-xs border-emerald-500/50 text-emerald-700 hover:bg-emerald-50"
+                            disabled={confirming}
+                            onClick={() => handleConfirm({ id: d.id, dispatch_number: d.dispatch_number })}
+                          >
+                            <CheckCircle2 className="h-3 w-3 mr-0.5" />Confirm
+                          </Button>
+                        )}
+                      </td>
                       <td className="px-3 py-1.5 text-muted-foreground">{d.notes}</td>
+                      <td className="px-3 py-1.5 text-right">
+                        {(d.status === "draft" || d.status === "confirmed") && !d.invoice_id && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs text-destructive hover:text-destructive"
+                            onClick={() => setCancelTarget({ id: d.id, dispatch_number: d.dispatch_number })}
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -329,6 +483,29 @@ const Dispatch = () => {
           )}
         </div>
       </div>
+
+      {/* ── Cancel Confirmation Dialog ─────────────────────────────────────── */}
+      <AlertDialog open={!!cancelTarget} onOpenChange={(open) => !open && setCancelTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Dispatch {cancelTarget?.dispatch_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reverse the dispatched quantities back to pending on the order.
+              If a linked invoice exists, it will also be cancelled.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep Dispatch</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleCancelDispatch}
+            >
+              Yes, Cancel Dispatch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
