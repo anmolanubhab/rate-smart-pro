@@ -1,6 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
+export type DispatchStatus = "draft" | "confirmed" | "cancelled";
+
 export interface Dispatch {
   id: string;
   user_id: string;
@@ -10,6 +12,8 @@ export interface Dispatch {
   dispatch_number: string;
   dispatch_date: string;
   notes: string | null;
+  status: DispatchStatus;
+  invoice_id: string | null;
   created_at: string;
 }
 
@@ -79,6 +83,8 @@ export async function createDispatch(input: {
     dispatch_number,
     dispatch_date: input.dispatchDate,
     notes: input.notes ?? null,
+    status: "draft",           // always starts as draft
+    invoice_id: null,
     packing_slip_number,
     box_count: input.packing?.box_count ?? 0,
     case_count: input.packing?.case_count ?? 0,
@@ -106,6 +112,109 @@ export async function createDispatch(input: {
     throw e2;
   }
   return dispatch as Dispatch;
+}
+
+/**
+ * Confirm a dispatch → sets status = 'confirmed'.
+ * The caller (Dispatch.tsx) should then call generateInvoiceFromDispatch()
+ * from salesInvoices.ts to auto-create the invoice.
+ */
+export async function confirmDispatch(dispatchId: string) {
+  const { error } = await supabase
+    .from("dispatches")
+    .update({ status: "confirmed" } as any)
+    .eq("id", dispatchId)
+    .eq("status", "draft"); // safety: only draft can be confirmed
+  if (error) throw error;
+}
+
+/**
+ * Cancel a dispatch.
+ * - Sets dispatch status = 'cancelled'
+ * - Reverses dispatched_qty on order_items (pending_qty goes back up)
+ * - If an invoice exists on this dispatch, cancels it too
+ * Returns the invoice_id that was cancelled (if any), so the caller
+ * can show an appropriate toast.
+ */
+export async function cancelDispatch(dispatchId: string): Promise<{ cancelledInvoiceId: string | null }> {
+  // 1. Fetch dispatch + its items
+  const { data: dispatch, error: de } = await supabase
+    .from("dispatches")
+    .select("*, dispatch_items(order_item_id, dispatched_qty)")
+    .eq("id", dispatchId)
+    .single();
+  if (de) throw de;
+  if (!dispatch) throw new Error("Dispatch not found");
+  if (dispatch.status === "cancelled") throw new Error("Dispatch already cancelled");
+
+  // 2. Reverse dispatched_qty on each order_item
+  const dispatchItems: Array<{ order_item_id: string; dispatched_qty: number }> =
+    (dispatch as any).dispatch_items || [];
+
+  for (const di of dispatchItems) {
+    // Decrement dispatched_qty and increment pending_qty
+    const { data: oi, error: oie } = await supabase
+      .from("order_items")
+      .select("qty, dispatched_qty, pending_qty")
+      .eq("id", di.order_item_id)
+      .single();
+    if (oie) throw oie;
+    const newDispatched = Math.max(0, Number(oi.dispatched_qty) - Number(di.dispatched_qty));
+    const newPending = Number(oi.qty) - newDispatched;
+    await supabase.from("order_items").update({
+      dispatched_qty: newDispatched,
+      pending_qty: Math.max(0, newPending),
+    }).eq("id", di.order_item_id);
+  }
+
+  // 3. Cancel linked invoice if any
+  let cancelledInvoiceId: string | null = null;
+  if ((dispatch as any).invoice_id) {
+    cancelledInvoiceId = (dispatch as any).invoice_id;
+    const { error: ie } = await supabase
+      .from("sales_invoices")
+      .update({ status: "cancelled" })
+      .eq("id", cancelledInvoiceId);
+    if (ie) throw ie;
+  }
+
+  // 4. Update order status back (recalculate from remaining dispatched qty)
+  await recalcOrderStatus(dispatch.order_id);
+
+  // 5. Set dispatch status = cancelled
+  const { error: ue } = await supabase
+    .from("dispatches")
+    .update({ status: "cancelled" } as any)
+    .eq("id", dispatchId);
+  if (ue) throw ue;
+
+  return { cancelledInvoiceId };
+}
+
+/**
+ * Recalculate and update order status based on current pending_qty of all items.
+ */
+async function recalcOrderStatus(orderId: string) {
+  const { data: items, error } = await supabase
+    .from("order_items")
+    .select("qty, dispatched_qty, pending_qty")
+    .eq("order_id", orderId);
+  if (error) return; // non-fatal
+
+  const totalQty = items?.reduce((s, i) => s + Number(i.qty), 0) ?? 0;
+  const totalPending = items?.reduce((s, i) => s + Number(i.pending_qty), 0) ?? 0;
+  const totalDispatched = items?.reduce((s, i) => s + Number(i.dispatched_qty), 0) ?? 0;
+
+  let newStatus: string;
+  if (totalDispatched === 0) {
+    newStatus = "pending";
+  } else if (totalPending === 0) {
+    newStatus = "completed";
+  } else {
+    newStatus = "partial";
+  }
+
+  await supabase.from("orders").update({ status: newStatus } as any).eq("id", orderId);
 }
 
 export async function fetchDispatchItems(dispatchId: string) {
