@@ -184,8 +184,10 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
 
   if (!orderId) {
     if (!orderNumber) orderNumber = await nextOrderNumber(input.userId);
+    const biz = getActiveBusinessIdSync();
     const { data, error } = await supabase.from("orders").insert({
       user_id: input.userId,
+      business_id: biz,
       order_number: orderNumber,
       order_date: input.order_date,
       party_id: input.party_id,
