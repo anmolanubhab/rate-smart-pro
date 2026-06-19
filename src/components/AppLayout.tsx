@@ -217,7 +217,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <img src={rdProLogo} alt="RD Pro" className="h-10 w-10 object-contain" />
               </div>
               <div>
-                <h1 className="font-bold text-white text-lg tracking-tight transition-colors duration-200 group-hover:text-primary">
+                <h1 className="font-bold text-sidebar-foreground text-lg tracking-tight transition-colors duration-200 group-hover:text-primary">
                   RD Pro
                 </h1>
                 <div className="relative">
@@ -239,7 +239,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <Building2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[11px] uppercase tracking-wide text-sidebar-foreground/40">Company</p>
-                  <p className="text-sm font-semibold text-white truncate" title={business.business_name}>{business.business_name}</p>
+                  <p className="text-sm font-semibold text-sidebar-foreground truncate" title={business.business_name}>{business.business_name}</p>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-sidebar-foreground/60">
                     {business.business_type && <span className="truncate">{business.business_type}</span>}
                     <span>•</span>
