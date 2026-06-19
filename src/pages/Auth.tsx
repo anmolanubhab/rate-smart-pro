@@ -325,7 +325,7 @@ export default function Auth() {
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Welcome To RD-PRO</h1>
           <p className="text-sm text-slate-500 mt-1">
-            {isSignUp ? "Start Your 14 Days Free Trial" : "Sign in to your account"}
+            {isSignUp ? "Start Your 14 Days Free Trial" : "Business Operating System"}
           </p>
         </div>
 
