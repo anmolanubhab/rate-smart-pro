@@ -316,8 +316,12 @@ export default function Auth() {
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 overflow-x-hidden">
       <div className={`w-full ${isSignUp ? "max-w-[760px]" : "max-w-[420px]"}`}>
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600 shadow-lg mb-4">
-            <Building2 className="h-7 w-7 text-white" />
+          <div className="mb-4">
+            <img
+              src="/icons/icon-128x128.png"
+              alt="RD Pro"
+              className="w-16 h-16 rounded-2xl shadow-lg"
+            />
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Welcome To RD-PRO</h1>
           <p className="text-sm text-slate-500 mt-1">
