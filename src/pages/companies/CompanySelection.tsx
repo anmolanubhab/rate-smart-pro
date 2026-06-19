@@ -1,9 +1,11 @@
 import { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { setActiveBusinessId } from "@/hooks/useBusiness";
+import { fetchBusinessesForUser } from "@/lib/businesses";
+import { rdproDebug } from "@/lib/rdproDebug";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +16,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Building2, Plus, Search, LogOut, MoreVertical, Pencil, Users, Settings, Archive, Trash2, ArchiveRestore } from "lucide-react";
+import { Building2, Plus, Search, LogOut, MoreVertical, Pencil, Users, Settings, Archive, Trash2, ArchiveRestore, Loader2 } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 import { toast } from "sonner";
 
@@ -46,7 +48,7 @@ const currentFY = (startMonth: number) => {
 };
 
 export default function CompanySelection() {
-  const { user, signOut } = useAuth();
+  const { user, session, loading: authLoading, signOut } = useAuth();
   const nav = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -57,16 +59,11 @@ export default function CompanySelection() {
 
   const q = useQuery({
     queryKey: ["company-list", user?.id],
-    enabled: !!user,
+    enabled: !authLoading && !!user && !!session,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("business_users")
-        .select("business_id, role, status, businesses:business_id ( id, business_name, business_type, gst_number, fy_start_month, setup_completed, created_at, archived_at )")
-        .eq("user_id", user!.id)
-        .eq("status", "active")
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      return (data ?? []) as unknown as Row[];
+      const rows = await fetchBusinessesForUser(user!.id);
+      rdproDebug("CompanySelection rows ready", { total: rows.length, visibleBusinessRows: rows.filter((r) => r.businesses).length });
+      return rows as unknown as Row[];
     },
   });
 
@@ -82,10 +79,20 @@ export default function CompanySelection() {
     );
   }, [q.data, search, showArchived]);
 
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+
   const openCompany = async (id: string, name: string) => {
-    setActiveBusinessId(id);
-    await logAudit({ business_id: id, action: "COMPANY_OPENED", entity_type: "business", entity_id: id, new_value: { name } });
-    nav("/dashboard");
+    if (switchingId) return;
+    setSwitchingId(id);
+    try {
+      setActiveBusinessId(id);
+      await queryClient.invalidateQueries({ queryKey: ["current-business"] });
+      await logAudit({ business_id: id, action: "COMPANY_OPENED", entity_type: "business", entity_id: id, new_value: { name } });
+      nav("/dashboard");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to switch company");
+      setSwitchingId(null);
+    }
   };
 
   const createNew = () => {
@@ -104,6 +111,32 @@ export default function CompanySelection() {
   const onSettings = (id: string) => {
     setActiveBusinessId(id);
     nav("/settings/sales-config");
+  };
+
+  const handleSignOut = async () => {
+    console.log("Sign out clicked");
+    try {
+      const { error } = await supabase.auth.signOut();
+      console.log("Sign out error", error);
+      try {
+        localStorage.removeItem("activeBusinessId");
+        localStorage.removeItem("rdpro.activeBusinessId");
+        localStorage.removeItem("businessId");
+        localStorage.removeItem("currentBusiness");
+        localStorage.removeItem("supabase.auth.token");
+        // Remove any sb-*-auth-token keys for this project
+        Object.keys(localStorage)
+          .filter((k) => k.startsWith("sb-") && k.endsWith("-auth-token"))
+          .forEach((k) => localStorage.removeItem(k));
+      } catch {}
+      queryClient.clear();
+      const { data: { session: after } } = await supabase.auth.getSession();
+      console.log("session after signOut", after);
+      window.location.href = "/auth";
+    } catch (err) {
+      console.error("Logout failed", err);
+      toast.error("Logout failed");
+    }
   };
 
   const promptArchiveOrDelete = async (id: string, name: string) => {
@@ -146,6 +179,16 @@ export default function CompanySelection() {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background gradient-mesh flex items-center justify-center text-sm text-muted-foreground">
+        Loading session…
+      </div>
+    );
+  }
+
+  if (!user || !session) return <Navigate to="/auth" replace />;
+
   return (
     <div className="min-h-screen bg-background gradient-mesh p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -156,7 +199,7 @@ export default function CompanySelection() {
             <p className="text-sm text-muted-foreground mt-2">Choose a company to open or create a new one.</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={signOut}><LogOut className="h-4 w-4 mr-2" />Sign out</Button>
+            <Button variant="outline" onClick={handleSignOut}><LogOut className="h-4 w-4 mr-2" />Sign out</Button>
             <Button onClick={createNew}><Plus className="h-4 w-4 mr-2" />Create New Company</Button>
           </div>
         </header>
@@ -171,8 +214,17 @@ export default function CompanySelection() {
           </Button>
         </div>
 
-        {q.isLoading ? (
+        {authLoading || q.isLoading ? (
           <div className="text-sm text-muted-foreground">Loading companies…</div>
+        ) : q.isError ? (
+          <div className="rounded-2xl border bg-card p-8 text-center space-y-4">
+            <Building2 className="h-12 w-12 mx-auto text-destructive" />
+            <div>
+              <h2 className="font-semibold text-lg">Could not load companies</h2>
+              <p className="text-sm text-muted-foreground mt-1">{q.error instanceof Error ? q.error.message : "Company access is blocked by the database."}</p>
+            </div>
+            <Button onClick={() => q.refetch()}>Retry</Button>
+          </div>
         ) : rows.length === 0 ? (
           <div className="rounded-2xl border bg-card p-12 text-center space-y-4">
             <Building2 className="h-12 w-12 mx-auto text-muted-foreground" />
@@ -243,7 +295,7 @@ export default function CompanySelection() {
                   </div>
                   <button
                     type="button"
-                    disabled={archived}
+                    disabled={archived || !!switchingId}
                     onClick={() => !archived && openCompany(b.id, b.business_name)}
                     className="block w-full text-left mt-3 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
@@ -267,8 +319,17 @@ export default function CompanySelection() {
                         <dd>{new Date(b.created_at).toLocaleDateString()}</dd>
                       </div>
                     </dl>
-                    {!archived && <div className="mt-4 pt-3 border-t text-xs text-primary font-medium">Open company →</div>}
+                    {!archived && (
+                      <div className="mt-4 pt-3 border-t text-xs text-primary font-medium flex items-center gap-1.5">
+                        {switchingId === b.id ? (
+                          <><Loader2 className="h-3 w-3 animate-spin" />Opening…</>
+                        ) : (
+                          <>Open company →</>
+                        )}
+                      </div>
+                    )}
                   </button>
+
                 </div>
               );
             })}
