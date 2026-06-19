@@ -114,25 +114,9 @@ export default function CompanySelection() {
   };
 
   const handleSignOut = async () => {
-    console.log("Sign out clicked");
     try {
-      const { error } = await supabase.auth.signOut();
-      console.log("Sign out error", error);
-      try {
-        localStorage.removeItem("activeBusinessId");
-        localStorage.removeItem("rdpro.activeBusinessId");
-        localStorage.removeItem("businessId");
-        localStorage.removeItem("currentBusiness");
-        localStorage.removeItem("supabase.auth.token");
-        // Remove any sb-*-auth-token keys for this project
-        Object.keys(localStorage)
-          .filter((k) => k.startsWith("sb-") && k.endsWith("-auth-token"))
-          .forEach((k) => localStorage.removeItem(k));
-      } catch {}
       queryClient.clear();
-      const { data: { session: after } } = await supabase.auth.getSession();
-      console.log("session after signOut", after);
-      window.location.href = "/auth";
+      await signOut(); // handles localStorage cleanup + redirect to /auth
     } catch (err) {
       console.error("Logout failed", err);
       toast.error("Logout failed");
