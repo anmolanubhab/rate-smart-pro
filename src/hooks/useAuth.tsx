@@ -21,6 +21,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
+      setLoading(false); // always mark loading done when auth state is known
     });
 
     // THEN check existing session
@@ -35,6 +36,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    // Clear all business-related localStorage keys
+    try {
+      ["activeBusinessId", "rdpro.activeBusinessId", "businessId", "currentBusiness", "supabase.auth.token"]
+        .forEach((k) => localStorage.removeItem(k));
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("sb-") && k.endsWith("-auth-token"))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch { /* noop */ }
+    // Hard redirect so all React state/cache is cleared
+    window.location.href = "/auth";
   };
 
   return (
