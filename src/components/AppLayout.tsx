@@ -222,10 +222,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 </h1>
                 <div className="relative">
                   <p className="text-[11px] text-sidebar-foreground/50 leading-tight transition-all duration-300 group-hover:opacity-0 group-hover:translate-y-1">
-                    SPMS
+                    BOS
                   </p>
                   <p className="text-[11px] text-primary/80 leading-tight absolute top-0 left-0 opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-0 whitespace-nowrap">
-                    Sale Purchase<br />Management System
+                    Business Operating System
                   </p>
                 </div>
               </div>
