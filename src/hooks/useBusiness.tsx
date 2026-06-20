@@ -77,6 +77,14 @@ export function useBusiness() {
       const chosen =
         memberships.find((m) => m.business_id === activeId) ?? memberships[0];
 
+      // Keep localStorage in sync with whatever business we actually resolved to.
+      // Without this, code that reads localStorage directly (getActiveBusinessIdSync,
+      // used by orders/parties/products queries) can fall out of sync with what the
+      // UI shows here, causing inserts/fetches to silently target the wrong (or no) business.
+      if (activeId !== chosen.business_id) {
+        setActiveBusinessId(chosen.business_id);
+      }
+
       const { data: biz, error: e2 } = await supabase
         .from("businesses")
         .select("*")
