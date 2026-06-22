@@ -54,6 +54,7 @@ const PurchaseGRN = lazy(() => import("./pages/purchase/PurchaseGRN"));
 const PurchaseInvoices = lazy(() => import("./pages/purchase/PurchaseInvoices"));
 const PurchasePayments = lazy(() => import("./pages/purchase/PurchasePayments"));
 const PurchaseReports = lazy(() => import("./pages/purchase/PurchaseReports"));
+const CreatePurchaseOrder = lazy(() => import("./pages/purchase/CreatePurchaseOrder"));
 
 const queryClient = new QueryClient();
 
@@ -121,6 +122,8 @@ const App = () => (
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
               <Route path="/purchase/orders" element={L(<PurchaseOrders />)} />
+              <Route path="/purchase/orders/new" element={L(<CreatePurchaseOrder />)} />
+              <Route path="/purchase/orders/edit/:id" element={L(<CreatePurchaseOrder />)} />
               <Route path="/purchase/grn" element={L(<PurchaseGRN />)} />
               <Route path="/purchase/invoices" element={L(<PurchaseInvoices />)} />
               <Route path="/purchase/payments" element={L(<PurchasePayments />)} />
