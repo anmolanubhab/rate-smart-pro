@@ -48,6 +48,13 @@ const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
+const PurchaseDashboard = lazy(() => import("./pages/purchase/PurchaseDashboard"));
+const PurchaseOrders = lazy(() => import("./pages/purchase/PurchaseOrders"));
+const PurchaseGRN = lazy(() => import("./pages/purchase/PurchaseGRN"));
+const PurchaseInvoices = lazy(() => import("./pages/purchase/PurchaseInvoices"));
+const PurchasePayments = lazy(() => import("./pages/purchase/PurchasePayments"));
+const PurchaseReports = lazy(() => import("./pages/purchase/PurchaseReports"));
+
 const queryClient = new QueryClient();
 
 const RouteFallback = () => (
@@ -112,6 +119,12 @@ const App = () => (
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
+              <Route path="/purchase" element={L(<PurchaseDashboard />)} />
+              <Route path="/purchase/orders" element={L(<PurchaseOrders />)} />
+              <Route path="/purchase/grn" element={L(<PurchaseGRN />)} />
+              <Route path="/purchase/invoices" element={L(<PurchaseInvoices />)} />
+              <Route path="/purchase/payments" element={L(<PurchasePayments />)} />
+              <Route path="/purchase/reports" element={L(<PurchaseReports />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
