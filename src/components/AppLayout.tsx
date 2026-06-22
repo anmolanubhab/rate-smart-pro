@@ -30,6 +30,10 @@ import {
   ClipboardList,
   Building2,
   Repeat,
+  ShoppingBag,
+  TruckIcon,
+  FileText,
+  CreditCard,
 } from "lucide-react";
 
 
@@ -107,6 +111,17 @@ const navGroups: NavGroup[] = [
     label: "GST",
     items: [
       { to: "/gst/summary", label: "GST Summary", icon: FileSpreadsheet },
+    ],
+  },
+  {
+    label: "Purchase",
+    items: [
+      { to: "/purchase", label: "Purchase Dashboard", icon: ShoppingBag },
+      { to: "/purchase/orders", label: "Purchase Orders", icon: ClipboardList },
+      { to: "/purchase/grn", label: "Goods Receipt Note", icon: TruckIcon },
+      { to: "/purchase/invoices", label: "Purchase Invoices", icon: FileText },
+      { to: "/purchase/payments", label: "Payments", icon: CreditCard },
+      { to: "/purchase/reports", label: "Reports", icon: BarChart3 },
     ],
   },
   {
