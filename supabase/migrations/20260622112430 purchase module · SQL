@@ -1,0 +1,205 @@
+-- =============================================================================
+-- RD-PRO  |  PURCHASE MODULE — Foundation Migration
+-- File   : 20260622112430_purchase_module.sql
+-- Tables : purchase_orders, purchase_order_items
+-- Note   : No existing tables are modified. No business logic triggers here.
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- ENUM: purchase_order_status
+-- ---------------------------------------------------------------------------
+DO $$ BEGIN
+  CREATE TYPE public.purchase_order_status AS ENUM (
+    'draft',
+    'pending_approval',
+    'approved',
+    'ordered',
+    'partially_received',
+    'received',
+    'cancelled',
+    'closed'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+
+-- ---------------------------------------------------------------------------
+-- TABLE: purchase_orders
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.purchase_orders (
+  -- Identity
+  id                     uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id            uuid        NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+
+  -- PO Meta
+  po_number              text        NOT NULL,
+  supplier_id            uuid        REFERENCES public.parties(id) ON DELETE SET NULL,
+  warehouse_id           uuid,                                          -- FK to warehouses when that table exists
+  po_date                date        NOT NULL DEFAULT CURRENT_DATE,
+  expected_delivery_date date,
+
+  -- Workflow
+  status                 public.purchase_order_status NOT NULL DEFAULT 'draft',
+  remarks                text,
+
+  -- Financials
+  subtotal               numeric     NOT NULL DEFAULT 0  CHECK (subtotal      >= 0),
+  discount_total         numeric     NOT NULL DEFAULT 0  CHECK (discount_total >= 0),
+  tax_total              numeric     NOT NULL DEFAULT 0  CHECK (tax_total      >= 0),
+  grand_total            numeric     NOT NULL DEFAULT 0  CHECK (grand_total    >= 0),
+
+  -- Audit
+  created_by             uuid        NOT NULL,           -- auth.uid() at insert time
+  approved_by            uuid,
+  approved_at            timestamptz,
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  updated_at             timestamptz NOT NULL DEFAULT now(),
+
+  -- Uniqueness: one PO number per business
+  UNIQUE (business_id, po_number)
+);
+
+-- Grants
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.purchase_orders TO authenticated;
+GRANT ALL                            ON public.purchase_orders TO service_role;
+
+-- updated_at auto-touch (reuses the existing helper already in this schema)
+CREATE TRIGGER trg_po_updated
+  BEFORE UPDATE ON public.purchase_orders
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- INDEXES — purchase_orders
+-- ---------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_po_business         ON public.purchase_orders(business_id);
+CREATE INDEX IF NOT EXISTS idx_po_supplier         ON public.purchase_orders(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_po_status           ON public.purchase_orders(business_id, status);
+CREATE INDEX IF NOT EXISTS idx_po_date             ON public.purchase_orders(business_id, po_date DESC);
+CREATE INDEX IF NOT EXISTS idx_po_created_by       ON public.purchase_orders(created_by);
+CREATE INDEX IF NOT EXISTS idx_po_warehouse        ON public.purchase_orders(warehouse_id) WHERE warehouse_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- RLS — purchase_orders
+-- (All four CRUD operations; uses public.is_business_member for access gate)
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
+
+-- SELECT: any active member of the business may view POs
+CREATE POLICY po_select ON public.purchase_orders
+  FOR SELECT TO authenticated
+  USING (public.is_business_member(business_id));
+
+-- INSERT: must be an active member; created_by must match the caller
+CREATE POLICY po_insert ON public.purchase_orders
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    public.is_business_member(business_id)
+    AND created_by = auth.uid()
+  );
+
+-- UPDATE: any active member may update (approval workflow restrictions
+--         should be enforced at the application / RPC layer)
+CREATE POLICY po_update ON public.purchase_orders
+  FOR UPDATE TO authenticated
+  USING  (public.is_business_member(business_id))
+  WITH CHECK (public.is_business_member(business_id));
+
+-- DELETE: any active member may delete (soft-delete via status = 'cancelled'
+--         is preferred; hard delete kept available for admin cleanup)
+CREATE POLICY po_delete ON public.purchase_orders
+  FOR DELETE TO authenticated
+  USING (public.is_business_member(business_id));
+
+
+-- ---------------------------------------------------------------------------
+-- TABLE: purchase_order_items
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.purchase_order_items (
+  -- Identity
+  id                   uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  purchase_order_id    uuid        NOT NULL REFERENCES public.purchase_orders(id) ON DELETE CASCADE,
+
+  -- Item reference
+  product_id           uuid        REFERENCES public.products(id) ON DELETE SET NULL,
+
+  -- Quantities & pricing
+  qty                  numeric     NOT NULL DEFAULT 1   CHECK (qty            > 0),
+  rate                 numeric     NOT NULL DEFAULT 0   CHECK (rate           >= 0),
+  discount_percent     numeric     NOT NULL DEFAULT 0   CHECK (discount_percent BETWEEN 0 AND 100),
+  gst_percent          numeric     NOT NULL DEFAULT 0   CHECK (gst_percent    >= 0),
+
+  -- Computed amounts (stored for reporting; recalculate on save)
+  taxable_amount       numeric     NOT NULL DEFAULT 0   CHECK (taxable_amount >= 0),
+  tax_amount           numeric     NOT NULL DEFAULT 0   CHECK (tax_amount     >= 0),
+  total_amount         numeric     NOT NULL DEFAULT 0   CHECK (total_amount   >= 0)
+);
+
+-- Grants
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.purchase_order_items TO authenticated;
+GRANT ALL                            ON public.purchase_order_items TO service_role;
+
+-- ---------------------------------------------------------------------------
+-- INDEXES — purchase_order_items
+-- ---------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_poi_purchase_order  ON public.purchase_order_items(purchase_order_id);
+CREATE INDEX IF NOT EXISTS idx_poi_product         ON public.purchase_order_items(product_id) WHERE product_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- RLS — purchase_order_items
+-- (Items inherit access through their parent purchase_order's business_id)
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.purchase_order_items ENABLE ROW LEVEL SECURITY;
+
+-- SELECT: visible if the caller is a member of the owning business
+CREATE POLICY poi_select ON public.purchase_order_items
+  FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.purchase_orders po
+       WHERE po.id = purchase_order_id
+         AND public.is_business_member(po.business_id)
+    )
+  );
+
+-- INSERT: caller must be a member of the owning business
+CREATE POLICY poi_insert ON public.purchase_order_items
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.purchase_orders po
+       WHERE po.id = purchase_order_id
+         AND public.is_business_member(po.business_id)
+    )
+  );
+
+-- UPDATE: same membership check
+CREATE POLICY poi_update ON public.purchase_order_items
+  FOR UPDATE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.purchase_orders po
+       WHERE po.id = purchase_order_id
+         AND public.is_business_member(po.business_id)
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.purchase_orders po
+       WHERE po.id = purchase_order_id
+         AND public.is_business_member(po.business_id)
+    )
+  );
+
+-- DELETE: same membership check
+CREATE POLICY poi_delete ON public.purchase_order_items
+  FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.purchase_orders po
+       WHERE po.id = purchase_order_id
+         AND public.is_business_member(po.business_id)
+    )
+  );
+
+-- =============================================================================
+-- END OF MIGRATION
+-- =============================================================================
