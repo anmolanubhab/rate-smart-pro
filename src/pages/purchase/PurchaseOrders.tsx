@@ -16,7 +16,7 @@ export default function PurchaseOrders() {
       description="Create and manage purchase orders sent to suppliers. Track PO status from draft to confirmed."
       actions={
         <Button asChild>
-          <Link to="#">
+          <Link to="/purchase/orders/new">
             <PlusCircle className="h-4 w-4 mr-2" />
             New PO
           </Link>
