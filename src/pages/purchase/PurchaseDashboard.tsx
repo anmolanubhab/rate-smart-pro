@@ -101,7 +101,7 @@ export default function PurchaseDashboard() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button asChild>
-            <Link to="/purchase/orders">
+            <Link to="/purchase/orders/new">
               <ClipboardList className="h-4 w-4 mr-2" />
               New Purchase Order
             </Link>
@@ -174,7 +174,7 @@ export default function PurchaseDashboard() {
             <p className="text-xs text-muted-foreground mt-0.5">Latest POs across all suppliers</p>
           </div>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/purchase/orders">
+            <Link to="/purchase/orders/new">
               View All <ArrowRight className="h-3 w-3 ml-1" />
             </Link>
           </Button>
@@ -184,7 +184,7 @@ export default function PurchaseDashboard() {
           <p className="text-sm font-medium">No purchase orders yet</p>
           <p className="text-xs mt-1">Create your first purchase order to get started.</p>
           <Button size="sm" className="mt-4" asChild>
-            <Link to="/purchase/orders">Create Purchase Order</Link>
+            <Link to="/purchase/orders/new">Create Purchase Order</Link>
           </Button>
         </div>
       </div>
