@@ -34,9 +34,9 @@ const BankBook = lazy(() => import("./pages/accounts/BankBook"));
 const TrialBalance = lazy(() => import("./pages/accounts/TrialBalance"));
 const ProfitLoss = lazy(() => import("./pages/accounts/ProfitLoss"));
 const BalanceSheet = lazy(() => import("./pages/accounts/BalanceSheet"));
+const PartyLedger = lazy(() => import("./pages/accounts/PartyLedger")); // NEW
 const Receivables = lazy(() => import("./pages/accounts/Receivables"));
 const Payables = lazy(() => import("./pages/accounts/Payables"));
-const PartyLedger = lazy(() => import("./pages/accounts/PartyLedger"));
 const GstSummary = lazy(() => import("./pages/gst/GstSummary"));
 const AuditLogs = lazy(() => import("./pages/admin/AuditLogs"));
 const BusinessWizard = lazy(() => import("./pages/setup/BusinessWizard"));
@@ -110,8 +110,8 @@ const App = () => (
               <Route path="/accounts/trial-balance" element={L(<TrialBalance />)} />
               <Route path="/accounts/profit-loss" element={L(<ProfitLoss />)} />
               <Route path="/accounts/balance-sheet" element={L(<BalanceSheet />)} />
+              <Route path="/accounts/party/:partyId" element={L(<PartyLedger />)} /> {/* NEW */}
               <Route path="/accounts/receivables" element={L(<Receivables />)} />
-              <Route path="/accounts/party/:partyId" element={L(<PartyLedger />)} />
               <Route path="/accounts/payables" element={L(<Payables />)} />
               <Route path="/gst/summary" element={L(<GstSummary />)} />
               <Route path="/admin/audit-logs" element={L(<AuditLogs />)} />
