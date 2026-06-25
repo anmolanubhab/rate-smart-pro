@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   AlertCircle,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { fetchParties, Party } from "@/lib/parties";
 import { searchProducts, Product } from "@/lib/products";
+import POExcelUpload from "@/components/purchase/POExcelUpload";
 import {
   POItem,
   POStatus,
@@ -95,6 +97,7 @@ export default function CreatePurchaseOrder() {
   const [currentStatus, setCurrentStatus] = useState<POStatus>("draft");
   const [savedPO, setSavedPO] = useState<PurchaseOrder | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const poIdRef = useRef<string | null>(editId || null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
@@ -268,6 +271,17 @@ export default function CreatePurchaseOrder() {
     else if (e.key === "ArrowUp") { e.preventDefault(); focusCell(Math.max(0, idx - 1), col); }
   };
 
+  const handleImport = (imported: POItem[]) => {
+    setItems((prev) => {
+      // Remove blank placeholder rows first
+      const existing = prev.filter((it) => it.part_number.trim() || Number(it.qty) > 0);
+      const merged = [...existing, ...imported];
+      // Pad with blank rows so the grid never looks empty
+      while (merged.length < 5) merged.push(blankPOItem());
+      return merged;
+    });
+  };
+
   const handleSave = async (status: POStatus = "draft") => {
     if (!user || saving) return;
     if (status !== "draft" && !supplierId) { toast.error("Please select a supplier"); return; }
@@ -352,6 +366,9 @@ export default function CreatePurchaseOrder() {
         <div className="flex gap-1.5 flex-wrap">
           <Button size="sm" variant="ghost" onClick={downloadPOImportTemplate} className="h-8 text-xs">
             <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Template
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="h-8 text-xs">
+            <Upload className="h-3.5 w-3.5 mr-1" />Import XLS
           </Button>
           <Button size="sm" variant="outline" onClick={handleExport} className="h-8 text-xs">
             <FileDown className="h-3.5 w-3.5 mr-1" />Export XLS
@@ -680,6 +697,12 @@ export default function CreatePurchaseOrder() {
                       <Plus className="h-3 w-3" /> Add Row
                     </button>
                     <button
+                      onClick={() => setImportOpen(true)}
+                      className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+                    >
+                      <Upload className="h-3 w-3" /> Import XLS
+                    </button>
+                    <button
                       onClick={downloadPOImportTemplate}
                       className="text-[11px] text-muted-foreground hover:underline inline-flex items-center gap-1"
                     >
@@ -786,6 +809,16 @@ export default function CreatePurchaseOrder() {
           </div>
         </div>
       </div>
+
+      {/* ── Excel Import Dialog ────────────────────────────────────── */}
+      {user && (
+        <POExcelUpload
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          userId={user.id}
+          onImport={handleImport}
+        />
+      )}
 
       <style>{`
         .po-entry input[type=number]::-webkit-outer-spin-button,
