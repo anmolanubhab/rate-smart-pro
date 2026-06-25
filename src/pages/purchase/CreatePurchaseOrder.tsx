@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness } from "@/hooks/useBusiness";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +63,7 @@ const STATUS_BADGE: Record<POStatus, string> = {
 
 export default function CreatePurchaseOrder() {
   const { user, loading: authLoading } = useAuth();
-  const { business, loading: bizLoading } = useBusiness();
+  const businessId = getActiveBusinessIdSync();
   const navigate = useNavigate();
   const { id: editId } = useParams<{ id?: string }>();
 
@@ -139,19 +139,16 @@ export default function CreatePurchaseOrder() {
   }, [editId]);
 
   useEffect(() => {
-    if (authLoading || bizLoading) return;   // wait for auth+business to resolve
-    if (!user || !business) return;
+    if (authLoading) return;
+    if (!user || !businessId) return;
 
-    // Load suppliers (non-blocking — page renders fine without them)
     fetchParties(user.id).then(setSuppliers).catch(() => {});
 
     if (!editId) {
-      // ① Set a local PO number immediately — zero DB dependency, zero wait
       setPONumber(localPONumber());
-      // ② Quietly replace with the proper sequential number in background
-      nextPONumber(business.id)
+      nextPONumber(businessId)
         .then((n) => setPONumber(n))
-        .catch(() => {}); // keep local number if DB unavailable
+        .catch(() => {});
       setTimeout(() => supplierInputRef.current?.focus(), 100);
     } else {
       (async () => {
@@ -173,7 +170,7 @@ export default function CreatePurchaseOrder() {
         }
       })();
     }
-  }, [authLoading, bizLoading, user, business, editId]);
+  }, [authLoading, user, businessId, editId]);
 
   // Set supplier query when supplier loads
   useEffect(() => {
@@ -350,7 +347,7 @@ export default function CreatePurchaseOrder() {
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   // Show skeleton while auth or business context is resolving — prevents white flash
-  if (authLoading || bizLoading) {
+  if (authLoading) {
     return (
       <div className="max-w-[1400px] mx-auto animate-pulse space-y-4 p-4">
         <div className="flex items-center justify-between">
@@ -434,7 +431,7 @@ export default function CreatePurchaseOrder() {
         {/* Header bar */}
         <div className="bg-primary text-primary-foreground px-3 py-1.5 flex items-center justify-between text-xs">
           <div className="font-sans font-semibold tracking-wide">Purchase Order</div>
-          <div className="font-sans opacity-80">{business?.business_name}</div>
+          <div className="font-sans opacity-80">RD Pro</div>
           <button
             onClick={() => setHeaderCollapsed((p) => !p)}
             className="opacity-70 hover:opacity-100 transition-opacity md:hidden"
