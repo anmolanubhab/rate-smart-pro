@@ -15,6 +15,7 @@ interface Props {
   rows: Record<string, any>[];
   footer?: ReactNode;
   samplePending?: boolean;
+  onRowClick?: (row: Record<string, any>) => void; // NEW
 }
 
 const fmtInr = (n: number) =>
@@ -27,7 +28,7 @@ const toneClass = (t?: MockKpi["tone"]) =>
     : "text-foreground";
 
 export default function MockTablePage({
-  eyebrow, title, description, actions, kpis, columns, rows, footer, samplePending = false,
+  eyebrow, title, description, actions, kpis, columns, rows, footer, samplePending = false, onRowClick,
 }: Props) {
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in-up">
@@ -69,7 +70,11 @@ export default function MockTablePage({
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={i} className="border-t border-border hover:bg-muted/30">
+                <tr
+                  key={i}
+                  className={`border-t border-border hover:bg-muted/30 ${onRowClick ? "cursor-pointer" : ""}`}
+                  onClick={() => onRowClick?.(r)}
+                >
                   {columns.map((c) => {
                     const v = r[c.key];
                     let display: ReactNode = v;
