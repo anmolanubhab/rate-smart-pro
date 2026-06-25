@@ -146,9 +146,7 @@ export default function CreatePurchaseOrder() {
 
     if (!editId) {
       setPONumber(localPONumber());
-      nextPONumber(businessId)
-        .then((n) => setPONumber(n))
-        .catch(() => {});
+      nextPONumber(businessId).then((n) => setPONumber(n)).catch(() => {});
       setTimeout(() => supplierInputRef.current?.focus(), 100);
     } else {
       (async () => {
