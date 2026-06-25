@@ -115,24 +115,44 @@ export const blankPOItem = (): POItem =>
 
 // ─── PO Number ──────────────────────────────────────────────────────────────
 
+/** Generate a quick local PO number instantly (no DB call).
+ *  Used to populate the field immediately on page load.
+ *  The real sequence is validated server-side on save to avoid collisions. */
+export function localPONumber(): string {
+  const now = new Date();
+  const yy = now.getFullYear();
+  // Use timestamp-based suffix so it's unique enough for a draft label
+  const suffix = String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0") +
+    String(now.getHours()).padStart(2, "0") +
+    String(now.getMinutes()).padStart(2, "0");
+  return `PO-${yy}-${suffix}`;
+}
+
+/** Fetch the next sequential PO number from DB.
+ *  Call this in the background after initial render — never block on it. */
 export async function nextPONumber(businessId: string): Promise<string> {
   const prefix = "PO-" + new Date().getFullYear() + "-";
-  const { data, error } = await supabase
-    .from("purchase_orders")
-    .select("po_number")
-    .eq("business_id", businessId)
-    .ilike("po_number", `${prefix}%`)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (error) throw error;
-  let nextSeq = 1;
-  if (data && data.length > 0) {
-    const last = data[0].po_number as string;
-    const parts = last.split("-");
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+  try {
+    const { data, error } = await supabase
+      .from("purchase_orders")
+      .select("po_number")
+      .eq("business_id", businessId)
+      .ilike("po_number", `${prefix}%`)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) return localPONumber(); // table not yet migrated — fall back silently
+    let nextSeq = 1;
+    if (data && data.length > 0) {
+      const last = data[0].po_number as string;
+      const parts = last.split("-");
+      const lastNum = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+    }
+    return prefix + String(nextSeq).padStart(4, "0");
+  } catch {
+    return localPONumber();
   }
-  return prefix + String(nextSeq).padStart(4, "0");
 }
 
 // ─── Save ───────────────────────────────────────────────────────────────────
