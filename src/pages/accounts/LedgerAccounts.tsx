@@ -6,11 +6,13 @@ import { toast } from "sonner";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { backfillAccounting, fetchLedgersWithBalance, seedAccounts, fmtInr } from "@/lib/accounting";
+import { useNavigate } from "react-router-dom"; // NEW
 
 export default function LedgerAccounts() {
   useEffect(() => { document.title = "Ledger Accounts — RD Pro"; }, []);
   const { user } = useAuth();
   const qc = useQueryClient();
+  const navigate = useNavigate(); // NEW
   const [syncing, setSyncing] = useState(false);
 
   const { data: ledgers = [], isLoading } = useQuery({
@@ -46,6 +48,7 @@ export default function LedgerAccounts() {
       side: bal >= 0 ? "Dr" : "Cr",
       status: l.is_system ? "System" : "Active",
       status_tone: l.is_system ? "default" : "success",
+      _party_id: l.party_id,   // NEW
     };
   }), [ledgers]);
 
@@ -80,6 +83,9 @@ export default function LedgerAccounts() {
         { key: "status", label: "Status", format: "badge" },
       ]}
       rows={rows}
+      onRowClick={(row) => {                                 // NEW
+        if (row._party_id) navigate(`/accounts/party/${row._party_id}`);
+      }}
     />
   );
 }
