@@ -153,3 +153,148 @@ export async function backfillAccounting(userId: string) {
 
 export const fmtInr = (n: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
+// ───────────────────────────────────────────────────────────────
+// NEW: Party Ledger exports (append to end of file)
+// ───────────────────────────────────────────────────────────────
+
+export type PartyLedgerLine = {
+  date: string;
+  voucher_id: string;
+  voucher_number: string;
+  voucher_type: string;
+  narration: string;
+  dr: number;
+  cr: number;
+  running_balance: number;
+};
+
+// Type for joined voucher_items with vouchers
+type VoucherItemWithVoucher = {
+  id: string;
+  voucher_id: string;
+  dr_amount: number;
+  cr_amount: number;
+  position: number;
+  narration: string | null;
+  vouchers: {
+    id: string;
+    voucher_date: string;
+    voucher_number: string;
+    voucher_type: string;
+    voucher_narration: string;
+  };
+};
+
+/**
+ * Fetches the complete ledger for a specific party (customer/supplier).
+ * Returns the ledger account (as LedgerRow), transaction lines with running balance,
+ * and the closing balance.
+ */
+export async function fetchPartyLedger(
+  userId: string,
+  partyId: string,
+  opts?: { from?: string; to?: string }
+): Promise<{
+  ledger: LedgerRow | null;
+  lines: PartyLedgerLine[];
+  closingBalance: number;
+}> {
+  const businessId = getActiveBusinessIdSync();
+  if (!businessId) throw new Error("No active business");
+
+  // 1. Find the ledger account for this party
+  const { data: ledger, error: ledgerError } = await supabase
+    .from("ledger_accounts")
+    .select("*")
+    .eq("party_id", partyId)
+    .eq("business_id", businessId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (ledgerError) throw new Error(`fetchPartyLedger ledger: ${ledgerError.message}`);
+  if (!ledger) {
+    return { ledger: null, lines: [], closingBalance: 0 };
+  }
+
+  // 2. Fetch voucher items for this ledger with related vouchers
+  let query = supabase
+    .from("voucher_items")
+    .select(
+      `
+        id,
+        voucher_id,
+        dr_amount,
+        cr_amount,
+        position,
+        narration,
+        vouchers!inner (
+          id,
+          voucher_date,
+          voucher_number,
+          voucher_type,
+          narration as voucher_narration
+        )
+      `
+    )
+    .eq("ledger_id", ledger.id)
+    .eq("business_id", businessId)
+    .eq("user_id", userId);
+
+  // Apply date filter if provided
+  if (opts?.from) {
+    query = query.gte("vouchers.voucher_date", opts.from);
+  }
+  if (opts?.to) {
+    query = query.lte("vouchers.voucher_date", opts.to);
+  }
+
+  const { data: items, error: itemsError } = await query;
+  if (itemsError) throw new Error(`fetchPartyLedger items: ${itemsError.message}`);
+
+  // Sort in JavaScript: by voucher_date ASC, then position ASC
+  // (avoids nested order("vouchers(voucher_date)") issues)
+  if (items) {
+    items.sort((a, b) => {
+      const va = (a as VoucherItemWithVoucher).vouchers;
+      const vb = (b as VoucherItemWithVoucher).vouchers;
+      if (va.voucher_date < vb.voucher_date) return -1;
+      if (va.voucher_date > vb.voucher_date) return 1;
+      return a.position - b.position;
+    });
+  }
+
+  // 3. Compute opening balance
+  const opening =
+    ledger.opening_balance_type === "dr" ? ledger.opening_balance : -ledger.opening_balance;
+
+  // 4. Build lines with running balance
+  const lines: PartyLedgerLine[] = [];
+  let running = opening;
+
+  if (items) {
+    for (const item of items) {
+      const itemWithVoucher = item as VoucherItemWithVoucher;
+      const voucher = itemWithVoucher.vouchers;
+      const dr = Number(itemWithVoucher.dr_amount) || 0;
+      const cr = Number(itemWithVoucher.cr_amount) || 0;
+      running += dr - cr;
+
+      lines.push({
+        date: voucher.voucher_date,
+        voucher_id: voucher.id,
+        voucher_number: voucher.voucher_number,
+        voucher_type: voucher.voucher_type,
+        narration: voucher.voucher_narration || itemWithVoucher.narration || "",
+        dr,
+        cr,
+        running_balance: running,
+      });
+    }
+  }
+
+  return {
+    ledger,
+    lines,
+    closingBalance: running,
+  };
+}
