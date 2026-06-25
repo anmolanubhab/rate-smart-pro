@@ -34,6 +34,7 @@ import {
   downloadPOImportTemplate,
   fetchPOItems,
   fetchPurchaseOrder,
+  localPONumber,
   nextPONumber,
   savePurchaseOrder,
   approvePurchaseOrder,
@@ -61,8 +62,8 @@ const STATUS_BADGE: Record<POStatus, string> = {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function CreatePurchaseOrder() {
-  const { user } = useAuth();
-  const { business } = useBusiness();
+  const { user, loading: authLoading } = useAuth();
+  const { business, loading: bizLoading } = useBusiness();
   const navigate = useNavigate();
   const { id: editId } = useParams<{ id?: string }>();
 
@@ -138,11 +139,19 @@ export default function CreatePurchaseOrder() {
   }, [editId]);
 
   useEffect(() => {
+    if (authLoading || bizLoading) return;   // wait for auth+business to resolve
     if (!user || !business) return;
+
+    // Load suppliers (non-blocking — page renders fine without them)
     fetchParties(user.id).then(setSuppliers).catch(() => {});
 
     if (!editId) {
-      nextPONumber(business.id).then(setPONumber).catch(() => {});
+      // ① Set a local PO number immediately — zero DB dependency, zero wait
+      setPONumber(localPONumber());
+      // ② Quietly replace with the proper sequential number in background
+      nextPONumber(business.id)
+        .then((n) => setPONumber(n))
+        .catch(() => {}); // keep local number if DB unavailable
       setTimeout(() => supplierInputRef.current?.focus(), 100);
     } else {
       (async () => {
@@ -164,7 +173,7 @@ export default function CreatePurchaseOrder() {
         }
       })();
     }
-  }, [user, business, editId]);
+  }, [authLoading, bizLoading, user, business, editId]);
 
   // Set supplier query when supplier loads
   useEffect(() => {
@@ -339,6 +348,35 @@ export default function CreatePurchaseOrder() {
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  // Show skeleton while auth or business context is resolving — prevents white flash
+  if (authLoading || bizLoading) {
+    return (
+      <div className="max-w-[1400px] mx-auto animate-pulse space-y-4 p-4">
+        <div className="flex items-center justify-between">
+          <div className="h-5 w-48 bg-muted rounded" />
+          <div className="flex gap-2">
+            {[80, 96, 96, 72].map((w, i) => (
+              <div key={i} className="h-8 bg-muted rounded" style={{ width: w }} />
+            ))}
+          </div>
+        </div>
+        <div className="border border-border rounded">
+          <div className="h-8 bg-primary/20 rounded-t" />
+          <div className="p-4 grid grid-cols-2 gap-3 border-b border-border">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-6 bg-muted rounded" />
+            ))}
+          </div>
+          <div className="p-4 space-y-2">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="h-7 bg-muted/60 rounded" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="po-entry max-w-[1400px] mx-auto text-[13px] font-mono space-y-0">
