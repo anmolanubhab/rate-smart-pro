@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { useNavigate } from "react-router-dom"; // <-- NEW IMPORT
 
 export default function Payables() {
   useEffect(() => { document.title = "Outstanding Payables — RD Pro"; }, []);
   const { user } = useAuth();
+  const navigate = useNavigate(); // <-- NEW
   const { data: ledgers = [], isLoading } = useQuery({
     queryKey: ["payables", user?.id],
     enabled: !!user?.id,
@@ -22,6 +24,7 @@ export default function Payables() {
         amount: Math.abs(l.balance ?? 0),
         status: "Outstanding",
         status_tone: "warning",
+        _party_id: l.party_id, // <-- store party_id for navigation
       }));
   }, [ledgers]);
 
@@ -51,6 +54,10 @@ export default function Payables() {
         { key: "status", label: "Status", format: "badge" },
       ]}
       rows={rows}
+      // ── NEW: row click handler ──
+      onRowClick={(row) => {
+        if (row._party_id) navigate(`/accounts/party/${row._party_id}`);
+      }}
     />
   );
 }
