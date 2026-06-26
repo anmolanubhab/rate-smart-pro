@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import MockTablePage from "@/components/accounts/MockTablePage";
-import { useNavigate } from "react-router-dom"; // <-- NEW IMPORT
 
 type OrderRow = {
   id: string;
   order_number: string;
   order_date: string;
   party_name: string | null;
-  party_id: string | null; // <-- added
+  party_id: string | null;
   grand_total: number;
   dispatched_total_qty: number;
   pending_total_qty: number;
@@ -23,7 +23,7 @@ const daysBetween = (iso: string) => {
 
 export default function Receivables() {
   useEffect(() => { document.title = "Outstanding Receivables — RD Pro"; }, []);
-  const navigate = useNavigate(); // <-- NEW
+  const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const PAGE = 50;
 
@@ -32,7 +32,7 @@ export default function Receivables() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select("id, order_number, order_date, party_name, party_id, grand_total, dispatched_total_qty, pending_total_qty, status") // <-- added party_id
+        .select("id, order_number, order_date, party_name, party_id, grand_total, dispatched_total_qty, pending_total_qty, status")
         .in("status", ["pending", "partial"])
         .is("deleted_at", null)
         .order("order_date", { ascending: false })
@@ -60,7 +60,7 @@ export default function Receivables() {
         amount: outstanding,
         status,
         status_tone: tone,
-        _party_id: o.party_id, // <-- store party_id for navigation
+        _party_id: o.party_id,
       };
     }).filter(r => r.amount > 0);
   }, [data]);
@@ -89,10 +89,7 @@ export default function Receivables() {
         { key: "status", label: "Status", format: "badge" },
       ]}
       rows={rows}
-      // ── NEW: row click handler ──
-      onRowClick={(row) => {
-        if (row._party_id) navigate(`/accounts/party/${row._party_id}`);
-      }}
+      onRowClick={(row) => { if (row._party_id) navigate(`/accounts/party/${row._party_id}`); }}
     />
   );
 }
