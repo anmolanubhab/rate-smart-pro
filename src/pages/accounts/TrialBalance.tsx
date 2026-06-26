@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { useNavigate } from "react-router-dom"; // <-- NEW IMPORT
 
 export default function TrialBalance() {
   useEffect(() => { document.title = "Trial Balance — RD Pro"; }, []);
   const { user } = useAuth();
+  const navigate = useNavigate(); // <-- NEW
   const { data: ledgers = [], isLoading } = useQuery({
     queryKey: ["trial-balance", user?.id],
     enabled: !!user?.id,
@@ -22,7 +24,13 @@ export default function TrialBalance() {
         const dr = bal > 0 ? bal : 0;
         const cr = bal < 0 ? -bal : 0;
         totDr += dr; totCr += cr;
-        return { ledger: l.name, group: l.group?.name ?? "—", dr, cr };
+        return {
+          ledger: l.name,
+          group: l.group?.name ?? "—",
+          dr,
+          cr,
+          _party_id: l.party_id, // <-- store party_id for navigation
+        };
       });
     return { rows, totDr, totCr };
   }, [ledgers]);
@@ -45,6 +53,10 @@ export default function TrialBalance() {
         { key: "cr", label: "Credit", align: "right", format: "currency" },
       ]}
       rows={rows}
+      // ── NEW: row click handler ──
+      onRowClick={(row) => {
+        if (row._party_id) navigate(`/accounts/party/${row._party_id}`);
+      }}
     />
   );
 }
