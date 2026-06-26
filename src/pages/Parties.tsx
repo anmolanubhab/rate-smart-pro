@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Plus, Pencil, Trash2, Users, Search, Upload,
   ArrowUpDown, ArrowUp, ArrowDown, Download, RefreshCw,
@@ -21,7 +22,6 @@ import { ProductsPagination } from "@/components/ProductsPagination";
 import { useDebounce } from "@/hooks/useDebounce";
 import PartyExcelUpload from "@/components/PartyExcelUpload";
 import { fetchParties, Party, DiscountType } from "@/lib/parties";
-import { useNavigate } from "react-router-dom"; // <-- NEW IMPORT
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -176,6 +176,7 @@ const SkeletonRow = ({ index }: { index: number }) => (
 const Parties = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
+  const navigate = useNavigate();
   const businessId = business?.id ?? null;
   const [parties, setParties]   = useState<Party[]>([]);
   const [total, setTotal]       = useState(0);
@@ -195,8 +196,6 @@ const Parties = () => {
   const [activeTab, setActiveTab] = useState<TabKey>("general");
   const [form, setForm]         = useState(emptyForm);
   const [saving, setSaving]     = useState(false);
-
-  const navigate = useNavigate(); // <-- NEW
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -480,9 +479,9 @@ const Parties = () => {
                       </td>
                       <td className="px-4 py-2.5"><StatusBadge p={p} /></td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                        {/* NEW LEDGER BUTTON */}
                         <Button
-                          variant="ghost" size="sm"
+                          variant="ghost"
+                          size="sm"
                           title="View Ledger"
                           onClick={() => navigate(`/accounts/party/${p.id}`)}
                         >
