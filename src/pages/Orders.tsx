@@ -329,7 +329,19 @@ const Orders = () => {
                       <button className="hover:underline text-primary" onClick={() => onView(o)}>{o.order_number}</button>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{o.order_date}</td>
-                    <td className="px-3 py-2">{o.party_name ?? "—"}</td>
+                    {/* ── Clickable party name ── */}
+                    <td className="px-3 py-2">
+                      {o.party_id ? (
+                        <button
+                          className="hover:underline text-primary text-left"
+                          onClick={(e) => { e.stopPropagation(); nav(`/accounts/party/${o.party_id}`); }}
+                        >
+                          {o.party_name ?? "—"}
+                        </button>
+                      ) : (
+                        o.party_name ?? "—"
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <Badge variant="outline" className={statusColor[o.status] ?? ""}>{o.status}</Badge>
                     </td>
