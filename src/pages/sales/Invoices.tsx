@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -18,7 +19,6 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { useNavigate } from "react-router-dom"; // <-- NEW IMPORT
 
 const statusTone: Record<string, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
@@ -30,7 +30,7 @@ const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function InvoicesPage() {
   const { user } = useAuth();
-  const navigate = useNavigate(); // <-- NEW
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [page, setPage] = useState(1);
@@ -99,6 +99,7 @@ export default function InvoicesPage() {
     }
   };
 
+  // ── FIX: Direct delete using deleteInvoice() ────────────────────────────
   const onDeleteConfirm = async () => {
     if (!deleteTarget) return;
     setBusy(deleteTarget.id);
@@ -178,7 +179,6 @@ export default function InvoicesPage() {
                     <tr key={i.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-2.5 font-mono text-xs">{i.invoice_number}</td>
                       <td className="px-4 py-2.5">{i.invoice_date}</td>
-                      {/* ── Party name (clickable) ── */}
                       <td className="px-4 py-2.5">
                         {i.party_id ? (
                           <button
