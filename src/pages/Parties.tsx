@@ -21,6 +21,7 @@ import { ProductsPagination } from "@/components/ProductsPagination";
 import { useDebounce } from "@/hooks/useDebounce";
 import PartyExcelUpload from "@/components/PartyExcelUpload";
 import { fetchParties, Party, DiscountType } from "@/lib/parties";
+import { useNavigate } from "react-router-dom"; // <-- NEW IMPORT
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -194,6 +195,8 @@ const Parties = () => {
   const [activeTab, setActiveTab] = useState<TabKey>("general");
   const [form, setForm]         = useState(emptyForm);
   const [saving, setSaving]     = useState(false);
+
+  const navigate = useNavigate(); // <-- NEW
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -477,6 +480,14 @@ const Parties = () => {
                       </td>
                       <td className="px-4 py-2.5"><StatusBadge p={p} /></td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        {/* NEW LEDGER BUTTON */}
+                        <Button
+                          variant="ghost" size="sm"
+                          title="View Ledger"
+                          onClick={() => navigate(`/accounts/party/${p.id}`)}
+                        >
+                          <BookOpen className="h-3.5 w-3.5" />
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
