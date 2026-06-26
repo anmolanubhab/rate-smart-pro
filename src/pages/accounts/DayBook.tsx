@@ -1,10 +1,11 @@
 import { useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
-import { fmtInr } from "@/lib/accounting";
-import { useNavigate } from "react-router-dom";
+import { fetchVouchers, fmtInr } from "@/lib/accounting";
+import { supabase } from "@/integrations/supabase/client";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 const labels: Record<string, string> = {
   sales: "Sales", purchase: "Purchase", receipt: "Receipt", payment: "Payment",
@@ -16,44 +17,49 @@ export default function DayBook() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // ── Custom query with party info ──
   const { data = [], isLoading } = useQuery({
     queryKey: ["daybook", user?.id],
     enabled: !!user?.id,
+    queryFn: () => fetchVouchers(user!.id, { limit: 500 }),
+  });
+
+  // Fetch party_id for vouchers that reference orders
+  const orderRefIds = useMemo(
+    () => data.filter(v => v.reference_type === "order" && v.reference_id).map(v => v.reference_id!),
+    [data]
+  );
+
+  const { data: orderPartyMap = {} } = useQuery<Record<string, string>>({
+    queryKey: ["daybook-order-parties", orderRefIds],
+    enabled: orderRefIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("vouchers")
-        .select(`
-          voucher_number,
-          voucher_date,
-          voucher_type,
-          narration,
-          total_amount,
-          reference_type,
-          reference_id,
-          orders!left ( party_id, party_name )
-        `)
-        .eq("user_id", user!.id)
-        .order("voucher_date", { ascending: false })
-        .limit(500);
-      if (error) throw error;
-      return data.map((v: any) => ({
-        ...v,
-        party_id: v.orders?.party_id ?? null,
-        party_name: v.orders?.party_name ?? null,
-      }));
+      const biz = getActiveBusinessIdSync();
+      let q = supabase
+        .from("orders")
+        .select("id, party_id")
+        .in("id", orderRefIds);
+      if (biz) q = q.eq("business_id", biz);
+      const { data: orders } = await q;
+      const map: Record<string, string> = {};
+      (orders ?? []).forEach((o: any) => { if (o.party_id) map[o.id] = o.party_id; });
+      return map;
     },
   });
 
-  const rows = useMemo(() => data.map((v) => ({
-    date: v.voucher_date,
-    number: v.voucher_number,
-    type: labels[v.voucher_type] ?? v.voucher_type,
-    narration: v.narration ?? "—",
-    amount: v.total_amount,
-    party: v.party_name ?? "—",
-    _party_id: v.party_id,
-  })), [data]);
+  const rows = useMemo(() => data.map((v) => {
+    const partyId = v.reference_type === "order" && v.reference_id
+      ? orderPartyMap[v.reference_id] ?? null
+      : null;
+    return {
+      date: v.voucher_date,
+      number: v.voucher_number,
+      type: labels[v.voucher_type] ?? v.voucher_type,
+      narration: v.narration ?? "—",
+      amount: v.total_amount,
+      _party_id: partyId,
+      _voucher_id: v.id,
+    };
+  }), [data, orderPartyMap]);
 
   const total = data.reduce((s, v) => s + Number(v.total_amount || 0), 0);
 
@@ -72,31 +78,17 @@ export default function DayBook() {
         { key: "date", label: "Date" },
         { key: "number", label: "Voucher #" },
         { key: "type", label: "Type" },
-        { key: "party", label: "Party" }, // new clickable column
         { key: "narration", label: "Narration" },
         { key: "amount", label: "Amount", align: "right", format: "currency" },
       ]}
       rows={rows}
-      // Row click navigates to party ledger if party_id exists
       onRowClick={(row) => {
-        if (row._party_id) navigate(`/accounts/party/${row._party_id}`);
-      }}
-      // Override cell rendering for the 'party' column to make it clickable independently
-      renderCell={(row, key) => {
-        if (key === "party" && row._party_id) {
-          return (
-            <button
-              className="hover:underline text-primary text-left"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/accounts/party/${row._party_id}`);
-              }}
-            >
-              {row.party}
-            </button>
-          );
+        // If party is linked → open party ledger; else open voucher center
+        if (row._party_id) {
+          navigate(`/accounts/party/${row._party_id}`);
+        } else {
+          navigate(`/accounts/vouchers?id=${row._voucher_id}`);
         }
-        return null; // fallback to default rendering
       }}
     />
   );
