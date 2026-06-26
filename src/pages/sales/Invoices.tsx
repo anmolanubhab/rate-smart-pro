@@ -18,6 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { useNavigate } from "react-router-dom"; // <-- NEW IMPORT
 
 const statusTone: Record<string, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
@@ -29,6 +30,7 @@ const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function InvoicesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate(); // <-- NEW
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [page, setPage] = useState(1);
@@ -97,7 +99,6 @@ export default function InvoicesPage() {
     }
   };
 
-  // ── FIX: Direct delete using deleteInvoice() ────────────────────────────
   const onDeleteConfirm = async () => {
     if (!deleteTarget) return;
     setBusy(deleteTarget.id);
@@ -177,7 +178,19 @@ export default function InvoicesPage() {
                     <tr key={i.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-2.5 font-mono text-xs">{i.invoice_number}</td>
                       <td className="px-4 py-2.5">{i.invoice_date}</td>
-                      <td className="px-4 py-2.5">{i.party_name ?? "—"}</td>
+                      {/* ── Party name (clickable) ── */}
+                      <td className="px-4 py-2.5">
+                        {i.party_id ? (
+                          <button
+                            className="hover:underline text-primary text-left"
+                            onClick={() => navigate(`/accounts/party/${i.party_id}`)}
+                          >
+                            {i.party_name ?? "—"}
+                          </button>
+                        ) : (
+                          i.party_name ?? "—"
+                        )}
+                      </td>
                       <td className="px-4 py-2.5"><Badge variant="outline" className={statusTone[i.status]}>{i.status}</Badge></td>
                       <td className="px-4 py-2.5 text-right tabular-nums">₹{Number(i.gst_total).toFixed(2)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold">₹{Number(i.grand_total).toFixed(2)}</td>
