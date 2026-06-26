@@ -329,7 +329,6 @@ const Orders = () => {
                       <button className="hover:underline text-primary" onClick={() => onView(o)}>{o.order_number}</button>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{o.order_date}</td>
-                    {/* ── Clickable party name ── */}
                     <td className="px-3 py-2">
                       {o.party_id ? (
                         <button
