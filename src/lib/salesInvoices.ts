@@ -29,7 +29,7 @@ export interface SalesInvoice {
 }
 
 export async function nextInvoiceNumber(userId: string) {
-  const { data, error } = await supabase.rpc("next_invoice_number", { _user_id: userId });
+  const { data, error } = await supabase.rpc("next_invoice_number", { _user_id: userId, _business_id: getActiveBusinessIdSync() } as any);
   if (error) throw error;
   return data as string;
 }
