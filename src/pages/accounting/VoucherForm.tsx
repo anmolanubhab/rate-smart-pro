@@ -20,7 +20,7 @@ import {
   Alert, AlertDescription,
 } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness } from "@/hooks/useActiveBusinessId";
+import { useBusiness } from "@/hooks/useBusiness";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 import {
   VOUCHER_TYPES,
