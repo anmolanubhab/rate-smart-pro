@@ -6,6 +6,7 @@ import {
   Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useActiveBusinessId";
 import { fetchInvoices, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function InvoicesPage() {
   const { user } = useAuth();
+  const { business } = useBusiness();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
@@ -45,7 +47,7 @@ export default function InvoicesPage() {
   useEffect(() => { document.title = "Sales Invoices — RD Pro"; }, []);
 
   const { data = [], isLoading, refetch } = useQuery({
-    queryKey: ["sales-invoices", user?.id],
+    queryKey: ["sales-invoices", user?.id, business?.id],
     enabled: !!user,
     queryFn: () => fetchInvoices(user!.id),
   });
