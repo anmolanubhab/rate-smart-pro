@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness } from "@/hooks/useActiveBusinessId";
+import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Package, Search, AlertTriangle, TrendingDown, Edit2 } from "lucide-react";
+import { Package, Search, Edit2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import InventoryStockImport from "@/components/InventoryStockImport";
 import { InventoryWidgets } from "@/components/InventoryWidgets";
@@ -110,7 +110,10 @@ export default function Inventory() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Package className="h-6 w-6" /> Inventory</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{total} products</p>
         </div>
-        <InventoryStockImport onImported={() => { qc.invalidateQueries({ queryKey: ["inventory", businessId] }); qc.invalidateQueries({ queryKey: ["inventory-widgets", businessId] }); }} />
+        <InventoryStockImport onImported={() => {
+          qc.invalidateQueries({ queryKey: ["inventory", businessId] });
+          qc.invalidateQueries({ queryKey: ["inventory-widgets", businessId] });
+        }} />
       </div>
 
       <InventoryWidgets
@@ -189,7 +192,10 @@ export default function Inventory() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditProduct(null)}>Cancel</Button>
-            <Button onClick={() => updateMutation.mutate({ id: editProduct.id, stock: Number(editStock), low_stock_threshold: Number(editThreshold) })} disabled={updateMutation.isPending}>Save</Button>
+            <Button
+              onClick={() => updateMutation.mutate({ id: editProduct.id, stock: Number(editStock), low_stock_threshold: Number(editThreshold) })}
+              disabled={updateMutation.isPending}
+            >Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
