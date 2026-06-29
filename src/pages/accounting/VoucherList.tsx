@@ -30,6 +30,7 @@ import {
   type Voucher, type VoucherType, type VoucherStatus,
 } from "@/lib/voucherService";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useActiveBusinessId";
 import { fmtInr } from "@/lib/accounting";
 
 // ── tone helpers ──────────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ function exportCSV(rows: Voucher[]) {
 export default function VoucherList() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { business } = useBusiness();
   const qc = useQueryClient();
 
   useEffect(() => { document.title = "Vouchers — RD Pro"; }, []);
@@ -104,7 +106,7 @@ export default function VoucherList() {
   const offset = (page - 1) * PAGE_SIZE;
 
   const { data: result, isLoading, refetch } = useQuery({
-    queryKey: ["vouchers-list", typeFilter, statusFilter, fromDate, toDate, search, page],
+    queryKey: ["vouchers-list", business?.id, typeFilter, statusFilter, fromDate, toDate, search, page],
     queryFn: () =>
       listVouchers({
         voucher_type: typeFilter as VoucherType | "All",
