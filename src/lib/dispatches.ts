@@ -24,7 +24,7 @@ export interface DispatchItemInput {
 }
 
 export async function nextDispatchNumber(userId: string) {
-  const { data, error } = await supabase.rpc("next_dispatch_number", { _user_id: userId });
+  const { data, error } = await supabase.rpc("next_dispatch_number", { _user_id: userId, _business_id: getActiveBusinessIdSync() } as any);
   if (error) throw error;
   return data as string;
 }
