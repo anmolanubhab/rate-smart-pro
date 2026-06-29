@@ -49,12 +49,19 @@ const Dashboard = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
   const businessId = business?.id ?? null;
+
+  // --- Display name state ---
+  const [displayName, setDisplayName] = useState("");
+  const [nameLoading, setNameLoading] = useState(true);
+  // --------------------------
+
   const [calcs, setCalcs] = useState<Calc[]>([]);
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [party, setParty] = useState("all");
 
+  // Fetch calculations (existing)
   useEffect(() => {
     document.title = "Dashboard — RD Calculator Pro";
     if (!user) return;
@@ -68,6 +75,43 @@ const Dashboard = () => {
       setLoading(false);
     });
   }, [user, businessId]);
+
+  // --- Load user's full name from profiles table (with fallbacks) ---
+  useEffect(() => {
+    if (!user) {
+      setNameLoading(false);
+      return;
+    }
+
+    const loadProfile = async () => {
+      try {
+        // 1. Try profiles table
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", user.id)
+          .single();
+
+        if (data?.full_name) {
+          setDisplayName(data.full_name);
+        } else if (user.user_metadata?.full_name) {
+          // 2. Fallback to user_metadata (if set during sign‑up)
+          setDisplayName(user.user_metadata.full_name);
+        } else {
+          // 3. Fallback to email prefix
+          setDisplayName(user.email?.split("@")[0] || "User");
+        }
+      } catch (err) {
+        console.error("Failed to load profile name:", err);
+        setDisplayName(user.email?.split("@")[0] || "User");
+      } finally {
+        setNameLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [user]);
+  // ----------------------------------------------------------------
 
   const parties = useMemo(() => {
     const set = new Set<string>();
@@ -138,7 +182,13 @@ const Dashboard = () => {
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground font-medium">Welcome back</p>
-          <h1 className="font-display text-3xl md:text-4xl font-bold mt-1">{user?.email?.split("@")[0]}</h1>
+          <h1 className="font-display text-3xl md:text-4xl font-bold mt-1">
+            {nameLoading ? (
+              <Skeleton className="h-10 w-48" />
+            ) : (
+              displayName
+            )}
+          </h1>
           <p className="text-muted-foreground mt-1">Business Health Control Center.</p>
         </div>
       </header>
