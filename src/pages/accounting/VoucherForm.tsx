@@ -20,6 +20,7 @@ import {
   Alert, AlertDescription,
 } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useActiveBusinessId";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 import {
   VOUCHER_TYPES,
@@ -50,6 +51,7 @@ export default function VoucherForm() {
   const isEdit = !!id;
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { business } = useBusiness();
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -86,7 +88,7 @@ export default function VoucherForm() {
 
   // ── ledger accounts list ─────────────────────────────────────────────────
   const { data: ledgers = [] } = useQuery({
-    queryKey: ["ledgers", user?.id],
+    queryKey: ["ledgers", user?.id, business?.id],
     enabled: !!user?.id,
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
