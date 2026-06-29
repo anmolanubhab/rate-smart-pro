@@ -221,7 +221,7 @@ export async function createVoucher(
   const dbType = typeToDb(input.voucher_type);
   const { data: vnoData, error: vnoErr } = await supabase.rpc(
     "next_voucher_number" as any,
-    { _user_id: userId, _voucher_type: dbType }
+    { _user_id: userId, _type: dbType, _business_id: getActiveBusinessIdSync() }
   );
   const voucherNo: string =
     vnoErr || !vnoData
