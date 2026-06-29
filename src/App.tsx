@@ -49,6 +49,11 @@ const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
+// Voucher Engine — foundation pages
+const VoucherList   = lazy(() => import("./pages/accounting/VoucherList"));
+const VoucherForm   = lazy(() => import("./pages/accounting/VoucherForm"));
+const VoucherDetail = lazy(() => import("./pages/accounting/VoucherDetail"));
+
 const PurchaseDashboard = lazy(() => import("./pages/purchase/PurchaseDashboard"));
 const PurchaseOrders = lazy(() => import("./pages/purchase/PurchaseOrders"));
 const PurchaseGRN = lazy(() => import("./pages/purchase/PurchaseGRN"));
@@ -113,6 +118,11 @@ const App = () => (
               <Route path="/accounts/party/:partyId" element={L(<PartyLedger />)} /> {/* NEW */}
               <Route path="/accounts/receivables" element={L(<Receivables />)} />
               <Route path="/accounts/payables" element={L(<Payables />)} />
+              {/* Voucher Engine — new routes */}
+              <Route path="/accounting/vouchers" element={L(<VoucherList />)} />
+              <Route path="/accounting/vouchers/new" element={L(<VoucherForm />)} />
+              <Route path="/accounting/vouchers/:id/edit" element={L(<VoucherForm />)} />
+              <Route path="/accounting/vouchers/:id" element={L(<VoucherDetail />)} />
               <Route path="/gst/summary" element={L(<GstSummary />)} />
               <Route path="/admin/audit-logs" element={L(<AuditLogs />)} />
               <Route path="/settings/business-profile" element={L(<BusinessProfile />)} />
