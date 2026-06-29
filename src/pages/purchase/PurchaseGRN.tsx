@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast"; // Adjust path if needed (e.g. @/components/ui/use-toast)
 import { ArrowLeft, Save, CheckCircle, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 interface GRNItem {
   product_id: string;
@@ -133,8 +134,7 @@ export default function PurchaseGRN() {
       // Fetching active business session context
       const { data: { user } } = await supabase.auth.getUser();
       
-      // NOTE: Replace this mock string with your exact business context/session state if available
-      const businessId = "00000000-0000-0000-0000-000000000000"; 
+      const businessId = getActiveBusinessIdSync(); 
 
       // 1. Save GRN Header
       const { data: grn, error: grnError } = await supabase
