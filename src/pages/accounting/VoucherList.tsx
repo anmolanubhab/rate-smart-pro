@@ -30,7 +30,7 @@ import {
   type Voucher, type VoucherType, type VoucherStatus,
 } from "@/lib/voucherService";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness } from "@/hooks/useActiveBusinessId";
+import { useBusiness } from "@/hooks/useBusiness";
 import { fmtInr } from "@/lib/accounting";
 
 // ── tone helpers ──────────────────────────────────────────────────────────────
