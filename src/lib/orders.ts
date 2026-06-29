@@ -57,7 +57,7 @@ export interface Order {
 }
 
 export async function nextOrderNumber(userId: string): Promise<string> {
-  const { data, error } = await supabase.rpc("next_order_number", { _user_id: userId });
+  const { data, error } = await supabase.rpc("next_order_number", { _user_id: userId, _business_id: getActiveBusinessIdSync() } as any);
   if (error) throw error;
   return data as string;
 }
