@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Package, Search, Edit2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import InventoryStockImport from "@/components/InventoryStockImport";
-import { InventoryWidgets } from "@/components/InventoryWidgets";
+import InventoryWidgets from "@/components/InventoryWidgets";
 
 const INVENTORY_COLUMNS = "id, part_number, description, stock, low_stock_threshold, mrp, hsn_code, gst_pct, unit";
 
@@ -53,22 +53,6 @@ export default function Inventory() {
     },
   });
 
-  const widgetQuery = useQuery({
-    queryKey: ["inventory-widgets", businessId],
-    enabled: !!businessId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("stock, low_stock_threshold")
-        .eq("business_id", businessId!);
-      if (error) throw error;
-      const all = (data ?? []) as { stock: number; low_stock_threshold: number }[];
-      const out = all.filter((p) => Number(p.stock) <= 0).length;
-      const low = all.filter((p) => Number(p.stock) > 0 && Number(p.stock) <= Number(p.low_stock_threshold)).length;
-      return { outOfStock: out, lowStock: low, total: all.length };
-    },
-  });
-
   const updateMutation = useMutation({
     mutationFn: async ({ id, stock, low_stock_threshold }: { id: string; stock: number; low_stock_threshold: number }) => {
       const { error } = await supabase.from("products").update({ stock, low_stock_threshold }).eq("id", id);
@@ -76,7 +60,6 @@ export default function Inventory() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory", businessId] });
-      qc.invalidateQueries({ queryKey: ["inventory-widgets", businessId] });
       setEditProduct(null);
       toast({ title: "Stock updated" });
     },
@@ -110,17 +93,10 @@ export default function Inventory() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Package className="h-6 w-6" /> Inventory</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{total} products</p>
         </div>
-        <InventoryStockImport onImported={() => {
-          qc.invalidateQueries({ queryKey: ["inventory", businessId] });
-          qc.invalidateQueries({ queryKey: ["inventory-widgets", businessId] });
-        }} />
+        <InventoryStockImport onImported={() => qc.invalidateQueries({ queryKey: ["inventory", businessId] })} />
       </div>
 
-      <InventoryWidgets
-        outOfStock={widgetQuery.data?.outOfStock ?? 0}
-        lowStock={widgetQuery.data?.lowStock ?? 0}
-        total={widgetQuery.data?.total ?? 0}
-      />
+      <InventoryWidgets />
 
       <div className="relative">
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
