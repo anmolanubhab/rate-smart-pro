@@ -34,6 +34,7 @@ import {
   TruckIcon,
   FileText,
   CreditCard,
+  FilePlus,
 } from "lucide-react";
 
 
@@ -96,6 +97,7 @@ const navGroups: NavGroup[] = [
     label: "Accounts",
     items: [
       { to: "/accounts/ledgers", label: "Ledger Accounts", icon: BookOpen },
+      { to: "/accounting/vouchers", label: "Vouchers", icon: FilePlus },
       { to: "/accounts/vouchers", label: "Voucher Center", icon: Receipt },
       { to: "/accounts/day-book", label: "Day Book", icon: ClipboardList },
       { to: "/accounts/cash-book", label: "Cash Book", icon: Wallet },
