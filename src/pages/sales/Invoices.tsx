@@ -6,7 +6,7 @@ import {
   Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness } from "@/hooks/useActiveBusinessId";
+import { useBusiness } from "@/hooks/useBusiness";
 import { fetchInvoices, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
