@@ -54,7 +54,7 @@ export default function VoucherNumbering() {
   useEffect(() => { document.title = "Voucher Numbering — RD Pro"; }, []);
 
   const list = useQuery({
-    queryKey: ["voucher-series", user?.id],
+    queryKey: ["voucher-series", user?.id, business?.id],
     enabled: !!user,
     queryFn: async () => {
       const { data, error } = await supabase
