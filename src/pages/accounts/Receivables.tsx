@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useBusiness } from "@/hooks/useBusiness";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import MockTablePage from "@/components/accounts/MockTablePage";
 
 type OrderRow = {
@@ -24,15 +26,19 @@ const daysBetween = (iso: string) => {
 export default function Receivables() {
   useEffect(() => { document.title = "Outstanding Receivables — RD Pro"; }, []);
   const navigate = useNavigate();
+  const { business } = useBusiness();
+  const businessId = business?.id ?? getActiveBusinessIdSync();
   const [page, setPage] = useState(0);
   const PAGE = 50;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["receivables", page],
+    queryKey: ["receivables", businessId, page],
+    enabled: !!businessId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
         .select("id, order_number, order_date, party_name, party_id, grand_total, dispatched_total_qty, pending_total_qty, status")
+        .eq("business_id", businessId!)
         .in("status", ["pending", "partial"])
         .is("deleted_at", null)
         .order("order_date", { ascending: false })
