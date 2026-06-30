@@ -46,6 +46,21 @@ export async function seedAccounts(userId: string) {
   if (error) throw error;
 }
 
+// Ensures every party (customer/supplier) currently in the `parties` table has a
+// matching row in `ledger_accounts`. Cheap to call repeatedly — `ensure_party_ledger`
+// is idempotent on the backend. Used wherever a ledger picker needs an up-to-date list
+// (e.g. the voucher form), not just on the Ledger Accounts page.
+export async function ensurePartyLedgers(userId: string) {
+  const biz = getActiveBusinessIdSync();
+  let pq = supabase.from("parties").select("id").eq("user_id", userId);
+  if (biz) pq = pq.eq("business_id", biz);
+  const { data: parties, error } = await pq;
+  if (error) throw error;
+  for (const p of parties ?? []) {
+    await supabase.rpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id, _business_id: biz } as any);
+  }
+}
+
 export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow[]> {
   const biz = getActiveBusinessIdSync();
   let lq = supabase
