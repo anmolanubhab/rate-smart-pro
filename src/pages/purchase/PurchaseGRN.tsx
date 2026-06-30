@@ -210,6 +210,70 @@ export default function PurchaseGRN() {
         if (itemsError) throw itemsError;
       }
 
+      // ── On "Receive Stock": bump product stock + log movement + advance PO status ──
+      if (status === 'received') {
+        for (const item of items) {
+          if (item.accepted_qty <= 0) continue;
+
+          const { data: product, error: prodErr } = await supabase
+            .from('products')
+            .select('stock')
+            .eq('id', item.product_id)
+            .single();
+          if (prodErr) { console.error('Stock lookup failed', prodErr.message); continue; }
+
+          const before = Number(product?.stock) || 0;
+          const after = before + item.accepted_qty;
+
+          const { error: stockErr } = await supabase
+            .from('products')
+            .update({ stock: after })
+            .eq('id', item.product_id);
+          if (stockErr) { console.error('Stock update failed', stockErr.message); continue; }
+
+          await supabase.from('inventory_movements' as any).insert({
+            user_id: user?.id ?? null,
+            business_id: businessId,
+            product_id: item.product_id,
+            movement_type: 'purchase_grn',
+            qty: item.accepted_qty,
+            stock_before: before,
+            stock_after: after,
+            reference_id: grn.id,
+            reference_type: 'goods_receipt',
+            notes: `GRN ${grnNumber}${selectedPO ? ' against PO' : ''}`,
+          });
+        }
+
+        // Advance the linked PO's status: fully received vs partially received.
+        if (selectedPO) {
+          const { data: poItemsAll } = await supabase
+            .from('purchase_order_items')
+            .select('id, product_id, qty')
+            .eq('purchase_order_id', selectedPO);
+
+          const { data: allReceipts } = await supabase
+            .from('goods_receipt_items')
+            .select('product_id, accepted_qty, goods_receipts!inner(purchase_order_id, status)')
+            .eq('goods_receipts.purchase_order_id', selectedPO)
+            .eq('goods_receipts.status', 'received');
+
+          const receivedMap = new Map<string, number>();
+          (allReceipts ?? []).forEach((r: any) => {
+            receivedMap.set(r.product_id, (receivedMap.get(r.product_id) ?? 0) + Number(r.accepted_qty ?? 0));
+          });
+
+          const fullyReceived = (poItemsAll ?? []).every(
+            (it: any) => (receivedMap.get(it.product_id) ?? 0) >= Number(it.qty)
+          );
+
+          await supabase
+            .from('purchase_orders')
+            .update({ status: fullyReceived ? 'received' : 'partially_received' })
+            .eq('id', selectedPO);
+        }
+      }
+
       toast({ title: "Success", description: `GRN created as ${status.toUpperCase()}` });
       navigate('/purchase');
 
