@@ -40,10 +40,25 @@ export type VoucherItemRow = {
   narration: string | null;
 };
 
+// The live DB may still have the older single-arg versions of these RPCs
+// (seed_accounting_defaults(_user_id), ensure_party_ledger(_user_id, _party_id))
+// if the _business_id migration hasn't been applied yet. PostgREST returns a
+// "Could not find the function" / PGRST202 error when the named-arg signature
+// doesn't match any deployed overload — in that case, retry without _business_id.
+async function callAccountingRpc(fn: string, args: Record<string, any>) {
+  const { error } = await supabase.rpc(fn, args as any);
+  if (error && (error.code === "PGRST202" || /Could not find the function/i.test(error.message))) {
+    const { _business_id, ...rest } = args;
+    const retry = await supabase.rpc(fn, rest as any);
+    if (retry.error) throw retry.error;
+    return;
+  }
+  if (error) throw error;
+}
+
 export async function seedAccounts(userId: string) {
   const biz = getActiveBusinessIdSync();
-  const { error } = await supabase.rpc("seed_accounting_defaults", { _user_id: userId, _business_id: biz } as any);
-  if (error) throw error;
+  await callAccountingRpc("seed_accounting_defaults", { _user_id: userId, _business_id: biz });
 }
 
 // Ensures every party (customer/supplier) currently in the `parties` table has a
@@ -57,7 +72,7 @@ export async function ensurePartyLedgers(userId: string) {
   const { data: parties, error } = await pq;
   if (error) throw error;
   for (const p of parties ?? []) {
-    await supabase.rpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id, _business_id: biz } as any);
+    await callAccountingRpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id, _business_id: biz });
   }
 }
 
@@ -173,7 +188,7 @@ export async function backfillAccounting(userId: string) {
   if (biz) pq = pq.eq("business_id", biz);
   const { data: parties } = await pq;
   for (const p of parties ?? []) {
-    await supabase.rpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id, _business_id: biz } as any);
+    await callAccountingRpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id, _business_id: biz });
   }
 
   let oq = supabase
