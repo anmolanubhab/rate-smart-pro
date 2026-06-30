@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
+import { createVoucher, postVoucher, type VoucherItem } from "@/lib/voucherService";
 
 export type PurchaseInvoiceStatus = "unpaid" | "partially_paid" | "paid" | "cancelled";
 
@@ -114,12 +116,89 @@ export interface SaveInvoiceInput {
   createdBy?: string | null;
 }
 
+/**
+ * Posts a saved purchase invoice to the accounting ledger as a balanced "Purchase"
+ * voucher: Dr Purchase Account (taxable) + Dr GST Input (tax) / Cr Supplier ledger
+ * (grand total). Best-effort — failures are logged but never block the invoice
+ * itself from being saved (accounting sync can be retried/fixed independently).
+ */
+export async function postPurchaseInvoiceToLedger(
+  userId: string,
+  invoice: PurchaseInvoice
+): Promise<void> {
+  const businessId = getActiveBusinessIdSync();
+  if (!businessId || !invoice.supplier_id) return;
+
+  await seedAccounts(userId);
+  await ensurePartyLedgers(userId);
+
+  let lq = supabase
+    .from("ledger_accounts")
+    .select("id, name, party_id")
+    .eq("user_id", userId)
+    .eq("business_id", businessId);
+  const { data: ledgers, error } = await lq;
+  if (error || !ledgers) {
+    console.error("postPurchaseInvoiceToLedger: ledger lookup failed", error?.message);
+    return;
+  }
+
+  const purchaseLedger = ledgers.find((l: any) => l.name === "Purchase Account");
+  const gstLedger = ledgers.find((l: any) => l.name === "GST Input");
+  const supplierLedger = ledgers.find((l: any) => l.party_id === invoice.supplier_id);
+
+  if (!purchaseLedger || !supplierLedger) {
+    console.error("postPurchaseInvoiceToLedger: required ledgers not found (Purchase Account / supplier)");
+    return;
+  }
+
+  const items: VoucherItem[] = [
+    {
+      ledger_account_id: purchaseLedger.id,
+      debit: invoice.subtotal - invoice.discount_total,
+      credit: 0,
+      remarks: `Purchase Invoice ${invoice.invoice_number}`,
+    },
+  ];
+
+  if (invoice.tax_total > 0 && gstLedger) {
+    items.push({
+      ledger_account_id: gstLedger.id,
+      debit: invoice.tax_total,
+      credit: 0,
+      remarks: `GST on ${invoice.invoice_number}`,
+    });
+  }
+
+  items.push({
+    ledger_account_id: supplierLedger.id,
+    debit: 0,
+    credit: invoice.grand_total,
+    remarks: `Purchase Invoice ${invoice.invoice_number}`,
+  });
+
+  try {
+    const voucher = await createVoucher(userId, {
+      voucher_type: "Purchase",
+      voucher_date: invoice.invoice_date,
+      narration: `Auto-posted from Purchase Invoice ${invoice.invoice_number}`,
+      reference_type: "purchase_invoice",
+      reference_id: invoice.id,
+      items,
+    });
+    await postVoucher(userId, voucher.id);
+  } catch (e: any) {
+    console.error("postPurchaseInvoiceToLedger: voucher posting failed", e.message);
+  }
+}
+
 export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<PurchaseInvoice> {
   const businessId = getActiveBusinessIdSync();
   if (!businessId) throw new Error("No active business selected");
 
   const totals = computeInvoiceTotals(input.items);
   let invId = input.id;
+  const isNew = !invId;
 
   if (!invId) {
     const invoiceNumber = input.invoice_number || (await nextInvoiceNumber(businessId));
@@ -188,6 +267,13 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
 
   const { data, error } = await supabase.from("purchase_invoices").select("*").eq("id", invId).single();
   if (error) throw error;
+
+  if (isNew && input.createdBy) {
+    postPurchaseInvoiceToLedger(input.createdBy, data as PurchaseInvoice).catch((e) =>
+      console.error("Auto-post to ledger failed:", e.message)
+    );
+  }
+
   return data as PurchaseInvoice;
 }
 
