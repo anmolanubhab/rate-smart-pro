@@ -2,13 +2,15 @@ import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 
 export default function ProfitLoss() {
   useEffect(() => { document.title = "Profit & Loss — RD Pro"; }, []);
   const { user } = useAuth();
+  const { business } = useBusiness();
   const { data: ledgers = [], isLoading } = useQuery({
-    queryKey: ["pnl", user?.id],
+    queryKey: ["pnl", user?.id, business?.id],
     enabled: !!user?.id,
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
