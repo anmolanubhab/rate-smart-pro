@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { fetchVouchers, fmtInr } from "@/lib/accounting";
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
@@ -15,10 +16,11 @@ const labels: Record<string, string> = {
 export default function DayBook() {
   useEffect(() => { document.title = "Day Book — RD Pro"; }, []);
   const { user } = useAuth();
+  const { business } = useBusiness();
   const navigate = useNavigate();
 
   const { data = [], isLoading } = useQuery({
-    queryKey: ["daybook", user?.id],
+    queryKey: ["daybook", user?.id, business?.id],
     enabled: !!user?.id,
     queryFn: () => fetchVouchers(user!.id, { limit: 500 }),
   });
