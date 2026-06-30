@@ -132,24 +132,10 @@ export function localPONumber(): string {
 /** Fetch the next sequential PO number from DB.
  *  Call this in the background after initial render — never block on it. */
 export async function nextPONumber(businessId: string): Promise<string> {
-  const prefix = "PO-" + new Date().getFullYear() + "-";
   try {
-    const { data, error } = await supabase
-      .from("purchase_orders")
-      .select("po_number")
-      .eq("business_id", businessId)
-      .ilike("po_number", `${prefix}%`)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (error) return localPONumber(); // table not yet migrated — fall back silently
-    let nextSeq = 1;
-    if (data && data.length > 0) {
-      const last = data[0].po_number as string;
-      const parts = last.split("-");
-      const lastNum = parseInt(parts[parts.length - 1], 10);
-      if (!isNaN(lastNum)) nextSeq = lastNum + 1;
-    }
-    return prefix + String(nextSeq).padStart(4, "0");
+    const { data, error } = await supabase.rpc("next_po_number", { _business_id: businessId } as any);
+    if (error || !data) return localPONumber();
+    return data as string;
   } catch {
     return localPONumber();
   }
@@ -383,3 +369,4 @@ export function downloadPOImportTemplate() {
   XLSX.utils.book_append_sheet(wb, wsI, "Instructions");
   XLSX.writeFile(wb, "PO-import-template.xlsx");
 }
+  
