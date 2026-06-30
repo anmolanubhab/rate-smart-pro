@@ -6,12 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast"; // Adjust path if needed (e.g. @/components/ui/use-toast)
+import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, CheckCircle, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 interface GRNItem {
+  purchase_order_item_id: string | null;
   product_id: string;
   product_name: string;
   part_number: string;
@@ -25,49 +28,60 @@ interface GRNItem {
 export default function PurchaseGRN() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  
-  // Form States
-  const [grnNumber, setGrnNumber] = useState(`GRN-${Date.now().toString().slice(-6)}`);
+  const { user } = useAuth();
+  const { business } = useBusiness();
+  const businessId = business?.id ?? getActiveBusinessIdSync();
+
+  const [grnNumber, setGrnNumber] = useState('');
   const [grnDate, setGrnDate] = useState(new Date().toISOString().split('T')[0]);
   const [remarks, setRemarks] = useState('');
-  
-  // Dropdown Master Data
+
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
-  
+
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selectedPO, setSelectedPO] = useState('');
-  
+
   const [items, setItems] = useState<GRNItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Fetch Suppliers, Warehouses, and Approved POs
+  // Fetch suppliers (parties), warehouses, and POs eligible for receipt
   useEffect(() => {
+    if (!businessId) return;
     const fetchMasterData = async () => {
       try {
-        const { data: supplierData } = await supabase.from('suppliers').select('id, name');
-        const { data: warehouseData } = await supabase.from('warehouses').select('id, name');
-        const { data: poData } = await supabase.from('purchase_orders').select('id, po_number').eq('status', 'approved');
-
-        if (supplierData) setSuppliers(supplierData);
-        if (warehouseData) setWarehouses(warehouseData);
+        const [{ data: partyData }, { data: warehouseData }, { data: poData }] = await Promise.all([
+          supabase.from('parties').select('id, name').eq('business_id', businessId).order('name'),
+          supabase.from('warehouses').select('id, name, is_default').eq('business_id', businessId).order('is_default', { ascending: false }),
+          supabase.from('purchase_orders').select('id, po_number, supplier_id, warehouse_id')
+            .eq('business_id', businessId)
+            .in('status', ['approved', 'ordered', 'partially_received'])
+            .order('created_at', { ascending: false }),
+        ]);
+        if (partyData) setSuppliers(partyData);
+        if (warehouseData) {
+          setWarehouses(warehouseData);
+          const def = warehouseData.find((w: any) => w.is_default);
+          if (def) setSelectedWarehouse(def.id);
+        }
         if (poData) setPurchaseOrders(poData);
+
+        const { data: grnNo } = await supabase.rpc('next_grn_number', { _business_id: businessId } as any);
+        setGrnNumber((grnNo as string) || `GRN-${Date.now().toString().slice(-6)}`);
       } catch (err: any) {
         console.error("Error loading master data:", err.message);
       }
     };
-
     fetchMasterData();
-  }, []);
+  }, [businessId]);
 
   // When a Purchase Order is selected, auto-fill details and fetch items
   const handlePOChange = async (poId: string) => {
     setSelectedPO(poId);
     setLoading(true);
-    
-    // Fetch PO Header info
+
     const { data: poDetails } = await supabase
       .from('purchase_orders')
       .select('supplier_id, warehouse_id')
@@ -79,7 +93,18 @@ export default function PurchaseGRN() {
       if (poDetails.warehouse_id) setSelectedWarehouse(poDetails.warehouse_id);
     }
 
-    // Fetch PO Line Items
+    // Already-received quantities against this PO (for partial GRN support)
+    const { data: priorReceipts } = await supabase
+      .from('goods_receipt_items')
+      .select('product_id, accepted_qty, goods_receipts!inner(purchase_order_id, status)')
+      .eq('goods_receipts.purchase_order_id', poId)
+      .eq('goods_receipts.status', 'received');
+
+    const receivedMap = new Map<string, number>();
+    (priorReceipts ?? []).forEach((r: any) => {
+      receivedMap.set(r.product_id, (receivedMap.get(r.product_id) ?? 0) + Number(r.accepted_qty ?? 0));
+    });
+
     const { data: poItems, error } = await supabase
       .from('purchase_order_items')
       .select(`
@@ -91,52 +116,63 @@ export default function PurchaseGRN() {
     if (error) {
       toast({ title: "Error fetching PO items", description: error.message, variant: "destructive" });
     } else if (poItems) {
-      const mappedItems: GRNItem[] = poItems.map((item: any) => ({
-        product_id: item.product_id,
-        product_name: item.product?.name || 'Unknown Product',
-        part_number: item.product?.part_number || 'N/A',
-        ordered_qty: Number(item.qty),
-        received_qty: Number(item.qty), // defaults to full order quantity
-        damaged_qty: 0,
-        accepted_qty: Number(item.qty),
-        pending_qty: 0
-      }));
+      const mappedItems: GRNItem[] = poItems
+        .map((item: any) => {
+          const ordered = Number(item.qty);
+          const alreadyReceived = receivedMap.get(item.product_id) ?? 0;
+          const remaining = Math.max(0, ordered - alreadyReceived);
+          return {
+            purchase_order_item_id: item.id,
+            product_id: item.product_id,
+            product_name: item.product?.name || 'Unknown Product',
+            part_number: item.product?.part_number || 'N/A',
+            ordered_qty: remaining,
+            received_qty: remaining,
+            damaged_qty: 0,
+            accepted_qty: remaining,
+            pending_qty: 0,
+          };
+        })
+        .filter((it) => it.ordered_qty > 0);
       setItems(mappedItems);
+      if (mappedItems.length === 0) {
+        toast({ title: "Nothing pending", description: "All items on this PO have already been received." });
+      }
     }
     setLoading(false);
   };
 
-  // Recalculate calculations on Qty inputs
   const handleQtyChange = (index: number, field: 'received_qty' | 'damaged_qty', value: number) => {
     const updatedItems = [...items];
-    const item = updatedItems[index];
+    const item = { ...updatedItems[index] };
 
-    if (field === 'received_qty') item.received_qty = value;
-    if (field === 'damaged_qty') item.damaged_qty = value;
+    if (field === 'received_qty') item.received_qty = Math.max(0, value);
+    if (field === 'damaged_qty') item.damaged_qty = Math.max(0, value);
 
-    // Logic formulas
     item.accepted_qty = Math.max(0, item.received_qty - item.damaged_qty);
-    item.pending_qty = Math.max(0, item.ordered_qty - item.accepted_qty);
+    item.pending_qty = Math.max(0, item.ordered_qty - item.received_qty);
 
+    updatedItems[index] = item;
     setItems(updatedItems);
   };
 
-  // Submit and save handler
   const handleSaveGRN = async (status: 'draft' | 'received' | 'closed') => {
+    if (!businessId) {
+      toast({ title: "No active company", description: "Select a business first.", variant: "destructive" });
+      return;
+    }
     if (!selectedSupplier || !selectedWarehouse) {
       toast({ title: "Validation Error", description: "Supplier and Warehouse are required.", variant: "destructive" });
+      return;
+    }
+    if (status === 'received' && items.length === 0) {
+      toast({ title: "No items", description: "Select a Purchase Order with pending items first.", variant: "destructive" });
       return;
     }
 
     try {
       setLoading(true);
-      
-      // Fetching active business session context
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      const businessId = getActiveBusinessIdSync(); 
 
-      // 1. Save GRN Header
       const { data: grn, error: grnError } = await supabase
         .from('goods_receipts')
         .insert([{
@@ -146,33 +182,36 @@ export default function PurchaseGRN() {
           supplier_id: selectedSupplier,
           warehouse_id: selectedWarehouse,
           grn_date: grnDate,
-          status: status,
-          remarks: remarks
+          status,
+          remarks,
+          created_by: user?.id ?? null,
         }])
         .select()
         .single();
 
       if (grnError) throw grnError;
 
-      // 2. Save GRN Child Items
-      const grnItemsPayload = items.map(item => ({
-        goods_receipt_id: grn.id,
-        product_id: item.product_id,
-        ordered_qty: item.ordered_qty,
-        received_qty: item.received_qty,
-        damaged_qty: item.damaged_qty,
-        accepted_qty: item.accepted_qty,
-        pending_qty: item.pending_qty
-      }));
+      if (items.length > 0) {
+        const grnItemsPayload = items.map(item => ({
+          goods_receipt_id: grn.id,
+          purchase_order_item_id: item.purchase_order_item_id,
+          product_id: item.product_id,
+          ordered_qty: item.ordered_qty,
+          received_qty: item.received_qty,
+          damaged_qty: item.damaged_qty,
+          accepted_qty: item.accepted_qty,
+          pending_qty: item.pending_qty,
+        }));
 
-      const { error: itemsError } = await supabase
-        .from('goods_receipt_items')
-        .insert(grnItemsPayload);
+        const { error: itemsError } = await supabase
+          .from('goods_receipt_items')
+          .insert(grnItemsPayload);
 
-      if (itemsError) throw itemsError;
+        if (itemsError) throw itemsError;
+      }
 
       toast({ title: "Success", description: `GRN created as ${status.toUpperCase()}` });
-      navigate('/purchase'); // Returns to main dashboard/module root
+      navigate('/purchase');
 
     } catch (error: any) {
       toast({ title: "Operation Failed", description: error.message, variant: "destructive" });
@@ -183,7 +222,6 @@ export default function PurchaseGRN() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header Bar */}
       <div className="flex items-center gap-2">
         <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" />
@@ -191,7 +229,6 @@ export default function PurchaseGRN() {
         <h1 className="text-2xl font-bold tracking-tight">Goods Receipt Note (GRN)</h1>
       </div>
 
-      {/* Form Fields Card */}
       <Card>
         <CardHeader>
           <CardTitle>GRN Information</CardTitle>
@@ -210,7 +247,7 @@ export default function PurchaseGRN() {
           <div className="space-y-2">
             <Label>Link Purchase Order</Label>
             <Select value={selectedPO} onValueChange={handlePOChange}>
-              <SelectTrigger><SelectValue placeholder="Select PO" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select approved PO" /></SelectTrigger>
               <SelectContent>
                 {purchaseOrders.map((po) => <SelectItem key={po.id} value={po.id}>{po.po_number}</SelectItem>)}
               </SelectContent>
@@ -244,7 +281,6 @@ export default function PurchaseGRN() {
         </CardContent>
       </Card>
 
-      {/* Line Items Grid/Table */}
       <Card>
         <CardHeader>
           <CardTitle>Items Matrix</CardTitle>
@@ -289,7 +325,6 @@ export default function PurchaseGRN() {
         </CardContent>
       </Card>
 
-      {/* Control Actions Form Buttons */}
       <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
         <Button variant="outline" className="gap-2" onClick={() => handleSaveGRN('draft')} disabled={loading}>
           <Save className="h-4 w-4" /> Save Draft
