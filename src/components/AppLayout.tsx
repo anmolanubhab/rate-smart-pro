@@ -1,4 +1,4 @@
-// AppLayout.tsx - Find box as INPUT field for cursor focus
+// AppLayout.tsx - Collapsible Sidebar (Phase 1)
 import { ReactNode, useRef, useState, useEffect } from "react";
 import { NavLink, useLocation, Navigate, useNavigate } from "react-router-dom";
 import {
@@ -35,8 +35,9 @@ import {
   FileText,
   CreditCard,
   FilePlus,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
-
 
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
@@ -164,6 +165,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
 
+  // Collapsible sidebar state – default open "Overview"
+  const [openSection, setOpenSection] = useState("Overview");
+
+  const toggleSection = (section: string) => {
+    setOpenSection((prev) => (prev === section ? "" : section));
+  };
+
   // Handle keyboard shortcut (Ctrl+K / Cmd+K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -225,8 +233,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <OfflinePage>
       <div className="min-h-screen flex w-full bg-background gradient-mesh">
-        <CommandMenu 
-          open={commandMenuOpen} 
+        <CommandMenu
+          open={commandMenuOpen}
           onOpenChange={setCommandMenuOpen}
           triggerRef={searchInputRef}
           searchValue={searchValue}
@@ -277,8 +285,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-
-          {/* 🔍 Find Box - Now an INPUT field with cursor */}
+          {/* 🔍 Find Box */}
           <div className="px-4 py-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-sidebar-foreground/50" />
@@ -318,32 +325,45 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+          <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+            {/* Collapsible Nav Groups */}
             {navGroups.map((group) => (
-              <div key={group.label}>
-                {group.label && (
-                  <p className="px-3 py-2 text-[10px] uppercase text-sidebar-foreground/40 tracking-wider">
-                    {group.label}
-                  </p>
+              <div key={group.label} className="mb-2">
+                <button
+                  type="button"
+                  onClick={() => toggleSection(group.label)}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold hover:bg-sidebar-accent/50 transition-colors text-sidebar-foreground/80 hover:text-sidebar-foreground"
+                >
+                  <span>{group.label}</span>
+                  {openSection === group.label ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+
+                {openSection === group.label && (
+                  <div className="mt-1 ml-2 space-y-1">
+                    {group.items.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setCommandMenuOpen(false)}
+                        className={({ isActive }) =>
+                          cn(
+                            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                            isActive
+                              ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+                              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
+                          )
+                        }
+                      >
+                        <item.icon className="h-4 w-4" />
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
                 )}
-                {group.items.map(({ to, label, icon: Icon }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    onClick={() => setCommandMenuOpen(false)}
-                    className={({ isActive }) =>
-                      cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200",
-                        isActive
-                          ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
-                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
-                      )
-                    }
-                  >
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </NavLink>
-                ))}
               </div>
             ))}
           </nav>
