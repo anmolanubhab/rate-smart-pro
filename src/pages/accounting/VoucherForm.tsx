@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts, fmtInr } from "@/lib/accounting";
 import {
   VOUCHER_TYPES,
   calculateTotals,
@@ -87,10 +87,14 @@ export default function VoucherForm() {
   }, [existingVoucher]);
 
   // ── ledger accounts list ─────────────────────────────────────────────────
-  const { data: ledgers = [] } = useQuery({
+  const { data: ledgers = [], isLoading: ledgersLoading } = useQuery({
     queryKey: ["ledgers", user?.id, business?.id],
     enabled: !!user?.id,
-    queryFn: () => fetchLedgersWithBalance(user!.id),
+    queryFn: async () => {
+      await seedAccounts(user!.id);
+      await ensurePartyLedgers(user!.id);
+      return fetchLedgersWithBalance(user!.id);
+    },
   });
 
   // ── computed totals ──────────────────────────────────────────────────────
@@ -353,7 +357,7 @@ export default function VoucherForm() {
                       onValueChange={(v) => updateRow(idx, { ledger_account_id: v })}
                     >
                       <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="Select ledger…" />
+                        <SelectValue placeholder={ledgersLoading ? "Loading ledgers…" : "Select ledger…"} />
                       </SelectTrigger>
                       <SelectContent>
                         {ledgers.map((l) => (
