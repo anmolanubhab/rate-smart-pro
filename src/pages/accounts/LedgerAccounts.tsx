@@ -5,18 +5,20 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { backfillAccounting, fetchLedgersWithBalance, seedAccounts, fmtInr } from "@/lib/accounting";
 import { useNavigate } from "react-router-dom"; // NEW
 
 export default function LedgerAccounts() {
   useEffect(() => { document.title = "Ledger Accounts — RD Pro"; }, []);
   const { user } = useAuth();
+  const { business } = useBusiness();
   const qc = useQueryClient();
   const navigate = useNavigate(); // NEW
   const [syncing, setSyncing] = useState(false);
 
   const { data: ledgers = [], isLoading } = useQuery({
-    queryKey: ["ledgers", user?.id],
+    queryKey: ["ledgers", user?.id, business?.id],
     enabled: !!user?.id,
     queryFn: async () => {
       await seedAccounts(user!.id);
