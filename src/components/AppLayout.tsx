@@ -66,39 +66,47 @@ const navGroups: NavGroup[] = [
     items: [
       { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { to: "/calculator", label: "RD Calculator", icon: Calculator },
+      { to: "/reports", label: "Business Analytics", icon: BarChart3 },
     ],
   },
+
   {
     label: "Sales",
     items: [
-      { to: "/orders", label: "Orders", icon: ShoppingCart },
       { to: "/orders/new", label: "Create Order", icon: PlusSquare },
+      { to: "/orders", label: "Orders", icon: ShoppingCart },
       { to: "/pending", label: "Pending Orders", icon: Boxes },
       { to: "/dispatch", label: "Dispatch", icon: Package },
       { to: "/sales/invoices", label: "Sales Invoices", icon: Receipt },
+      { to: "/parties", label: "Customers", icon: Users },
     ],
   },
+
   {
-    label: "Catalog",
+    label: "Purchase",
     items: [
-      { to: "/parties", label: "Parties", icon: Users },
+      { to: "/purchase", label: "Purchase Dashboard", icon: ShoppingBag },
+      { to: "/purchase/orders", label: "Purchase Orders", icon: ClipboardList },
+      { to: "/purchase/grn", label: "Goods Receipt Note", icon: TruckIcon },
+      { to: "/purchase/invoices", label: "Purchase Invoices", icon: FileText },
+      { to: "/purchase/payments", label: "Supplier Payments", icon: CreditCard },
+    ],
+  },
+
+  {
+    label: "Inventory",
+    items: [
       { to: "/products", label: "Products", icon: Package },
       { to: "/inventory", label: "Inventory", icon: Boxes },
     ],
   },
-  {
-    label: "Insights",
-    items: [
-      { to: "/history", label: "History", icon: History },
-      { to: "/reports", label: "Reports", icon: BarChart3 },
-    ],
-  },
+
   {
     label: "Accounts",
     items: [
-      { to: "/accounts/ledgers", label: "Ledger Accounts", icon: BookOpen },
-      { to: "/accounting/vouchers", label: "Vouchers", icon: FilePlus },
       { to: "/accounts/vouchers", label: "Voucher Center", icon: Receipt },
+      { to: "/accounting/vouchers", label: "Vouchers", icon: FilePlus },
+      { to: "/accounts/ledgers", label: "Ledger Accounts", icon: BookOpen },
       { to: "/accounts/day-book", label: "Day Book", icon: ClipboardList },
       { to: "/accounts/cash-book", label: "Cash Book", icon: Wallet },
       { to: "/accounts/bank-book", label: "Bank Book", icon: Landmark },
@@ -109,40 +117,38 @@ const navGroups: NavGroup[] = [
       { to: "/accounts/payables", label: "Payables", icon: ArrowDownRight },
     ],
   },
+
   {
     label: "GST",
     items: [
       { to: "/gst/summary", label: "GST Summary", icon: FileSpreadsheet },
     ],
   },
-  {
-    label: "Purchase",
-    items: [
-      { to: "/purchase", label: "Purchase Dashboard", icon: ShoppingBag },
-      { to: "/purchase/orders", label: "Purchase Orders", icon: ClipboardList },
-      { to: "/purchase/grn", label: "Goods Receipt Note", icon: TruckIcon },
-      { to: "/purchase/invoices", label: "Purchase Invoices", icon: FileText },
-      { to: "/purchase/payments", label: "Payments", icon: CreditCard },
-      { to: "/purchase/reports", label: "Reports", icon: BarChart3 },
-    ],
-  },
+
   {
     label: "Administration",
     items: [
       { to: "/approval-center", label: "Approval Center", icon: ShieldCheck },
       { to: "/admin/audit-logs", label: "Audit Logs", icon: ShieldCheck },
+      { to: "/settings/voucher-numbering", label: "Voucher Numbering", icon: Receipt },
+      { to: "/settings/sales-config", label: "Sales Configuration", icon: SettingsIcon },
     ],
   },
+
   {
-    label: "Account",
+    label: "Business",
     items: [
-      { to: "/profile", label: "Profile", icon: User },
-      { to: "/settings", label: "Settings", icon: SettingsIcon },
       { to: "/settings/business-profile", label: "Business Profile", icon: Landmark },
       { to: "/settings/company-users", label: "Company Users", icon: Users },
       { to: "/settings/team", label: "Team & Roles", icon: Users },
-      { to: "/settings/voucher-numbering", label: "Voucher Numbering", icon: Receipt },
-      { to: "/settings/sales-config", label: "Sales Configuration", icon: SettingsIcon },
+    ],
+  },
+
+  {
+    label: "My Account",
+    items: [
+      { to: "/profile", label: "Profile", icon: User },
+      { to: "/settings", label: "Settings", icon: SettingsIcon },
     ],
   },
 ];
