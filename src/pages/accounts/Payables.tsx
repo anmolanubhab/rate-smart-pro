@@ -3,14 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 
 export default function Payables() {
   useEffect(() => { document.title = "Outstanding Payables — RD Pro"; }, []);
   const { user } = useAuth();
+  const { business } = useBusiness();
   const navigate = useNavigate();
   const { data: ledgers = [], isLoading } = useQuery({
-    queryKey: ["payables", user?.id],
+    queryKey: ["payables", user?.id, business?.id],
     enabled: !!user?.id,
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
