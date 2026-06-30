@@ -9,6 +9,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { fetchLockDate, isDateLocked } from "@/lib/accountingLock";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -102,6 +103,16 @@ function requireBusiness(): string {
   const biz = getActiveBusinessIdSync();
   if (!biz) throw new Error("No active business selected.");
   return biz;
+}
+
+/** Throws if the given voucher date falls on/before the business's accounting lock date. */
+async function assertNotLocked(businessId: string, voucherDate: string): Promise<void> {
+  const lock = await fetchLockDate(businessId);
+  if (isDateLocked(voucherDate, lock)) {
+    throw new Error(
+      `This accounting period is locked (up to ${lock!.lock_date}). Unlock it in Settings → Accounting Lock to make changes before that date.`
+    );
+  }
 }
 
 /** Map UI VoucherType → DB voucher_type string (snake_case) */
@@ -217,6 +228,8 @@ export async function createVoucher(
   const check = validateVoucher(input);
   if (!check.valid) throw new Error(check.errors.join(" | "));
 
+  await assertNotLocked(businessId, input.voucher_date);
+
   // Generate voucher number via existing RPC
   const dbType = typeToDb(input.voucher_type);
   const { data: vnoData, error: vnoErr } = await supabase.rpc(
@@ -270,7 +283,7 @@ export async function updateVoucher(
   // Fetch current status
   const { data: existing, error: fetchErr } = await supabase
     .from("vouchers")
-    .select("status")
+    .select("status, voucher_date")
     .eq("id", input.id)
     .eq("business_id", businessId)
     .single();
@@ -279,6 +292,9 @@ export async function updateVoucher(
   if (existing.status !== "draft") {
     throw new Error("Only draft vouchers can be edited.");
   }
+
+  await assertNotLocked(businessId, existing.voucher_date);
+  if (input.voucher_date) await assertNotLocked(businessId, input.voucher_date);
 
   const patch: Record<string, any> = {
     updated_at: new Date().toISOString(),
@@ -347,6 +363,8 @@ export async function postVoucher(
   );
   if (!check.valid) throw new Error(check.errors.join(" | "));
 
+  await assertNotLocked(businessId, voucher.voucher_date);
+
   const { data: vRow, error } = await supabase
     .from("vouchers")
     .update({
@@ -373,7 +391,7 @@ export async function deleteVoucher(voucherId: string): Promise<void> {
 
   const { data: existing } = await supabase
     .from("vouchers")
-    .select("status")
+    .select("status, voucher_date")
     .eq("id", voucherId)
     .eq("business_id", businessId)
     .single();
@@ -383,6 +401,7 @@ export async function deleteVoucher(voucherId: string): Promise<void> {
       "Posted vouchers cannot be deleted. Cancel it first."
     );
   }
+  if (existing?.voucher_date) await assertNotLocked(businessId, existing.voucher_date);
 
   // Delete items first (FK constraint)
   await supabase
