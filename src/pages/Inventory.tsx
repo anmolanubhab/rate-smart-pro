@@ -26,9 +26,6 @@ function InventoryStockImportTrigger({ onDone }: { onDone: () => void }) {
     </>
   );
 }
-import { toast } from "@/hooks/use-toast";
-import InventoryStockImport from "@/components/InventoryStockImport";
-import InventoryWidgets from "@/components/InventoryWidgets";
 
 const INVENTORY_COLUMNS = "id, part_number, description, stock, low_stock_threshold, mrp, hsn_code, gst_pct, unit";
 
