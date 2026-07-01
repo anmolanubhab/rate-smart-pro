@@ -10,7 +10,22 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Package, Search, Edit2 } from "lucide-react";
+import { Package, Search, Edit2, Upload } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import InventoryStockImport from "@/components/InventoryStockImport";
+import InventoryWidgets from "@/components/InventoryWidgets";
+
+function InventoryStockImportTrigger({ onDone }: { onDone: () => void }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  if (!user) return null;
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}><Upload className="h-4 w-4 mr-2" />Import Stock</Button>
+      <InventoryStockImport open={open} onOpenChange={setOpen} userId={user.id} onDone={onDone} />
+    </>
+  );
+}
 import { toast } from "@/hooks/use-toast";
 import InventoryStockImport from "@/components/InventoryStockImport";
 import InventoryWidgets from "@/components/InventoryWidgets";
