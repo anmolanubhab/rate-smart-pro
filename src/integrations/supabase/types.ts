@@ -55,6 +55,128 @@ export type Database = {
           },
         ]
       }
+      accounting_settings: {
+        Row: {
+          business_id: string
+          created_at: string
+          id: string
+          lock_date: string | null
+          locked_at: string | null
+          locked_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          id?: string
+          lock_date?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          id?: string
+          lock_date?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "accounting_settings_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: true
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      approval_requests: {
+        Row: {
+          action_type: string
+          after_snapshot: Json | null
+          applied_at: string | null
+          apply_error: string | null
+          approved_at: string | null
+          approved_by: string | null
+          before_snapshot: Json | null
+          business_id: string
+          created_at: string
+          document_no: string | null
+          id: string
+          module: string
+          reason: string | null
+          record_id: string
+          rejected_at: string | null
+          rejection_reason: string | null
+          request_data: Json | null
+          requested_by: string
+          requested_by_role: Database["public"]["Enums"]["business_role"] | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          action_type: string
+          after_snapshot?: Json | null
+          applied_at?: string | null
+          apply_error?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          before_snapshot?: Json | null
+          business_id: string
+          created_at?: string
+          document_no?: string | null
+          id?: string
+          module: string
+          reason?: string | null
+          record_id: string
+          rejected_at?: string | null
+          rejection_reason?: string | null
+          request_data?: Json | null
+          requested_by: string
+          requested_by_role?:
+            | Database["public"]["Enums"]["business_role"]
+            | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          action_type?: string
+          after_snapshot?: Json | null
+          applied_at?: string | null
+          apply_error?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          before_snapshot?: Json | null
+          business_id?: string
+          created_at?: string
+          document_no?: string | null
+          id?: string
+          module?: string
+          reason?: string | null
+          record_id?: string
+          rejected_at?: string | null
+          rejection_reason?: string | null
+          request_data?: Json | null
+          requested_by?: string
+          requested_by_role?:
+            | Database["public"]["Enums"]["business_role"]
+            | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_requests_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -1583,6 +1705,10 @@ export type Database = {
         Args: { _order_item_id: string }
         Returns: undefined
       }
+      role_rank: {
+        Args: { _role: Database["public"]["Enums"]["business_role"] }
+        Returns: number
+      }
       seed_accounting_defaults:
         | { Args: { _user_id: string }; Returns: undefined }
         | {
@@ -1590,6 +1716,10 @@ export type Database = {
             Returns: undefined
           }
       unarchive_business: { Args: { _business_id: string }; Returns: undefined }
+      user_business_role: {
+        Args: { _business_id: string }
+        Returns: Database["public"]["Enums"]["business_role"]
+      }
     }
     Enums: {
       account_nature: "asset" | "liability" | "income" | "expense" | "capital"
