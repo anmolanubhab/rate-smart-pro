@@ -93,7 +93,7 @@ export default function Inventory() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Package className="h-6 w-6" /> Inventory</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{total} products</p>
         </div>
-        <InventoryStockImport onImported={() => qc.invalidateQueries({ queryKey: ["inventory", businessId] })} />
+        <InventoryStockImportTrigger onDone={() => qc.invalidateQueries({ queryKey: ["inventory", businessId] })} />
       </div>
 
       <InventoryWidgets />

@@ -20,5 +20,5 @@ export async function fetchBusinessesForUser(userId: string): Promise<BusinessRo
 
   if (error) throw error;
 
-  return (data ?? []) as BusinessRow[];
+  return (data ?? []) as unknown as BusinessRow[];
 }

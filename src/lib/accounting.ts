@@ -321,9 +321,9 @@ export async function fetchPartyLedger(
   // Sort in JavaScript: by voucher_date ASC, then position ASC
   // (avoids nested order("vouchers(voucher_date)") issues)
   if (items) {
-    items.sort((a, b) => {
-      const va = (a as VoucherItemWithVoucher).vouchers;
-      const vb = (b as VoucherItemWithVoucher).vouchers;
+    (items as any[]).sort((a: any, b: any) => {
+      const va = a.vouchers;
+      const vb = b.vouchers;
       if (va.voucher_date < vb.voucher_date) return -1;
       if (va.voucher_date > vb.voucher_date) return 1;
       return a.position - b.position;
@@ -339,8 +339,8 @@ export async function fetchPartyLedger(
   let running = opening;
 
   if (items) {
-    for (const item of items) {
-      const itemWithVoucher = item as VoucherItemWithVoucher;
+    for (const item of items as any[]) {
+      const itemWithVoucher = item as any;
       const voucher = itemWithVoucher.vouchers;
       const dr = Number(itemWithVoucher.dr_amount) || 0;
       const cr = Number(itemWithVoucher.cr_amount) || 0;
