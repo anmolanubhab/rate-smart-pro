@@ -63,6 +63,37 @@ const PurchasePayments = lazy(() => import("./pages/purchase/PurchasePayments"))
 const PurchaseReports = lazy(() => import("./pages/purchase/PurchaseReports"));
 const CreatePurchaseOrder = lazy(() => import("./pages/purchase/CreatePurchaseOrder"));
 
+// Phase 3 — Purchase mock screens
+const PurchaseReturns = lazy(() => import("./pages/purchase/PurchaseReturns"));
+const PurchaseApprovals = lazy(() => import("./pages/purchase/PurchaseApprovals"));
+const SupplierLedger = lazy(() => import("./pages/purchase/SupplierLedger"));
+
+// Phase 4 — Inventory mock screens
+const Warehouses = lazy(() => import("./pages/inventory/Warehouses"));
+const Batches = lazy(() => import("./pages/inventory/Batches"));
+const Serials = lazy(() => import("./pages/inventory/Serials"));
+const Barcodes = lazy(() => import("./pages/inventory/Barcodes"));
+const StockTransfers = lazy(() => import("./pages/inventory/StockTransfers"));
+const StockTake = lazy(() => import("./pages/inventory/StockTake"));
+const StockAdjustments = lazy(() => import("./pages/inventory/StockAdjustments"));
+
+// Phase 5 — Dedicated Accounts screens
+const JournalVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.JournalVoucher })));
+const ContraVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.ContraVoucher })));
+const PaymentVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.PaymentVoucher })));
+const ReceiptVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.ReceiptVoucher })));
+const DebitNote = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.DebitNote })));
+const CreditNote = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.CreditNote })));
+const CashFlow = lazy(() => import("./pages/accounts/CashFlow"));
+
+// Phase 6 — Dealer portal (separate namespace, no AppLayout)
+const DealerLogin = lazy(() => import("./pages/dealer/DealerLogin"));
+const DealerDashboard = lazy(() => import("./pages/dealer/DealerDashboard"));
+const DealerOrder = lazy(() => import("./pages/dealer/DealerOrder"));
+const DealerPricing = lazy(() => import("./pages/dealer/DealerPricing"));
+const DealerOutstanding = lazy(() => import("./pages/dealer/DealerOutstanding"));
+const DealerLedger = lazy(() => import("./pages/dealer/DealerLedger"));
+
 const queryClient = new QueryClient();
 
 const RouteFallback = () => (
@@ -142,6 +173,34 @@ const App = () => (
               <Route path="/purchase/invoices" element={L(<PurchaseInvoices />)} />
               <Route path="/purchase/payments" element={L(<PurchasePayments />)} />
               <Route path="/purchase/reports" element={L(<PurchaseReports />)} />
+              {/* Phase 3 — Purchase mocks */}
+              <Route path="/purchase/returns" element={L(<PurchaseReturns />)} />
+              <Route path="/purchase/approvals" element={L(<PurchaseApprovals />)} />
+              <Route path="/purchase/supplier-ledger" element={L(<SupplierLedger />)} />
+              {/* Phase 4 — Inventory mocks */}
+              <Route path="/inventory/warehouses" element={L(<Warehouses />)} />
+              <Route path="/inventory/batches" element={L(<Batches />)} />
+              <Route path="/inventory/serials" element={L(<Serials />)} />
+              <Route path="/inventory/barcodes" element={L(<Barcodes />)} />
+              <Route path="/inventory/transfers" element={L(<StockTransfers />)} />
+              <Route path="/inventory/stock-take" element={L(<StockTake />)} />
+              <Route path="/inventory/adjustments" element={L(<StockAdjustments />)} />
+              {/* Phase 5 — Dedicated Accounts */}
+              <Route path="/accounts/journal" element={L(<JournalVoucher />)} />
+              <Route path="/accounts/contra" element={L(<ContraVoucher />)} />
+              <Route path="/accounts/payment" element={L(<PaymentVoucher />)} />
+              <Route path="/accounts/receipt" element={L(<ReceiptVoucher />)} />
+              <Route path="/accounts/debit-note" element={L(<DebitNote />)} />
+              <Route path="/accounts/credit-note" element={L(<CreditNote />)} />
+              <Route path="/accounts/cash-flow" element={L(<CashFlow />)} />
+              {/* Phase 6 — Dealer portal */}
+              <Route path="/dealer" element={B(<DealerLogin />)} />
+              <Route path="/dealer/login" element={B(<DealerLogin />)} />
+              <Route path="/dealer/dashboard" element={B(<DealerDashboard />)} />
+              <Route path="/dealer/order" element={B(<DealerOrder />)} />
+              <Route path="/dealer/pricing" element={B(<DealerPricing />)} />
+              <Route path="/dealer/outstanding" element={B(<DealerOutstanding />)} />
+              <Route path="/dealer/ledger" element={B(<DealerLedger />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
