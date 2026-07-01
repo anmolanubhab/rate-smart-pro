@@ -117,7 +117,7 @@ export default function VoucherList() {
         limit: PAGE_SIZE,
         offset,
       }),
-    keepPreviousData: true,
+    placeholderData: (prev) => prev,
   });
 
   const vouchers = result?.data ?? [];

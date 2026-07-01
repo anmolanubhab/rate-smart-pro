@@ -10,10 +10,22 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Package, Search, Edit2 } from "lucide-react";
+import { Package, Search, Edit2, Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import InventoryStockImport from "@/components/InventoryStockImport";
 import InventoryWidgets from "@/components/InventoryWidgets";
+
+function InventoryStockImportTrigger({ onDone }: { onDone: () => void }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  if (!user) return null;
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}><Upload className="h-4 w-4 mr-2" />Import Stock</Button>
+      <InventoryStockImport open={open} onOpenChange={setOpen} userId={user.id} onDone={onDone} />
+    </>
+  );
+}
 
 const INVENTORY_COLUMNS = "id, part_number, description, stock, low_stock_threshold, mrp, hsn_code, gst_pct, unit";
 
@@ -93,7 +105,7 @@ export default function Inventory() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Package className="h-6 w-6" /> Inventory</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{total} products</p>
         </div>
-        <InventoryStockImport onImported={() => qc.invalidateQueries({ queryKey: ["inventory", businessId] })} />
+        <InventoryStockImportTrigger onDone={() => qc.invalidateQueries({ queryKey: ["inventory", businessId] })} />
       </div>
 
       <InventoryWidgets />
