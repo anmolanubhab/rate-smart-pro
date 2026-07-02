@@ -43,6 +43,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
+import { canAccessErp, getLandingForRole } from "@/lib/roleRouting";
 import { Button } from "@/components/ui/button";
 
 import CommandMenu from "@/components/CommandMenu";
