@@ -247,7 +247,7 @@ export default function CompanySelection() {
                         <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                           {!archived && (
                             <>
-                              <DropdownMenuItem onClick={() => openCompany(b.id, b.business_name)}>
+                              <DropdownMenuItem onClick={() => openCompany(b.id, b.business_name, r.role)}>
                                 <Building2 className="h-4 w-4 mr-2" />Open Company
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => onEdit(b.id)}>
