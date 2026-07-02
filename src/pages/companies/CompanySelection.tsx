@@ -81,14 +81,15 @@ export default function CompanySelection() {
 
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
-  const openCompany = async (id: string, name: string) => {
+  const openCompany = async (id: string, name: string, role?: string) => {
     if (switchingId) return;
     setSwitchingId(id);
     try {
       setActiveBusinessId(id);
       await queryClient.invalidateQueries({ queryKey: ["current-business"] });
       await logAudit({ business_id: id, action: "COMPANY_OPENED", entity_type: "business", entity_id: id, new_value: { name } });
-      nav("/dashboard");
+      const { getLandingForRole } = await import("@/lib/roleRouting");
+      nav(getLandingForRole(role ?? null));
     } catch (e: any) {
       toast.error(e.message ?? "Failed to switch company");
       setSwitchingId(null);
@@ -246,7 +247,7 @@ export default function CompanySelection() {
                         <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                           {!archived && (
                             <>
-                              <DropdownMenuItem onClick={() => openCompany(b.id, b.business_name)}>
+                              <DropdownMenuItem onClick={() => openCompany(b.id, b.business_name, r.role)}>
                                 <Building2 className="h-4 w-4 mr-2" />Open Company
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => onEdit(b.id)}>
@@ -280,7 +281,7 @@ export default function CompanySelection() {
                   <button
                     type="button"
                     disabled={archived || !!switchingId}
-                    onClick={() => !archived && openCompany(b.id, b.business_name)}
+                    onClick={() => !archived && openCompany(b.id, b.business_name, r.role)}
                     className="block w-full text-left mt-3 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <h3 className="font-semibold text-base group-hover:text-primary transition-colors line-clamp-1">{b.business_name}</h3>
