@@ -81,14 +81,15 @@ export default function CompanySelection() {
 
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
-  const openCompany = async (id: string, name: string) => {
+  const openCompany = async (id: string, name: string, role?: string) => {
     if (switchingId) return;
     setSwitchingId(id);
     try {
       setActiveBusinessId(id);
       await queryClient.invalidateQueries({ queryKey: ["current-business"] });
       await logAudit({ business_id: id, action: "COMPANY_OPENED", entity_type: "business", entity_id: id, new_value: { name } });
-      nav("/dashboard");
+      const { getLandingForRole } = await import("@/lib/roleRouting");
+      nav(getLandingForRole(role ?? null));
     } catch (e: any) {
       toast.error(e.message ?? "Failed to switch company");
       setSwitchingId(null);
