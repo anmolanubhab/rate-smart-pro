@@ -281,7 +281,7 @@ export default function CompanySelection() {
                   <button
                     type="button"
                     disabled={archived || !!switchingId}
-                    onClick={() => !archived && openCompany(b.id, b.business_name)}
+                    onClick={() => !archived && openCompany(b.id, b.business_name, r.role)}
                     className="block w-full text-left mt-3 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <h3 className="font-semibold text-base group-hover:text-primary transition-colors line-clamp-1">{b.business_name}</h3>
