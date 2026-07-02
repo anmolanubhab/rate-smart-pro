@@ -209,6 +209,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   if (bizLoading) return <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">Loading workspace…</div>;
   if (!business) return <Navigate to="/companies" replace />;
   if (!business.setup_completed) return <Navigate to="/setup/business" replace />;
+  // Role-based portal gate: send non-ERP roles (dealer, retailer, wholesaler…) to their portal.
+  if (role && !canAccessErp(role)) {
+    return <Navigate to={getLandingForRole(role)} replace />;
+  }
 
   const switchCompany = () => {
     setActiveBusinessId(null);
