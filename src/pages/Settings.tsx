@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useBusiness } from "@/hooks/useBusiness";
 import {
-  Building2, Users, Hash, SlidersHorizontal, UserCog,
+  Building2, Users, Hash, SlidersHorizontal, UserCog, Handshake,
   ChevronRight,
 } from "lucide-react";
 
@@ -35,6 +35,12 @@ const items = [
     icon: UserCog,
     title: "Company Users",
     desc: "View all users with access to this company",
+  },
+  {
+    to: "/settings/dealer-applications",
+    icon: Handshake,
+    title: "Dealer Applications",
+    desc: "Review and approve dealer/wholesaler portal signup requests",
   },
 ];
 
