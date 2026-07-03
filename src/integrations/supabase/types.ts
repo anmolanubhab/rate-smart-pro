@@ -1346,6 +1346,54 @@ export type Database = {
           },
         ]
       }
+      portal_users: {
+        Row: {
+          business_id: string
+          created_at: string
+          id: string
+          party_id: string
+          portal_type: string
+          role: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          id?: string
+          party_id: string
+          portal_type?: string
+          role?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          id?: string
+          party_id?: string
+          portal_type?: string
+          role?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_users_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_users_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           barcode: string | null
@@ -2239,6 +2287,7 @@ export type Database = {
             Args: { _business_id?: string; _party_id: string; _user_id: string }
             Returns: string
           }
+      get_current_portal_party_id: { Args: never; Returns: string }
       has_business_role: {
         Args: {
           _business_id: string

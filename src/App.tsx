@@ -11,6 +11,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+import DealerGuard from "@/components/dealer/DealerGuard";
 
 const Calculator = lazy(() => import("./pages/Calculator"));
 const History = lazy(() => import("./pages/History"));
@@ -196,11 +197,11 @@ const App = () => (
               {/* Phase 6 — Dealer portal */}
               <Route path="/dealer" element={B(<DealerLogin />)} />
               <Route path="/dealer/login" element={B(<DealerLogin />)} />
-              <Route path="/dealer/dashboard" element={B(<DealerDashboard />)} />
-              <Route path="/dealer/order" element={B(<DealerOrder />)} />
-              <Route path="/dealer/pricing" element={B(<DealerPricing />)} />
-              <Route path="/dealer/outstanding" element={B(<DealerOutstanding />)} />
-              <Route path="/dealer/ledger" element={B(<DealerLedger />)} />
+              <Route path="/dealer/dashboard" element={<DealerGuard>{B(<DealerDashboard />)}</DealerGuard>} />
+              <Route path="/dealer/order" element={<DealerGuard>{B(<DealerOrder />)}</DealerGuard>} />
+              <Route path="/dealer/pricing" element={<DealerGuard>{B(<DealerPricing />)}</DealerGuard>} />
+              <Route path="/dealer/outstanding" element={<DealerGuard>{B(<DealerOutstanding />)}</DealerGuard>} />
+              <Route path="/dealer/ledger" element={<DealerGuard>{B(<DealerLedger />)}</DealerGuard>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
