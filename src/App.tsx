@@ -89,11 +89,13 @@ const CashFlow = lazy(() => import("./pages/accounts/CashFlow"));
 
 // Phase 6 — Dealer portal (separate namespace, no AppLayout)
 const DealerLogin = lazy(() => import("./pages/dealer/DealerLogin"));
+const DealerApply = lazy(() => import("./pages/dealer/DealerApply"));
 const DealerDashboard = lazy(() => import("./pages/dealer/DealerDashboard"));
 const DealerOrder = lazy(() => import("./pages/dealer/DealerOrder"));
 const DealerPricing = lazy(() => import("./pages/dealer/DealerPricing"));
 const DealerOutstanding = lazy(() => import("./pages/dealer/DealerOutstanding"));
 const DealerLedger = lazy(() => import("./pages/dealer/DealerLedger"));
+const DealerApplications = lazy(() => import("./pages/settings/DealerApplications"));
 
 const queryClient = new QueryClient();
 
@@ -197,11 +199,14 @@ const App = () => (
               {/* Phase 6 — Dealer portal */}
               <Route path="/dealer" element={B(<DealerLogin />)} />
               <Route path="/dealer/login" element={B(<DealerLogin />)} />
+              <Route path="/dealer/apply" element={B(<DealerApply />)} />
               <Route path="/dealer/dashboard" element={<DealerGuard>{B(<DealerDashboard />)}</DealerGuard>} />
               <Route path="/dealer/order" element={<DealerGuard>{B(<DealerOrder />)}</DealerGuard>} />
               <Route path="/dealer/pricing" element={<DealerGuard>{B(<DealerPricing />)}</DealerGuard>} />
               <Route path="/dealer/outstanding" element={<DealerGuard>{B(<DealerOutstanding />)}</DealerGuard>} />
               <Route path="/dealer/ledger" element={<DealerGuard>{B(<DealerLedger />)}</DealerGuard>} />
+              {/* Internal admin — review dealer applications */}
+              <Route path="/settings/dealer-applications" element={L(<DealerApplications />)} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
