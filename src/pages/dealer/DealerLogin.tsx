@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -132,6 +132,12 @@ export default function DealerLogin() {
             </Button>
             <p className="text-xs text-center text-muted-foreground">
               Forgot password? Contact your account manager.
+            </p>
+            <p className="text-xs text-center text-muted-foreground">
+              New dealer?{" "}
+              <Link to={`/dealer/apply${window.location.search}`} className="underline">
+                Apply for an account
+              </Link>
             </p>
           </form>
         </CardContent>
