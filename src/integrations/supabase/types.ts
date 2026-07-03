@@ -1129,6 +1129,7 @@ export type Database = {
           salesman: string | null
           shipping_address: string | null
           shipping_charges: number
+          source_channel: string | null
           source_type: string
           status: Database["public"]["Enums"]["order_status"]
           subtotal: number
@@ -1174,6 +1175,7 @@ export type Database = {
           salesman?: string | null
           shipping_address?: string | null
           shipping_charges?: number
+          source_channel?: string | null
           source_type?: string
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
@@ -1219,6 +1221,7 @@ export type Database = {
           salesman?: string | null
           shipping_address?: string | null
           shipping_charges?: number
+          source_channel?: string | null
           source_type?: string
           status?: Database["public"]["Enums"]["order_status"]
           subtotal?: number
@@ -2287,6 +2290,7 @@ export type Database = {
             Args: { _business_id?: string; _party_id: string; _user_id: string }
             Returns: string
           }
+      get_current_portal_business_id: { Args: never; Returns: string }
       get_current_portal_party_id: { Args: never; Returns: string }
       has_business_role: {
         Args: {
