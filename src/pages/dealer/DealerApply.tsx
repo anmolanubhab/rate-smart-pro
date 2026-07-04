@@ -63,39 +63,25 @@ export default function DealerApply() {
     try {
       const email = form.email.trim();
 
-      // Helper: insert dealer_applications for the given userId — dedupes and self-heals.
+      // Helper: submit dealer_applications for the given userId via a SECURITY DEFINER
+      // RPC — dedupes and self-heals. This works even before the user's email is
+      // confirmed (i.e. before an authenticated session exists), since a direct
+      // insert would be blocked by RLS (auth.uid() is null pre-confirmation).
       const insertApplication = async (userId: string): Promise<"submitted" | "already_pending" | "already_portal"> => {
-        // Already an approved portal user?
-        const { data: existingPortal } = await supabase
-          .from("portal_users" as never)
-          .select("id")
-          .eq("user_id", userId)
-          .maybeSingle();
-        if (existingPortal) return "already_portal";
-
-        // Already a pending/approved application?
-        const { data: existingApp } = await supabase
-          .from("dealer_applications" as never)
-          .select("id, status")
-          .eq("user_id", userId)
-          .in("status", ["pending", "approved"])
-          .maybeSingle();
-        if (existingApp) return "already_pending";
-
-        const { error: appErr } = await supabase.from("dealer_applications" as never).insert({
-          user_id: userId,
-          business_id: businessId,
-          company_name: form.companyName,
-          contact_name: form.contactName,
-          phone: form.phone,
-          email,
-          gstin: form.gstin || null,
-          address: form.address || null,
-          city: form.city || null,
-          portal_type: "b2b",
+        const { data, error: rpcErr } = await supabase.rpc("submit_dealer_application" as never, {
+          _user_id: userId,
+          _business_id: businessId,
+          _company_name: form.companyName,
+          _contact_name: form.contactName,
+          _phone: form.phone,
+          _email: email,
+          _gstin: form.gstin || null,
+          _address: form.address || null,
+          _city: form.city || null,
+          _portal_type: "b2b",
         } as never);
-        if (appErr) throw appErr;
-        return "submitted";
+        if (rpcErr) throw rpcErr;
+        return (data as any)?.status ?? "submitted";
       };
 
       // 1) Create the auth account
