@@ -13,9 +13,9 @@ export default function DealerGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) return <Navigate to="/dealer/login" replace />;
+  if (!user) return <Navigate to="/portal/login" replace />;
   if (!portalUser || portalUser.portal_type !== "b2b" || portalUser.status !== "active") {
-    return <Navigate to="/dealer/login" replace />;
+    return <Navigate to="/portal/login" replace />;
   }
 
   return <>{children}</>;

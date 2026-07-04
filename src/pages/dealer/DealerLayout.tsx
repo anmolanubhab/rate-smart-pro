@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const items = [
-  { to: "/dealer/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/dealer/order", label: "Place Order", icon: ShoppingCart },
-  { to: "/dealer/pricing", label: "My Pricing", icon: Tag },
-  { to: "/dealer/outstanding", label: "Outstanding", icon: Wallet },
-  { to: "/dealer/ledger", label: "Ledger", icon: BookOpen },
+  { to: "/portal/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/portal/order", label: "Place Order", icon: ShoppingCart },
+  { to: "/portal/pricing", label: "My Pricing", icon: Tag },
+  { to: "/portal/outstanding", label: "Outstanding", icon: Wallet },
+  { to: "/portal/ledger", label: "Ledger", icon: BookOpen },
 ];
 
 export default function DealerLayout({ children }: { children?: ReactNode }) {
@@ -27,7 +27,7 @@ export default function DealerLayout({ children }: { children?: ReactNode }) {
               <div className="text-xs text-muted-foreground">Kumar Enterprises · DLR-00142</div>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => navigate("/dealer/login")}><LogOut className="h-4 w-4 mr-2" />Sign out</Button>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/portal/login")}><LogOut className="h-4 w-4 mr-2" />Sign out</Button>
         </div>
         <nav className="max-w-6xl mx-auto px-4 flex gap-1 overflow-x-auto">
           {items.map((i) => (

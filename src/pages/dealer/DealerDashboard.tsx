@@ -138,7 +138,7 @@ export default function DealerDashboard() {
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-6">
                     No orders yet.{" "}
-                    <Link to="/dealer/order" className="text-primary underline">
+                    <Link to="/portal/order" className="text-primary underline">
                       Place your first order
                     </Link>
                   </TableCell>

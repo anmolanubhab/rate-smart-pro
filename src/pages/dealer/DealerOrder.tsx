@@ -191,7 +191,7 @@ export default function DealerOrder() {
         description: `${(orderRow as { order_number: string }).order_number} submitted for ${inr(totals.grand_total)}.`,
       });
       setCart({});
-      navigate("/dealer/dashboard");
+      navigate("/portal/dashboard");
     } catch (e: any) {
       toast({ title: "Could not place order", description: e.message ?? String(e), variant: "destructive" });
     } finally {

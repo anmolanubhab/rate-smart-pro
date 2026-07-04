@@ -74,7 +74,7 @@ export function useDealerAuth() {
         .filter((k) => k.startsWith("dealer.") || (k.startsWith("sb-") && k.endsWith("-auth-token")))
         .forEach((k) => localStorage.removeItem(k));
     } catch { /* noop */ }
-    window.location.href = "/dealer/login";
+    window.location.href = "/portal/login";
   };
 
   return { user, session, portalUser, loading, signOut };

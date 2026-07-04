@@ -184,7 +184,7 @@ export default function DealerApply() {
                 <span className="font-medium">{form.email}</span> too.
               </p>
             )}
-            <Button className="w-full mt-2" onClick={() => navigate("/dealer/login")}>
+            <Button className="w-full mt-2" onClick={() => navigate("/portal/login")}>
               Go to sign in
             </Button>
           </CardContent>
@@ -244,7 +244,7 @@ export default function DealerApply() {
             </Button>
             <p className="text-xs text-center text-muted-foreground">
               Already approved?{" "}
-              <Link to="/dealer/login" className="underline">
+              <Link to="/portal/login" className="underline">
                 Sign in
               </Link>
             </p>
