@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -99,6 +99,12 @@ const DealerApplications = lazy(() => import("./pages/settings/DealerApplication
 
 const queryClient = new QueryClient();
 
+// Preserves query string when redirecting legacy /dealer/* URLs to /portal/*
+const DealerRedirect = ({ to }: { to: string }) => {
+  const loc = useLocation();
+  return <Navigate to={`${to}${loc.search}`} replace />;
+};
+
 const RouteFallback = () => (
   <div className="flex items-center justify-center min-h-[40vh] text-sm text-muted-foreground">Loading…</div>
 );
@@ -196,15 +202,24 @@ const App = () => (
               <Route path="/accounts/debit-note" element={L(<DebitNote />)} />
               <Route path="/accounts/credit-note" element={L(<CreditNote />)} />
               <Route path="/accounts/cash-flow" element={L(<CashFlow />)} />
-              {/* Phase 6 — Dealer portal */}
-              <Route path="/dealer" element={B(<DealerLogin />)} />
-              <Route path="/dealer/login" element={B(<DealerLogin />)} />
-              <Route path="/dealer/apply" element={B(<DealerApply />)} />
-              <Route path="/dealer/dashboard" element={<DealerGuard>{B(<DealerDashboard />)}</DealerGuard>} />
-              <Route path="/dealer/order" element={<DealerGuard>{B(<DealerOrder />)}</DealerGuard>} />
-              <Route path="/dealer/pricing" element={<DealerGuard>{B(<DealerPricing />)}</DealerGuard>} />
-              <Route path="/dealer/outstanding" element={<DealerGuard>{B(<DealerOutstanding />)}</DealerGuard>} />
-              <Route path="/dealer/ledger" element={<DealerGuard>{B(<DealerLedger />)}</DealerGuard>} />
+              {/* Phase 6 — Portal (formerly /dealer/*) */}
+              <Route path="/portal" element={B(<DealerLogin />)} />
+              <Route path="/portal/login" element={B(<DealerLogin />)} />
+              <Route path="/portal/apply" element={B(<DealerApply />)} />
+              <Route path="/portal/dashboard" element={<DealerGuard>{B(<DealerDashboard />)}</DealerGuard>} />
+              <Route path="/portal/order" element={<DealerGuard>{B(<DealerOrder />)}</DealerGuard>} />
+              <Route path="/portal/pricing" element={<DealerGuard>{B(<DealerPricing />)}</DealerGuard>} />
+              <Route path="/portal/outstanding" element={<DealerGuard>{B(<DealerOutstanding />)}</DealerGuard>} />
+              <Route path="/portal/ledger" element={<DealerGuard>{B(<DealerLedger />)}</DealerGuard>} />
+              {/* Backward-compatible /dealer/* → /portal/* redirects (preserve query string) */}
+              <Route path="/dealer"              element={<DealerRedirect to="/portal/login" />} />
+              <Route path="/dealer/login"        element={<DealerRedirect to="/portal/login" />} />
+              <Route path="/dealer/apply"        element={<DealerRedirect to="/portal/apply" />} />
+              <Route path="/dealer/dashboard"    element={<DealerRedirect to="/portal/dashboard" />} />
+              <Route path="/dealer/order"        element={<DealerRedirect to="/portal/order" />} />
+              <Route path="/dealer/pricing"      element={<DealerRedirect to="/portal/pricing" />} />
+              <Route path="/dealer/outstanding"  element={<DealerRedirect to="/portal/outstanding" />} />
+              <Route path="/dealer/ledger"       element={<DealerRedirect to="/portal/ledger" />} />
               {/* Internal admin — review dealer applications */}
               <Route path="/settings/dealer-applications" element={L(<DealerApplications />)} />
               <Route path="*" element={<NotFound />} />

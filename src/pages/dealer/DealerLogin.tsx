@@ -25,7 +25,7 @@ export default function DealerLogin() {
         .maybeSingle();
       const pu = data as { portal_type?: string; status?: string } | null;
       if (pu && pu.portal_type === "b2b" && pu.status === "active") {
-        navigate("/dealer/dashboard", { replace: true });
+        navigate("/portal/dashboard", { replace: true });
       }
     })();
   }, [navigate]);
@@ -87,7 +87,7 @@ export default function DealerLogin() {
       }
 
       toast({ title: "Welcome back" });
-      navigate("/dealer/dashboard", { replace: true });
+      navigate("/portal/dashboard", { replace: true });
     } finally {
       setBusy(false);
     }

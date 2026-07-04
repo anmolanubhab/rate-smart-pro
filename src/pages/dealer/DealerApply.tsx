@@ -61,54 +61,111 @@ export default function DealerApply() {
 
     setBusy(true);
     try {
-      // 1) Create the auth account for this applicant
+      const email = form.email.trim();
+
+      // Helper: insert dealer_applications for the given userId — dedupes and self-heals.
+      const insertApplication = async (userId: string): Promise<"submitted" | "already_pending" | "already_portal"> => {
+        // Already an approved portal user?
+        const { data: existingPortal } = await supabase
+          .from("portal_users" as never)
+          .select("id")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (existingPortal) return "already_portal";
+
+        // Already a pending/approved application?
+        const { data: existingApp } = await supabase
+          .from("dealer_applications" as never)
+          .select("id, status")
+          .eq("user_id", userId)
+          .in("status", ["pending", "approved"])
+          .maybeSingle();
+        if (existingApp) return "already_pending";
+
+        const { error: appErr } = await supabase.from("dealer_applications" as never).insert({
+          user_id: userId,
+          business_id: businessId,
+          company_name: form.companyName,
+          contact_name: form.contactName,
+          phone: form.phone,
+          email,
+          gstin: form.gstin || null,
+          address: form.address || null,
+          city: form.city || null,
+          portal_type: "b2b",
+        } as never);
+        if (appErr) throw appErr;
+        return "submitted";
+      };
+
+      // 1) Create the auth account
       const { data: signUp, error: signUpErr } = await supabase.auth.signUp({
-        email: form.email.trim(),
+        email,
         password: form.password,
       });
+
+      let userId: string | undefined = signUp?.user?.id;
+
       if (signUpErr) {
         const m = signUpErr.message.toLowerCase();
-        if (m.includes("already registered") || m.includes("already exists")) {
+        const alreadyRegistered =
+          m.includes("already registered") ||
+          m.includes("already exists") ||
+          m.includes("user already");
+
+        if (!alreadyRegistered) {
+          toast({ title: "Could not create account", description: signUpErr.message, variant: "destructive" });
+          return;
+        }
+
+        // Orphan-recovery branch: try signing in with the same credentials
+        const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({
+          email,
+          password: form.password,
+        });
+        if (signInErr || !signIn.user) {
           toast({
-            title: "Account already exists",
-            description: "An account with this email already exists. Try signing in instead, or contact your account manager.",
+            title: "Email already registered",
+            description:
+              "An account with this email already exists. If this is your business, please contact your distributor to resolve access, or use a different email.",
             variant: "destructive",
           });
-        } else {
-          toast({ title: "Could not create account", description: signUpErr.message, variant: "destructive" });
+          return;
         }
-        return;
+        userId = signIn.user.id;
       }
-      const userId = signUp.user?.id;
+
       if (!userId) {
         toast({ title: "Something went wrong", description: "Please try again.", variant: "destructive" });
         return;
       }
 
-      // 2) Submit the dealer application referencing that account
-      const { error: appErr } = await supabase.from("dealer_applications" as never).insert({
-        user_id: userId,
-        business_id: businessId,
-        company_name: form.companyName,
-        contact_name: form.contactName,
-        phone: form.phone,
-        email: form.email.trim(),
-        gstin: form.gstin || null,
-        address: form.address || null,
-        city: form.city || null,
-        portal_type: "b2b",
-      } as never);
-
-      if (appErr) {
-        toast({ title: "Could not submit application", description: appErr.message, variant: "destructive" });
+      // 2) Submit application (self-healing — checks existing rows first)
+      const result = await insertApplication(userId);
+      if (result === "already_portal") {
+        toast({
+          title: "You already have an account",
+          description: "Redirecting to sign in…",
+        });
+        navigate("/portal/login");
         return;
       }
-
+      if (result === "already_pending") {
+        toast({
+          title: "Application already submitted",
+          description: "Your application is pending review. You'll be able to sign in once approved.",
+        });
+        setSubmitted(true);
+        return;
+      }
       setSubmitted(true);
+    } catch (e: any) {
+      toast({ title: "Could not submit application", description: e?.message ?? String(e), variant: "destructive" });
     } finally {
       setBusy(false);
     }
   };
+
 
   if (submitted) {
     return (
@@ -127,7 +184,7 @@ export default function DealerApply() {
                 <span className="font-medium">{form.email}</span> too.
               </p>
             )}
-            <Button className="w-full mt-2" onClick={() => navigate("/dealer/login")}>
+            <Button className="w-full mt-2" onClick={() => navigate("/portal/login")}>
               Go to sign in
             </Button>
           </CardContent>
@@ -187,7 +244,7 @@ export default function DealerApply() {
             </Button>
             <p className="text-xs text-center text-muted-foreground">
               Already approved?{" "}
-              <Link to="/dealer/login" className="underline">
+              <Link to="/portal/login" className="underline">
                 Sign in
               </Link>
             </p>

@@ -15,10 +15,10 @@ const ROLE_HOME: Record<string, string> = {
   viewer: "/dashboard",
   salesman: "/dashboard",
   // Reserved for future external roles — same-app routes, no new project.
-  dealer: "/dealer/dashboard",
-  wholesaler: "/dealer/dashboard",
-  distributor: "/dealer/dashboard",
-  retailer: "/dealer/dashboard",
+  dealer: "/portal/dashboard",
+  wholesaler: "/portal/dashboard",
+  distributor: "/portal/dashboard",
+  retailer: "/portal/dashboard",
 };
 
 const PORTAL_BY_ROLE: Record<string, PortalKind> = {
