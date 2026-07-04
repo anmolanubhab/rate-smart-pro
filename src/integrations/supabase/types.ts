@@ -476,6 +476,173 @@ export type Database = {
           },
         ]
       }
+      dealer_applications: {
+        Row: {
+          address: string | null
+          business_id: string
+          city: string | null
+          company_name: string
+          contact_name: string
+          created_at: string
+          email: string
+          gstin: string | null
+          id: string
+          phone: string
+          portal_type: string
+          review_notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          address?: string | null
+          business_id: string
+          city?: string | null
+          company_name: string
+          contact_name: string
+          created_at?: string
+          email: string
+          gstin?: string | null
+          id?: string
+          phone: string
+          portal_type?: string
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          address?: string | null
+          business_id?: string
+          city?: string | null
+          company_name?: string
+          contact_name?: string
+          created_at?: string
+          email?: string
+          gstin?: string | null
+          id?: string
+          phone?: string
+          portal_type?: string
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dealer_applications_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dealer_documents: {
+        Row: {
+          application_id: string
+          business_id: string
+          created_at: string
+          doc_type: string
+          file_name: string | null
+          file_path: string
+          id: string
+          mime_type: string | null
+          size_bytes: number | null
+          user_id: string
+        }
+        Insert: {
+          application_id: string
+          business_id: string
+          created_at?: string
+          doc_type: string
+          file_name?: string | null
+          file_path: string
+          id?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          user_id: string
+        }
+        Update: {
+          application_id?: string
+          business_id?: string
+          created_at?: string
+          doc_type?: string
+          file_name?: string | null
+          file_path?: string
+          id?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dealer_documents_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "dealer_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dealer_documents_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dealer_notifications: {
+        Row: {
+          body: string | null
+          business_id: string
+          created_at: string
+          id: string
+          is_read: boolean
+          party_id: string
+          title: string
+        }
+        Insert: {
+          body?: string | null
+          business_id: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          party_id: string
+          title: string
+        }
+        Update: {
+          body?: string | null
+          business_id?: string
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          party_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dealer_notifications_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dealer_notifications_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dispatch_items: {
         Row: {
           business_id: string | null
@@ -2278,6 +2445,7 @@ export type Database = {
     }
     Functions: {
       _user_default_business: { Args: { _user_id: string }; Returns: string }
+      approve_dealer_application: { Args: { _app_id: string }; Returns: string }
       archive_business: { Args: { _business_id: string }; Returns: undefined }
       business_transaction_count: {
         Args: { _business_id: string }
@@ -2324,6 +2492,10 @@ export type Database = {
       recompute_order: { Args: { _order_id: string }; Returns: undefined }
       recompute_order_item: {
         Args: { _order_item_id: string }
+        Returns: undefined
+      }
+      reject_dealer_application: {
+        Args: { _app_id: string; _notes?: string }
         Returns: undefined
       }
       role_rank: {
