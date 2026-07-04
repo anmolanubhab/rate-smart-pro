@@ -164,28 +164,36 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
   let poId = input.id;
 
   if (!poId) {
-    const poNumber = input.po_number || (await nextPONumber(businessId));
-    const { data, error } = await supabase
-      .from("purchase_orders")
-      .insert({
-        business_id: businessId,
-        po_number: poNumber,
-        supplier_id: input.supplier_id,
-        warehouse_id: input.warehouse_id ?? null,
-        po_date: input.po_date,
-        expected_delivery_date: input.expected_delivery_date ?? null,
-        status: input.status,
-        remarks: input.remarks ?? null,
-        subtotal: totals.subtotal,
-        discount_total: totals.discount_total,
-        tax_total: totals.tax_total,
-        grand_total: totals.grand_total,
-        created_by: input.userId,
-      })
-      .select()
-      .single();
+    const insertWith = (poNumber: string) =>
+      supabase
+        .from("purchase_orders")
+        .insert({
+          business_id: businessId,
+          po_number: poNumber,
+          supplier_id: input.supplier_id,
+          warehouse_id: input.warehouse_id ?? null,
+          po_date: input.po_date,
+          expected_delivery_date: input.expected_delivery_date ?? null,
+          status: input.status,
+          remarks: input.remarks ?? null,
+          subtotal: totals.subtotal,
+          discount_total: totals.discount_total,
+          tax_total: totals.tax_total,
+          grand_total: totals.grand_total,
+          created_by: input.userId,
+        })
+        .select()
+        .single();
+
+    let poNumber = input.po_number || (await nextPONumber(businessId));
+    let { data, error } = await insertWith(poNumber);
+    // 23505 = unique_violation → retry once with a freshly minted sequential number
+    if (error && (error.code === "23505" || /duplicate key|unique/i.test(error.message ?? ""))) {
+      poNumber = await nextPONumber(businessId);
+      ({ data, error } = await insertWith(poNumber));
+    }
     if (error) throw error;
-    poId = data.id;
+    poId = data!.id;
   } else {
     const { error } = await supabase
       .from("purchase_orders")
