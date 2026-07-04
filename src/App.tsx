@@ -99,6 +99,12 @@ const DealerApplications = lazy(() => import("./pages/settings/DealerApplication
 
 const queryClient = new QueryClient();
 
+// Preserves query string when redirecting legacy /dealer/* URLs to /portal/*
+const DealerRedirect = ({ to }: { to: string }) => {
+  const loc = useLocation();
+  return <Navigate to={`${to}${loc.search}`} replace />;
+};
+
 const RouteFallback = () => (
   <div className="flex items-center justify-center min-h-[40vh] text-sm text-muted-foreground">Loading…</div>
 );
