@@ -234,7 +234,7 @@ export async function createVoucher(
   const dbType = typeToDb(input.voucher_type);
   const { data: vnoData, error: vnoErr } = await supabase.rpc(
     "next_voucher_number" as any,
-    { _user_id: userId, _type: dbType, _business_id: getActiveBusinessIdSync() }
+    { _user_id: userId, _voucher_type: dbType }
   );
   const voucherNo: string =
     vnoErr || !vnoData
@@ -437,40 +437,20 @@ export async function getVoucher(voucherId: string): Promise<Voucher | null> {
   if (vErr) throw new Error(`getVoucher: ${vErr.message}`);
   if (!vRow) return null;
 
-  // Try selecting dr_amount/cr_amount first; fall back to amount if column missing
-  let rawItems: any[] | null = null;
-  let iErr: any = null;
-
-  const res1 = await supabase
+  const { data: rawItems, error: iErr } = await supabase
     .from("voucher_items")
-    .select("id, ledger_id, dr_amount, cr_amount, narration, position, ledger_accounts(name)")
+    .select("id, ledger_account_id, dr_amount, cr_amount, narration, position, ledger_accounts(name)")
     .eq("voucher_id", voucherId)
     .eq("business_id", businessId)
     .order("position");
-
-  if (res1.error && res1.error.message.includes("dr_amount")) {
-    // Fallback: DB only has "amount" column (pre-migration)
-    const res2 = await supabase
-      .from("voucher_items")
-      .select("id, ledger_id, amount, narration, position, ledger_accounts(name)")
-      .eq("voucher_id", voucherId)
-      .eq("business_id", businessId)
-      .order("position");
-    rawItems = res2.data;
-    iErr = res2.error;
-  } else {
-    rawItems = res1.data;
-    iErr = res1.error;
-  }
 
   if (iErr) throw new Error(`getVoucher items: ${iErr.message}`);
 
   const items: VoucherItem[] = (rawItems ?? []).map((it: any) => ({
     id: it.id,
-    ledger_account_id: it.ledger_id,
+    ledger_account_id: it.ledger_account_id,
     ledger_name: it.ledger_accounts?.name ?? "",
-    // Handle both schema variants
-    debit: Number(it.dr_amount ?? it.amount) || 0,
+    debit: Number(it.dr_amount) || 0,
     credit: Number(it.cr_amount) || 0,
     remarks: it.narration ?? "",
   }));
@@ -542,7 +522,7 @@ async function _upsertItems(
     user_id: userId,
     business_id: businessId,
     voucher_id: voucherId,
-    ledger_id: it.ledger_account_id,
+    ledger_account_id: it.ledger_account_id,
     dr_amount: Number(it.debit) || 0,
     cr_amount: Number(it.credit) || 0,
     narration: it.remarks || null,
@@ -550,22 +530,6 @@ async function _upsertItems(
   }));
 
   const { error } = await supabase.from("voucher_items").insert(rows);
-
-  if (error && error.message.includes("dr_amount")) {
-    // Pre-migration fallback: DB only has "amount" column
-    const fallbackRows = items.map((it, idx) => ({
-      user_id: userId,
-      business_id: businessId,
-      voucher_id: voucherId,
-      ledger_id: it.ledger_account_id,
-      amount: Number(it.debit) || Number(it.credit) || 0,
-      narration: it.remarks || null,
-      position: idx + 1,
-    }));
-    const { error: e2 } = await supabase.from("voucher_items").insert(fallbackRows);
-    if (e2) throw new Error(`_upsertItems fallback: ${e2.message}`);
-    return;
-  }
 
   if (error) throw new Error(`_upsertItems: ${error.message}`);
 }
