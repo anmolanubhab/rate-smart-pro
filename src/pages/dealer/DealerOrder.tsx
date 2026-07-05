@@ -104,12 +104,30 @@ export default function DealerOrder() {
     if (!user || !portalUser || cartRows.length === 0) return;
     setSubmitting(true);
     try {
-      // Re-check stock at submit time
+      // Re-check stock against a FRESH read from the DB (the client's cached
+      // `stock` value is from page load and can be stale if someone else
+      // ordered the same item in the meantime).
+      const ids = cartRows.map((r) => r.id);
+      const { data: freshStock, error: stockErr } = await supabase
+        .from("products")
+        .select("id, stock")
+        .in("id", ids);
+      if (stockErr) throw stockErr;
+      const stockMap = new Map((freshStock as { id: string; stock: number }[]).map((p) => [p.id, p.stock]));
       for (const r of cartRows) {
-        if (r.qty > (r.stock ?? 0)) {
-          throw new Error(`${r.part_number}: only ${r.stock} in stock`);
+        const live = stockMap.get(r.id) ?? 0;
+        if (r.qty > live) {
+          throw new Error(`${r.part_number}: only ${live} in stock right now`);
         }
       }
+
+      // Load party snapshot early so we can check the credit limit before
+      // building/submitting the order.
+      const { data: party } = await supabase
+        .from("parties")
+        .select("*")
+        .eq("id", portalUser.party_id)
+        .maybeSingle();
 
       const items = cartRows.map((r, idx) =>
         computeItem({
@@ -126,19 +144,24 @@ export default function DealerOrder() {
       );
       const totals = computeTotals(items, 0);
 
+      // Credit-limit check — skip entirely if the party has no limit set
+      // (0 or null means "no limit configured", not "zero credit").
+      const creditLimit = Number((party as { credit_limit?: number } | null)?.credit_limit) || 0;
+      const currentOutstanding = Number((party as { outstanding_balance?: number } | null)?.outstanding_balance) || 0;
+      if (creditLimit > 0 && currentOutstanding + totals.grand_total > creditLimit) {
+        const available = Math.max(0, creditLimit - currentOutstanding);
+        throw new Error(
+          `This order (${inr(totals.grand_total)}) would exceed your credit limit. ` +
+          `Available credit: ${inr(available)}. Contact your account manager to proceed.`
+        );
+      }
+
       // Reuse existing sequential order-number RPC
       const { data: numberData, error: numErr } = await supabase.rpc("next_order_number", {
         _user_id: user.id,
       } as never);
       if (numErr) throw numErr;
       const orderNumber = numberData as string;
-
-      // Load party snapshot for the order
-      const { data: party } = await supabase
-        .from("parties")
-        .select("*")
-        .eq("id", portalUser.party_id)
-        .maybeSingle();
 
       const { data: orderRow, error: orderErr } = await supabase
         .from("orders")
