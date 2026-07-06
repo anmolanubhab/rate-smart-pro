@@ -173,6 +173,7 @@ const App = () => (
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="/settings/accounting-lock" element={L(<AccountingLock />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
+              <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
