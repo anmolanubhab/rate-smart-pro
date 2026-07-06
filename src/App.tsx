@@ -48,6 +48,7 @@ const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"))
 const AccountingLock = lazy(() => import("./pages/settings/AccountingLock"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
+const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
