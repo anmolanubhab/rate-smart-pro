@@ -46,7 +46,9 @@ const items = [
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { business } = useBusiness();
+  const { business, role } = useBusiness();
+  const isOwner = role === "owner";
+
 
   return (
     <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6">
