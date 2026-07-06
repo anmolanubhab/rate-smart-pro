@@ -33,7 +33,7 @@ export type VoucherRow = {
 export type VoucherItemRow = {
   id: string;
   voucher_id: string;
-  ledger_account_id: string;
+  ledger_id: string;
   dr_amount: number;
   cr_amount: number;
   position: number;
@@ -93,10 +93,29 @@ export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow
     .eq("user_id", userId);
   if (biz) iq = iq.eq("business_id", biz);
   const { data: items, error: e2 } = await iq;
-  if (e2) throw e2;
+
+  // If dr_amount column doesn't exist yet (pre-migration), fall back to amount
+  let resolvedItems = items;
+  if (e2 && e2.message.includes("dr_amount")) {
+    const fallback = supabase
+      .from("voucher_items")
+      .select("ledger_account_id, amount")
+      .eq("user_id", userId);
+    const fq = biz ? fallback.eq("business_id", biz) : fallback;
+    const { data: fItems, error: fe } = await fq;
+    if (fe) throw fe;
+    // Treat amount as dr_amount
+    resolvedItems = (fItems ?? []).map((it: any) => ({
+      ledger_id: it.ledger_account_id,
+      dr_amount: Number(it.amount) || 0,
+      cr_amount: 0,
+    }));
+  } else if (e2) {
+    throw e2;
+  }
 
   const agg = new Map<string, { dr: number; cr: number }>();
-  (items ?? []).forEach((it: any) => {
+  (resolvedItems ?? []).forEach((it: any) => {
     const a = agg.get(it.ledger_account_id) ?? { dr: 0, cr: 0 };
     a.dr += Number(it.dr_amount ?? 0);
     a.cr += Number(it.cr_amount ?? 0);
@@ -139,6 +158,24 @@ export async function fetchVoucherItems(userId: string, voucherIds: string[]) {
     .in("voucher_id", voucherIds);
   if (biz) q = q.eq("business_id", biz);
   const { data, error } = await q;
+
+  if (error && error.message.includes("dr_amount")) {
+    // Fallback for amount-only schema
+    let q2 = supabase
+      .from("voucher_items")
+      .select("id, voucher_id, ledger_account_id, amount, position, narration")
+      .eq("user_id", userId)
+      .in("voucher_id", voucherIds);
+    if (biz) q2 = q2.eq("business_id", biz);
+    const { data: d2, error: e2 } = await q2;
+    if (e2) throw e2;
+    return (d2 ?? []).map((it: any) => ({
+      ...it,
+      dr_amount: Number(it.amount) || 0,
+      cr_amount: 0,
+    })) as VoucherItemRow[];
+  }
+
   if (error) throw error;
   return (data ?? []) as VoucherItemRow[];
 }
@@ -262,7 +299,7 @@ export async function fetchPartyLedger(
           voucher_date,
           voucher_number,
           voucher_type,
-          narration as voucher_narration
+          voucher_narration:narration
         )
       `
     )
