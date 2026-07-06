@@ -16,9 +16,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Building2, Plus, Search, LogOut, MoreVertical, Pencil, Users, Settings, Archive, Trash2, ArchiveRestore, Loader2 } from "lucide-react";
+import { Building2, Plus, Search, LogOut, MoreVertical, Pencil, Users, Settings, Archive, ArchiveRestore, Loader2, ShieldAlert } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 import { toast } from "sonner";
+import { EditCompanyWizard } from "@/components/company/EditCompanyWizard";
+import { ArchiveCompanyDialog } from "@/components/company/ArchiveCompanyDialog";
 
 type Row = {
   business_id: string;
@@ -53,7 +55,8 @@ export default function CompanySelection() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<{ kind: "archive" | "delete"; id: string; name: string; txCount: number } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; row: Row["businesses"] } | null>(null);
+  const [archiving, setArchiving] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => { document.title = "Select Company — RD Pro"; }, []);
 
@@ -124,38 +127,9 @@ export default function CompanySelection() {
     }
   };
 
-  const promptArchiveOrDelete = async (id: string, name: string) => {
-    const { data, error } = await supabase.rpc("business_transaction_count", { _business_id: id } as any);
-    if (error) { toast.error(error.message); return; }
-    const txCount = Number(data ?? 0);
-    setConfirmAction({ kind: txCount > 0 ? "archive" : "delete", id, name, txCount });
-  };
-
-  const doConfirm = async () => {
-    if (!confirmAction) return;
-    try {
-      if (confirmAction.kind === "archive") {
-        const { error } = await supabase.rpc("archive_business", { _business_id: confirmAction.id } as any);
-        if (error) throw error;
-        await logAudit({ business_id: confirmAction.id, action: "COMPANY_ARCHIVED", entity_type: "business", entity_id: confirmAction.id });
-        toast.success(`Archived "${confirmAction.name}"`);
-      } else {
-        const { error } = await supabase.from("businesses").delete().eq("id", confirmAction.id);
-        if (error) throw error;
-        await logAudit({ business_id: confirmAction.id, action: "COMPANY_DELETED", entity_type: "business", entity_id: confirmAction.id });
-        toast.success(`Deleted "${confirmAction.name}"`);
-      }
-      queryClient.invalidateQueries({ queryKey: ["company-list"] });
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setConfirmAction(null);
-    }
-  };
-
   const unarchive = async (id: string, name: string) => {
     try {
-      const { error } = await supabase.rpc("unarchive_business", { _business_id: id } as any);
+      const { error } = await supabase.rpc("restore_business", { _business_id: id } as any);
       if (error) throw error;
       toast.success(`Restored "${name}"`);
       queryClient.invalidateQueries({ queryKey: ["company-list"] });
@@ -163,6 +137,7 @@ export default function CompanySelection() {
       toast.error(e.message);
     }
   };
+
 
   if (authLoading) {
     return (
@@ -250,9 +225,6 @@ export default function CompanySelection() {
                               <DropdownMenuItem onClick={() => openCompany(b.id, b.business_name, r.role)}>
                                 <Building2 className="h-4 w-4 mr-2" />Open Company
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => onEdit(b.id)}>
-                                <Pencil className="h-4 w-4 mr-2" />Edit Company
-                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => onManageUsers(b.id)}>
                                 <Users className="h-4 w-4 mr-2" />Manage Users
                               </DropdownMenuItem>
@@ -262,8 +234,18 @@ export default function CompanySelection() {
                               {isOwner && (
                                 <>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => promptArchiveOrDelete(b.id, b.business_name)} className="text-destructive">
-                                    <Archive className="h-4 w-4 mr-2" />Archive / Delete
+                                  <DropdownMenuItem onClick={() => setEditing({ id: b.id, row: b })} className="text-blue-600 focus:text-blue-600">
+                                    <Pencil className="h-4 w-4 mr-2" />Edit Company
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setArchiving({ id: b.id, name: b.business_name })} className="text-amber-600 focus:text-amber-600">
+                                    <Archive className="h-4 w-4 mr-2" />Archive Company
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => { setActiveBusinessId(b.id); nav("/settings/danger-zone"); }}
+                                    className="text-destructive focus:text-destructive"
+                                  >
+                                    <ShieldAlert className="h-4 w-4 mr-2" />Danger Zone…
                                   </DropdownMenuItem>
                                 </>
                               )}
@@ -322,26 +304,23 @@ export default function CompanySelection() {
         )}
       </div>
 
-      <AlertDialog open={!!confirmAction} onOpenChange={(o) => !o && setConfirmAction(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmAction?.kind === "archive" ? "Archive company?" : "Delete company?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmAction?.kind === "archive"
-                ? `"${confirmAction?.name}" has ${confirmAction?.txCount} transactions. To preserve audit history, it will be archived (hidden from the active list, no data deleted). You can restore it later.`
-                : `"${confirmAction?.name}" has no transactions and will be permanently deleted. This cannot be undone.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={doConfirm} className={confirmAction?.kind === "delete" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}>
-              {confirmAction?.kind === "archive" ? <><Archive className="h-4 w-4 mr-2" />Archive</> : <><Trash2 className="h-4 w-4 mr-2" />Delete</>}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {editing?.row && (
+        <EditCompanyWizard
+          open={!!editing}
+          onOpenChange={(v) => !v && setEditing(null)}
+          business={editing.row as unknown as Record<string, unknown> & { id: string; business_name: string }}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: ["company-list"] })}
+        />
+      )}
+      {archiving && (
+        <ArchiveCompanyDialog
+          open={!!archiving}
+          onOpenChange={(v) => !v && setArchiving(null)}
+          businessId={archiving.id}
+          businessName={archiving.name}
+          onArchived={() => queryClient.invalidateQueries({ queryKey: ["company-list"] })}
+        />
+      )}
     </div>
   );
 }

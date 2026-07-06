@@ -19,7 +19,7 @@ function BookPage({ kind, title, eyebrow }: { kind: "cash" | "bank"; title: stri
       const rows: any[] = [];
       let receipts = 0, payments = 0;
       items
-        .filter(it => ledgerIds.has(it.ledger_account_id))
+        .filter(it => ledgerIds.has(it.ledger_id))
         .map(it => ({ it, v: vMap.get(it.voucher_id)! }))
         .filter(x => x.v)
         .sort((a, b) => a.v.voucher_date.localeCompare(b.v.voucher_date))
@@ -29,7 +29,7 @@ function BookPage({ kind, title, eyebrow }: { kind: "cash" | "bank"; title: stri
           rows.push({
             date: v.voucher_date,
             number: v.voucher_number,
-            particulars: `${lMap.get(it.ledger_account_id)?.name ?? "—"} · ${v.narration ?? ""}`,
+            particulars: `${lMap.get(it.ledger_id)?.name ?? "—"} · ${v.narration ?? ""}`,
             dr: Number(it.dr_amount || 0),
             cr: Number(it.cr_amount || 0),
           });

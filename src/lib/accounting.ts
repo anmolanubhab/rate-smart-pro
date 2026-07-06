@@ -89,7 +89,7 @@ export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow
 
   let iq = supabase
     .from("voucher_items")
-    .select("ledger_account_id, dr_amount, cr_amount")
+    .select("ledger_id, dr_amount, cr_amount")
     .eq("user_id", userId);
   if (biz) iq = iq.eq("business_id", biz);
   const { data: items, error: e2 } = await iq;
@@ -99,14 +99,14 @@ export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow
   if (e2 && e2.message.includes("dr_amount")) {
     const fallback = supabase
       .from("voucher_items")
-      .select("ledger_account_id, amount")
+      .select("ledger_id, amount")
       .eq("user_id", userId);
     const fq = biz ? fallback.eq("business_id", biz) : fallback;
     const { data: fItems, error: fe } = await fq;
     if (fe) throw fe;
     // Treat amount as dr_amount
     resolvedItems = (fItems ?? []).map((it: any) => ({
-      ledger_id: it.ledger_account_id,
+      ledger_id: it.ledger_id,
       dr_amount: Number(it.amount) || 0,
       cr_amount: 0,
     }));
@@ -116,10 +116,10 @@ export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow
 
   const agg = new Map<string, { dr: number; cr: number }>();
   (resolvedItems ?? []).forEach((it: any) => {
-    const a = agg.get(it.ledger_account_id) ?? { dr: 0, cr: 0 };
+    const a = agg.get(it.ledger_id) ?? { dr: 0, cr: 0 };
     a.dr += Number(it.dr_amount ?? 0);
     a.cr += Number(it.cr_amount ?? 0);
-    agg.set(it.ledger_account_id, a);
+    agg.set(it.ledger_id, a);
   });
 
   return (ledgers ?? []).map((l: any) => {
@@ -153,7 +153,7 @@ export async function fetchVoucherItems(userId: string, voucherIds: string[]) {
   const biz = getActiveBusinessIdSync();
   let q = supabase
     .from("voucher_items")
-    .select("id, voucher_id, ledger_account_id, dr_amount, cr_amount, position, narration")
+    .select("id, voucher_id, ledger_id, dr_amount, cr_amount, position, narration")
     .eq("user_id", userId)
     .in("voucher_id", voucherIds);
   if (biz) q = q.eq("business_id", biz);
@@ -163,7 +163,7 @@ export async function fetchVoucherItems(userId: string, voucherIds: string[]) {
     // Fallback for amount-only schema
     let q2 = supabase
       .from("voucher_items")
-      .select("id, voucher_id, ledger_account_id, amount, position, narration")
+      .select("id, voucher_id, ledger_id, amount, position, narration")
       .eq("user_id", userId)
       .in("voucher_id", voucherIds);
     if (biz) q2 = q2.eq("business_id", biz);
@@ -303,7 +303,7 @@ export async function fetchPartyLedger(
         )
       `
     )
-    .eq("ledger_account_id", ledger.id)
+    .eq("ledger_id", ledger.id)
     .eq("business_id", businessId)
     .eq("user_id", userId);
 

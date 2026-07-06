@@ -19,7 +19,7 @@ export default function BankBook() {
       const lMap = new Map(ledgers.map(l => [l.id, l]));
       let receipts = 0, payments = 0;
       const list = items
-        .filter(it => ledgerIds.has(it.ledger_account_id))
+        .filter(it => ledgerIds.has(it.ledger_id))
         .map(it => ({ it, v: vMap.get(it.voucher_id)! }))
         .filter(x => x.v)
         .sort((a, b) => a.v.voucher_date.localeCompare(b.v.voucher_date));
@@ -31,7 +31,7 @@ export default function BankBook() {
         return {
           date: v.voucher_date,
           number: v.voucher_number,
-          particulars: `${lMap.get(it.ledger_account_id)?.name ?? "—"} · ${v.narration ?? ""}`,
+          particulars: `${lMap.get(it.ledger_id)?.name ?? "—"} · ${v.narration ?? ""}`,
           dr: Number(it.dr_amount || 0),
           cr: Number(it.cr_amount || 0),
           balance: bal,
