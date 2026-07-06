@@ -290,7 +290,9 @@ export type Database = {
       businesses: {
         Row: {
           address: string | null
+          archive_reason: string | null
           archived_at: string | null
+          archived_by: string | null
           bank_account_number: string | null
           bank_branch: string | null
           bank_ifsc: string | null
@@ -301,6 +303,9 @@ export type Database = {
           composition_scheme: boolean
           created_at: string
           default_gst_pct: number
+          delete_reason: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           district: string | null
           email: string | null
           firm_name: string | null
@@ -311,6 +316,7 @@ export type Database = {
           industry_segment: string | null
           invoice_prefix: string | null
           invoice_terms: string | null
+          is_deleted: boolean
           logo_url: string | null
           mobile: string | null
           msme_number: string | null
@@ -322,11 +328,15 @@ export type Database = {
           state: string | null
           tan_number: string | null
           updated_at: string
+          updated_by: string | null
+          version: number
           website: string | null
         }
         Insert: {
           address?: string | null
+          archive_reason?: string | null
           archived_at?: string | null
+          archived_by?: string | null
           bank_account_number?: string | null
           bank_branch?: string | null
           bank_ifsc?: string | null
@@ -337,6 +347,9 @@ export type Database = {
           composition_scheme?: boolean
           created_at?: string
           default_gst_pct?: number
+          delete_reason?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           district?: string | null
           email?: string | null
           firm_name?: string | null
@@ -347,6 +360,7 @@ export type Database = {
           industry_segment?: string | null
           invoice_prefix?: string | null
           invoice_terms?: string | null
+          is_deleted?: boolean
           logo_url?: string | null
           mobile?: string | null
           msme_number?: string | null
@@ -358,11 +372,15 @@ export type Database = {
           state?: string | null
           tan_number?: string | null
           updated_at?: string
+          updated_by?: string | null
+          version?: number
           website?: string | null
         }
         Update: {
           address?: string | null
+          archive_reason?: string | null
           archived_at?: string | null
+          archived_by?: string | null
           bank_account_number?: string | null
           bank_branch?: string | null
           bank_ifsc?: string | null
@@ -373,6 +391,9 @@ export type Database = {
           composition_scheme?: boolean
           created_at?: string
           default_gst_pct?: number
+          delete_reason?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           district?: string | null
           email?: string | null
           firm_name?: string | null
@@ -383,6 +404,7 @@ export type Database = {
           industry_segment?: string | null
           invoice_prefix?: string | null
           invoice_terms?: string | null
+          is_deleted?: boolean
           logo_url?: string | null
           mobile?: string | null
           msme_number?: string | null
@@ -394,6 +416,8 @@ export type Database = {
           state?: string | null
           tan_number?: string | null
           updated_at?: string
+          updated_by?: string | null
+          version?: number
           website?: string | null
         }
         Relationships: []
@@ -472,6 +496,106 @@ export type Database = {
             columns: ["segment_id"]
             isOneToOne: false
             referencedRelation: "segments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_audit_logs: {
+        Row: {
+          action: string
+          business_id: string
+          changed_fields: Json | null
+          created_at: string
+          id: string
+          ip: string | null
+          new_value: Json | null
+          old_value: Json | null
+          reason: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          business_id: string
+          changed_fields?: Json | null
+          created_at?: string
+          id?: string
+          ip?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          reason?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          business_id?: string
+          changed_fields?: Json | null
+          created_at?: string
+          id?: string
+          ip?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          reason?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_audit_logs_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_delete_requests: {
+        Row: {
+          business_id: string
+          cancelled_at: string | null
+          cancelled_by: string | null
+          eligible_at: string
+          executed_at: string | null
+          executed_by: string | null
+          id: string
+          reason: string | null
+          requested_at: string
+          requested_by: string
+          status: string
+        }
+        Insert: {
+          business_id: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          eligible_at?: string
+          executed_at?: string | null
+          executed_by?: string | null
+          id?: string
+          reason?: string | null
+          requested_at?: string
+          requested_by: string
+          status?: string
+        }
+        Update: {
+          business_id?: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          eligible_at?: string
+          executed_at?: string | null
+          executed_by?: string | null
+          id?: string
+          reason?: string | null
+          requested_at?: string
+          requested_by?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_delete_requests_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
@@ -2447,9 +2571,23 @@ export type Database = {
       _user_default_business: { Args: { _user_id: string }; Returns: string }
       approve_dealer_application: { Args: { _app_id: string }; Returns: string }
       archive_business: { Args: { _business_id: string }; Returns: undefined }
+      audited_update_business: {
+        Args: {
+          _business_id: string
+          _changes: Json
+          _ip?: string
+          _reason?: string
+          _user_agent?: string
+        }
+        Returns: undefined
+      }
       business_transaction_count: {
         Args: { _business_id: string }
         Returns: number
+      }
+      cancel_permanent_delete: {
+        Args: { _business_id: string }
+        Returns: undefined
       }
       current_business_id: { Args: never; Returns: string }
       ensure_party_ledger:
@@ -2458,6 +2596,10 @@ export type Database = {
             Args: { _business_id?: string; _party_id: string; _user_id: string }
             Returns: string
           }
+      execute_permanent_delete: {
+        Args: { _business_id: string }
+        Returns: undefined
+      }
       get_current_portal_business_id: { Args: never; Returns: string }
       get_current_portal_party_id: { Args: never; Returns: string }
       has_business_role: {
@@ -2498,6 +2640,11 @@ export type Database = {
         Args: { _app_id: string; _notes?: string }
         Returns: undefined
       }
+      request_permanent_delete: {
+        Args: { _business_id: string; _reason?: string }
+        Returns: string
+      }
+      restore_business: { Args: { _business_id: string }; Returns: undefined }
       role_rank: {
         Args: { _role: Database["public"]["Enums"]["business_role"] }
         Returns: number
@@ -2508,6 +2655,10 @@ export type Database = {
             Args: { _business_id?: string; _user_id: string }
             Returns: undefined
           }
+      soft_delete_business: {
+        Args: { _business_id: string; _reason?: string }
+        Returns: undefined
+      }
       unarchive_business: { Args: { _business_id: string }; Returns: undefined }
       user_business_role: {
         Args: { _business_id: string }

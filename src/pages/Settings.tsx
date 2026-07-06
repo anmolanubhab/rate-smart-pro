@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useBusiness } from "@/hooks/useBusiness";
 import {
   Building2, Users, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight,
+  ChevronRight, ShieldAlert,
 } from "lucide-react";
 
 const items = [
@@ -46,7 +46,9 @@ const items = [
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { business } = useBusiness();
+  const { business, role } = useBusiness();
+  const isOwner = role === "owner";
+
 
   return (
     <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6">
@@ -75,6 +77,24 @@ export default function Settings() {
           </button>
         ))}
       </div>
+
+      {isOwner && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 overflow-hidden">
+          <button
+            onClick={() => navigate("/settings/danger-zone")}
+            className="w-full flex items-center gap-4 px-5 py-4 hover:bg-destructive/10 transition-colors text-left"
+          >
+            <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center flex-shrink-0">
+              <ShieldAlert className="h-5 w-5 text-destructive" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm text-destructive">Danger Zone</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Archive or permanently delete this company (owner only)</div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-destructive flex-shrink-0" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
