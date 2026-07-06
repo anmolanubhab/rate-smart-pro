@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useBusiness } from "@/hooks/useBusiness";
 import {
   Building2, Users, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight,
+  ChevronRight, ShieldAlert,
 } from "lucide-react";
 
 const items = [
