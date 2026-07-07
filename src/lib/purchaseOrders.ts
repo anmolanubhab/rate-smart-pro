@@ -8,6 +8,7 @@ export type POStatus =
   | "draft"
   | "pending_approval"
   | "approved"
+  | "rejected"
   | "ordered"
   | "partially_received"
   | "received"
@@ -30,6 +31,9 @@ export interface POItem {
   position?: number;
 }
 
+export type TransportMode = "road" | "rail" | "air" | "courier" | "self_pickup" | "other";
+export type TaxMode = "inclusive" | "exclusive";
+
 export interface PurchaseOrder {
   id: string;
   business_id: string;
@@ -40,10 +44,20 @@ export interface PurchaseOrder {
   expected_delivery_date: string | null;
   status: POStatus;
   remarks: string | null;
+  transport_name: string | null;
+  transport_mode: TransportMode | null;
+  lr_number: string | null;
+  vehicle_number: string | null;
+  payment_terms: string | null;
+  terms_conditions: string | null;
+  tax_mode: TaxMode;
   subtotal: number;
   discount_total: number;
   tax_total: number;
   grand_total: number;
+  total_qty: number;
+  received_qty: number;
+  pending_qty: number;
   created_by: string;
   approved_by: string | null;
   approved_at: string | null;
@@ -153,6 +167,13 @@ export interface SavePOInput {
   expected_delivery_date?: string | null;
   status: POStatus;
   remarks?: string | null;
+  transport_name?: string | null;
+  transport_mode?: TransportMode | null;
+  lr_number?: string | null;
+  vehicle_number?: string | null;
+  payment_terms?: string | null;
+  terms_conditions?: string | null;
+  tax_mode?: TaxMode;
   items: POItem[];
 }
 
@@ -176,6 +197,13 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
           expected_delivery_date: input.expected_delivery_date ?? null,
           status: input.status,
           remarks: input.remarks ?? null,
+          transport_name: input.transport_name ?? null,
+          transport_mode: input.transport_mode ?? null,
+          lr_number: input.lr_number ?? null,
+          vehicle_number: input.vehicle_number ?? null,
+          payment_terms: input.payment_terms ?? null,
+          terms_conditions: input.terms_conditions ?? null,
+          tax_mode: input.tax_mode ?? "exclusive",
           subtotal: totals.subtotal,
           discount_total: totals.discount_total,
           tax_total: totals.tax_total,
@@ -204,6 +232,13 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
         expected_delivery_date: input.expected_delivery_date ?? null,
         status: input.status,
         remarks: input.remarks ?? null,
+        transport_name: input.transport_name ?? null,
+        transport_mode: input.transport_mode ?? null,
+        lr_number: input.lr_number ?? null,
+        vehicle_number: input.vehicle_number ?? null,
+        payment_terms: input.payment_terms ?? null,
+        terms_conditions: input.terms_conditions ?? null,
+        tax_mode: input.tax_mode ?? "exclusive",
         subtotal: totals.subtotal,
         discount_total: totals.discount_total,
         tax_total: totals.tax_total,
@@ -259,6 +294,19 @@ export async function approvePurchaseOrder(id: string, userId: string): Promise<
   const { error } = await supabase
     .from("purchase_orders")
     .update({ status: "approved", approved_by: userId, approved_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function rejectPurchaseOrder(id: string, userId: string, reason?: string | null): Promise<void> {
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({
+      status: "rejected",
+      approved_by: userId,
+      approved_at: new Date().toISOString(),
+      remarks: reason ? `Rejected: ${reason}` : undefined,
+    })
     .eq("id", id);
   if (error) throw error;
 }

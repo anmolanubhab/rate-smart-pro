@@ -23,6 +23,9 @@ interface GRNItem {
   damaged_qty: number;
   accepted_qty: number;
   pending_qty: number;
+  short_qty: number;
+  excess_qty: number;
+  quality_remarks: string;
 }
 
 export default function PurchaseGRN() {
@@ -54,7 +57,7 @@ export default function PurchaseGRN() {
       try {
         const [{ data: partyData }, { data: warehouseData }, { data: poData }] = await Promise.all([
           supabase.from('parties').select('id, name').eq('business_id', businessId).order('name'),
-          supabase.from('warehouses').select('id, name, is_default').eq('business_id', businessId).order('is_default', { ascending: false }),
+          supabase.from('warehouses').select('id, warehouse_name').eq('business_id', businessId).order('warehouse_name', { ascending: true }),
           supabase.from('purchase_orders').select('id, po_number, supplier_id, warehouse_id')
             .eq('business_id', businessId)
             .in('status', ['approved', 'ordered', 'partially_received'])
@@ -63,8 +66,7 @@ export default function PurchaseGRN() {
         if (partyData) setSuppliers(partyData);
         if (warehouseData) {
           setWarehouses(warehouseData);
-          const def = warehouseData.find((w: any) => w.is_default);
-          if (def) setSelectedWarehouse(def.id);
+          if (warehouseData.length === 1) setSelectedWarehouse(warehouseData[0].id);
         }
         if (poData) setPurchaseOrders(poData);
 
@@ -131,6 +133,9 @@ export default function PurchaseGRN() {
             damaged_qty: 0,
             accepted_qty: remaining,
             pending_qty: 0,
+            short_qty: 0,
+            excess_qty: 0,
+            quality_remarks: '',
           };
         })
         .filter((it) => it.ordered_qty > 0);
@@ -151,8 +156,16 @@ export default function PurchaseGRN() {
 
     item.accepted_qty = Math.max(0, item.received_qty - item.damaged_qty);
     item.pending_qty = Math.max(0, item.ordered_qty - item.received_qty);
+    item.short_qty = Math.max(0, item.ordered_qty - item.received_qty);
+    item.excess_qty = Math.max(0, item.received_qty - item.ordered_qty);
 
     updatedItems[index] = item;
+    setItems(updatedItems);
+  };
+
+  const handleRemarksChange = (index: number, value: string) => {
+    const updatedItems = [...items];
+    updatedItems[index] = { ...updatedItems[index], quality_remarks: value };
     setItems(updatedItems);
   };
 
@@ -201,6 +214,9 @@ export default function PurchaseGRN() {
           damaged_qty: item.damaged_qty,
           accepted_qty: item.accepted_qty,
           pending_qty: item.pending_qty,
+          short_qty: item.short_qty,
+          excess_qty: item.excess_qty,
+          quality_remarks: item.quality_remarks || null,
         }));
 
         const { error: itemsError } = await supabase
@@ -245,33 +261,10 @@ export default function PurchaseGRN() {
           });
         }
 
-        // Advance the linked PO's status: fully received vs partially received.
-        if (selectedPO) {
-          const { data: poItemsAll } = await supabase
-            .from('purchase_order_items')
-            .select('id, product_id, qty')
-            .eq('purchase_order_id', selectedPO);
-
-          const { data: allReceipts } = await supabase
-            .from('goods_receipt_items')
-            .select('product_id, accepted_qty, goods_receipts!inner(purchase_order_id, status)')
-            .eq('goods_receipts.purchase_order_id', selectedPO)
-            .eq('goods_receipts.status', 'received');
-
-          const receivedMap = new Map<string, number>();
-          (allReceipts ?? []).forEach((r: any) => {
-            receivedMap.set(r.product_id, (receivedMap.get(r.product_id) ?? 0) + Number(r.accepted_qty ?? 0));
-          });
-
-          const fullyReceived = (poItemsAll ?? []).every(
-            (it: any) => (receivedMap.get(it.product_id) ?? 0) >= Number(it.qty)
-          );
-
-          await supabase
-            .from('purchase_orders')
-            .update({ status: fullyReceived ? 'received' : 'partially_received' })
-            .eq('id', selectedPO);
-        }
+        // PO status + Ordered/Received/Pending quantities are now recalculated
+        // automatically by a database trigger (trg_gri_recalc / recalc_po_quantities)
+        // the moment goods_receipt_items rows land — no client-side computation needed,
+        // and this stays correct no matter which screen or process wrote the GRN.
       }
 
       toast({ title: "Success", description: `GRN created as ${status.toUpperCase()}` });
@@ -333,7 +326,7 @@ export default function PurchaseGRN() {
             <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
               <SelectTrigger><SelectValue placeholder="Select Warehouse" /></SelectTrigger>
               <SelectContent>
-                {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -360,12 +353,15 @@ export default function PurchaseGRN() {
                 <th className="p-3 text-center">Damaged</th>
                 <th className="p-3 text-center">Accepted</th>
                 <th className="p-3 text-center">Pending</th>
+                <th className="p-3 text-center">Short</th>
+                <th className="p-3 text-center">Excess</th>
+                <th className="p-3">Quality Remarks</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
+                  <td colSpan={10} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
                 </tr>
               ) : (
                 items.map((item, idx) => (
@@ -381,6 +377,16 @@ export default function PurchaseGRN() {
                     </td>
                     <td className="p-3 text-center text-green-600 font-bold">{item.accepted_qty}</td>
                     <td className="p-3 text-center text-orange-500 font-bold">{item.pending_qty}</td>
+                    <td className="p-3 text-center text-red-500 font-semibold">{item.short_qty || '—'}</td>
+                    <td className="p-3 text-center text-blue-500 font-semibold">{item.excess_qty || '—'}</td>
+                    <td className="p-3">
+                      <Input
+                        className="w-40 text-xs"
+                        placeholder="e.g. damaged in transit"
+                        value={item.quality_remarks}
+                        onChange={(e) => handleRemarksChange(idx, e.target.value)}
+                      />
+                    </td>
                   </tr>
                 ))
               )}

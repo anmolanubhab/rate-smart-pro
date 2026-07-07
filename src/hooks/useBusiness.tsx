@@ -120,10 +120,10 @@ export function useBusiness() {
 
 const PERMS: Record<BusinessRole, string[]> = {
   owner:      ["*"],
-  admin:      ["business.edit", "team.manage", "voucher.create", "voucher.edit", "voucher.delete", "voucher.cancel", "settings.edit", "audit.view", "data.import", "data.export"],
-  manager:    ["voucher.create", "voucher.edit", "voucher.cancel", "data.export"],
-  accountant: ["voucher.create", "voucher.edit", "audit.view", "data.export"],
-  operator:   ["voucher.create", "data.export"],
+  admin:      ["business.edit", "team.manage", "voucher.create", "voucher.edit", "voucher.delete", "voucher.cancel", "settings.edit", "audit.view", "data.import", "data.export", "purchase.create", "purchase.approve"],
+  manager:    ["voucher.create", "voucher.edit", "voucher.cancel", "data.export", "purchase.create", "purchase.approve"],
+  accountant: ["voucher.create", "voucher.edit", "audit.view", "data.export", "purchase.create", "purchase.approve"],
+  operator:   ["voucher.create", "data.export", "purchase.create"],
   salesman:   ["voucher.create", "data.export"],
   viewer:     ["data.export"],
 };

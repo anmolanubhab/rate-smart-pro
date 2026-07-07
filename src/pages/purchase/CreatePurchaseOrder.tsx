@@ -15,7 +15,10 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness, can } from "@/hooks/useBusiness";
+import { logAudit } from "@/lib/audit";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +41,7 @@ import {
   nextPONumber,
   savePurchaseOrder,
   approvePurchaseOrder,
+  rejectPurchaseOrder,
 } from "@/lib/purchaseOrders";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -52,6 +56,7 @@ const STATUS_BADGE: Record<POStatus, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/5",
   pending_approval: "border-blue-500/40 text-blue-600 bg-blue-500/5",
   approved: "border-emerald-500/40 text-emerald-600 bg-emerald-500/5",
+  rejected: "border-destructive/40 text-destructive bg-destructive/5",
   ordered: "border-primary/40 text-primary bg-primary/5",
   partially_received: "border-orange-500/40 text-orange-600 bg-orange-500/5",
   received: "border-emerald-600/40 text-emerald-700 bg-emerald-600/5",
@@ -63,6 +68,8 @@ const STATUS_BADGE: Record<POStatus, string> = {
 
 export default function CreatePurchaseOrder() {
   const { user, loading: authLoading } = useAuth();
+  const { role } = useBusiness();
+  const canApprove = can(role, "purchase.approve");
   const businessId = getActiveBusinessIdSync();
   const navigate = useNavigate();
   const { id: editId } = useParams<{ id?: string }>();
@@ -72,6 +79,13 @@ export default function CreatePurchaseOrder() {
   const [poDate, setPODate] = useState(new Date().toISOString().slice(0, 10));
   const [expectedDelivery, setExpectedDelivery] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [transportName, setTransportName] = useState("");
+  const [transportMode, setTransportMode] = useState<string>("");
+  const [lrNumber, setLrNumber] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("");
+  const [termsConditions, setTermsConditions] = useState("");
+  const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("exclusive");
 
   // Supplier (from parties, type = supplier)
   const [suppliers, setSuppliers] = useState<Party[]>([]);
@@ -80,8 +94,9 @@ export default function CreatePurchaseOrder() {
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [supplierHighlight, setSupplierHighlight] = useState(0);
 
-  // Warehouse (static placeholder for now — wire to warehouses table when ready)
-  const [warehouseId] = useState<string | null>(null);
+  // Warehouse
+  const [warehouses, setWarehouses] = useState<{ id: string; warehouse_name: string }[]>([]);
+  const [warehouseId, setWarehouseId] = useState<string | null>(null);
 
   // Items
   const [items, setItems] = useState<POItem[]>(Array.from({ length: 5 }, blankPOItem));
@@ -143,6 +158,17 @@ export default function CreatePurchaseOrder() {
     if (!user || !businessId) return;
 
     fetchParties(user.id).then(setSuppliers).catch(() => {});
+    supabase
+      .from("warehouses")
+      .select("id, warehouse_name")
+      .eq("business_id", businessId)
+      .order("warehouse_name", { ascending: true })
+      .then(({ data }) => {
+        if (data) {
+          setWarehouses(data);
+          if (data.length === 1) setWarehouseId(data[0].id);
+        }
+      });
 
     if (!editId) {
       setPONumber(localPONumber());
@@ -158,6 +184,14 @@ export default function CreatePurchaseOrder() {
           setExpectedDelivery(po.expected_delivery_date || "");
           setRemarks(po.remarks || "");
           setSupplierId(po.supplier_id || "");
+          setWarehouseId(po.warehouse_id || null);
+          setTransportName(po.transport_name || "");
+          setTransportMode(po.transport_mode || "");
+          setLrNumber(po.lr_number || "");
+          setVehicleNumber(po.vehicle_number || "");
+          setPaymentTerms(po.payment_terms || "");
+          setTermsConditions(po.terms_conditions || "");
+          setTaxMode(po.tax_mode || "exclusive");
           setCurrentStatus(po.status);
           setSavedPO(po);
           setEditMode(true);
@@ -302,6 +336,13 @@ export default function CreatePurchaseOrder() {
         expected_delivery_date: expectedDelivery || null,
         status,
         remarks: remarks || null,
+        transport_name: transportName || null,
+        transport_mode: (transportMode as any) || null,
+        lr_number: lrNumber || null,
+        vehicle_number: vehicleNumber || null,
+        payment_terms: paymentTerms || null,
+        terms_conditions: termsConditions || null,
+        tax_mode: taxMode,
         items: validItems(),
       });
       poIdRef.current = saved.id;
@@ -328,8 +369,40 @@ export default function CreatePurchaseOrder() {
     try {
       setSaving(true);
       await approvePurchaseOrder(poIdRef.current, user.id);
+      await logAudit({
+        business_id: businessId,
+        action: "purchase_order.approve",
+        entity_type: "purchase_order",
+        entity_id: poIdRef.current,
+        old_value: { status: currentStatus },
+        new_value: { status: "approved" },
+      });
       setCurrentStatus("approved");
       toast.success("Purchase Order approved");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!user || !poIdRef.current) return;
+    const reason = window.prompt("Reason for rejecting this PO? (optional)") ?? "";
+    try {
+      setSaving(true);
+      await rejectPurchaseOrder(poIdRef.current, user.id, reason || null);
+      await logAudit({
+        business_id: businessId,
+        action: "purchase_order.reject",
+        entity_type: "purchase_order",
+        entity_id: poIdRef.current,
+        old_value: { status: currentStatus },
+        new_value: { status: "rejected", reason },
+        reason: reason || null,
+      });
+      setCurrentStatus("rejected");
+      toast.success("Purchase Order rejected");
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -412,10 +485,15 @@ export default function CreatePurchaseOrder() {
           <Button size="sm" variant="outline" onClick={() => handleSave("pending_approval")} disabled={saving} className="h-8 text-xs" title="Ctrl+Enter">
             <CheckCircle2 className="h-3.5 w-3.5 mr-1" />Submit
           </Button>
-          {editMode && currentStatus === "pending_approval" && (
-            <Button size="sm" onClick={handleApprove} disabled={saving} className="h-8 text-xs gradient-primary text-white border-0">
-              <ShieldCheck className="h-3.5 w-3.5 mr-1" />Approve
-            </Button>
+          {editMode && currentStatus === "pending_approval" && canApprove && (
+            <>
+              <Button size="sm" variant="outline" onClick={handleReject} disabled={saving} className="h-8 text-xs border-destructive/40 text-destructive">
+                <X className="h-3.5 w-3.5 mr-1" />Reject
+              </Button>
+              <Button size="sm" onClick={handleApprove} disabled={saving} className="h-8 text-xs gradient-primary text-white border-0">
+                <ShieldCheck className="h-3.5 w-3.5 mr-1" />Approve
+              </Button>
+            </>
           )}
           <Button size="sm" variant="ghost" onClick={() => navigate("/purchase/orders")} className="h-8 text-xs text-muted-foreground">
             <X className="h-3.5 w-3.5 mr-1" />Cancel
@@ -516,13 +594,96 @@ export default function CreatePurchaseOrder() {
               </>
             )}
 
-            {/* Warehouse (placeholder) */}
+            {/* Warehouse */}
             <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">Warehouse</div>
             <div className="col-span-1 md:col-span-4">
+              <select
+                value={warehouseId ?? ""}
+                onChange={(e) => setWarehouseId(e.target.value || null)}
+                className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              >
+                <option value="">Select warehouse…</option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.warehouse_name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Transport */}
+            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">Transport</div>
+            <div className="col-span-1 md:col-span-4">
               <Input
-                placeholder="Default warehouse"
-                disabled
-                className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 opacity-50 cursor-not-allowed"
+                value={transportName}
+                onChange={(e) => setTransportName(e.target.value)}
+                placeholder="Transporter name"
+                className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              />
+            </div>
+            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center md:text-right">Mode</div>
+            <div className="col-span-1 md:col-span-4">
+              <select
+                value={transportMode}
+                onChange={(e) => setTransportMode(e.target.value)}
+                className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              >
+                <option value="">Select mode…</option>
+                <option value="road">Road</option>
+                <option value="rail">Rail</option>
+                <option value="air">Air</option>
+                <option value="courier">Courier</option>
+                <option value="self_pickup">Self Pickup</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            {/* LR / Vehicle */}
+            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">LR Number</div>
+            <div className="col-span-1 md:col-span-4">
+              <Input
+                value={lrNumber}
+                onChange={(e) => setLrNumber(e.target.value)}
+                className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              />
+            </div>
+            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center md:text-right">Vehicle Number</div>
+            <div className="col-span-1 md:col-span-4">
+              <Input
+                value={vehicleNumber}
+                onChange={(e) => setVehicleNumber(e.target.value)}
+                className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              />
+            </div>
+
+            {/* Payment Terms / Tax Mode */}
+            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">Payment Terms</div>
+            <div className="col-span-1 md:col-span-4">
+              <Input
+                value={paymentTerms}
+                onChange={(e) => setPaymentTerms(e.target.value)}
+                placeholder="e.g. Net 30 days"
+                className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              />
+            </div>
+            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center md:text-right">Tax Mode</div>
+            <div className="col-span-1 md:col-span-4">
+              <select
+                value={taxMode}
+                onChange={(e) => setTaxMode(e.target.value as "inclusive" | "exclusive")}
+                className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              >
+                <option value="exclusive">Exclusive of Tax</option>
+                <option value="inclusive">Inclusive of Tax</option>
+              </select>
+            </div>
+
+            {/* Terms & Conditions */}
+            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">Terms & Conditions</div>
+            <div className="col-span-1 md:col-span-10">
+              <Input
+                value={termsConditions}
+                onChange={(e) => setTermsConditions(e.target.value)}
+                placeholder="Printed on the PO document…"
+                className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
               />
             </div>
 
@@ -536,6 +697,18 @@ export default function CreatePurchaseOrder() {
                 className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
               />
             </div>
+
+            {/* Qty rollup (read-only, DB-computed) */}
+            {editMode && savedPO && (
+              <>
+                <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">Qty Status</div>
+                <div className="col-span-1 md:col-span-10 flex gap-4 text-[12px] font-mono">
+                  <span>Ordered: <strong>{savedPO.total_qty}</strong></span>
+                  <span className="text-emerald-600">Received: <strong>{savedPO.received_qty}</strong></span>
+                  <span className="text-orange-500">Pending: <strong>{savedPO.pending_qty}</strong></span>
+                </div>
+              </>
+            )}
 
             {/* Remarks */}
             <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">Remarks</div>
@@ -820,15 +993,26 @@ export default function CreatePurchaseOrder() {
               >
                 <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Submit
               </Button>
-              {editMode && currentStatus === "pending_approval" && (
-                <Button
-                  size="sm"
-                  onClick={handleApprove}
-                  disabled={saving}
-                  className="flex-1 min-w-[100px] bg-emerald-600 hover:bg-emerald-700 text-white border-0"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />Approve
-                </Button>
+              {editMode && currentStatus === "pending_approval" && canApprove && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleReject}
+                    disabled={saving}
+                    className="flex-1 min-w-[100px] border-destructive/40 text-destructive"
+                  >
+                    <X className="h-3.5 w-3.5 mr-1.5" />Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleApprove}
+                    disabled={saving}
+                    className="flex-1 min-w-[100px] bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />Approve
+                  </Button>
+                </>
               )}
               <Button
                 variant="ghost"

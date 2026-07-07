@@ -20,7 +20,7 @@ export default function PurchaseOrders() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchase_orders")
-        .select("id, po_number, po_date, status, grand_total, supplier:parties(name)")
+        .select("id, po_number, po_date, status, grand_total, total_qty, received_qty, pending_qty, supplier:parties(name)")
         .eq("business_id", businessId!)
         .order("po_date", { ascending: false })
         .limit(200);
@@ -32,7 +32,7 @@ export default function PurchaseOrders() {
   const rows = useMemo(() => (data ?? []).map((po) => {
     const toneMap: Record<string, string> = {
       draft: "default", pending_approval: "warning", approved: "success",
-      ordered: "success", partially_received: "warning", received: "success",
+      rejected: "danger", ordered: "success", partially_received: "warning", received: "success",
       cancelled: "danger", closed: "default",
     };
     return {
@@ -40,6 +40,9 @@ export default function PurchaseOrders() {
       supplier: po.supplier?.name ?? "—",
       date: po.po_date,
       amount: Number(po.grand_total ?? 0),
+      ordered_qty: Number(po.total_qty ?? 0),
+      received_qty: Number(po.received_qty ?? 0),
+      pending_qty: Number(po.pending_qty ?? 0),
       status: po.status.replace(/_/g, " "),
       status_tone: toneMap[po.status] ?? "default",
       _id: po.id,
@@ -73,6 +76,9 @@ export default function PurchaseOrders() {
         { key: "po_number", label: "PO Number" },
         { key: "supplier", label: "Supplier" },
         { key: "date", label: "Date" },
+        { key: "ordered_qty", label: "Ordered", align: "right", format: "number" },
+        { key: "received_qty", label: "Received", align: "right", format: "number" },
+        { key: "pending_qty", label: "Pending", align: "right", format: "number" },
         { key: "amount", label: "Amount", align: "right", format: "currency" },
         { key: "status", label: "Status", format: "badge" },
       ]}

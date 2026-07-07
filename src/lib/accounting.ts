@@ -33,7 +33,7 @@ export type VoucherRow = {
 export type VoucherItemRow = {
   id: string;
   voucher_id: string;
-  ledger_id: string;
+  ledger_account_id: string;
   dr_amount: number;
   cr_amount: number;
   position: number;
@@ -89,37 +89,18 @@ export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow
 
   let iq = supabase
     .from("voucher_items")
-    .select("ledger_id, dr_amount, cr_amount")
+    .select("ledger_account_id, dr_amount, cr_amount")
     .eq("user_id", userId);
   if (biz) iq = iq.eq("business_id", biz);
   const { data: items, error: e2 } = await iq;
-
-  // If dr_amount column doesn't exist yet (pre-migration), fall back to amount
-  let resolvedItems = items;
-  if (e2 && e2.message.includes("dr_amount")) {
-    const fallback = supabase
-      .from("voucher_items")
-      .select("ledger_id, amount")
-      .eq("user_id", userId);
-    const fq = biz ? fallback.eq("business_id", biz) : fallback;
-    const { data: fItems, error: fe } = await fq;
-    if (fe) throw fe;
-    // Treat amount as dr_amount
-    resolvedItems = (fItems ?? []).map((it: any) => ({
-      ledger_id: it.ledger_id,
-      dr_amount: Number(it.amount) || 0,
-      cr_amount: 0,
-    }));
-  } else if (e2) {
-    throw e2;
-  }
+  if (e2) throw e2;
 
   const agg = new Map<string, { dr: number; cr: number }>();
-  (resolvedItems ?? []).forEach((it: any) => {
-    const a = agg.get(it.ledger_id) ?? { dr: 0, cr: 0 };
+  (items ?? []).forEach((it: any) => {
+    const a = agg.get(it.ledger_account_id) ?? { dr: 0, cr: 0 };
     a.dr += Number(it.dr_amount ?? 0);
     a.cr += Number(it.cr_amount ?? 0);
-    agg.set(it.ledger_id, a);
+    agg.set(it.ledger_account_id, a);
   });
 
   return (ledgers ?? []).map((l: any) => {
@@ -153,29 +134,11 @@ export async function fetchVoucherItems(userId: string, voucherIds: string[]) {
   const biz = getActiveBusinessIdSync();
   let q = supabase
     .from("voucher_items")
-    .select("id, voucher_id, ledger_id, dr_amount, cr_amount, position, narration")
+    .select("id, voucher_id, ledger_account_id, dr_amount, cr_amount, position, narration")
     .eq("user_id", userId)
     .in("voucher_id", voucherIds);
   if (biz) q = q.eq("business_id", biz);
   const { data, error } = await q;
-
-  if (error && error.message.includes("dr_amount")) {
-    // Fallback for amount-only schema
-    let q2 = supabase
-      .from("voucher_items")
-      .select("id, voucher_id, ledger_id, amount, position, narration")
-      .eq("user_id", userId)
-      .in("voucher_id", voucherIds);
-    if (biz) q2 = q2.eq("business_id", biz);
-    const { data: d2, error: e2 } = await q2;
-    if (e2) throw e2;
-    return (d2 ?? []).map((it: any) => ({
-      ...it,
-      dr_amount: Number(it.amount) || 0,
-      cr_amount: 0,
-    })) as VoucherItemRow[];
-  }
-
   if (error) throw error;
   return (data ?? []) as VoucherItemRow[];
 }
@@ -303,7 +266,7 @@ export async function fetchPartyLedger(
         )
       `
     )
-    .eq("ledger_id", ledger.id)
+    .eq("ledger_account_id", ledger.id)
     .eq("business_id", businessId)
     .eq("user_id", userId);
 
