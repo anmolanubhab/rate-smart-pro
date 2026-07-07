@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import {
   Plus, Pencil, Trash2, Package, Search,
   AlertTriangle, Upload, ArrowUpDown, ArrowUp, ArrowDown,
@@ -415,6 +416,9 @@ const Products = () => {
             <Download className="h-4 w-4" />
             {exporting ? "Exporting…" : "Export CSV"}
           </Button>
+          <Link to="/products/bulk-gst">
+            <Button variant="outline">Bulk HSN / GST</Button>
+          </Link>
           <Button
             onClick={openNew}
             className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant"
