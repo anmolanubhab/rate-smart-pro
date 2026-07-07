@@ -18,6 +18,7 @@ const History = lazy(() => import("./pages/History"));
 const Parties = lazy(() => import("./pages/Parties"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Products = lazy(() => import("./pages/Products"));
+const BulkGstAssign = lazy(() => import("./pages/inventory/BulkGstAssign"));
 const Orders = lazy(() => import("./pages/Orders"));
 const CreateOrder = lazy(() => import("./pages/CreateOrder"));
 const ExcelImport = lazy(() => import("./pages/ExcelImport"));
@@ -48,7 +49,6 @@ const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"))
 const AccountingLock = lazy(() => import("./pages/settings/AccountingLock"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
-const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
@@ -139,6 +139,7 @@ const App = () => (
               <Route path="/history" element={L(<History />)} />
               <Route path="/parties" element={L(<Parties />)} />
               <Route path="/products" element={L(<Products />)} />
+              <Route path="/products/bulk-gst" element={L(<BulkGstAssign />)} />
               <Route path="/orders" element={L(<Orders />)} />
               <Route path="/orders/new" element={L(<CreateOrder />)} />
               <Route path="/orders/edit/:id" element={L(<CreateOrder />)} />
@@ -173,7 +174,6 @@ const App = () => (
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="/settings/accounting-lock" element={L(<AccountingLock />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
-              <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
