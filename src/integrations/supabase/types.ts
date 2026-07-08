@@ -4649,6 +4649,7 @@ export type Database = {
           cess_amount: number
           cgst_amount: number
           cgst_rate: number
+          description: string | null
           discount_percent: number | null
           gst_percent: number | null
           hsn: string | null
@@ -4656,6 +4657,8 @@ export type Database = {
           igst_amount: number
           igst_rate: number
           line_total: number | null
+          part_number: string | null
+          position: number
           product_id: string | null
           purchase_invoice_id: string | null
           purchase_price: number | null
@@ -4668,6 +4671,7 @@ export type Database = {
           cess_amount?: number
           cgst_amount?: number
           cgst_rate?: number
+          description?: string | null
           discount_percent?: number | null
           gst_percent?: number | null
           hsn?: string | null
@@ -4675,6 +4679,8 @@ export type Database = {
           igst_amount?: number
           igst_rate?: number
           line_total?: number | null
+          part_number?: string | null
+          position?: number
           product_id?: string | null
           purchase_invoice_id?: string | null
           purchase_price?: number | null
@@ -4687,6 +4693,7 @@ export type Database = {
           cess_amount?: number
           cgst_amount?: number
           cgst_rate?: number
+          description?: string | null
           discount_percent?: number | null
           gst_percent?: number | null
           hsn?: string | null
@@ -4694,6 +4701,8 @@ export type Database = {
           igst_amount?: number
           igst_rate?: number
           line_total?: number | null
+          part_number?: string | null
+          position?: number
           product_id?: string | null
           purchase_invoice_id?: string | null
           purchase_price?: number | null
@@ -4724,45 +4733,60 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           discount_total: number | null
+          due_date: string | null
+          goods_receipt_id: string | null
           grand_total: number | null
           gst_total: number | null
           id: string
           invoice_date: string | null
           invoice_number: string
           notes: string | null
+          paid_amount: number
+          purchase_order_id: string | null
           status: string | null
           subtotal: number | null
           supplier_id: string | null
+          supplier_invoice_number: string | null
         }
         Insert: {
           business_id?: string | null
           created_at?: string | null
           created_by?: string | null
           discount_total?: number | null
+          due_date?: string | null
+          goods_receipt_id?: string | null
           grand_total?: number | null
           gst_total?: number | null
           id?: string
           invoice_date?: string | null
           invoice_number: string
           notes?: string | null
+          paid_amount?: number
+          purchase_order_id?: string | null
           status?: string | null
           subtotal?: number | null
           supplier_id?: string | null
+          supplier_invoice_number?: string | null
         }
         Update: {
           business_id?: string | null
           created_at?: string | null
           created_by?: string | null
           discount_total?: number | null
+          due_date?: string | null
+          goods_receipt_id?: string | null
           grand_total?: number | null
           gst_total?: number | null
           id?: string
           invoice_date?: string | null
           invoice_number?: string
           notes?: string | null
+          paid_amount?: number
+          purchase_order_id?: string | null
           status?: string | null
           subtotal?: number | null
           supplier_id?: string | null
+          supplier_invoice_number?: string | null
         }
         Relationships: [
           {
@@ -4770,6 +4794,20 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_invoices_goods_receipt_id_fkey"
+            columns: ["goods_receipt_id"]
+            isOneToOne: false
+            referencedRelation: "goods_receipts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
           {
@@ -6240,7 +6278,10 @@ export type Database = {
       is_business_member: { Args: { _business_id: string }; Returns: boolean }
       next_dispatch_number: { Args: { _user_id: string }; Returns: string }
       next_invoice_number: { Args: { _user_id: string }; Returns: string }
-      next_order_number: { Args: { _user_id: string }; Returns: string }
+      next_order_number: {
+        Args: { _business_id?: string; _user_id: string }
+        Returns: string
+      }
       next_packing_slip_number: { Args: { _user_id: string }; Returns: string }
       next_po_number: { Args: { _business_id: string }; Returns: string }
       next_voucher_number: {

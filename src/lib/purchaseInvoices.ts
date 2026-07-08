@@ -213,10 +213,11 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         goods_receipt_id: input.goods_receipt_id ?? null,
         invoice_date: input.invoice_date,
         due_date: input.due_date ?? null,
-        remarks: input.remarks ?? null,
+        notes: input.remarks ?? null,
+        status: "unpaid",
         subtotal: totals.subtotal,
         discount_total: totals.discount_total,
-        tax_total: totals.tax_total,
+        gst_total: totals.tax_total,
         grand_total: totals.grand_total,
         created_by: input.createdBy ?? null,
       })
@@ -234,10 +235,10 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         goods_receipt_id: input.goods_receipt_id ?? null,
         invoice_date: input.invoice_date,
         due_date: input.due_date ?? null,
-        remarks: input.remarks ?? null,
+        notes: input.remarks ?? null,
         subtotal: totals.subtotal,
         discount_total: totals.discount_total,
-        tax_total: totals.tax_total,
+        gst_total: totals.tax_total,
         grand_total: totals.grand_total,
       })
       .eq("id", invId);
@@ -247,34 +248,120 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
 
   const validItems = input.items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
   if (validItems.length) {
-    const rows = validItems.map((it, idx) => ({
-      purchase_invoice_id: invId!,
-      product_id: it.product_id,
-      part_number: it.part_number,
-      description: it.description,
-      qty: it.qty,
-      rate: it.rate,
-      discount_percent: it.discount_percent,
-      gst_percent: it.gst_percent,
-      taxable_amount: it.taxable_amount,
-      tax_amount: it.tax_amount,
-      total_amount: it.total_amount,
-      position: idx,
-    }));
+    const rows = validItems.map((it, idx) => {
+      // No state-comparison helper exists yet — default to intra-state
+      // (CGST+SGST split). A future phase can make this place-of-supply aware.
+      const half = +(it.tax_amount / 2).toFixed(2);
+      return {
+        purchase_invoice_id: invId!,
+        business_id: businessId,
+        product_id: it.product_id,
+        part_number: it.part_number,
+        description: it.description,
+        quantity: it.qty,
+        purchase_price: it.rate,
+        discount_percent: it.discount_percent,
+        gst_percent: it.gst_percent,
+        line_total: it.total_amount,
+        cgst_rate: it.gst_percent / 2,
+        sgst_rate: it.gst_percent / 2,
+        igst_rate: 0,
+        cgst_amount: half,
+        sgst_amount: it.tax_amount - half,
+        igst_amount: 0,
+        cess_amount: 0,
+        position: idx,
+      };
+    });
     const { error } = await supabase.from("purchase_invoice_items").insert(rows);
     if (error) throw error;
   }
 
-  const { data, error } = await supabase.from("purchase_invoices").select("*").eq("id", invId).single();
-  if (error) throw error;
+  const { data: row, error: rowErr } = await supabase.from("purchase_invoices").select("*").eq("id", invId).single();
+  if (rowErr) throw rowErr;
+
+  const data: PurchaseInvoice = {
+    id: row.id,
+    business_id: row.business_id,
+    invoice_number: row.invoice_number,
+    supplier_invoice_number: row.supplier_invoice_number,
+    supplier_id: row.supplier_id,
+    purchase_order_id: row.purchase_order_id,
+    goods_receipt_id: row.goods_receipt_id,
+    invoice_date: row.invoice_date,
+    due_date: row.due_date,
+    status: row.status,
+    remarks: row.notes,
+    subtotal: Number(row.subtotal) || 0,
+    discount_total: Number(row.discount_total) || 0,
+    tax_total: Number(row.gst_total) || 0,
+    grand_total: Number(row.grand_total) || 0,
+    paid_amount: Number(row.paid_amount) || 0,
+    created_at: row.created_at,
+  };
 
   if (isNew && input.createdBy) {
-    postPurchaseInvoiceToLedger(input.createdBy, data as PurchaseInvoice).catch((e) =>
+    postPurchaseInvoiceToLedger(input.createdBy, data).catch((e) =>
       console.error("Auto-post to ledger failed:", e.message)
     );
+    if (!data.goods_receipt_id) {
+      // Direct purchase invoice (no linked GRN) — GRN already posts stock for
+      // the GRN-linked path, so only post stock here when there was no GRN,
+      // to avoid double-counting the same goods twice.
+      postDirectInvoiceStock(input.createdBy, businessId, data.id, data.invoice_number, validItems).catch((e) =>
+        console.error("Direct-invoice stock posting failed:", e.message)
+      );
+    }
   }
 
-  return data as PurchaseInvoice;
+  return data;
+}
+
+/**
+ * Posts stock movement for a DIRECT purchase invoice (no linked GRN) — mirrors
+ * the same product.stock bump + inventory_movements log that PurchaseGRN.tsx
+ * does on GRN receipt. Only ever called when goods_receipt_id is null, so
+ * goods received via GRN are never double-counted here.
+ */
+async function postDirectInvoiceStock(
+  userId: string,
+  businessId: string,
+  invoiceId: string,
+  invoiceNumber: string,
+  items: PurchaseInvoiceItem[]
+): Promise<void> {
+  for (const item of items) {
+    if (!item.product_id || Number(item.qty) <= 0) continue;
+
+    const { data: product, error: prodErr } = await supabase
+      .from("products")
+      .select("stock")
+      .eq("id", item.product_id)
+      .single();
+    if (prodErr) { console.error("postDirectInvoiceStock: stock lookup failed", prodErr.message); continue; }
+
+    const before = Number(product?.stock) || 0;
+    const after = before + Number(item.qty);
+
+    const { error: stockErr } = await supabase
+      .from("products")
+      .update({ stock: after })
+      .eq("id", item.product_id);
+    if (stockErr) { console.error("postDirectInvoiceStock: stock update failed", stockErr.message); continue; }
+
+    await supabase.from("inventory_movements" as any).insert({
+      user_id: userId,
+      business_id: businessId,
+      product_id: item.product_id,
+      movement_type: "purchase_invoice_direct",
+      qty: item.qty,
+      stock_before: before,
+      stock_after: after,
+      reference_id: invoiceId,
+      reference_type: "purchase_invoice",
+      notes: `Direct Purchase Invoice ${invoiceNumber} (no GRN)`,
+    });
+  }
 }
 
 export async function fetchInvoiceItems(invoiceId: string): Promise<PurchaseInvoiceItem[]> {
@@ -284,7 +371,21 @@ export async function fetchInvoiceItems(invoiceId: string): Promise<PurchaseInvo
     .eq("purchase_invoice_id", invoiceId)
     .order("position", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as PurchaseInvoiceItem[];
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    purchase_invoice_id: r.purchase_invoice_id,
+    product_id: r.product_id,
+    part_number: r.part_number ?? "",
+    description: r.description ?? "",
+    qty: Number(r.quantity) || 0,
+    rate: Number(r.purchase_price) || 0,
+    discount_percent: Number(r.discount_percent) || 0,
+    gst_percent: Number(r.gst_percent) || 0,
+    taxable_amount: Number(r.line_total) - (Number(r.cgst_amount) + Number(r.sgst_amount) + Number(r.igst_amount)),
+    tax_amount: Number(r.cgst_amount) + Number(r.sgst_amount) + Number(r.igst_amount),
+    total_amount: Number(r.line_total) || 0,
+    position: r.position,
+  }));
 }
 
 /** Pre-fill invoice items from a received GRN (accepted quantities), joining product rate/gst. */
