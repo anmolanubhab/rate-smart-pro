@@ -2987,6 +2987,51 @@ export type Database = {
           },
         ]
       }
+      measurement_categories: {
+        Row: {
+          base_unit_id: string | null
+          business_id: string | null
+          code: string
+          created_at: string
+          id: string
+          is_system: boolean
+          name: string
+        }
+        Insert: {
+          base_unit_id?: string | null
+          business_id?: string | null
+          code: string
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          name: string
+        }
+        Update: {
+          base_unit_id?: string | null
+          business_id?: string | null
+          code?: string
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "measurement_categories_base_unit_id_fkey"
+            columns: ["base_unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "measurement_categories_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_logs: {
         Row: {
           delivery_status: string | null
@@ -3720,6 +3765,65 @@ export type Database = {
           },
         ]
       }
+      packaging_hierarchy: {
+        Row: {
+          business_id: string | null
+          child_unit_id: string
+          created_at: string
+          id: string
+          parent_unit_id: string
+          product_id: string | null
+          quantity: number
+        }
+        Insert: {
+          business_id?: string | null
+          child_unit_id: string
+          created_at?: string
+          id?: string
+          parent_unit_id: string
+          product_id?: string | null
+          quantity: number
+        }
+        Update: {
+          business_id?: string | null
+          child_unit_id?: string
+          created_at?: string
+          id?: string
+          parent_unit_id?: string
+          product_id?: string | null
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "packaging_hierarchy_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "packaging_hierarchy_child_unit_id_fkey"
+            columns: ["child_unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "packaging_hierarchy_parent_unit_id_fkey"
+            columns: ["parent_unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "packaging_hierarchy_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       parties: {
         Row: {
           address: string | null
@@ -4386,6 +4490,91 @@ export type Database = {
           },
         ]
       }
+      product_units: {
+        Row: {
+          barcode: string | null
+          business_id: string | null
+          conversion_factor: number
+          created_at: string
+          dealer_rate: number | null
+          discount: number | null
+          id: string
+          is_purchase: boolean
+          is_sales: boolean
+          is_stock: boolean
+          mrp: number | null
+          product_id: string
+          purchase_rate: number | null
+          rd_rate: number | null
+          sales_rate: number | null
+          scheme: string | null
+          unit_id: string
+          updated_at: string
+        }
+        Insert: {
+          barcode?: string | null
+          business_id?: string | null
+          conversion_factor?: number
+          created_at?: string
+          dealer_rate?: number | null
+          discount?: number | null
+          id?: string
+          is_purchase?: boolean
+          is_sales?: boolean
+          is_stock?: boolean
+          mrp?: number | null
+          product_id: string
+          purchase_rate?: number | null
+          rd_rate?: number | null
+          sales_rate?: number | null
+          scheme?: string | null
+          unit_id: string
+          updated_at?: string
+        }
+        Update: {
+          barcode?: string | null
+          business_id?: string | null
+          conversion_factor?: number
+          created_at?: string
+          dealer_rate?: number | null
+          discount?: number | null
+          id?: string
+          is_purchase?: boolean
+          is_sales?: boolean
+          is_stock?: boolean
+          mrp?: number | null
+          product_id?: string
+          purchase_rate?: number | null
+          rd_rate?: number | null
+          sales_rate?: number | null
+          scheme?: string | null
+          unit_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_units_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_units_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_units_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       production_orders: {
         Row: {
           business_id: string
@@ -4430,6 +4619,7 @@ export type Database = {
           accept_online_orders: boolean | null
           allow_credit_orders: boolean | null
           barcode: string | null
+          base_unit_id: string | null
           batch_tracking: boolean | null
           brand: string | null
           business_id: string | null
@@ -4458,6 +4648,7 @@ export type Database = {
           locked_at: string | null
           locked_by: string | null
           low_stock_threshold: number | null
+          measurement_category_id: string | null
           min_stock: number | null
           mrp: number | null
           name: string
@@ -4477,6 +4668,7 @@ export type Database = {
           sku: string | null
           status: string | null
           stock: number | null
+          stock_unit_id: string | null
           tax_type: string | null
           unit: string | null
           updated_at: string | null
@@ -4487,6 +4679,7 @@ export type Database = {
           accept_online_orders?: boolean | null
           allow_credit_orders?: boolean | null
           barcode?: string | null
+          base_unit_id?: string | null
           batch_tracking?: boolean | null
           brand?: string | null
           business_id?: string | null
@@ -4515,6 +4708,7 @@ export type Database = {
           locked_at?: string | null
           locked_by?: string | null
           low_stock_threshold?: number | null
+          measurement_category_id?: string | null
           min_stock?: number | null
           mrp?: number | null
           name: string
@@ -4534,6 +4728,7 @@ export type Database = {
           sku?: string | null
           status?: string | null
           stock?: number | null
+          stock_unit_id?: string | null
           tax_type?: string | null
           unit?: string | null
           updated_at?: string | null
@@ -4544,6 +4739,7 @@ export type Database = {
           accept_online_orders?: boolean | null
           allow_credit_orders?: boolean | null
           barcode?: string | null
+          base_unit_id?: string | null
           batch_tracking?: boolean | null
           brand?: string | null
           business_id?: string | null
@@ -4572,6 +4768,7 @@ export type Database = {
           locked_at?: string | null
           locked_by?: string | null
           low_stock_threshold?: number | null
+          measurement_category_id?: string | null
           min_stock?: number | null
           mrp?: number | null
           name?: string
@@ -4591,6 +4788,7 @@ export type Database = {
           sku?: string | null
           status?: string | null
           stock?: number | null
+          stock_unit_id?: string | null
           tax_type?: string | null
           unit?: string | null
           updated_at?: string | null
@@ -4603,6 +4801,27 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_base_unit_id_fkey"
+            columns: ["base_unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_measurement_category_id_fkey"
+            columns: ["measurement_category_id"]
+            isOneToOne: false
+            referencedRelation: "measurement_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_stock_unit_id_fkey"
+            columns: ["stock_unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
@@ -5838,6 +6057,112 @@ export type Database = {
             columns: ["plan_id"]
             isOneToOne: false
             referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      unit_conversions: {
+        Row: {
+          business_id: string | null
+          created_at: string
+          factor: number
+          from_unit_id: string
+          id: string
+          to_unit_id: string
+        }
+        Insert: {
+          business_id?: string | null
+          created_at?: string
+          factor: number
+          from_unit_id: string
+          id?: string
+          to_unit_id: string
+        }
+        Update: {
+          business_id?: string | null
+          created_at?: string
+          factor?: number
+          from_unit_id?: string
+          id?: string
+          to_unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_conversions_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_conversions_from_unit_id_fkey"
+            columns: ["from_unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_conversions_to_unit_id_fkey"
+            columns: ["to_unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      units: {
+        Row: {
+          allow_decimal: boolean
+          business_id: string | null
+          category_id: string
+          conversion_factor: number
+          created_at: string
+          decimal_places: number
+          id: string
+          is_base: boolean
+          is_system: boolean
+          name: string
+          symbol: string
+        }
+        Insert: {
+          allow_decimal?: boolean
+          business_id?: string | null
+          category_id: string
+          conversion_factor?: number
+          created_at?: string
+          decimal_places?: number
+          id?: string
+          is_base?: boolean
+          is_system?: boolean
+          name: string
+          symbol: string
+        }
+        Update: {
+          allow_decimal?: boolean
+          business_id?: string | null
+          category_id?: string
+          conversion_factor?: number
+          created_at?: string
+          decimal_places?: number
+          id?: string
+          is_base?: boolean
+          is_system?: boolean
+          name?: string
+          symbol?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "units_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "units_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "measurement_categories"
             referencedColumns: ["id"]
           },
         ]

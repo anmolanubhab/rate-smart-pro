@@ -19,6 +19,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Product, ProductCategory } from "@/lib/products";
+import {
+  fetchCategories, fetchUnits, fetchProductUnits, saveProductUnits,
+  type MeasurementCategory, type Unit,
+} from "@/lib/units";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +48,13 @@ const EMPTY_FORM = {
   gst_pct: "18",
   barcode: "",
   status: "active",
+  // Measurement Engine (Layer B) — all optional; legacy products keep working without these
+  measurement_category_id: "",
+  base_unit_id: "",
+  purchase_unit_id: "",
+  purchase_unit_factor: "1",
+  sales_unit_id: "",
+  sales_unit_factor: "1",
 };
 
 // ─── Optimized columns (no select *) ─────────────────────────────────────────
@@ -60,7 +71,9 @@ const PRODUCT_COLUMNS = `
   low_stock_threshold,
   gst_pct,
   status,
-  barcode
+  barcode,
+  measurement_category_id,
+  base_unit_id
 `.trim();
 
 // ─── Server-side fetch with pagination, search, sort ─────────────────────────
@@ -177,6 +190,16 @@ const Products = () => {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+
+  // Measurement Engine (Layer A + B) — categories/units come entirely from the
+  // Unit Master, never hard-coded, so any custom unit a business adds shows up automatically.
+  const [measCategories, setMeasCategories] = useState<MeasurementCategory[]>([]);
+  const [measUnits, setMeasUnits] = useState<Unit[]>([]);
+  useEffect(() => {
+    fetchCategories().then(setMeasCategories).catch(() => {});
+    fetchUnits().then(setMeasUnits).catch(() => {});
+  }, []);
+  const unitsInCategory = (categoryId: string) => measUnits.filter((u) => u.category_id === categoryId);
   const [saving, setSaving] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -319,7 +342,7 @@ const Products = () => {
     setOpen(true);
   };
 
-  const openEdit = (p: Product) => {
+  const openEdit = async (p: Product) => {
     setEditing(p);
     setForm({
       part_number: p.part_number,
@@ -333,8 +356,28 @@ const Products = () => {
       gst_pct: String(p.gst_pct),
       barcode: p.barcode || "",
       status: p.status,
+      measurement_category_id: p.measurement_category_id || "",
+      base_unit_id: p.base_unit_id || "",
+      purchase_unit_id: "",
+      purchase_unit_factor: "1",
+      sales_unit_id: "",
+      sales_unit_factor: "1",
     });
     setOpen(true);
+    try {
+      const pu = await fetchProductUnits(p.id);
+      const purchase = pu.find((u) => u.is_purchase);
+      const sales = pu.find((u) => u.is_sales);
+      setForm((f) => ({
+        ...f,
+        purchase_unit_id: purchase?.unit_id || "",
+        purchase_unit_factor: purchase ? String(purchase.conversion_factor) : "1",
+        sales_unit_id: sales?.unit_id || "",
+        sales_unit_factor: sales ? String(sales.conversion_factor) : "1",
+      }));
+    } catch {
+      // non-fatal — product still opens for editing even if unit mapping fetch fails
+    }
   };
 
   const save = async () => {
@@ -357,14 +400,56 @@ const Products = () => {
         gst_pct: parseFloat(form.gst_pct) || 0,
         barcode: form.barcode.trim() || null,
         status: form.status,
+        measurement_category_id: form.measurement_category_id || null,
+        base_unit_id: form.base_unit_id || null,
       };
+      let productId = editing?.id;
       if (editing) {
         const { error } = await supabase.from("products").update(payload).eq("id", editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("products").insert(payload);
+        const { data, error } = await supabase.from("products").insert(payload).select("id").single();
         if (error) throw error;
+        productId = data.id;
       }
+
+      // Layer B: persist purchase/sales unit mapping (only if a base unit was chosen)
+      if (productId && form.base_unit_id) {
+        const rows = [
+          {
+            product_id: productId,
+            unit_id: form.base_unit_id,
+            conversion_factor: 1,
+            is_purchase: !form.purchase_unit_id,
+            is_sales: !form.sales_unit_id,
+            is_stock: true,
+            barcode: null, mrp: null, purchase_rate: null, sales_rate: null,
+            dealer_rate: null, rd_rate: null, discount: null, scheme: null,
+          },
+          ...(form.purchase_unit_id && form.purchase_unit_id !== form.base_unit_id
+            ? [{
+                product_id: productId,
+                unit_id: form.purchase_unit_id,
+                conversion_factor: parseFloat(form.purchase_unit_factor) || 1,
+                is_purchase: true, is_sales: false, is_stock: false,
+                barcode: null, mrp: null, purchase_rate: null, sales_rate: null,
+                dealer_rate: null, rd_rate: null, discount: null, scheme: null,
+              }]
+            : []),
+          ...(form.sales_unit_id && form.sales_unit_id !== form.base_unit_id
+            ? [{
+                product_id: productId,
+                unit_id: form.sales_unit_id,
+                conversion_factor: parseFloat(form.sales_unit_factor) || 1,
+                is_purchase: false, is_sales: true, is_stock: false,
+                barcode: null, mrp: null, purchase_rate: null, sales_rate: null,
+                dealer_rate: null, rd_rate: null, discount: null, scheme: null,
+              }]
+            : []),
+        ];
+        await saveProductUnits(productId, rows as any);
+      }
+
       toast.success(editing ? "Product updated" : "Product added");
       setOpen(false);
       load();
@@ -645,6 +730,89 @@ const Products = () => {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="md:col-span-2 border-t pt-3 mt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Measurement (optional)
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Measurement Category</Label>
+              <Select
+                value={form.measurement_category_id}
+                onValueChange={(v) => setForm({ ...form, measurement_category_id: v, base_unit_id: "", purchase_unit_id: "", sales_unit_id: "" })}
+              >
+                <SelectTrigger><SelectValue placeholder="e.g. Weight, Volume, Quantity" /></SelectTrigger>
+                <SelectContent>
+                  {measCategories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Base / Stock Unit</Label>
+              <Select
+                value={form.base_unit_id}
+                onValueChange={(v) => setForm({ ...form, base_unit_id: v })}
+                disabled={!form.measurement_category_id}
+              >
+                <SelectTrigger><SelectValue placeholder="Select category first" /></SelectTrigger>
+                <SelectContent>
+                  {unitsInCategory(form.measurement_category_id).map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name} ({u.symbol})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {form.base_unit_id && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Purchase Unit</Label>
+                  <Select value={form.purchase_unit_id} onValueChange={(v) => setForm({ ...form, purchase_unit_id: v })}>
+                    <SelectTrigger><SelectValue placeholder="Same as base unit" /></SelectTrigger>
+                    <SelectContent>
+                      {unitsInCategory(form.measurement_category_id).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.name} ({u.symbol})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>1 Purchase Unit = ? Base Units</Label>
+                  <Input
+                    type="number"
+                    value={form.purchase_unit_factor}
+                    onChange={(e) => setForm({ ...form, purchase_unit_factor: e.target.value })}
+                    disabled={!form.purchase_unit_id || form.purchase_unit_id === form.base_unit_id}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Sales Unit</Label>
+                  <Select value={form.sales_unit_id} onValueChange={(v) => setForm({ ...form, sales_unit_id: v })}>
+                    <SelectTrigger><SelectValue placeholder="Same as base unit" /></SelectTrigger>
+                    <SelectContent>
+                      {unitsInCategory(form.measurement_category_id).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.name} ({u.symbol})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>1 Sales Unit = ? Base Units</Label>
+                  <Input
+                    type="number"
+                    value={form.sales_unit_factor}
+                    onChange={(e) => setForm({ ...form, sales_unit_factor: e.target.value })}
+                    disabled={!form.sales_unit_id || form.sales_unit_id === form.base_unit_id}
+                  />
+                </div>
+                <p className="md:col-span-2 text-[11px] text-muted-foreground -mt-1">
+                  e.g. Engine Oil — Base: Liter · Purchase: Drum (1 Drum = 210 Liter) · Sales: Can (1 Can = 5 Liter).
+                  Stock is always tracked in the base unit; purchase/sales screens convert automatically.
+                </p>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>

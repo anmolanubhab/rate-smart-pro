@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useBusiness } from "@/hooks/useBusiness";
 import {
   Building2, Users, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight, ShieldAlert,
+  ChevronRight, ShieldAlert, Ruler,
 } from "lucide-react";
 
 const items = [
@@ -11,6 +11,12 @@ const items = [
     icon: Building2,
     title: "Business Profile",
     desc: "Company name, GST, address, bank details, invoice prefix",
+  },
+  {
+    to: "/settings/measurement-units",
+    icon: Ruler,
+    title: "Measurement Units",
+    desc: "Manage units, categories and conversions used across Purchase, Sales & Inventory",
   },
   {
     to: "/settings/sales-config",

@@ -18,6 +18,8 @@ low_stock_threshold: number;
 gst_pct: number;
 barcode: string | null;
 status: string;
+measurement_category_id: string | null;
+base_unit_id: string | null;
 created_at: string;
 updated_at: string;
 }
