@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -116,7 +116,11 @@ type SignUpFormData = z.infer<typeof signUpSchema>;
 export default function Auth() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [searchParams] = useSearchParams();
+
+  const [isSignUp, setIsSignUp] = useState(
+    searchParams.get("tab") === "signup"
+  );
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
