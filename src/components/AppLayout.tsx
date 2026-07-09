@@ -80,6 +80,7 @@ const navGroups: NavGroup[] = [
       { to: "/dispatch", label: "Dispatch", icon: Package },
       { to: "/sales/invoices", label: "Sales Invoices", icon: Receipt },
       { to: "/parties", label: "Customers", icon: Users },
+      { to: "/masters/party-groups", label: "Party Groups", icon: Users },
     ],
   },
   {
