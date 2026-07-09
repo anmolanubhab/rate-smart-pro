@@ -18,6 +18,7 @@ const History = lazy(() => import("./pages/History"));
 const Parties = lazy(() => import("./pages/Parties"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Products = lazy(() => import("./pages/Products"));
+const PartyGroups = lazy(() => import("./pages/masters/PartyGroups"));
 const BulkGstAssign = lazy(() => import("./pages/inventory/BulkGstAssign"));
 const Orders = lazy(() => import("./pages/Orders"));
 const CreateOrder = lazy(() => import("./pages/CreateOrder"));
@@ -46,7 +47,6 @@ const BusinessProfile = lazy(() => import("./pages/settings/BusinessProfile"));
 const Team = lazy(() => import("./pages/settings/Team"));
 const CompanyUsers = lazy(() => import("./pages/settings/CompanyUsers"));
 const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
-const MeasurementUnits = lazy(() => import("./pages/settings/MeasurementUnits"));
 const AccountingLock = lazy(() => import("./pages/settings/AccountingLock"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
@@ -140,6 +140,7 @@ const App = () => (
               <Route path="/history" element={L(<History />)} />
               <Route path="/parties" element={L(<Parties />)} />
               <Route path="/products" element={L(<Products />)} />
+              <Route path="/masters/party-groups" element={L(<PartyGroups />)} />
               <Route path="/products/bulk-gst" element={L(<BulkGstAssign />)} />
               <Route path="/orders" element={L(<Orders />)} />
               <Route path="/orders/new" element={L(<CreateOrder />)} />
@@ -173,7 +174,6 @@ const App = () => (
               <Route path="/settings/team" element={L(<Team />)} />
               <Route path="/settings/company-users" element={L(<CompanyUsers />)} />
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
-              <Route path="/settings/measurement-units" element={L(<MeasurementUnits />)} />
               <Route path="/settings/accounting-lock" element={L(<AccountingLock />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
