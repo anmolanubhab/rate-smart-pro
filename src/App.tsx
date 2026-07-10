@@ -18,6 +18,7 @@ const History = lazy(() => import("./pages/History"));
 const Parties = lazy(() => import("./pages/Parties"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Products = lazy(() => import("./pages/Products"));
+const PartyDashboard = lazy(() => import("./pages/parties/PartyDashboard"));
 const PartyGroups = lazy(() => import("./pages/masters/PartyGroups"));
 const BulkGstAssign = lazy(() => import("./pages/inventory/BulkGstAssign"));
 const Orders = lazy(() => import("./pages/Orders"));
@@ -140,6 +141,7 @@ const App = () => (
               <Route path="/history" element={L(<History />)} />
               <Route path="/parties" element={L(<Parties />)} />
               <Route path="/products" element={L(<Products />)} />
+              <Route path="/parties/:partyId" element={L(<PartyDashboard />)} />
               <Route path="/masters/party-groups" element={L(<PartyGroups />)} />
               <Route path="/products/bulk-gst" element={L(<BulkGstAssign />)} />
               <Route path="/orders" element={L(<Orders />)} />
