@@ -514,7 +514,12 @@ const Parties = () => {
                   return (
                     <tr key={p.id} className="border-t border-border hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-2.5 font-medium">
-                        {p.name}
+                        <button
+                          className="hover:underline hover:text-primary text-left"
+                          onClick={() => navigate(`/parties/${p.id}`)}
+                        >
+                          {p.name}
+                        </button>
                         {overLimit && <AlertCircle className="inline-block h-3.5 w-3.5 ml-1.5 text-destructive -mt-0.5" />}
                       </td>
                       <td className="px-4 py-2.5">
