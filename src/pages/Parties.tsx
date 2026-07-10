@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import PartyActivityTimeline from "@/components/parties/PartyActivityTimeline";
 import { ProductsPagination } from "@/components/ProductsPagination";
 import { useDebounce } from "@/hooks/useDebounce";
 import PartyExcelUpload from "@/components/PartyExcelUpload";
@@ -45,7 +46,8 @@ const DEFAULT_PAGE_SIZE = 25;
 const PARTY_COLS = `
   id, name, phone, gst, address, billing_address, shipping_address,
   beat, credit_limit, outstanding_balance, agreed_discount,
-  default_discount, discount_type, notes, created_at
+  default_discount, discount_type, notes, created_at,
+  party_group_id, use_group_defaults, credit_days
 `.trim();
 
 // ─── Empty form ───────────────────────────────────────────────────────────────
@@ -72,6 +74,8 @@ const emptyForm = {
   preferred_supplier: false, preferred_customer: false,
   // Legacy
   address: "", beat: "", notes: "",
+  // Group / inheritance
+  party_group_id: "" as string, use_group_defaults: true,
 };
 
 // ─── Server fetch ─────────────────────────────────────────────────────────────
@@ -197,6 +201,52 @@ const Parties = () => {
   const [form, setForm]         = useState(emptyForm);
   const [saving, setSaving]     = useState(false);
 
+  // Party Groups (inheritance)
+  type PartyGroupLite = {
+    id: string; parent_id: string | null; name: string;
+    default_rd_pct: number | null; default_cd_pct: number | null;
+    default_credit_days: number | null; default_credit_limit: number | null;
+  };
+  const [groups, setGroups] = useState<PartyGroupLite[]>([]);
+
+  useEffect(() => {
+    if (!businessId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("party_groups")
+        .select("id, parent_id, name, default_rd_pct, default_cd_pct, default_credit_days, default_credit_limit")
+        .eq("business_id", businessId)
+        .order("name");
+      setGroups((data as PartyGroupLite[]) ?? []);
+    })();
+  }, [businessId]);
+
+  const resolveGroupDefaults = useCallback((groupId: string | null) => {
+    if (!groupId) return null;
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return null;
+    const parent = group.parent_id ? groups.find(g => g.id === group.parent_id) : undefined;
+    return {
+      rd: group.default_rd_pct ?? parent?.default_rd_pct ?? 0,
+      cd: group.default_cd_pct ?? parent?.default_cd_pct ?? 0,
+      creditDays: group.default_credit_days ?? parent?.default_credit_days ?? null,
+      creditLimit: group.default_credit_limit ?? parent?.default_credit_limit ?? null,
+    };
+  }, [groups]);
+
+  const applyGroupToForm = (groupId: string, useDefaults: boolean) => {
+    if (!useDefaults) return;
+    const resolved = resolveGroupDefaults(groupId);
+    if (!resolved) return;
+    setForm(f => ({
+      ...f,
+      party_group_id: groupId,
+      use_group_defaults: true,
+      agreed_discount: String(f.discount_type === "CD" ? resolved.cd : resolved.rd),
+      credit_limit: resolved.creditLimit != null ? String(resolved.creditLimit) : f.credit_limit,
+    }));
+  };
+
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
@@ -255,6 +305,8 @@ const Parties = () => {
       discount_type: (p.discount_type as DiscountType) || "RD",
       notes: p.notes || "",
       ledger_name: p.name,
+      party_group_id: p.party_group_id || "",
+      use_group_defaults: p.use_group_defaults ?? true,
     });
     setActiveTab("general");
     setOpen(true);
@@ -281,6 +333,8 @@ const Parties = () => {
         credit_limit: parseFloat(form.credit_limit) || 0,
         outstanding_balance: parseFloat(form.outstanding_balance) || 0,
         notes: form.notes.trim() || null,
+        party_group_id: form.party_group_id || null,
+        use_group_defaults: form.use_group_defaults,
       };
       if (editing) {
         const { error } = await supabase.from("parties").update(payload).eq("id", editing.id);
@@ -542,6 +596,53 @@ const Parties = () => {
             {/* ── TAB 1: GENERAL ── */}
             {activeTab === "general" && (
               <div className="grid md:grid-cols-2 gap-3">
+                <div className="space-y-1.5 md:col-span-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 space-y-1.5">
+                      <Label>Party Group</Label>
+                      <Select
+                        value={form.party_group_id || "none"}
+                        onValueChange={v => {
+                          const gid = v === "none" ? "" : v;
+                          setForm(f => ({ ...f, party_group_id: gid }));
+                          if (gid) applyGroupToForm(gid, form.use_group_defaults);
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="No group" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No group</SelectItem>
+                          {groups.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2 pt-5">
+                      <input
+                        type="checkbox"
+                        id="use-group-defaults"
+                        checked={form.use_group_defaults}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          setForm(f => ({ ...f, use_group_defaults: checked }));
+                          if (checked && form.party_group_id) applyGroupToForm(form.party_group_id, true);
+                        }}
+                      />
+                      <Label htmlFor="use-group-defaults" className="font-normal cursor-pointer">Use Group Defaults</Label>
+                    </div>
+                  </div>
+                  {form.party_group_id && (() => {
+                    const r = resolveGroupDefaults(form.party_group_id);
+                    if (!r) return null;
+                    const tag = form.use_group_defaults ? "Group" : "Override";
+                    return (
+                      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground pt-1">
+                        <span>RD <b className="text-foreground">{r.rd}%</b> ({tag})</span>
+                        <span>CD <b className="text-foreground">{r.cd}%</b> ({tag})</span>
+                        {r.creditDays != null && <span>Credit <b className="text-foreground">{r.creditDays}d</b> ({tag})</span>}
+                        {r.creditLimit != null && <span>Limit <b className="text-foreground">₹{r.creditLimit.toLocaleString("en-IN")}</b> ({tag})</span>}
+                      </div>
+                    );
+                  })()}
+                </div>
                 <div className="space-y-1.5">
                   <Label>Party Name *</Label>
                   <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Ram Traders" />
@@ -685,8 +786,20 @@ const Parties = () => {
                     <Input type="number" value={form.credit_days} onChange={e => setForm({...form, credit_days: e.target.value})} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Credit Limit (₹)</Label>
-                    <Input type="number" value={form.credit_limit} onChange={e => setForm({...form, credit_limit: e.target.value})} />
+                    <div className="flex items-center justify-between">
+                      <Label>Credit Limit (₹)</Label>
+                      {form.party_group_id && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${form.use_group_defaults ? "bg-muted text-muted-foreground" : "bg-blue-100 text-blue-700"}`}>
+                          {form.use_group_defaults ? "Inherited" : "Overridden"}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      value={form.credit_limit}
+                      disabled={form.use_group_defaults && !!form.party_group_id}
+                      onChange={e => setForm({...form, credit_limit: e.target.value})}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Interest % (p.a.)</Label>
@@ -740,8 +853,20 @@ const Parties = () => {
                   <Input type="number" value={form.default_discount} onChange={e => setForm({...form, default_discount: e.target.value})} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Agreed Discount (%)</Label>
-                  <Input type="number" value={form.agreed_discount} onChange={e => setForm({...form, agreed_discount: e.target.value})} />
+                  <div className="flex items-center justify-between">
+                    <Label>Agreed Discount (%)</Label>
+                    {form.party_group_id && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${form.use_group_defaults ? "bg-muted text-muted-foreground" : "bg-blue-100 text-blue-700"}`}>
+                        {form.use_group_defaults ? "Inherited" : "Overridden"}
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    type="number"
+                    value={form.agreed_discount}
+                    disabled={form.use_group_defaults && !!form.party_group_id}
+                    onChange={e => setForm({...form, agreed_discount: e.target.value})}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>RD / CD Mode</Label>
@@ -819,21 +944,7 @@ const Parties = () => {
 
             {/* ── TAB 7: HISTORY ── */}
             {activeTab === "history" && (
-              <div className="space-y-4">
-                <p className="text-xs text-muted-foreground">ERP activity log for this party. Full history will be populated as transactions are recorded.</p>
-                {[
-                  { label: "Recent Orders",         value: "No orders recorded yet" },
-                  { label: "Recent Purchases",       value: "No purchases recorded yet" },
-                  { label: "Payment History",        value: "No payments recorded yet" },
-                  { label: "Credit Limit Changes",   value: "No changes recorded yet" },
-                  { label: "Audit Trail",            value: editing ? `Party created. Last edited: today.` : "New party — not saved yet" },
-                ].map(item => (
-                  <div key={item.label} className="rounded-lg border border-border px-4 py-3">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{item.label}</p>
-                    <p className="text-sm mt-1 text-muted-foreground">{item.value}</p>
-                  </div>
-                ))}
-              </div>
+              <PartyActivityTimeline partyId={editing?.id} />
             )}
           </div>
 
