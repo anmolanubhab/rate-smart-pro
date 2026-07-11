@@ -14,6 +14,10 @@ import {
   AlertCircle,
   Upload,
 } from "lucide-react";
+import {
+  fetchProductUnits, fetchUnits, purchaseUnitOf, stockUnitOf, toStockQty,
+  type ProductUnit, type Unit as MeasureUnit,
+} from "@/lib/units";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -97,6 +101,25 @@ export default function CreatePurchaseOrder() {
   // Warehouse
   const [warehouses, setWarehouses] = useState<{ id: string; warehouse_name: string }[]>([]);
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
+
+  // Layer C1: per-product unit options, cached by product_id to avoid N+1 fetches
+  const [unitsByProduct, setUnitsByProduct] = useState<Record<string, ProductUnit[]>>({});
+  const [allUnits, setAllUnits] = useState<MeasureUnit[]>([]);
+  useEffect(() => { fetchUnits().then(setAllUnits).catch(() => {}); }, []);
+  const unitLabel = (unitId: string) => {
+    const u = allUnits.find((x) => x.id === unitId);
+    return u ? `${u.symbol}` : "";
+  };
+  const loadProductUnits = async (productId: string): Promise<ProductUnit[]> => {
+    if (unitsByProduct[productId]) return unitsByProduct[productId];
+    try {
+      const pu = await fetchProductUnits(productId);
+      setUnitsByProduct((m) => ({ ...m, [productId]: pu }));
+      return pu;
+    } catch {
+      return [];
+    }
+  };
 
   // Items
   const [items, setItems] = useState<POItem[]>(Array.from({ length: 5 }, blankPOItem));
@@ -253,19 +276,34 @@ export default function CreatePurchaseOrder() {
   const delRow = (idx: number) =>
     setItems((r) => (r.length <= 1 ? [blankPOItem()] : r.filter((_, i) => i !== idx)));
 
-  const pickProduct = (idx: number, p: Product) => {
+  const pickProduct = async (idx: number, p: Product) => {
+    const qty = items[idx].qty || 1;
     updateRow(idx, {
       product_id: p.id,
       part_number: p.part_number,
       description: p.name,
       rate: Number(p.mrp),
       gst_percent: Number(p.gst_pct),
-      qty: items[idx].qty || 1,
+      qty,
+      unit_id: null,
+      stock_qty: null,
     });
     setSearchIdx(null);
     setSearchTerm("");
     setSearchResults([]);
     setTimeout(() => focusCell(idx, "qty"), 10);
+
+    // Layer C1: default to this product's configured Purchase Unit, if any
+    const pu = await loadProductUnits(p.id);
+    if (pu.length) {
+      const defaultUnit = purchaseUnitOf(pu);
+      if (defaultUnit) {
+        updateRow(idx, {
+          unit_id: defaultUnit.unit_id,
+          stock_qty: toStockQty(qty, defaultUnit.unit_id, pu),
+        });
+      }
+    }
   };
 
   const focusCell = (row: number, col: Col) => {
@@ -732,6 +770,7 @@ export default function CreatePurchaseOrder() {
                 <th className="text-left px-1.5 py-1.5 min-w-[120px]">Part No.</th>
                 <th className="text-left px-1.5 py-1.5 min-w-[180px]">Description</th>
                 <th className="text-right px-1.5 py-1.5 w-20">Qty</th>
+                <th className="text-left px-1.5 py-1.5 w-16">Unit</th>
                 <th className="text-right px-1.5 py-1.5 w-24">Rate (₹)</th>
                 <th className="text-right px-1.5 py-1.5 w-16">Disc %</th>
                 <th className="text-right px-1.5 py-1.5 w-16">GST %</th>
@@ -816,10 +855,48 @@ export default function CreatePurchaseOrder() {
                         type="number"
                         step="any"
                         value={it.qty || ""}
-                        onChange={(e) => updateRow(idx, { qty: +e.target.value })}
+                        onChange={(e) => {
+                          const qty = +e.target.value;
+                          const pu = it.product_id ? unitsByProduct[it.product_id] : undefined;
+                          updateRow(idx, {
+                            qty,
+                            stock_qty: pu ? toStockQty(qty, it.unit_id, pu) : null,
+                          });
+                        }}
                         onKeyDown={(e) => handleKey(e, idx, "qty")}
                         className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary"
                       />
+                    </td>
+
+                    {/* Unit — only shown once this product has configured units; legacy products skip this entirely */}
+                    <td className="px-0.5 py-0.5">
+                      {it.product_id && unitsByProduct[it.product_id]?.length ? (
+                        <select
+                          value={it.unit_id ?? ""}
+                          onChange={(e) => {
+                            const pu = unitsByProduct[it.product_id!] ?? [];
+                            updateRow(idx, {
+                              unit_id: e.target.value || null,
+                              stock_qty: toStockQty(it.qty, e.target.value, pu),
+                            });
+                          }}
+                          className="h-6 text-[11px] font-mono px-0.5 rounded-none border-0 bg-transparent focus-visible:ring-0 w-full"
+                        >
+                          {unitsByProduct[it.product_id].map((u) => (
+                            <option key={u.unit_id} value={u.unit_id}>{unitLabel(u.unit_id)}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground px-1">—</span>
+                      )}
+                      {it.stock_qty != null && it.product_id && (
+                        <div className="text-[9px] text-muted-foreground px-1 leading-none pb-0.5">
+                          → {fmt(it.stock_qty)} {(() => {
+                            const su = unitsByProduct[it.product_id!] && stockUnitOf(unitsByProduct[it.product_id!]);
+                            return su ? unitLabel(su.unit_id) : "";
+                          })()}
+                        </div>
+                      )}
                     </td>
 
                     {/* Rate */}
@@ -886,7 +963,7 @@ export default function CreatePurchaseOrder() {
               {/* Spacer rows */}
               {Array.from({ length: Math.max(0, 3 - (items.length % 3)) }).map((_, i) => (
                 <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
-                  <td colSpan={11}>&nbsp;</td>
+                  <td colSpan={12}>&nbsp;</td>
                 </tr>
               ))}
             </tbody>
@@ -917,7 +994,7 @@ export default function CreatePurchaseOrder() {
                   </div>
                 </td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.total_qty)} Qty</td>
-                <td colSpan={3}></td>
+                <td colSpan={4}></td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.taxable)}</td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.tax_total)}</td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.grand_total)}</td>

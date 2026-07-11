@@ -29,6 +29,8 @@ export interface POItem {
   tax_amount: number;
   total_amount: number;
   position?: number;
+  unit_id?: string | null;
+  stock_qty?: number | null;
 }
 
 export type TransportMode = "road" | "rail" | "air" | "courier" | "self_pickup" | "other";
@@ -90,6 +92,8 @@ export function computePOItem(item: Partial<POItem>): POItem {
     tax_amount: taxAmount,
     total_amount: totalAmount,
     position: item.position,
+    unit_id: item.unit_id ?? null,
+    stock_qty: item.stock_qty ?? null,
   };
 }
 
@@ -264,6 +268,8 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
       tax_amount: it.tax_amount,
       total_amount: it.total_amount,
       position: idx,
+      unit_id: it.unit_id ?? null,
+      stock_qty: it.stock_qty ?? null,
     }));
     const { error } = await supabase.from("purchase_order_items").insert(rows);
     if (error) throw error;
