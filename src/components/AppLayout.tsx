@@ -1,167 +1,37 @@
-// AppLayout.tsx – Phase 3: Independent Scroll + Active Indicator
-import { ReactNode, useRef, useState, useEffect } from "react";
-import { NavLink, useLocation, Navigate, useNavigate } from "react-router-dom";
+// AppLayout.tsx – Enterprise navigation: Sidebar + Search + Breadcrumbs all
+// driven by the centralized registry in src/lib/navigation. No hardcoded
+// menu arrays live here anymore — add a page to the registry and it shows
+// up in the sidebar, the command search, and breadcrumbs automatically.
+import { ReactNode, useEffect, useState } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Calculator,
-  History,
-  User,
   LogOut,
   Moon,
   Sun,
-  Users,
-  ShoppingCart,
-  PlusSquare,
-  Package,
-  Boxes,
-  BarChart3,
-  Settings as SettingsIcon,
-  Search,
-  BookOpen,
-  FileSpreadsheet,
-  Receipt,
-  Scale,
-  Wallet,
-  Landmark,
-  ArrowUpRight,
-  ArrowDownRight,
-  PieChart,
-  ShieldCheck,
-  ClipboardList,
   Building2,
   Repeat,
-  ShoppingBag,
-  TruckIcon,
-  FileText,
-  CreditCard,
-  FilePlus,
+  Search,
   ChevronDown,
   ChevronRight,
+  Star,
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
 import { useTheme } from "@/hooks/useTheme";
-import { cn } from "@/lib/utils";
 import { canAccessErp, getLandingForRole } from "@/lib/roleRouting";
 import { Button } from "@/components/ui/button";
 
-import CommandMenu from "@/components/CommandMenu";
+import EnterpriseCommandMenu from "@/components/search/EnterpriseCommandMenu";
+import PageBreadcrumbs from "@/components/navigation/PageBreadcrumbs";
+import SidebarNavItem from "@/components/navigation/SidebarNavItem";
 import OfflinePage from "@/components/pwa/OfflinePage";
 import UpdateNotification from "@/components/pwa/UpdateNotification";
 import rdProLogo from "/rdpro-logo.png";
 
-type NavItem = {
-  to: string;
-  label: string;
-  icon: any;
-};
-
-type NavGroup = {
-  label?: string;
-  items: NavItem[];
-};
-
-const navGroups: NavGroup[] = [
-  {
-    label: "Overview",
-    items: [
-      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/calculator", label: "RD Calculator", icon: Calculator },
-      { to: "/reports", label: "Business Analytics", icon: BarChart3 },
-    ],
-  },
-  {
-    label: "Sales",
-    items: [
-      { to: "/orders/new", label: "Create Order", icon: PlusSquare },
-      { to: "/orders", label: "Orders", icon: ShoppingCart },
-      { to: "/pending", label: "Pending Orders", icon: Boxes },
-      { to: "/dispatch", label: "Dispatch", icon: Package },
-      { to: "/sales/invoices", label: "Sales Invoices", icon: Receipt },
-      { to: "/parties", label: "Customers", icon: Users },
-      { to: "/masters/party-groups", label: "Party Groups", icon: Users },
-    ],
-  },
-  {
-    label: "Purchase",
-    items: [
-      { to: "/purchase", label: "Purchase Dashboard", icon: ShoppingBag },
-      { to: "/purchase/orders", label: "Purchase Orders", icon: ClipboardList },
-      { to: "/purchase/grn", label: "Goods Receipt Note", icon: TruckIcon },
-      { to: "/purchase/invoices", label: "Purchase Invoices", icon: FileText },
-      { to: "/purchase/returns", label: "Purchase Returns", icon: Repeat },
-      { to: "/purchase/approvals", label: "Purchase Approvals", icon: ShieldCheck },
-      { to: "/purchase/payments", label: "Supplier Payments", icon: CreditCard },
-      { to: "/purchase/supplier-ledger", label: "Supplier Ledger", icon: BookOpen },
-    ],
-  },
-  {
-    label: "Inventory",
-    items: [
-      { to: "/products", label: "Products", icon: Package },
-      { to: "/inventory", label: "Inventory", icon: Boxes },
-      { to: "/inventory/warehouses", label: "Warehouses", icon: Building2 },
-      { to: "/inventory/batches", label: "Batch Tracking", icon: Boxes },
-      { to: "/inventory/serials", label: "Serial Numbers", icon: FilePlus },
-      { to: "/inventory/barcodes", label: "Barcodes", icon: FileSpreadsheet },
-      { to: "/inventory/transfers", label: "Stock Transfers", icon: Repeat },
-      { to: "/inventory/stock-take", label: "Physical Stock", icon: ClipboardList },
-      { to: "/inventory/adjustments", label: "Stock Adjustments", icon: Scale },
-    ],
-  },
-  {
-    label: "Accounts",
-    items: [
-      { to: "/accounts/vouchers", label: "Voucher Center", icon: Receipt },
-      { to: "/accounting/vouchers", label: "Vouchers", icon: FilePlus },
-      { to: "/accounts/journal", label: "Journal Voucher", icon: FilePlus },
-      { to: "/accounts/contra", label: "Contra Voucher", icon: Repeat },
-      { to: "/accounts/payment", label: "Payment Voucher", icon: ArrowDownRight },
-      { to: "/accounts/receipt", label: "Receipt Voucher", icon: ArrowUpRight },
-      { to: "/accounts/debit-note", label: "Debit Note", icon: FileText },
-      { to: "/accounts/credit-note", label: "Credit Note", icon: FileText },
-      { to: "/accounts/ledgers", label: "Ledger Accounts", icon: BookOpen },
-      { to: "/accounts/day-book", label: "Day Book", icon: ClipboardList },
-      { to: "/accounts/cash-book", label: "Cash Book", icon: Wallet },
-      { to: "/accounts/bank-book", label: "Bank Book", icon: Landmark },
-      { to: "/accounts/trial-balance", label: "Trial Balance", icon: Scale },
-      { to: "/accounts/profit-loss", label: "Profit & Loss", icon: PieChart },
-      { to: "/accounts/balance-sheet", label: "Balance Sheet", icon: FileSpreadsheet },
-      { to: "/accounts/cash-flow", label: "Cash Flow", icon: PieChart },
-      { to: "/accounts/receivables", label: "Receivables", icon: ArrowUpRight },
-      { to: "/accounts/payables", label: "Payables", icon: ArrowDownRight },
-    ],
-  },
-  {
-    label: "GST",
-    items: [{ to: "/gst/summary", label: "GST Summary", icon: FileSpreadsheet }],
-  },
-  {
-    label: "Administration",
-    items: [
-      { to: "/approval-center", label: "Approval Center", icon: ShieldCheck },
-      { to: "/admin/audit-logs", label: "Audit Logs", icon: ShieldCheck },
-      { to: "/settings/voucher-numbering", label: "Voucher Numbering", icon: Receipt },
-      { to: "/settings/sales-config", label: "Sales Configuration", icon: SettingsIcon },
-    ],
-  },
-  {
-    label: "Business",
-    items: [
-      { to: "/settings/business-profile", label: "Business Profile", icon: Landmark },
-      { to: "/settings/company-users", label: "Company Users", icon: Users },
-      { to: "/settings/team", label: "Team & Roles", icon: Users },
-    ],
-  },
-  {
-    label: "My Account",
-    items: [
-      { to: "/profile", label: "Profile", icon: User },
-      { to: "/settings", label: "Settings", icon: SettingsIcon },
-    ],
-  },
-];
+import { useNavigation } from "@/lib/navigation/useNavigation";
+import { useFavoritePages } from "@/lib/navigation/useFavoritePages";
+import { useRecentPages } from "@/lib/navigation/useRecentPages";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, loading, signOut } = useAuth();
@@ -170,41 +40,30 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState("");
+  const { tree, childrenOf, byId } = useNavigation();
+  const { favoriteIds } = useFavoritePages();
+  const { recordVisit } = useRecentPages();
 
-  // Collapsible sidebar state – default open "Overview"
-  const [openSection, setOpenSection] = useState("Overview");
+  // Collapsible sidebar state – default open the first module (e.g. "Dashboard")
+  const [openSection, setOpenSection] = useState(tree[0]?.module ?? "");
 
   const toggleSection = (section: string) => {
     setOpenSection((prev) => (prev === section ? "" : section));
   };
 
-  // Keyboard shortcuts
+  // Track every route change against the registry so "Recent Pages" in
+  // search stays in sync no matter how the user navigated (sidebar, search,
+  // deep link, browser back/forward).
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        setCommandMenuOpen(true);
-      }
-      if (e.key === "Escape" && commandMenuOpen) {
-        setCommandMenuOpen(false);
-        setSearchValue("");
-        searchInputRef.current?.blur();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [commandMenuOpen]);
+    const match = [...byId.values()].find((item) => item.route === location.pathname);
+    if (match) recordVisit(match.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, byId]);
 
-  useEffect(() => {
-    if (commandMenuOpen) searchInputRef.current?.focus();
-  }, [commandMenuOpen]);
-
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+  const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const shortcutKey = isMac ? "⌘K" : "Ctrl+K";
+
+  const favoriteItems = favoriteIds.map((id) => byId.get(id)).filter((i): i is NonNullable<typeof i> => !!i && !!i.route);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
@@ -229,13 +88,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <OfflinePage>
       <div className="h-screen overflow-hidden flex w-full bg-background gradient-mesh">
-        <CommandMenu
-          open={commandMenuOpen}
-          onOpenChange={setCommandMenuOpen}
-          triggerRef={searchInputRef}
-          searchValue={searchValue}
-          onSearchChange={setSearchValue}
-        />
+        {/* Centralized Command Search — reads the same registry as the sidebar */}
+        <EnterpriseCommandMenu />
 
         <aside className="hidden md:flex w-64 flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
           {/* ========== FIXED TOP AREA ========== */}
@@ -291,83 +145,58 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
 
-            {/* Search Box */}
+            {/* Search trigger — opens the same Command Search everywhere (Ctrl+K) */}
             <div className="px-4 py-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-sidebar-foreground/50" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Find..."
-                  value={searchValue}
-                  onChange={(e) => {
-                    setSearchValue(e.target.value);
-                    setCommandMenuOpen(true);
-                  }}
-                  onFocus={() => setCommandMenuOpen(true)}
-                  className={`
-                    w-full
-                    pl-9 pr-12
-                    py-2
-                    rounded-lg
-                    border
-                    border-sidebar-border
-                    bg-sidebar-accent/10
-                    text-sm
-                    text-sidebar-foreground
-                    placeholder:text-sidebar-foreground/50
-                    focus:outline-none
-                    focus:ring-2
-                    focus:ring-primary/50
-                    focus:border-transparent
-                    transition-all
-                    duration-200
-                    ${commandMenuOpen ? 'bg-sidebar-accent/20 ring-2 ring-primary/50' : ''}
-                  `}
-                />
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new Event("rdpro:open-search"))}
+                className="relative w-full pl-9 pr-14 py-2 rounded-lg border border-sidebar-border bg-sidebar-accent/10 text-sm text-left text-sidebar-foreground/50 hover:bg-sidebar-accent/20 hover:text-sidebar-foreground/70 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-200"
+              >
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" />
+                Find...
                 <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center rounded border border-sidebar-border bg-sidebar-background px-1.5 py-0.5 text-xs font-mono text-sidebar-foreground/60">
                   {shortcutKey}
                 </kbd>
-              </div>
+              </button>
             </div>
           </div>
 
           {/* ========== SCROLLABLE MENU AREA ========== */}
           <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-1 scrollbar-thin">
-            {navGroups.map((group) => (
-              <div key={group.label} className="mb-2">
+            {/* Favorites — pinned pages, synced from the Command Search */}
+            {favoriteItems.length > 0 && (
+              <div className="mb-3">
+                <div className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-sidebar-foreground/80">
+                  <Star className="h-3.5 w-3.5 fill-primary text-primary" />
+                  <span>Favorites</span>
+                </div>
+                <div className="space-y-1">
+                  {favoriteItems.map((item) => (
+                    <SidebarNavItem key={item.id} item={item} childrenOf={childrenOf} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {tree.map((group) => (
+              <div key={group.module} className="mb-2">
                 <button
                   type="button"
-                  onClick={() => toggleSection(group.label)}
+                  onClick={() => toggleSection(group.module)}
                   className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold hover:bg-sidebar-accent/50 transition-colors text-sidebar-foreground/80 hover:text-sidebar-foreground"
                 >
-                  <span>{group.label}</span>
-                  {openSection === group.label ? (
+                  <span>{group.module}</span>
+                  {openSection === group.module ? (
                     <ChevronDown className="h-4 w-4" />
                   ) : (
                     <ChevronRight className="h-4 w-4" />
                   )}
                 </button>
 
-                {openSection === group.label && (
+                {openSection === group.module && (
                   <div className="mt-1 ml-2 space-y-1">
                     {group.items.map((item) => (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        onClick={() => setCommandMenuOpen(false)}
-                        className={({ isActive }) =>
-                          cn(
-                            "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                            isActive
-                              ? "bg-sidebar-accent text-sidebar-primary shadow-sm before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-6 before:w-0.5 before:rounded-full before:bg-primary before:shadow-glow"
-                              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
-                          )
-                        }
-                      >
-                        <item.icon className="h-4 w-4" />
-                        {item.label}
-                      </NavLink>
+                      <SidebarNavItem key={item.id} item={item} childrenOf={childrenOf} />
                     ))}
                   </div>
                 )}
@@ -399,6 +228,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </aside>
 
         <main className="flex-1 h-screen overflow-y-auto overflow-x-hidden p-4 md:p-8">
+          <PageBreadcrumbs />
           {children}
         </main>
 
