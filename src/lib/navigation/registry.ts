@@ -91,6 +91,33 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     keywords: ["past orders", "activity"],
   },
+  {
+    id: "reports-sales-register",
+    title: "Sales Register",
+    description: "All sales invoices for a date range, with GST breakdown",
+    route: "/reports/sales-register",
+    icon: FileText,
+    module: "Reports",
+    keywords: ["sales", "invoices", "register"],
+  },
+  {
+    id: "reports-purchase-register",
+    title: "Purchase Register",
+    description: "All purchase invoices for a date range, supplier-wise",
+    route: "/reports/purchase-register",
+    icon: Receipt,
+    module: "Reports",
+    keywords: ["purchase", "invoices", "supplier"],
+  },
+  {
+    id: "reports-outstanding-ageing",
+    title: "Outstanding Ageing",
+    description: "Unpaid invoices bucketed by age (0-30, 31-60, 61-90, 90+)",
+    route: "/reports/outstanding-ageing",
+    icon: CreditCard,
+    module: "Reports",
+    keywords: ["outstanding", "ageing", "aging", "overdue", "receivables"],
+  },
 
   // ==========================================================================
   // SALES
