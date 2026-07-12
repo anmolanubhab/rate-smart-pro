@@ -13,6 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import DealerGuard from "@/components/dealer/DealerGuard";
 
+
 const Calculator = lazy(() => import("./pages/Calculator"));
 const History = lazy(() => import("./pages/History"));
 const Parties = lazy(() => import("./pages/Parties"));
@@ -50,6 +51,7 @@ const CompanyUsers = lazy(() => import("./pages/settings/CompanyUsers"));
 const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
 const MeasurementUnits = lazy(() => import("./pages/settings/MeasurementUnits"));
 const AccountingLock = lazy(() => import("./pages/settings/AccountingLock"));
+const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
@@ -180,6 +182,7 @@ const App = () => (
               <Route path="/settings/measurement-units" element={L(<MeasurementUnits />)} />
               <Route path="/settings/accounting-lock" element={L(<AccountingLock />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
+              <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
