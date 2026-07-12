@@ -33,7 +33,7 @@ export type VoucherRow = {
 export type VoucherItemRow = {
   id: string;
   voucher_id: string;
-  ledger_id: string;
+  ledger_account_id: string;
   dr_amount: number;
   cr_amount: number;
   position: number;
@@ -78,23 +78,36 @@ export async function ensurePartyLedgers(userId: string) {
 
 export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow[]> {
   const biz = getActiveBusinessIdSync();
-  // Fast path: current_balance is maintained incrementally by DB triggers
-  // (see apply_ledger_balance_delta) on every voucher_items write, so this
-  // never needs to scan transaction history -- stays O(ledger accounts)
-  // regardless of how many vouchers exist.
   let lq = supabase
     .from("ledger_accounts")
-    .select("id, name, ledger_type, group_id, party_id, opening_balance, opening_balance_type, is_system, status, current_balance, group:account_groups(name, nature)")
+    .select("id, name, ledger_type, group_id, party_id, opening_balance, opening_balance_type, is_system, status, group:account_groups(name, nature)")
     .eq("user_id", userId)
     .order("name");
   if (biz) lq = lq.eq("business_id", biz);
   const { data: ledgers, error } = await lq;
   if (error) throw error;
 
+  let iq = supabase
+    .from("voucher_items")
+    .select("ledger_account_id, dr_amount, cr_amount")
+    .eq("user_id", userId);
+  if (biz) iq = iq.eq("business_id", biz);
+  const { data: items, error: e2 } = await iq;
+  if (e2) throw e2;
+
+  const agg = new Map<string, { dr: number; cr: number }>();
+  (items ?? []).forEach((it: any) => {
+    const a = agg.get(it.ledger_account_id) ?? { dr: 0, cr: 0 };
+    a.dr += Number(it.dr_amount ?? 0);
+    a.cr += Number(it.cr_amount ?? 0);
+    agg.set(it.ledger_account_id, a);
+  });
+
   return (ledgers ?? []).map((l: any) => {
+    const a = agg.get(l.id) ?? { dr: 0, cr: 0 };
     const open = Number(l.opening_balance ?? 0) * (l.opening_balance_type === "cr" ? -1 : 1);
-    const bal = open + Number(l.current_balance ?? 0);
-    return { ...l, balance: bal, total_dr: undefined, total_cr: undefined } as LedgerRow;
+    const bal = open + a.dr - a.cr;
+    return { ...l, balance: bal, total_dr: a.dr, total_cr: a.cr } as LedgerRow;
   });
 }
 
@@ -126,24 +139,6 @@ export async function fetchVoucherItems(userId: string, voucherIds: string[]) {
     .in("voucher_id", voucherIds);
   if (biz) q = q.eq("business_id", biz);
   const { data, error } = await q;
-
-  if (error && error.message.includes("dr_amount")) {
-    // Fallback for amount-only schema
-    let q2 = supabase
-      .from("voucher_items")
-      .select("id, voucher_id, ledger_account_id, amount, position, narration")
-      .eq("user_id", userId)
-      .in("voucher_id", voucherIds);
-    if (biz) q2 = q2.eq("business_id", biz);
-    const { data: d2, error: e2 } = await q2;
-    if (e2) throw e2;
-    return (d2 ?? []).map((it: any) => ({
-      ...it,
-      dr_amount: Number(it.amount) || 0,
-      cr_amount: 0,
-    })) as VoucherItemRow[];
-  }
-
   if (error) throw error;
   return (data ?? []) as VoucherItemRow[];
 }

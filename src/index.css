@@ -1,14 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* RD-PRO — ChatGPT-inspired Enterprise ERP design system. All colors HSL. */
+/* RD-PRO — Premium Cloud ERP design system (Indigo). All colors HSL. */
 
 @layer base {
   :root {
-    --background: 240 7% 97%;        /* #F7F7F8 */
+    --background: 210 40% 98%;       /* #F8FAFC */
     --foreground: 221 39% 11%;       /* #111827 */
 
     --card: 0 0% 100%;               /* #FFFFFF */
@@ -17,20 +17,22 @@
     --popover: 0 0% 100%;
     --popover-foreground: 221 39% 11%;
 
-    --primary: 165 82% 35%;          /* #10A37F */
+    --primary: 243 75% 59%;          /* #4F46E5 */
+    --primary-hover: 245 58% 51%;    /* #4338CA */
+    --primary-light: 226 100% 97%;   /* #EEF2FF */
     --primary-foreground: 0 0% 100%;
-    --primary-glow: 160 70% 45%;     /* lighter green for glow/hover accents */
+    --primary-glow: 243 75% 65%;
 
-    --secondary: 220 14% 96%;        /* light neutral for secondary buttons */
-    --secondary-foreground: 221 39% 15%;
+    --secondary: 189 94% 43%;        /* #06B6D4 */
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 220 14% 96%;
+    --muted: 220 14% 96%;            /* #F3F4F6 hover/muted surface */
     --muted-foreground: 220 9% 46%;  /* #6B7280 */
 
-    --accent: 164 24% 56%;           /* #74AA9C soft green accent */
-    --accent-foreground: 0 0% 100%;
+    --accent: 226 100% 97%;          /* primary-light used as accent surface */
+    --accent-foreground: 243 75% 59%;
 
-    --success: 142 76% 36%;          /* #16A34A */
+    --success: 160 84% 39%;          /* #10B981 */
     --success-foreground: 0 0% 100%;
 
     --warning: 38 92% 50%;           /* #F59E0B */
@@ -41,32 +43,33 @@
 
     --border: 220 13% 91%;           /* #E5E7EB */
     --input: 220 13% 88%;
-    --ring: 165 82% 35%;
+    --ring: 243 75% 59%;
 
-    --radius: 0.75rem;               /* 12px */
+    --radius: 1rem;                  /* 16px cards, 12px buttons/inputs, 8px sm */
 
-    --gradient-primary: linear-gradient(135deg, hsl(165 82% 35%), hsl(160 70% 45%));
-    --gradient-accent: linear-gradient(135deg, hsl(217 91% 60%), hsl(164 24% 56%));
-    --gradient-success: linear-gradient(135deg, hsl(142 76% 36%), hsl(152 70% 45%));
-    --gradient-mesh: radial-gradient(at 20% 0%, hsl(165 82% 35% / 0.04) 0px, transparent 50%),
-                     radial-gradient(at 80% 0%, hsl(164 24% 56% / 0.04) 0px, transparent 50%),
-                     radial-gradient(at 50% 100%, hsl(160 70% 45% / 0.03) 0px, transparent 50%);
+    --gradient-primary: linear-gradient(135deg, hsl(243 75% 59%), hsl(255 70% 65%));
+    --gradient-accent: linear-gradient(135deg, hsl(243 75% 59%), hsl(189 94% 43%));
+    --gradient-success: linear-gradient(135deg, hsl(160 84% 39%), hsl(174 70% 45%));
+    --gradient-mesh: radial-gradient(at 20% 0%, hsl(243 75% 59% / 0.05) 0px, transparent 50%),
+                     radial-gradient(at 80% 0%, hsl(189 94% 43% / 0.04) 0px, transparent 50%),
+                     radial-gradient(at 50% 100%, hsl(243 75% 65% / 0.03) 0px, transparent 50%);
 
-    --shadow-soft: 0 1px 3px hsl(221 39% 11% / 0.08);
-    --shadow-elegant: 0 4px 12px -2px hsl(165 82% 35% / 0.12);
-    --shadow-glow: 0 0 40px hsl(165 82% 35% / 0.18);
+    --shadow-soft: 0 1px 3px hsl(221 39% 11% / 0.06);
+    --shadow-card: 0 4px 16px hsl(215 25% 27% / 0.06);
+    --shadow-elegant: 0 12px 24px hsl(215 25% 27% / 0.10);
+    --shadow-glow: 0 0 40px hsl(243 75% 59% / 0.18);
 
     --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
-    /* Sidebar — light, ChatGPT-style */
+    /* Sidebar — white, premium SaaS style */
     --sidebar-background: 0 0% 100%;       /* #FFFFFF */
     --sidebar-foreground: 221 39% 11%;     /* #111827 */
-    --sidebar-primary: 165 82% 35%;        /* #10A37F */
+    --sidebar-primary: 243 75% 59%;        /* #4F46E5 */
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 152 55% 95%;         /* light green tint for active item */
-    --sidebar-accent-foreground: 165 82% 35%; /* green text on active item */
+    --sidebar-accent: 226 100% 97%;        /* light indigo tint for active item */
+    --sidebar-accent-foreground: 243 75% 59%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 165 82% 35%;
+    --sidebar-ring: 243 75% 59%;
   }
 
   .dark {
@@ -79,20 +82,22 @@
     --popover: 215 28% 17%;
     --popover-foreground: 210 20% 98%;
 
-    --primary: 160 70% 45%;
+    --primary: 243 75% 65%;
+    --primary-hover: 243 75% 59%;
+    --primary-light: 243 40% 22%;
     --primary-foreground: 221 39% 11%;
-    --primary-glow: 160 70% 55%;
+    --primary-glow: 243 75% 70%;
 
-    --secondary: 217 19% 27%;        /* #374151 */
-    --secondary-foreground: 210 20% 98%;
+    --secondary: 189 80% 45%;
+    --secondary-foreground: 221 39% 11%;
 
     --muted: 217 19% 22%;
     --muted-foreground: 218 11% 65%; /* #9CA3AF */
 
-    --accent: 164 24% 45%;
-    --accent-foreground: 210 20% 98%;
+    --accent: 243 40% 22%;
+    --accent-foreground: 243 75% 75%;
 
-    --success: 142 70% 45%;
+    --success: 160 70% 45%;
     --success-foreground: 221 39% 11%;
 
     --warning: 38 92% 55%;
@@ -103,24 +108,25 @@
 
     --border: 217 19% 27%;           /* #374151 */
     --input: 217 19% 24%;
-    --ring: 160 70% 45%;
+    --ring: 243 75% 65%;
 
-    --gradient-mesh: radial-gradient(at 20% 0%, hsl(160 70% 45% / 0.10) 0px, transparent 50%),
-                     radial-gradient(at 80% 0%, hsl(164 24% 45% / 0.08) 0px, transparent 50%),
-                     radial-gradient(at 50% 100%, hsl(160 70% 55% / 0.06) 0px, transparent 50%);
+    --gradient-mesh: radial-gradient(at 20% 0%, hsl(243 75% 65% / 0.10) 0px, transparent 50%),
+                     radial-gradient(at 80% 0%, hsl(189 80% 45% / 0.08) 0px, transparent 50%),
+                     radial-gradient(at 50% 100%, hsl(243 75% 70% / 0.06) 0px, transparent 50%);
 
-    --shadow-elegant: 0 4px 16px -2px hsl(160 70% 45% / 0.25);
-    --shadow-glow: 0 0 50px hsl(160 70% 45% / 0.25);
+    --shadow-card: 0 4px 16px hsl(0 0% 0% / 0.25);
+    --shadow-elegant: 0 12px 24px hsl(243 75% 65% / 0.20);
+    --shadow-glow: 0 0 50px hsl(243 75% 65% / 0.25);
 
-    /* Sidebar — charcoal, ChatGPT dark-mode style */
+    /* Sidebar — charcoal, dark-mode */
     --sidebar-background: 220 4% 13%;       /* #202123 */
     --sidebar-foreground: 210 20% 90%;
-    --sidebar-primary: 160 70% 45%;
+    --sidebar-primary: 243 75% 65%;
     --sidebar-primary-foreground: 220 4% 13%;
-    --sidebar-accent: 220 4% 20%;
-    --sidebar-accent-foreground: 160 70% 55%;
+    --sidebar-accent: 243 40% 22%;
+    --sidebar-accent-foreground: 243 75% 75%;
     --sidebar-border: 220 4% 20%;
-    --sidebar-ring: 160 70% 45%;
+    --sidebar-ring: 243 75% 65%;
   }
 }
 
@@ -139,8 +145,8 @@
   }
 
   h1, h2, h3, h4, h5 {
-    font-family: 'Space Grotesk', system-ui, sans-serif;
-    letter-spacing: -0.02em;
+    font-family: 'Inter', system-ui, sans-serif;
+    letter-spacing: -0.01em;
   }
 }
 
@@ -152,6 +158,7 @@
   .shadow-elegant { box-shadow: var(--shadow-elegant); }
   .shadow-glow { box-shadow: var(--shadow-glow); }
   .shadow-soft { box-shadow: var(--shadow-soft); }
+  .shadow-card { box-shadow: var(--shadow-card); }
   .transition-smooth { transition: var(--transition-smooth); }
 
   .text-gradient {

@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Search } from "lucide-react";
 import { logAudit } from "@/lib/audit";
+import { ownerMinimumViolation } from "@/lib/companySafety";
 
 const ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant", "operator", "salesman", "viewer"];
 
@@ -78,6 +79,17 @@ export default function CompanyUsers() {
   const save = async () => {
     if (!business) return;
     if (editingId) {
+      // Owner-minimum guard: only relevant if this edit actually moves the
+      // user OUT of "active owner" status (role change away from owner,
+      // or status change away from active). A no-op or unrelated field
+      // edit on the last owner must not be blocked.
+      const original = list.data?.find((r) => r.id === editingId);
+      const losesOwnerStatus = original && original.role === "owner" && original.status === "active"
+        && (form.role !== "owner" || form.status !== "active");
+      if (losesOwnerStatus) {
+        const err = ownerMinimumViolation(list.data ?? [], editingId);
+        if (err) { toast.error(err); return; }
+      }
       const { error } = await supabase.from("business_users").update({
         full_name: form.full_name || null, username: form.username || null,
         email: form.email || null, mobile: form.mobile || null,
@@ -108,6 +120,10 @@ export default function CompanyUsers() {
 
   const toggleStatus = async (id: string, current: string, role: string) => {
     const next = current === "active" ? "inactive" : "active";
+    if (next === "inactive") {
+      const err = ownerMinimumViolation(list.data ?? [], id);
+      if (err) { toast.error(err); return; }
+    }
     const { error } = await supabase.from("business_users").update({ status: next }).eq("id", id);
     if (error) { toast.error(error.message); return; }
     await logAudit({ business_id: business?.id, action: next === "inactive" ? "USER_DISABLED" : "USER_ENABLED", entity_type: "business_user", entity_id: id, new_value: { status: next, role } });
@@ -115,6 +131,8 @@ export default function CompanyUsers() {
   };
 
   const remove = async (id: string) => {
+    const err = ownerMinimumViolation(list.data ?? [], id);
+    if (err) { toast.error(err); return; }
     if (!confirm("Remove this user from the company?")) return;
     const { error } = await supabase.from("business_users").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
@@ -176,14 +194,13 @@ export default function CompanyUsers() {
                     {canManage && (
                       <>
                         <Button size="sm" variant="ghost" onClick={() => startEdit(r)}>Edit</Button>
-                        {r.role !== "owner" && (
-                          <>
-                            <Button size="sm" variant="ghost" onClick={() => toggleStatus(r.id, r.status, r.role)}>
-                              {r.status === "active" ? "Disable" : "Enable"}
-                            </Button>
-                            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => remove(r.id)}>Remove</Button>
-                          </>
-                        )}
+                        {/* Owner rows are editable/removable too — ownerMinimumViolation()
+                            inside toggleStatus/remove/save blocks the action (with a toast)
+                            only if this is the last active owner. */}
+                        <Button size="sm" variant="ghost" onClick={() => toggleStatus(r.id, r.status, r.role)}>
+                          {r.status === "active" ? "Disable" : "Enable"}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => remove(r.id)}>Remove</Button>
                       </>
                     )}
                   </TableCell>

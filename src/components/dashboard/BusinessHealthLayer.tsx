@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, type ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Minus, TrendingUp, ShoppingCart, CreditCard, Boxes } from "lucide-react";
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -37,14 +37,14 @@ function toneForOutstanding(v: number, anchor: number): StatusTone {
 
 function TrendIcon({ pct }: { pct: number | null }) {
   if (pct === null) return <Minus className="h-4 w-4 text-muted-foreground" />;
-  if (pct >= 0) return <ArrowUpRight className="h-4 w-4 text-emerald-600" />;
+  if (pct >= 0) return <ArrowUpRight className="h-4 w-4 text-success" />;
   return <ArrowDownRight className="h-4 w-4 text-destructive" />;
 }
 
 function toneClasses(tone: StatusTone) {
-  if (tone === "healthy") return { badge: "border-emerald-500/40 text-emerald-700 bg-emerald-500/5", dot: "bg-emerald-500" };
+  if (tone === "healthy") return { badge: "border-success/30 text-success bg-success/5", dot: "bg-success" };
   if (tone === "critical") return { badge: "border-destructive/40 text-destructive bg-destructive/5", dot: "bg-destructive" };
-  return { badge: "border-amber-500/40 text-amber-700 bg-amber-500/5", dot: "bg-amber-500" };
+  return { badge: "border-warning/40 text-warning bg-warning/5", dot: "bg-warning" };
 }
 
 function KpiCard(props: {
@@ -52,33 +52,38 @@ function KpiCard(props: {
   value: number;
   previous: number;
   status: StatusTone;
+  icon: ComponentType<{ className?: string }>;
 }) {
   const pct = pctChange(props.value, props.previous);
   const fmtPct = pct === null ? "—" : `${Math.abs(pct).toFixed(1).replace(/\.0$/, "")}%`;
   const t = toneClasses(props.status);
+  const Icon = props.icon;
 
   return (
-    <div className="rounded-2xl bg-card border border-border shadow-soft p-5">
+    <div className="group rounded-2xl bg-card border border-border shadow-card p-5 transition-smooth hover:shadow-card-hover hover:-translate-y-0.5">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold truncate">{props.label}</div>
-          <div className="font-display text-2xl md:text-3xl font-bold mt-2 tabular-nums">{inr(props.value)}</div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            Prev month <span className="tabular-nums font-medium text-foreground/80">{inr(props.previous)}</span>
-          </div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-light text-primary transition-smooth group-hover:bg-primary group-hover:text-primary-foreground">
+          <Icon className="h-5 w-5" />
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <Badge variant="outline" className={cn("text-[10px]", t.badge)}>
-            <span className={cn("inline-block h-1.5 w-1.5 rounded-full mr-1.5", t.dot)} />
-            {props.status === "healthy" ? "Healthy" : props.status === "warning" ? "Warning" : "Critical"}
-          </Badge>
-          <div className="flex items-center gap-1.5">
-            <TrendIcon pct={pct} />
-            <div className={cn("text-sm font-semibold tabular-nums", pct === null ? "text-muted-foreground" : pct >= 0 ? "text-emerald-600" : "text-destructive")}>
-              {pct === null ? "—" : pct >= 0 ? `+${fmtPct}` : `-${fmtPct}`}
-            </div>
-          </div>
+        <Badge variant="outline" className={cn("text-[10px]", t.badge)}>
+          <span className={cn("inline-block h-1.5 w-1.5 rounded-full mr-1.5", t.dot)} />
+          {props.status === "healthy" ? "Healthy" : props.status === "warning" ? "Warning" : "Critical"}
+        </Badge>
+      </div>
+      <div className="mt-4 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold truncate">
+        {props.label}
+      </div>
+      <div className="mt-1 flex items-end justify-between gap-2">
+        <div className="text-2xl md:text-3xl font-bold tabular-nums text-foreground">{inr(props.value)}</div>
+        <div className="flex items-center gap-1 pb-0.5">
+          <TrendIcon pct={pct} />
+          <span className={cn("text-sm font-semibold tabular-nums", pct === null ? "text-muted-foreground" : pct >= 0 ? "text-success" : "text-destructive")}>
+            {pct === null ? "—" : pct >= 0 ? `+${fmtPct}` : `-${fmtPct}`}
+          </span>
         </div>
+      </div>
+      <div className="mt-1.5 text-xs text-muted-foreground">
+        Prev month <span className="tabular-nums font-medium text-foreground/80">{inr(props.previous)}</span>
       </div>
     </div>
   );
@@ -86,14 +91,14 @@ function KpiCard(props: {
 
 function KpiSkeleton() {
   return (
-    <div className="rounded-2xl bg-card border border-border shadow-soft p-5">
-      <Skeleton className="h-3 w-32" />
-      <Skeleton className="h-9 w-44 mt-3" />
-      <Skeleton className="h-3 w-40 mt-3" />
-      <div className="flex justify-between items-center mt-3">
-        <Skeleton className="h-6 w-20 rounded-full" />
-        <Skeleton className="h-6 w-16 rounded-full" />
+    <div className="rounded-2xl bg-card border border-border shadow-card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <Skeleton className="h-10 w-10 rounded-xl" />
+        <Skeleton className="h-5 w-16 rounded-full" />
       </div>
+      <Skeleton className="h-3 w-28 mt-4" />
+      <Skeleton className="h-8 w-36 mt-2" />
+      <Skeleton className="h-3 w-32 mt-2" />
     </div>
   );
 }
@@ -264,12 +269,12 @@ export default function BusinessHealthLayer() {
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-bold">Business Health</h2>
+          <h2 className="text-xl font-bold text-foreground">Business Health</h2>
           <p className="text-sm text-muted-foreground">Permanent KPIs with month-on-month signals.</p>
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
         {loading ? (
           <>
             <KpiSkeleton />
@@ -281,12 +286,12 @@ export default function BusinessHealthLayer() {
           </>
         ) : (
           <>
-            <KpiCard label="Sales This Month" value={computed.salesCur} previous={computed.salesPrev} status={salesTone} />
-            <KpiCard label="Purchase This Month" value={computed.purchaseCur} previous={computed.purchasePrev} status={purchaseTone} />
-            <KpiCard label="Receivables" value={computed.receivableCur} previous={computed.receivablePrev} status={receivableTone} />
-            <KpiCard label="Payables" value={computed.payableCur} previous={computed.payablePrev} status={payableTone} />
-            <KpiCard label="Inventory Value" value={computed.stockValue} previous={computed.stockPrev} status={inventoryTone} />
-            <KpiCard label="Net Profit" value={computed.profitCur} previous={computed.profitPrev} status={profitTone} />
+            <KpiCard label="Sales This Month" value={computed.salesCur} previous={computed.salesPrev} status={salesTone} icon={ShoppingCart} />
+            <KpiCard label="Purchase This Month" value={computed.purchaseCur} previous={computed.purchasePrev} status={purchaseTone} icon={CreditCard} />
+            <KpiCard label="Receivables" value={computed.receivableCur} previous={computed.receivablePrev} status={receivableTone} icon={ArrowUpRight} />
+            <KpiCard label="Payables" value={computed.payableCur} previous={computed.payablePrev} status={payableTone} icon={ArrowDownRight} />
+            <KpiCard label="Inventory Value" value={computed.stockValue} previous={computed.stockPrev} status={inventoryTone} icon={Boxes} />
+            <KpiCard label="Net Profit" value={computed.profitCur} previous={computed.profitPrev} status={profitTone} icon={TrendingUp} />
           </>
         )}
       </div>

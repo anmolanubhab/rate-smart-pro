@@ -60,17 +60,22 @@ export function DeleteCompanyWizard({
       .finally(() => setLoading(false));
   }, [open, businessId]);
 
+  // NOTE: "at least one active owner" is a USER-LEVEL rule (delete user /
+  // disable user / change an owner's role — see src/lib/companySafety.ts
+  // ownerMinimumViolation()). It intentionally does NOT apply to company
+  // deletion. A company with a single owner must still be deletable.
+  // Only real operational reasons block deletion here.
   const blockers = useMemo(() => {
     const out: string[] = [];
     if (!pre) return out;
-    if (pre.activeOwners <= 1) out.push("At least one active owner is required.");
     if (pre.pendingApprovals > 0) out.push(`${pre.pendingApprovals} pending approval request(s) must be resolved first.`);
-    if (pre.hasPendingDeleteRequest) out.push("A permanent-delete request is already pending for this company.");
+    if (pre.hasPendingDeleteRequest) out.push(`A permanent-delete request is already pending for this company${pre.deleteEligibleAt ? ` (eligible ${new Date(pre.deleteEligibleAt).toLocaleDateString()})` : ""}.`);
     return out;
   }, [pre]);
 
   const warnings = useMemo(() => {
     const out: string[] = [];
+    if (pre && pre.activeOwners <= 1) out.push("This company has only one active owner. Deleting it will remove that owner's access too — this is informational only and will not block deletion.");
     if (pre && pre.activeMembers > 1) out.push(`${pre.activeMembers} users still have access to this company.`);
     return out;
   }, [pre]);

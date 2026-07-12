@@ -12,7 +12,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
-import { fetchProductUnits, fetchUnits, toStockQty, stockUnitOf, type ProductUnit, type Unit as MeasureUnit } from "@/lib/units";
 
 interface GRNItem {
   purchase_order_item_id: string | null;
@@ -27,8 +26,6 @@ interface GRNItem {
   short_qty: number;
   excess_qty: number;
   quality_remarks: string;
-  unit_id: string | null;
-  stock_accepted_qty: number | null;
 }
 
 export default function PurchaseGRN() {
@@ -51,10 +48,6 @@ export default function PurchaseGRN() {
   const [selectedPO, setSelectedPO] = useState('');
 
   const [items, setItems] = useState<GRNItem[]>([]);
-  const [unitsByProduct, setUnitsByProduct] = useState<Record<string, ProductUnit[]>>({});
-  const [allUnits, setAllUnits] = useState<MeasureUnit[]>([]);
-  useEffect(() => { fetchUnits().then(setAllUnits).catch(() => {}); }, []);
-  const unitLabel = (unitId: string) => allUnits.find((u) => u.id === unitId)?.symbol ?? "";
   const [loading, setLoading] = useState(false);
 
   // Fetch suppliers (parties), warehouses, and POs eligible for receipt
@@ -117,7 +110,7 @@ export default function PurchaseGRN() {
     const { data: poItems, error } = await supabase
       .from('purchase_order_items')
       .select(`
-        id, product_id, qty, unit_id,
+        id, product_id, qty,
         product:products(name, part_number)
       `)
       .eq('purchase_order_id', poId);
@@ -125,22 +118,11 @@ export default function PurchaseGRN() {
     if (error) {
       toast({ title: "Error fetching PO items", description: error.message, variant: "destructive" });
     } else if (poItems) {
-      // Layer C1: preload each distinct product's unit mappings once (avoid N+1)
-      const productIds = [...new Set(poItems.map((i: any) => i.product_id).filter(Boolean))];
-      const puByProduct: Record<string, ProductUnit[]> = {};
-      await Promise.all(
-        productIds.map(async (pid: string) => {
-          try { puByProduct[pid] = await fetchProductUnits(pid); } catch { puByProduct[pid] = []; }
-        })
-      );
-      setUnitsByProduct(puByProduct);
-
       const mappedItems: GRNItem[] = poItems
         .map((item: any) => {
           const ordered = Number(item.qty);
           const alreadyReceived = receivedMap.get(item.product_id) ?? 0;
           const remaining = Math.max(0, ordered - alreadyReceived);
-          const pu = puByProduct[item.product_id] ?? [];
           return {
             purchase_order_item_id: item.id,
             product_id: item.product_id,
@@ -154,8 +136,6 @@ export default function PurchaseGRN() {
             short_qty: 0,
             excess_qty: 0,
             quality_remarks: '',
-            unit_id: item.unit_id ?? null,
-            stock_accepted_qty: pu.length ? toStockQty(remaining, item.unit_id, pu) : null,
           };
         })
         .filter((it) => it.ordered_qty > 0);
@@ -178,9 +158,6 @@ export default function PurchaseGRN() {
     item.pending_qty = Math.max(0, item.ordered_qty - item.received_qty);
     item.short_qty = Math.max(0, item.ordered_qty - item.received_qty);
     item.excess_qty = Math.max(0, item.received_qty - item.ordered_qty);
-
-    const pu = unitsByProduct[item.product_id];
-    item.stock_accepted_qty = pu?.length ? toStockQty(item.accepted_qty, item.unit_id, pu) : null;
 
     updatedItems[index] = item;
     setItems(updatedItems);
@@ -240,8 +217,6 @@ export default function PurchaseGRN() {
           short_qty: item.short_qty,
           excess_qty: item.excess_qty,
           quality_remarks: item.quality_remarks || null,
-          unit_id: item.unit_id,
-          stock_accepted_qty: item.stock_accepted_qty,
         }));
 
         const { error: itemsError } = await supabase
@@ -255,11 +230,6 @@ export default function PurchaseGRN() {
       if (status === 'received') {
         for (const item of items) {
           if (item.accepted_qty <= 0) continue;
-          // Layer C1: stock always moves in the product's STOCK unit; if this
-          // product has configured units, stock_accepted_qty already holds the
-          // converted amount. Legacy products (no units configured) fall back
-          // to accepted_qty exactly as before this migration.
-          const qtyToPost = item.stock_accepted_qty ?? item.accepted_qty;
 
           const { data: product, error: prodErr } = await supabase
             .from('products')
@@ -269,7 +239,7 @@ export default function PurchaseGRN() {
           if (prodErr) { console.error('Stock lookup failed', prodErr.message); continue; }
 
           const before = Number(product?.stock) || 0;
-          const after = before + qtyToPost;
+          const after = before + item.accepted_qty;
 
           const { error: stockErr } = await supabase
             .from('products')
@@ -282,18 +252,12 @@ export default function PurchaseGRN() {
             business_id: businessId,
             product_id: item.product_id,
             movement_type: 'purchase_grn',
-            qty: qtyToPost,
+            qty: item.accepted_qty,
             stock_before: before,
             stock_after: after,
             reference_id: grn.id,
             reference_type: 'goods_receipt',
-            notes: `GRN ${grnNumber}${selectedPO ? ' against PO' : ''}` +
-              (item.unit_id && item.stock_accepted_qty != null
-                ? ` — ${item.accepted_qty} ${unitLabel(item.unit_id)} = ${item.stock_accepted_qty} ${(() => {
-                    const su = stockUnitOf(unitsByProduct[item.product_id] ?? []);
-                    return su ? unitLabel(su.unit_id) : "";
-                  })()}`
-                : ""),
+            notes: `GRN ${grnNumber}${selectedPO ? ' against PO' : ''}`,
           });
         }
 
@@ -384,7 +348,6 @@ export default function PurchaseGRN() {
               <tr className="border-b bg-muted/60">
                 <th className="p-3">Product</th>
                 <th className="p-3">Part Number</th>
-                <th className="p-3 text-center">Unit</th>
                 <th className="p-3 text-center">Ordered</th>
                 <th className="p-3 text-center">Received</th>
                 <th className="p-3 text-center">Damaged</th>
@@ -398,24 +361,13 @@ export default function PurchaseGRN() {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
+                  <td colSpan={10} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
                 </tr>
               ) : (
                 items.map((item, idx) => (
                   <tr key={idx} className="border-b hover:bg-muted/10">
                     <td className="p-3 font-medium">{item.product_name}</td>
                     <td className="p-3 text-muted-foreground">{item.part_number}</td>
-                    <td className="p-3 text-center text-xs text-muted-foreground">
-                      {item.unit_id ? unitLabel(item.unit_id) : "—"}
-                      {item.stock_accepted_qty != null && (
-                        <div className="text-[10px] leading-none mt-0.5">
-                          → {item.stock_accepted_qty} {(() => {
-                            const su = stockUnitOf(unitsByProduct[item.product_id] ?? []);
-                            return su ? unitLabel(su.unit_id) : "";
-                          })()}
-                        </div>
-                      )}
-                    </td>
                     <td className="p-3 text-center font-semibold">{item.ordered_qty}</td>
                     <td className="p-3">
                       <Input type="number" className="w-24 mx-auto text-center" value={item.received_qty} onChange={(e) => handleQtyChange(idx, 'received_qty', Number(e.target.value))} />

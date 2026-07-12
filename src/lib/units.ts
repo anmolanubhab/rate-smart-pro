@@ -198,31 +198,11 @@ export async function saveProductUnits(productId: string, units: ProductUnit[]):
 }
 
 /**
- * Converts an entered quantity (in whatever unit the user picked) into the
- * product's stock unit, using that product's own configured conversion
- * factor when available. Returns null when the unit isn't mapped to this
- * product (caller should then just use the entered qty as-is — legacy path).
+ * Converts a quantity from one unit to another WITHIN THE SAME product's unit
+ * set, via each unit's conversion_factor relative to the product's base unit.
+ * Returns null if either unit isn't mapped to the product (caller should fall
+ * back to treating quantities as already being in the base/stock unit).
  */
-export function toStockQty(enteredQty: number, unitId: string | null | undefined, productUnits: ProductUnit[]): number | null {
-  if (!unitId) return null;
-  const pu = productUnits.find((u) => u.unit_id === unitId);
-  if (!pu) return null;
-  return enteredQty * (Number(pu.conversion_factor) || 1);
-}
-
-export function stockUnitOf(productUnits: ProductUnit[]): ProductUnit | undefined {
-  return productUnits.find((u) => u.is_stock);
-}
-
-export function purchaseUnitOf(productUnits: ProductUnit[]): ProductUnit | undefined {
-  return productUnits.find((u) => u.is_purchase) ?? stockUnitOf(productUnits);
-}
-
-export function salesUnitOf(productUnits: ProductUnit[]): ProductUnit | undefined {
-  return productUnits.find((u) => u.is_sales) ?? stockUnitOf(productUnits);
-}
-
-/** All of the functions above use the shared engine only — never hard-code a unit anywhere else in the app. */
 export function convertViaProductUnits(
   qty: number,
   fromUnitId: string,

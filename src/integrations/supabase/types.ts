@@ -797,6 +797,7 @@ export type Database = {
           fy_start_month: number | null
           gst_enabled: boolean | null
           gst_number: string | null
+          gstin: string | null
           id: string
           industry_segment: string | null
           invoice_prefix: string | null
@@ -835,6 +836,7 @@ export type Database = {
           fy_start_month?: number | null
           gst_enabled?: boolean | null
           gst_number?: string | null
+          gstin?: string | null
           id?: string
           industry_segment?: string | null
           invoice_prefix?: string | null
@@ -873,6 +875,7 @@ export type Database = {
           fy_start_month?: number | null
           gst_enabled?: boolean | null
           gst_number?: string | null
+          gstin?: string | null
           id?: string
           industry_segment?: string | null
           invoice_prefix?: string | null
@@ -2037,8 +2040,6 @@ export type Database = {
           quality_remarks: string | null
           received_qty: number
           short_qty: number
-          stock_accepted_qty: number | null
-          unit_id: string | null
         }
         Insert: {
           accepted_qty?: number
@@ -2053,8 +2054,6 @@ export type Database = {
           quality_remarks?: string | null
           received_qty?: number
           short_qty?: number
-          stock_accepted_qty?: number | null
-          unit_id?: string | null
         }
         Update: {
           accepted_qty?: number
@@ -2069,8 +2068,6 @@ export type Database = {
           quality_remarks?: string | null
           received_qty?: number
           short_qty?: number
-          stock_accepted_qty?: number | null
-          unit_id?: string | null
         }
         Relationships: [
           {
@@ -2078,13 +2075,6 @@ export type Database = {
             columns: ["goods_receipt_id"]
             isOneToOne: false
             referencedRelation: "goods_receipts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "goods_receipt_items_unit_id_fkey"
-            columns: ["unit_id"]
-            isOneToOne: false
-            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
@@ -3900,7 +3890,6 @@ export type Database = {
           pan: string | null
           pan_card_url: string | null
           party_code: string | null
-          party_group_id: string | null
           phone: string | null
           pincode: string | null
           place_of_supply: string | null
@@ -3919,7 +3908,6 @@ export type Database = {
           status: string | null
           trade_license_url: string | null
           updated_at: string | null
-          use_group_defaults: boolean
           user_id: string
           website: string | null
         }
@@ -3988,7 +3976,6 @@ export type Database = {
           pan?: string | null
           pan_card_url?: string | null
           party_code?: string | null
-          party_group_id?: string | null
           phone?: string | null
           pincode?: string | null
           place_of_supply?: string | null
@@ -4007,7 +3994,6 @@ export type Database = {
           status?: string | null
           trade_license_url?: string | null
           updated_at?: string | null
-          use_group_defaults?: boolean
           user_id: string
           website?: string | null
         }
@@ -4076,7 +4062,6 @@ export type Database = {
           pan?: string | null
           pan_card_url?: string | null
           party_code?: string | null
-          party_group_id?: string | null
           phone?: string | null
           pincode?: string | null
           place_of_supply?: string | null
@@ -4095,7 +4080,6 @@ export type Database = {
           status?: string | null
           trade_license_url?: string | null
           updated_at?: string | null
-          use_group_defaults?: boolean
           user_id?: string
           website?: string | null
         }
@@ -4105,13 +4089,6 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "parties_party_group_id_fkey"
-            columns: ["party_group_id"]
-            isOneToOne: false
-            referencedRelation: "party_groups"
             referencedColumns: ["id"]
           },
         ]
@@ -4145,72 +4122,6 @@ export type Database = {
           party_id?: string
         }
         Relationships: []
-      }
-      party_discount_profiles: {
-        Row: {
-          business_id: string
-          cd_pct: number
-          created_at: string
-          discount_mode: string
-          effective_from: string | null
-          effective_to: string | null
-          extra_pct: number
-          id: string
-          is_active: boolean
-          party_id: string
-          priority: number
-          rd_pct: number
-          scheme_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          business_id: string
-          cd_pct?: number
-          created_at?: string
-          discount_mode?: string
-          effective_from?: string | null
-          effective_to?: string | null
-          extra_pct?: number
-          id?: string
-          is_active?: boolean
-          party_id: string
-          priority?: number
-          rd_pct?: number
-          scheme_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          business_id?: string
-          cd_pct?: number
-          created_at?: string
-          discount_mode?: string
-          effective_from?: string | null
-          effective_to?: string | null
-          extra_pct?: number
-          id?: string
-          is_active?: boolean
-          party_id?: string
-          priority?: number
-          rd_pct?: number
-          scheme_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "party_discount_profiles_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "party_discount_profiles_party_id_fkey"
-            columns: ["party_id"]
-            isOneToOne: false
-            referencedRelation: "parties"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       party_discounts: {
         Row: {
@@ -4247,196 +4158,6 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
-      }
-      party_groups: {
-        Row: {
-          allow_invoice_download: boolean
-          allow_ledger: boolean
-          allow_online_order: boolean
-          allow_outstanding: boolean
-          allow_payment: boolean
-          allow_scheme_visibility: boolean
-          allow_stock_visibility: boolean
-          approval_required: boolean
-          auto_debit_note: boolean
-          auto_interest: boolean
-          beat: string | null
-          business_id: string
-          collection_priority: string
-          created_at: string
-          default_cd_pct: number | null
-          default_credit_days: number | null
-          default_credit_limit: number | null
-          default_discount_mode: string
-          default_price_level: string | null
-          default_price_list_id: string | null
-          default_rd_pct: number | null
-          default_salesman_id: string | null
-          default_salesman_name: string | null
-          default_scheme_id: string | null
-          default_transport: string | null
-          default_warehouse_id: string | null
-          freight_rule: string | null
-          grace_days: number
-          group_code: string | null
-          gst_type_default: string | null
-          id: string
-          interest_pct: number
-          is_active: boolean
-          is_system: boolean
-          ledger_group_id: string | null
-          margin_rule_pct: number | null
-          name: string
-          override_allowed: boolean
-          parent_id: string | null
-          payment_terms: string | null
-          reminder_schedule: string | null
-          route: string | null
-          stop_supply_rule: string
-          territory: string | null
-          updated_at: string
-          zone: string | null
-        }
-        Insert: {
-          allow_invoice_download?: boolean
-          allow_ledger?: boolean
-          allow_online_order?: boolean
-          allow_outstanding?: boolean
-          allow_payment?: boolean
-          allow_scheme_visibility?: boolean
-          allow_stock_visibility?: boolean
-          approval_required?: boolean
-          auto_debit_note?: boolean
-          auto_interest?: boolean
-          beat?: string | null
-          business_id: string
-          collection_priority?: string
-          created_at?: string
-          default_cd_pct?: number | null
-          default_credit_days?: number | null
-          default_credit_limit?: number | null
-          default_discount_mode?: string
-          default_price_level?: string | null
-          default_price_list_id?: string | null
-          default_rd_pct?: number | null
-          default_salesman_id?: string | null
-          default_salesman_name?: string | null
-          default_scheme_id?: string | null
-          default_transport?: string | null
-          default_warehouse_id?: string | null
-          freight_rule?: string | null
-          grace_days?: number
-          group_code?: string | null
-          gst_type_default?: string | null
-          id?: string
-          interest_pct?: number
-          is_active?: boolean
-          is_system?: boolean
-          ledger_group_id?: string | null
-          margin_rule_pct?: number | null
-          name: string
-          override_allowed?: boolean
-          parent_id?: string | null
-          payment_terms?: string | null
-          reminder_schedule?: string | null
-          route?: string | null
-          stop_supply_rule?: string
-          territory?: string | null
-          updated_at?: string
-          zone?: string | null
-        }
-        Update: {
-          allow_invoice_download?: boolean
-          allow_ledger?: boolean
-          allow_online_order?: boolean
-          allow_outstanding?: boolean
-          allow_payment?: boolean
-          allow_scheme_visibility?: boolean
-          allow_stock_visibility?: boolean
-          approval_required?: boolean
-          auto_debit_note?: boolean
-          auto_interest?: boolean
-          beat?: string | null
-          business_id?: string
-          collection_priority?: string
-          created_at?: string
-          default_cd_pct?: number | null
-          default_credit_days?: number | null
-          default_credit_limit?: number | null
-          default_discount_mode?: string
-          default_price_level?: string | null
-          default_price_list_id?: string | null
-          default_rd_pct?: number | null
-          default_salesman_id?: string | null
-          default_salesman_name?: string | null
-          default_scheme_id?: string | null
-          default_transport?: string | null
-          default_warehouse_id?: string | null
-          freight_rule?: string | null
-          grace_days?: number
-          group_code?: string | null
-          gst_type_default?: string | null
-          id?: string
-          interest_pct?: number
-          is_active?: boolean
-          is_system?: boolean
-          ledger_group_id?: string | null
-          margin_rule_pct?: number | null
-          name?: string
-          override_allowed?: boolean
-          parent_id?: string | null
-          payment_terms?: string | null
-          reminder_schedule?: string | null
-          route?: string | null
-          stop_supply_rule?: string
-          territory?: string | null
-          updated_at?: string
-          zone?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "party_groups_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "party_groups_default_price_list_fkey"
-            columns: ["default_price_list_id"]
-            isOneToOne: false
-            referencedRelation: "price_lists"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "party_groups_default_scheme_id_fkey"
-            columns: ["default_scheme_id"]
-            isOneToOne: false
-            referencedRelation: "schemes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "party_groups_default_warehouse_id_fkey"
-            columns: ["default_warehouse_id"]
-            isOneToOne: false
-            referencedRelation: "warehouses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "party_groups_ledger_group_id_fkey"
-            columns: ["ledger_group_id"]
-            isOneToOne: false
-            referencedRelation: "account_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "party_groups_parent_id_fkey"
-            columns: ["parent_id"]
-            isOneToOne: false
-            referencedRelation: "party_groups"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       payment_entries: {
         Row: {
@@ -5163,8 +4884,6 @@ export type Database = {
           quantity: number
           sgst_amount: number
           sgst_rate: number
-          stock_qty: number | null
-          unit_id: string | null
         }
         Insert: {
           business_id?: string | null
@@ -5187,8 +4906,6 @@ export type Database = {
           quantity?: number
           sgst_amount?: number
           sgst_rate?: number
-          stock_qty?: number | null
-          unit_id?: string | null
         }
         Update: {
           business_id?: string | null
@@ -5211,8 +4928,6 @@ export type Database = {
           quantity?: number
           sgst_amount?: number
           sgst_rate?: number
-          stock_qty?: number | null
-          unit_id?: string | null
         }
         Relationships: [
           {
@@ -5227,13 +4942,6 @@ export type Database = {
             columns: ["purchase_invoice_id"]
             isOneToOne: false
             referencedRelation: "purchase_invoices"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "purchase_invoice_items_unit_id_fkey"
-            columns: ["unit_id"]
-            isOneToOne: false
-            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
@@ -5343,11 +5051,9 @@ export type Database = {
           qty: number
           rate: number
           status: string
-          stock_qty: number | null
           tax_amount: number
           taxable_amount: number
           total_amount: number
-          unit_id: string | null
         }
         Insert: {
           description?: string
@@ -5361,11 +5067,9 @@ export type Database = {
           qty?: number
           rate?: number
           status?: string
-          stock_qty?: number | null
           tax_amount?: number
           taxable_amount?: number
           total_amount?: number
-          unit_id?: string | null
         }
         Update: {
           description?: string
@@ -5379,11 +5083,9 @@ export type Database = {
           qty?: number
           rate?: number
           status?: string
-          stock_qty?: number | null
           tax_amount?: number
           taxable_amount?: number
           total_amount?: number
-          unit_id?: string | null
         }
         Relationships: [
           {
@@ -5398,13 +5100,6 @@ export type Database = {
             columns: ["purchase_order_id"]
             isOneToOne: false
             referencedRelation: "purchase_orders"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "purchase_order_items_unit_id_fkey"
-            columns: ["unit_id"]
-            isOneToOne: false
-            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
@@ -6898,23 +6593,6 @@ export type Database = {
       }
       get_current_portal_business_id: { Args: never; Returns: string }
       get_current_portal_party_id: { Args: never; Returns: string }
-      get_effective_party_rules: {
-        Args: { _party_id: string }
-        Returns: {
-          cd_pct: number
-          credit_days: number
-          credit_limit: number
-          gst_type: string
-          payment_terms: string
-          price_list_id: string
-          rd_pct: number
-          route: string
-          scheme_id: string
-          source: string
-          territory: string
-          zone: string
-        }[]
-      }
       has_business_role: {
         Args: {
           _business_id: string
@@ -6923,14 +6601,6 @@ export type Database = {
         Returns: boolean
       }
       is_business_member: { Args: { _business_id: string }; Returns: boolean }
-      log_party_activity: {
-        Args: {
-          _activity_type: string
-          _description: string
-          _party_id: string
-        }
-        Returns: undefined
-      }
       next_dispatch_number: { Args: { _user_id: string }; Returns: string }
       next_invoice_number: { Args: { _user_id: string }; Returns: string }
       next_order_number: {
@@ -6947,10 +6617,6 @@ export type Database = {
         Args: { _business_id: string }
         Returns: number
       }
-      propagate_group_defaults: {
-        Args: { _group_id: string; _scope?: string }
-        Returns: number
-      }
       recalc_po_quantities: { Args: { _po_id: string }; Returns: undefined }
       reject_dealer_application: {
         Args: { _application_id: string; _reason?: string }
@@ -6960,7 +6626,6 @@ export type Database = {
         Args: { _business_id?: string; _user_id: string }
         Returns: undefined
       }
-      seed_party_groups: { Args: { _business_id: string }; Returns: undefined }
       submit_dealer_application: {
         Args: {
           _address?: string

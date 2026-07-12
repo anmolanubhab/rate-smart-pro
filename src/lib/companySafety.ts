@@ -65,6 +65,39 @@ export async function fetchDeletePreflight(businessId: string): Promise<Prefligh
   };
 }
 
+/**
+ * Owner-minimum guard for USER-LEVEL actions only:
+ *   - deleting a user
+ *   - disabling a user
+ *   - changing an owner's role away from "owner"
+ * This must NEVER be used for company deletion (Danger Zone). Company
+ * deletion is allowed even with a single owner; it is blocked only by
+ * real operational reasons (pending approvals, pending delete request, etc.)
+ * — see fetchDeletePreflight() above.
+ */
+export function activeOwnerCount(rows: { role: string; status: string }[]): number {
+  return rows.filter((r) => r.role === "owner" && r.status === "active").length;
+}
+
+/**
+ * Returns a blocking error message if performing a delete/disable/role-change
+ * on `targetId` would leave the company with zero active owners; otherwise null.
+ * `rows` should be the current full list of business_users for the company.
+ */
+export function ownerMinimumViolation(
+  rows: { id: string; role: string; status: string }[],
+  targetId: string,
+): string | null {
+  const target = rows.find((r) => r.id === targetId);
+  if (!target) return null;
+  // Only relevant if the target itself is currently an active owner —
+  // removing/disabling/re-roling a non-owner or inactive user never
+  // reduces the active-owner count.
+  if (target.role !== "owner" || target.status !== "active") return null;
+  if (activeOwnerCount(rows) <= 1) return "At least one active owner is required.";
+  return null;
+}
+
 /** Diff two flat objects and return only fields whose values changed. */
 export function diffBusiness<T extends Record<string, unknown>>(
   before: T,
