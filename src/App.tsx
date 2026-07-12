@@ -27,6 +27,9 @@ const CreateOrder = lazy(() => import("./pages/CreateOrder"));
 const ExcelImport = lazy(() => import("./pages/ExcelImport"));
 const Inventory = lazy(() => import("./pages/Inventory"));
 const Reports = lazy(() => import("./pages/Reports"));
+const SalesRegister = lazy(() => import("./pages/reports/SalesRegister"));
+const PurchaseRegister = lazy(() => import("./pages/reports/PurchaseRegister"));
+const OutstandingAgeing = lazy(() => import("./pages/reports/OutstandingAgeing"));
 const Settings = lazy(() => import("./pages/Settings"));
 const PendingOrders = lazy(() => import("./pages/PendingOrders"));
 const Dispatch = lazy(() => import("./pages/Dispatch"));
@@ -155,6 +158,17 @@ const App = () => (
               <Route path="/excel-import" element={L(<ExcelImport />)} />
               <Route path="/inventory" element={L(<Inventory />)} />
               <Route path="/reports" element={L(<Reports />)} />
+              <Route path="/reports/sales-register" element={L(<SalesRegister />)} />
+
+<Route
+  path="/reports/purchase-register"
+  element={L(<PurchaseRegister />)}
+/>
+
+<Route
+  path="/reports/outstanding-ageing"
+  element={L(<OutstandingAgeing />)}
+/>
               <Route path="/settings" element={L(<Settings />)} />
               <Route path="/profile" element={L(<Profile />)} />
               <Route path="/accounts/ledgers" element={L(<LedgerAccounts />)} />
