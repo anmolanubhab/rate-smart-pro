@@ -61,44 +61,68 @@ export function useProfileData(userId?: string) {
   });
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      console.log("❌ No userId provided to useProfileData");
+      setLoading(false);
+      return;
+    }
 
     const load = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // 1. Profile
+        console.log("🔍 Loading profile data for userId:", userId);
+
+        // 1. Profile - Using maybeSingle() to avoid 406 errors
         const { data: profileData, error: profileError } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", userId)
-          .single();
+          .maybeSingle();
 
-        if (profileError) throw profileError;
+        console.log("📋 PROFILE:", profileData, profileError);
+
+        if (profileError) {
+          console.error("❌ Profile error:", profileError);
+          throw profileError;
+        }
         setProfile(profileData);
 
-        // 2. Business Membership
+        // 2. Business Membership - Using maybeSingle()
         const { data: memberData, error: memberError } = await supabase
           .from("business_users")
           .select("*")
           .eq("user_id", userId)
           .eq("status", "active")
-          .single();
+          .maybeSingle();
 
-        if (memberError && memberError.code !== "PGRST116") throw memberError;
+        console.log("👥 MEMBERSHIP:", memberData, memberError);
+
+        if (memberError && memberError.code !== "PGRST116") {
+          console.error("❌ Membership error:", memberError);
+          throw memberError;
+        }
         setMembership(memberData);
 
-        // 3. Business
+        // 3. Business - Using maybeSingle()
         if (memberData?.business_id) {
           const { data: businessData, error: businessError } = await supabase
             .from("businesses")
             .select("*")
             .eq("id", memberData.business_id)
-            .single();
+            .maybeSingle();
 
-          if (businessError) throw businessError;
+          console.log("🏢 BUSINESS:", businessData, businessError);
+
+          if (businessError) {
+            console.error("❌ Business error:", businessError);
+            throw businessError;
+          }
           setBusiness(businessData);
+        } else {
+          console.log("ℹ️ No business_id found in membership");
+          setBusiness(null);
         }
 
         // 4. Permissions - based on role
@@ -113,24 +137,17 @@ export function useProfileData(userId?: string) {
             date_format: "DD/MM/YYYY",
             currency: "INR",
           });
-        } // <-- THIS CLOSING BRACE WAS MISSING!
+        }
 
         // 6. Activity - TEMPORARY: Set to null
-        // TODO: Later use supabase.auth.getUser() or a dedicated login_history table
         setActivity({
           last_login: null,
         });
 
-        // TODO: Future implementation using getUser()
-        // const { data: { user } } = await supabase.auth.getUser();
-        // if (user) {
-        //   setActivity({
-        //     last_login: user.last_sign_in_at || null,
-        //   });
-        // }
+        console.log("✅ Profile data loaded successfully");
 
       } catch (err) {
-        console.error("Error loading profile data:", err);
+        console.error("❌ Error loading profile data:", err);
         setError(err);
       } finally {
         setLoading(false);
