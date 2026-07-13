@@ -1,9 +1,9 @@
 import { Building2, Briefcase, Calendar } from "lucide-react";
-import { Business, Role } from "@/hooks/useProfileData";
+import { Business } from "@/hooks/useProfileData";
 
 interface Props {
-  business: Business | null;
-  role: Role | null;
+  business?: Business | null;
+  role?: { name: string } | null;
 }
 
 const CompanyCard = ({ business, role }: Props) => {
@@ -15,7 +15,7 @@ const CompanyCard = ({ business, role }: Props) => {
     );
   }
 
-  const financialYear = business.financial_year_start
+  const financialYear = business.financial_year_start && business.financial_year_end
     ? `${business.financial_year_start} – ${business.financial_year_end}`
     : "Not set";
 
@@ -26,7 +26,7 @@ const CompanyCard = ({ business, role }: Props) => {
           <Building2 className="h-6 w-6" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-display text-lg font-semibold">{business.name}</h3>
+          <h3 className="font-display text-lg font-semibold">{business.name || "Unnamed Company"}</h3>
           <p className="text-sm text-muted-foreground">{business.legal_type || "Company"}</p>
         </div>
       </div>
