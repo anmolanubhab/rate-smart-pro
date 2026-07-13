@@ -108,11 +108,12 @@ export function useProfileData(userId?: string) {
         // 5. Preferences - from profile
         if (profileData) {
           setPreferences({
-  theme: "light",
-  language: profileData.language || "English",
-  date_format: "DD/MM/YYYY",
-  currency: "INR",
-});
+            theme: "light",
+            language: profileData.language || "English",
+            date_format: "DD/MM/YYYY",
+            currency: "INR",
+          });
+        } // <-- THIS CLOSING BRACE WAS MISSING!
 
         // 6. Activity - TEMPORARY: Set to null
         // TODO: Later use supabase.auth.getUser() or a dedicated login_history table
