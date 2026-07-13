@@ -73,53 +73,80 @@ export function useProfileData(userId?: string) {
         setError(null);
 
         console.log("🔍 Loading profile data for userId:", userId);
+        console.log("🔍 userId type:", typeof userId);
+        console.log("🔍 userId length:", userId?.length);
 
         // 1. Profile - Using maybeSingle() to avoid 406 errors
-        const { data: profileData, error: profileError } = await supabase
+        console.log("📡 Querying profiles table...");
+        const { data: profileData, error: profileError, status, statusText } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", userId)
           .maybeSingle();
 
-        console.log("📋 PROFILE:", profileData, profileError);
+        console.log("📋 PROFILE - Data:", profileData);
+        console.log("📋 PROFILE - Error:", profileError);
+        console.log("📋 PROFILE - Status:", status, statusText);
 
         if (profileError) {
-          console.error("❌ Profile error:", profileError);
-          throw profileError;
+          console.error("❌ Profile error details:", {
+            message: profileError.message,
+            code: profileError.code,
+            details: profileError.details,
+            hint: profileError.hint,
+          });
+          // Don't throw - allow profile to be null
+        } else {
+          setProfile(profileData);
         }
-        setProfile(profileData);
 
         // 2. Business Membership - Using maybeSingle()
-        const { data: memberData, error: memberError } = await supabase
+        console.log("📡 Querying business_users table...");
+        const { data: memberData, error: memberError, status: memberStatus, statusText: memberStatusText } = await supabase
           .from("business_users")
           .select("*")
           .eq("user_id", userId)
           .eq("status", "active")
           .maybeSingle();
 
-        console.log("👥 MEMBERSHIP:", memberData, memberError);
+        console.log("👥 MEMBERSHIP - Data:", memberData);
+        console.log("👥 MEMBERSHIP - Error:", memberError);
+        console.log("👥 MEMBERSHIP - Status:", memberStatus, memberStatusText);
 
         if (memberError && memberError.code !== "PGRST116") {
-          console.error("❌ Membership error:", memberError);
-          throw memberError;
+          console.error("❌ Membership error details:", {
+            message: memberError.message,
+            code: memberError.code,
+            details: memberError.details,
+            hint: memberError.hint,
+          });
+        } else if (!memberError) {
+          setMembership(memberData);
         }
-        setMembership(memberData);
 
         // 3. Business - Using maybeSingle()
         if (memberData?.business_id) {
-          const { data: businessData, error: businessError } = await supabase
+          console.log("📡 Querying businesses table with business_id:", memberData.business_id);
+          const { data: businessData, error: businessError, status: bizStatus, statusText: bizStatusText } = await supabase
             .from("businesses")
             .select("*")
             .eq("id", memberData.business_id)
             .maybeSingle();
 
-          console.log("🏢 BUSINESS:", businessData, businessError);
+          console.log("🏢 BUSINESS - Data:", businessData);
+          console.log("🏢 BUSINESS - Error:", businessError);
+          console.log("🏢 BUSINESS - Status:", bizStatus, bizStatusText);
 
           if (businessError) {
-            console.error("❌ Business error:", businessError);
-            throw businessError;
+            console.error("❌ Business error details:", {
+              message: businessError.message,
+              code: businessError.code,
+              details: businessError.details,
+              hint: businessError.hint,
+            });
+          } else {
+            setBusiness(businessData);
           }
-          setBusiness(businessData);
         } else {
           console.log("ℹ️ No business_id found in membership");
           setBusiness(null);
@@ -128,6 +155,7 @@ export function useProfileData(userId?: string) {
         // 4. Permissions - based on role
         const roleBasedPermissions: Permission[] = getPermissionsForRole(memberData?.role);
         setPermissions(roleBasedPermissions);
+        console.log("🔐 Permissions set:", roleBasedPermissions);
 
         // 5. Preferences - from profile
         if (profileData) {
@@ -137,6 +165,14 @@ export function useProfileData(userId?: string) {
             date_format: "DD/MM/YYYY",
             currency: "INR",
           });
+          console.log("⚙️ Preferences set:", {
+            theme: "light",
+            language: profileData.language || "English",
+            date_format: "DD/MM/YYYY",
+            currency: "INR",
+          });
+        } else {
+          console.log("ℹ️ No profile data - using default preferences");
         }
 
         // 6. Activity - TEMPORARY: Set to null
@@ -144,10 +180,18 @@ export function useProfileData(userId?: string) {
           last_login: null,
         });
 
-        console.log("✅ Profile data loaded successfully");
+        console.log("✅ Profile data loading complete");
+        console.log("📊 Final state:", {
+          hasProfile: !!profileData,
+          hasMembership: !!memberData,
+          hasBusiness: !!business,
+          role: memberData?.role || "Viewer",
+          permissionsCount: roleBasedPermissions.length,
+        });
 
       } catch (err) {
-        console.error("❌ Error loading profile data:", err);
+        console.error("❌ Unhandled error in useProfileData:", err);
+        console.error("❌ Error stack:", err instanceof Error ? err.stack : "No stack available");
         setError(err);
       } finally {
         setLoading(false);
