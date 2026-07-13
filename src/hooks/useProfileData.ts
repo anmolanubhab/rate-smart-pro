@@ -63,9 +63,15 @@ export function useProfileData(userId?: string) {
   }, [userId]);
 
   return {
-    loading,
-    profile,
-    membership,
-    business,
-  };
-}
+  loading,
+  error,
+  profile,
+  membership,
+  business,
+
+  // Temporary defaults
+  role: membership?.role ?? "Viewer",
+  permissions,
+  preferences,
+  activity,
+};
