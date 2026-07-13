@@ -5,6 +5,10 @@ export interface Profile {
   full_name: string;
   mobile: string;
   avatar_url?: string;
+  theme?: string;
+  language?: string;
+  date_format?: string;
+  currency?: string;
 }
 
 export interface Business {
@@ -35,8 +39,6 @@ export interface Preferences {
 
 export interface Activity {
   last_login: string | null;
-  created_at?: string;
-  last_password_change?: string | null;
 }
 
 export function useProfileData(userId?: string) {
@@ -100,11 +102,10 @@ export function useProfileData(userId?: string) {
         }
 
         // 4. Permissions - based on role
-        // You can fetch from roles_permissions table or define logic based on role
         const roleBasedPermissions: Permission[] = getPermissionsForRole(memberData?.role);
         setPermissions(roleBasedPermissions);
 
-        // 5. Preferences - from profile or separate table
+        // 5. Preferences - from profile
         if (profileData) {
           setPreferences({
             theme: profileData.theme || "light",
@@ -114,20 +115,19 @@ export function useProfileData(userId?: string) {
           });
         }
 
-        // 6. Activity - from auth.users
-        const { data: userData, error: userError } = await supabase
-          .from("auth.users")
-          .select("last_sign_in_at, created_at, updated_at")
-          .eq("id", userId)
-          .single();
+        // 6. Activity - TEMPORARY: Set to null
+        // TODO: Later use supabase.auth.getUser() or a dedicated login_history table
+        setActivity({
+          last_login: null,
+        });
 
-        if (!userError && userData) {
-          setActivity({
-            last_login: userData.last_sign_in_at || null,
-            created_at: userData.created_at,
-            last_password_change: userData.updated_at || null,
-          });
-        }
+        // TODO: Future implementation using getUser()
+        // const { data: { user } } = await supabase.auth.getUser();
+        // if (user) {
+        //   setActivity({
+        //     last_login: user.last_sign_in_at || null,
+        //   });
+        // }
 
       } catch (err) {
         console.error("Error loading profile data:", err);
