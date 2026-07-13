@@ -21,6 +21,8 @@ export interface DispatchItemInput {
   order_item_id: string;
   dispatched_qty: number;
   rate: number;
+  unit_id?: string | null;
+  stock_dispatched_qty?: number | null;
 }
 
 export async function nextDispatchNumber(userId: string) {
@@ -105,6 +107,8 @@ export async function createDispatch(input: {
     dispatched_qty: it.dispatched_qty,
     rate: it.rate,
     total: +(it.dispatched_qty * it.rate).toFixed(2),
+    unit_id: it.unit_id ?? null,
+    stock_dispatched_qty: it.stock_dispatched_qty ?? null,
   }));
   const { error: e2 } = await supabase.from("dispatch_items").insert(rows);
   if (e2) {

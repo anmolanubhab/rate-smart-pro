@@ -581,6 +581,11 @@ const Products = () => {
                         >
                           {Number(p.stock)}
                         </span>
+                        {p.base_unit_id && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">
+                            {measUnits.find((u) => u.id === p.base_unit_id)?.symbol}
+                          </span>
+                        )}
                         {(low || out) && (
                           <AlertTriangle className="inline-block h-3.5 w-3.5 ml-1 -mt-0.5 text-amber-500" />
                         )}
@@ -811,6 +816,48 @@ const Products = () => {
                   e.g. Engine Oil — Base: Liter · Purchase: Drum (1 Drum = 210 Liter) · Sales: Can (1 Can = 5 Liter).
                   Stock is always tracked in the base unit; purchase/sales screens convert automatically.
                 </p>
+
+                {/* Layer C2: read-only conversion chain visual */}
+                <div className="md:col-span-2 rounded-md border bg-muted/30 px-3 py-3">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Conversion Chain
+                  </p>
+                  <div className="flex items-center flex-wrap gap-2 text-xs">
+                    {form.purchase_unit_id && form.purchase_unit_id !== form.base_unit_id && (
+                      <>
+                        <span className="px-2 py-1 rounded bg-primary/10 text-primary font-medium">
+                          1 {unitsInCategory(form.measurement_category_id).find((u) => u.id === form.purchase_unit_id)?.symbol}
+                          <span className="text-muted-foreground font-normal"> Purchase</span>
+                        </span>
+                        <span className="text-muted-foreground">→</span>
+                      </>
+                    )}
+                    <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-700 font-medium">
+                      {form.purchase_unit_id && form.purchase_unit_id !== form.base_unit_id
+                        ? form.purchase_unit_factor
+                        : form.sales_unit_id && form.sales_unit_id !== form.base_unit_id
+                        ? form.sales_unit_factor
+                        : 1}{" "}
+                      {unitsInCategory(form.measurement_category_id).find((u) => u.id === form.base_unit_id)?.symbol}
+                      <span className="text-muted-foreground font-normal"> Stock</span>
+                    </span>
+                    {form.sales_unit_id && form.sales_unit_id !== form.base_unit_id && (
+                      <>
+                        <span className="text-muted-foreground">→</span>
+                        <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-700 font-medium">
+                          1 {unitsInCategory(form.measurement_category_id).find((u) => u.id === form.sales_unit_id)?.symbol}
+                          <span className="text-muted-foreground font-normal"> Sales</span>
+                        </span>
+                      </>
+                    )}
+                    {!form.purchase_unit_id && !form.sales_unit_id && (
+                      <span className="text-muted-foreground">Stock unit only — no separate purchase/sales unit configured.</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-2">
+                    Purchase and GRN screens will let staff enter quantities in the Purchase Unit; the system stores everything against the Stock Unit automatically.
+                  </p>
+                </div>
               </>
             )}
           </div>

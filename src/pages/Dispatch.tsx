@@ -27,6 +27,7 @@ import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchUnits, type Unit as MeasureUnit } from "@/lib/units";
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
 function DispatchStatusBadge({ status }: { status: DispatchStatus }) {
@@ -135,11 +136,32 @@ const Dispatch = () => {
     return prod ? Number(prod.stock) : null;
   };
 
+  // Layer C3: unit symbol lookup for display only (order items already carry their own unit_id)
+  const [allUnits, setAllUnits] = useState<MeasureUnit[]>([]);
+  useEffect(() => { fetchUnits().then(setAllUnits).catch(() => {}); }, []);
+  const unitLabel = (unitId: string | null | undefined) => allUnits.find((u) => u.id === unitId)?.symbol ?? "";
+
   // ── Step 1: Save Dispatch as Draft ──────────────────────────────────────────
   const handleSave = async () => {
     if (!user || !order) return;
     const lines = items
-      .map((it) => ({ order_item_id: it.id!, dispatched_qty: Number(qtys[it.id!] || 0), rate: Number(it.net_rate) }))
+      .map((it) => {
+        const dispatched_qty = Number(qtys[it.id!] || 0);
+        // Layer C3: derive this order item's own unit-conversion factor
+        // (stock_qty / qty) and apply it to the dispatched quantity, rather
+        // than re-fetching product_units here. Legacy items (no unit_id /
+        // stock_qty on the order line) fall back to null -> dispatched_qty as-is.
+        const factor = it.unit_id && it.stock_qty && Number(it.qty) > 0
+          ? Number(it.stock_qty) / Number(it.qty)
+          : null;
+        return {
+          order_item_id: it.id!,
+          dispatched_qty,
+          rate: Number(it.net_rate),
+          unit_id: it.unit_id ?? null,
+          stock_dispatched_qty: factor != null ? +(dispatched_qty * factor).toFixed(4) : null,
+        };
+      })
       .filter((l) => l.dispatched_qty > 0);
     for (const l of lines) {
       const it = items.find((x) => x.id === l.order_item_id)!;
@@ -383,9 +405,15 @@ const Dispatch = () => {
                       <td className="px-3 py-1.5 font-mono text-xs">{it.part_number}</td>
                       <td className="px-3 py-1.5">{it.description}</td>
                       <td className="px-3 py-1.5 text-right">{stockBadge(stock)}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums">{Number(it.qty).toFixed(2)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">
+                        {Number(it.qty).toFixed(2)}
+                        {it.unit_id && <span className="ml-1 text-[10px] text-muted-foreground">{unitLabel(it.unit_id)}</span>}
+                      </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{Number(it.dispatched_qty).toFixed(2)}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-amber-600">{Number(it.pending_qty).toFixed(2)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-amber-600">
+                        {Number(it.pending_qty).toFixed(2)}
+                        {it.unit_id && <span className="ml-1 text-[10px] text-muted-foreground font-normal">{unitLabel(it.unit_id)}</span>}
+                      </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">₹{Number(it.net_rate).toFixed(2)}</td>
                       <td className="px-2 py-1.5">
                         <Input type="number" min={0} max={Number(it.pending_qty)} step="any"

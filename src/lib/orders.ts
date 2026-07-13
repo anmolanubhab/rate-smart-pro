@@ -23,6 +23,8 @@ export interface OrderItem {
   total: number;
   position?: number;
   item_status?: "pending" | "partial" | "completed";
+  unit_id?: string | null;
+  stock_qty?: number | null;
 }
 
 export interface Order {
@@ -250,6 +252,8 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
       gst_pct: it.gst_pct,
       total: it.total,
       position: idx,
+      unit_id: it.unit_id ?? null,
+      stock_qty: it.stock_qty ?? null,
     }));
     const { error } = await supabase.from("order_items").insert(rows);
     if (error) throw error;

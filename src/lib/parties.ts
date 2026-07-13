@@ -20,6 +20,8 @@ beat?: string | null;
 credit_limit?: number;
 outstanding_balance?: number;
 notes?: string | null;
+party_group_id?: string | null;
+use_group_defaults?: boolean;
 }
 
 export interface Segment {

@@ -19,6 +19,10 @@ import {
   fetchOrder,
   fetchOrderItems,
 } from "@/lib/orders";
+import {
+  fetchProductUnits, fetchUnits, salesUnitOf, toStockQty,
+  type ProductUnit, type Unit as MeasureUnit,
+} from "@/lib/units";
 
 /** Extended row that also carries HSN/Rack for the Tally-style UI (not persisted). */
 type Row = OrderItem & { hsn?: string; rack?: string };
@@ -258,10 +262,27 @@ const CreateOrder = () => {
   const delRow = (idx: number) =>
     setItems((r) => (r.length <= 1 ? [blankRow()] : r.filter((_, i) => i !== idx)));
 
-  const pickProduct = (idx: number, p: Product) => {
+  // Layer C3: per-product unit options, cached by product_id to avoid N+1 fetches
+  const [unitsByProduct, setUnitsByProduct] = useState<Record<string, ProductUnit[]>>({});
+  const [allUnits, setAllUnits] = useState<MeasureUnit[]>([]);
+  useEffect(() => { fetchUnits().then(setAllUnits).catch(() => {}); }, []);
+  const unitLabel = (unitId: string) => allUnits.find((u) => u.id === unitId)?.symbol ?? "";
+  const loadProductUnits = async (productId: string): Promise<ProductUnit[]> => {
+    if (unitsByProduct[productId]) return unitsByProduct[productId];
+    try {
+      const pu = await fetchProductUnits(productId);
+      setUnitsByProduct((m) => ({ ...m, [productId]: pu }));
+      return pu;
+    } catch {
+      return [];
+    }
+  };
+
+  const pickProduct = async (idx: number, p: Product) => {
     const def = party
       ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0
       : 0;
+    const qty = items[idx].qty || 1;
     updateRow(idx, {
       product_id: p.id,
       part_number: p.part_number,
@@ -270,12 +291,26 @@ const CreateOrder = () => {
       mrp: Number(p.mrp),
       gst_pct: Number(p.gst_pct),
       discount_pct: items[idx].discount_pct || def,
-      qty: items[idx].qty || 1,
+      qty,
+      unit_id: null,
+      stock_qty: null,
     });
     setSearchIdx(null);
     setSearchTerm("");
     setSearchResults([]);
     setTimeout(() => focusCell(idx, "qty"), 10);
+
+    // Default to this product's configured Sales Unit, if any
+    const pu = await loadProductUnits(p.id);
+    if (pu.length) {
+      const defaultUnit = salesUnitOf(pu);
+      if (defaultUnit) {
+        updateRow(idx, {
+          unit_id: defaultUnit.unit_id,
+          stock_qty: toStockQty(qty, defaultUnit.unit_id, pu),
+        });
+      }
+    }
   };
 
   const focusCell = (row: number, col: Col) => {
@@ -669,6 +704,7 @@ const CreateOrder = () => {
                 <th className="text-right px-1.5 py-1 w-14">GST %</th>
                 <th className="text-left px-1.5 py-1 w-14">Rack</th>
                 <th className="text-right px-1.5 py-1 w-16">Quantity</th>
+                <th className="text-left px-1.5 py-1 w-14">Unit</th>
                 <th className="text-right px-1.5 py-1 w-20">MRP</th>
                 <th className="text-right px-1.5 py-1 w-20">Rate</th>
                 <th className="text-right px-1.5 py-1 w-14">Disc %</th>
@@ -794,10 +830,38 @@ const CreateOrder = () => {
                         type="number"
                         step="any"
                         value={it.qty || ""}
-                        onChange={(e) => updateRow(idx, { qty: +e.target.value })}
+                        onChange={(e) => {
+                          const qty = +e.target.value;
+                          const pu = it.product_id ? unitsByProduct[it.product_id] : undefined;
+                          updateRow(idx, {
+                            qty,
+                            stock_qty: pu ? toStockQty(qty, it.unit_id, pu) : null,
+                          });
+                        }}
                         onKeyDown={(e) => handleKey(e, idx, "qty")}
                         className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary"
                       />
+                    </td>
+                    <td className="px-0.5 py-0.5">
+                      {it.product_id && unitsByProduct[it.product_id]?.length ? (
+                        <select
+                          value={it.unit_id ?? ""}
+                          onChange={(e) => {
+                            const pu = unitsByProduct[it.product_id!] ?? [];
+                            updateRow(idx, {
+                              unit_id: e.target.value || null,
+                              stock_qty: toStockQty(it.qty, e.target.value, pu),
+                            });
+                          }}
+                          className="h-6 text-[11px] font-mono px-0.5 rounded-none border-0 bg-transparent focus-visible:ring-0 w-full"
+                        >
+                          {unitsByProduct[it.product_id].map((u) => (
+                            <option key={u.unit_id} value={u.unit_id}>{unitLabel(u.unit_id)}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground px-1">—</span>
+                      )}
                     </td>
                     <td className="px-0.5 py-0.5">
                       <Input
@@ -844,7 +908,7 @@ const CreateOrder = () => {
               })}
               {Array.from({ length: Math.max(0, 4 - (items.length % 4)) }).map((_, i) => (
                 <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
-                  <td colSpan={13}>&nbsp;</td>
+                  <td colSpan={14}>&nbsp;</td>
                 </tr>
               ))}
             </tbody>
@@ -874,7 +938,7 @@ const CreateOrder = () => {
                   </div>
                 </td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
-                <td colSpan={4}></td>
+                <td colSpan={5}></td>
                 <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.taxable + totals.gst_total)}</td>
                 <td className="print:hidden"></td>
               </tr>

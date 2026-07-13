@@ -19,6 +19,8 @@ export interface PurchaseInvoiceItem {
   tax_amount: number;
   total_amount: number;
   position?: number;
+  unit_id?: string | null;
+  stock_qty?: number | null;
 }
 
 export interface PurchaseInvoice {
@@ -63,6 +65,8 @@ export function computeInvoiceItem(item: Partial<PurchaseInvoiceItem>): Purchase
     tax_amount: taxAmount,
     total_amount: totalAmount,
     position: item.position,
+    unit_id: item.unit_id ?? null,
+    stock_qty: item.stock_qty ?? null,
   };
 }
 
@@ -271,6 +275,8 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         igst_amount: 0,
         cess_amount: 0,
         position: idx,
+        unit_id: it.unit_id ?? null,
+        stock_qty: it.stock_qty ?? null,
       };
     });
     const { error } = await supabase.from("purchase_invoice_items").insert(rows);
@@ -332,6 +338,10 @@ async function postDirectInvoiceStock(
 ): Promise<void> {
   for (const item of items) {
     if (!item.product_id || Number(item.qty) <= 0) continue;
+    // Layer C1: stock always moves in the product's stock unit. stock_qty is
+    // the converted amount when the item's unit was configured; legacy items
+    // (no unit selected) fall back to qty exactly as before this change.
+    const qtyToPost = item.stock_qty ?? item.qty;
 
     const { data: product, error: prodErr } = await supabase
       .from("products")
@@ -341,7 +351,7 @@ async function postDirectInvoiceStock(
     if (prodErr) { console.error("postDirectInvoiceStock: stock lookup failed", prodErr.message); continue; }
 
     const before = Number(product?.stock) || 0;
-    const after = before + Number(item.qty);
+    const after = before + qtyToPost;
 
     const { error: stockErr } = await supabase
       .from("products")
@@ -354,7 +364,7 @@ async function postDirectInvoiceStock(
       business_id: businessId,
       product_id: item.product_id,
       movement_type: "purchase_invoice_direct",
-      qty: item.qty,
+      qty: qtyToPost,
       stock_before: before,
       stock_after: after,
       reference_id: invoiceId,
@@ -385,6 +395,8 @@ export async function fetchInvoiceItems(invoiceId: string): Promise<PurchaseInvo
     tax_amount: Number(r.cgst_amount) + Number(r.sgst_amount) + Number(r.igst_amount),
     total_amount: Number(r.line_total) || 0,
     position: r.position,
+    unit_id: r.unit_id ?? null,
+    stock_qty: r.stock_qty != null ? Number(r.stock_qty) : null,
   }));
 }
 
@@ -393,7 +405,7 @@ export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseIn
   const { data, error } = await supabase
     .from("goods_receipt_items")
     .select(`
-      product_id, accepted_qty,
+      product_id, accepted_qty, unit_id, stock_accepted_qty,
       product:products(part_number, name, dealer_rate, gst_pct)
     `)
     .eq("goods_receipt_id", grnId);
@@ -408,6 +420,8 @@ export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseIn
         qty: Number(r.accepted_qty),
         rate: Number(r.product?.dealer_rate ?? 0),
         gst_percent: Number(r.product?.gst_pct ?? 18),
+        unit_id: r.unit_id ?? null,
+        stock_qty: r.stock_accepted_qty ?? null,
       })
     );
 }

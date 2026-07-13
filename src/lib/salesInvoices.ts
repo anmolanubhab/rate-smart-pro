@@ -120,6 +120,8 @@ export async function generateInvoiceFromDispatch(opts: {
       dispatch_item_id: di.id,
       discount_pct: disc,
       gst_pct: gstPct,
+      unit_id: di.unit_id ?? null,
+      stock_qty: di.stock_dispatched_qty ?? null,
       // for totals computation
       _lineNet: lineNet,
       _gst: +(lineNet * gstPct / 100).toFixed(2),
@@ -179,6 +181,8 @@ export async function generateInvoiceFromDispatch(opts: {
     gst_pct: it.gst_pct,
     total: it.total,
     position: idx,
+    unit_id: it.unit_id ?? null,
+    stock_qty: it.stock_qty ?? null,
   }));
   const { error: ie2 } = await supabase.from("sales_invoice_items").insert(invRows);
   if (ie2) {
