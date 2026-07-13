@@ -2,10 +2,10 @@ import { Permission } from "@/hooks/useProfileData";
 import { CheckCircle, Circle, ShieldCheck } from "lucide-react";
 
 interface Props {
-  permissions: Permission[];
+  permissions?: Permission[];
 }
 
-const PermissionCard = ({ permissions }: Props) => {
+const PermissionCard = ({ permissions = [] }: Props) => {
   const getIcon = (access: string) => {
     if (access === "admin") return <ShieldCheck className="h-4 w-4 text-primary" />;
     if (access === "write") return <CheckCircle className="h-4 w-4 text-success" />;
@@ -20,6 +20,16 @@ const PermissionCard = ({ permissions }: Props) => {
     };
     return map[access] || access;
   };
+
+  // Empty state
+  if (!permissions?.length) {
+    return (
+      <div className="rounded-2xl bg-card border border-border shadow-soft p-6">
+        <h4 className="text-sm font-medium text-muted-foreground mb-4">Permissions</h4>
+        <p className="text-sm text-muted-foreground">No permissions assigned.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl bg-card border border-border shadow-soft p-6">
