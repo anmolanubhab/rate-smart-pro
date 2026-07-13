@@ -2,14 +2,25 @@ import { Activity } from "@/hooks/useProfileData";
 import { Clock, UserPlus, KeyRound } from "lucide-react";
 
 interface Props {
-  activity: Activity;
+  activity?: Activity;
 }
 
 const ActivityCard = ({ activity }: Props) => {
-  const formatDate = (dateStr: string | null) => {
+  const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return "—";
-    return new Date(dateStr).toLocaleString();
+    try {
+      return new Date(dateStr).toLocaleString();
+    } catch {
+      return "—";
+    }
   };
+
+  // Safe access with defaults
+  const lastLogin = activity?.last_login || null;
+  // Note: created_at and last_password_change are not in the Activity type
+  // We'll show them as "—" until they're added
+  const createdAt = null;
+  const lastPasswordChange = null;
 
   return (
     <div className="rounded-2xl bg-card border border-border shadow-soft p-6 space-y-3">
@@ -17,15 +28,15 @@ const ActivityCard = ({ activity }: Props) => {
       <div className="space-y-2 text-sm">
         <div className="flex items-center gap-3 text-muted-foreground">
           <Clock className="h-4 w-4" />
-          <span>Last Login: <span className="font-medium text-foreground">{formatDate(activity.last_login)}</span></span>
+          <span>Last Login: <span className="font-medium text-foreground">{formatDate(lastLogin)}</span></span>
         </div>
         <div className="flex items-center gap-3 text-muted-foreground">
           <UserPlus className="h-4 w-4" />
-          <span>Account Created: <span className="font-medium text-foreground">{formatDate(activity.created_at)}</span></span>
+          <span>Account Created: <span className="font-medium text-foreground">{formatDate(createdAt)}</span></span>
         </div>
         <div className="flex items-center gap-3 text-muted-foreground">
           <KeyRound className="h-4 w-4" />
-          <span>Last Password Change: <span className="font-medium text-foreground">{formatDate(activity.last_password_change)}</span></span>
+          <span>Last Password Change: <span className="font-medium text-foreground">{formatDate(lastPasswordChange)}</span></span>
         </div>
       </div>
     </div>
