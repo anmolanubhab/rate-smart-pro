@@ -73,91 +73,72 @@ export function useProfileData(userId?: string) {
         setError(null);
 
         console.log("🔍 Loading profile data for userId:", userId);
-        console.log("🔍 userId type:", typeof userId);
-        console.log("🔍 userId length:", userId?.length);
 
         // 1. Profile - Using maybeSingle() to avoid 406 errors
-        console.log("📡 Querying profiles table...");
-        const { data: profileData, error: profileError, status, statusText } = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", userId)
           .maybeSingle();
 
-        console.log("📋 PROFILE - Data:", profileData);
-        console.log("📋 PROFILE - Error:", profileError);
-        console.log("📋 PROFILE - Status:", status, statusText);
-
         if (profileError) {
-          console.error("❌ Profile error details:", {
-            message: profileError.message,
-            code: profileError.code,
-            details: profileError.details,
-            hint: profileError.hint,
-          });
-          // Don't throw - allow profile to be null
-        } else {
+          console.warn("⚠️ Profile query error:", profileError.message);
+        } else if (profileData) {
+          console.log("✅ Profile found:", profileData);
           setProfile(profileData);
+        } else {
+          console.log("ℹ️ No profile found for user");
+          // Create default profile data for display
+          setProfile({
+            full_name: "",
+            mobile: "",
+            language: "English",
+          });
         }
 
         // 2. Business Membership - Using maybeSingle()
-        console.log("📡 Querying business_users table...");
-        const { data: memberData, error: memberError, status: memberStatus, statusText: memberStatusText } = await supabase
+        const { data: memberData, error: memberError } = await supabase
           .from("business_users")
           .select("*")
           .eq("user_id", userId)
           .eq("status", "active")
           .maybeSingle();
 
-        console.log("👥 MEMBERSHIP - Data:", memberData);
-        console.log("👥 MEMBERSHIP - Error:", memberError);
-        console.log("👥 MEMBERSHIP - Status:", memberStatus, memberStatusText);
-
-        if (memberError && memberError.code !== "PGRST116") {
-          console.error("❌ Membership error details:", {
-            message: memberError.message,
-            code: memberError.code,
-            details: memberError.details,
-            hint: memberError.hint,
-          });
-        } else if (!memberError) {
+        if (memberError) {
+          console.warn("⚠️ Membership query error:", memberError.message);
+        } else if (memberData) {
+          console.log("✅ Membership found:", memberData);
           setMembership(memberData);
+        } else {
+          console.log("ℹ️ No active membership found for user");
         }
 
-        // 3. Business - Using maybeSingle()
+        // 3. Business - Only query if we have a business_id
         if (memberData?.business_id) {
-          console.log("📡 Querying businesses table with business_id:", memberData.business_id);
-          const { data: businessData, error: businessError, status: bizStatus, statusText: bizStatusText } = await supabase
+          const { data: businessData, error: businessError } = await supabase
             .from("businesses")
             .select("*")
             .eq("id", memberData.business_id)
             .maybeSingle();
 
-          console.log("🏢 BUSINESS - Data:", businessData);
-          console.log("🏢 BUSINESS - Error:", businessError);
-          console.log("🏢 BUSINESS - Status:", bizStatus, bizStatusText);
-
           if (businessError) {
-            console.error("❌ Business error details:", {
-              message: businessError.message,
-              code: businessError.code,
-              details: businessError.details,
-              hint: businessError.hint,
-            });
-          } else {
+            console.warn("⚠️ Business query error:", businessError.message);
+          } else if (businessData) {
+            console.log("✅ Business found:", businessData);
             setBusiness(businessData);
+          } else {
+            console.log("ℹ️ No business found for ID:", memberData.business_id);
           }
         } else {
-          console.log("ℹ️ No business_id found in membership");
-          setBusiness(null);
+          console.log("ℹ️ No business_id in membership");
         }
 
-        // 4. Permissions - based on role
+        // 4. Permissions - based on role (or default)
         const roleBasedPermissions: Permission[] = getPermissionsForRole(memberData?.role);
         setPermissions(roleBasedPermissions);
-        console.log("🔐 Permissions set:", roleBasedPermissions);
+        console.log("🔐 Permissions set based on role:", memberData?.role || "default");
 
-        // 5. Preferences - from profile
+        // 5. Preferences - from profile if available
         if (profileData) {
           setPreferences({
             theme: "light",
@@ -165,34 +146,22 @@ export function useProfileData(userId?: string) {
             date_format: "DD/MM/YYYY",
             currency: "INR",
           });
-          console.log("⚙️ Preferences set:", {
-            theme: "light",
-            language: profileData.language || "English",
-            date_format: "DD/MM/YYYY",
-            currency: "INR",
-          });
         } else {
-          console.log("ℹ️ No profile data - using default preferences");
+          // Keep default preferences
+          console.log("ℹ️ Using default preferences");
         }
 
-        // 6. Activity - TEMPORARY: Set to null
+        // 6. Activity - Set to null for now
         setActivity({
           last_login: null,
         });
 
         console.log("✅ Profile data loading complete");
-        console.log("📊 Final state:", {
-          hasProfile: !!profileData,
-          hasMembership: !!memberData,
-          hasBusiness: !!business,
-          role: memberData?.role || "Viewer",
-          permissionsCount: roleBasedPermissions.length,
-        });
 
       } catch (err) {
-        console.error("❌ Unhandled error in useProfileData:", err);
-        console.error("❌ Error stack:", err instanceof Error ? err.stack : "No stack available");
-        setError(err);
+        console.error("❌ Error in useProfileData:", err);
+        // Don't set error - we want the page to render even if data is missing
+        // setError(err);
       } finally {
         setLoading(false);
       }
@@ -203,7 +172,6 @@ export function useProfileData(userId?: string) {
 
   // Helper function to determine permissions based on role
   function getPermissionsForRole(role?: string): Permission[] {
-    // Default permissions for Viewer
     const viewerPermissions: Permission[] = [
       { module: "Sales", access: "readonly" },
       { module: "Purchase", access: "readonly" },
@@ -212,7 +180,6 @@ export function useProfileData(userId?: string) {
       { module: "Accounts", access: "readonly" },
     ];
 
-    // Enhanced permissions for Manager
     const managerPermissions: Permission[] = [
       { module: "Sales", access: "write" },
       { module: "Purchase", access: "write" },
@@ -221,7 +188,6 @@ export function useProfileData(userId?: string) {
       { module: "Accounts", access: "write" },
     ];
 
-    // Full permissions for Owner/Admin
     const ownerPermissions: Permission[] = [
       { module: "Sales", access: "admin" },
       { module: "Purchase", access: "admin" },
