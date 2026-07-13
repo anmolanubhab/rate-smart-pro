@@ -1,3 +1,16 @@
+const [permissions, setPermissions] = useState<any[]>([]);
+
+const [preferences, setPreferences] = useState({
+  theme: "light",
+  language: "English",
+  date_format: "DD/MM/YYYY",
+});
+
+const [activity, setActivity] = useState({
+  last_login: null,
+});
+
+const [error, setError] = useState<any>(null);
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
