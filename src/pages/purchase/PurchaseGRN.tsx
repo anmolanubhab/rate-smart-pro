@@ -13,6 +13,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchProductUnits, fetchUnits, toStockQty, stockUnitOf, type ProductUnit, type Unit as MeasureUnit } from "@/lib/units";
+import WarehouseFormDialog, { type WarehouseRow } from "@/components/inventory/WarehouseFormDialog";
+import { Warehouse as WarehouseIcon, PlusCircle } from "lucide-react";
 
 interface GRNItem {
   purchase_order_item_id: string | null;
@@ -43,8 +45,9 @@ export default function PurchaseGRN() {
   const [remarks, setRemarks] = useState('');
 
   const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
+  const [warehouseDialogOpen, setWarehouseDialogOpen] = useState(false);
 
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
@@ -64,7 +67,10 @@ export default function PurchaseGRN() {
       try {
         const [{ data: partyData }, { data: warehouseData }, { data: poData }] = await Promise.all([
           supabase.from('parties').select('id, name').eq('business_id', businessId).order('name'),
-          supabase.from('warehouses').select('id, warehouse_name').eq('business_id', businessId).order('warehouse_name', { ascending: true }),
+          supabase.from('warehouses').select('id, warehouse_name, address, is_default, status')
+            .eq('business_id', businessId)
+            .order('is_default', { ascending: false })
+            .order('warehouse_name', { ascending: true }),
           supabase.from('purchase_orders').select('id, po_number, supplier_id, warehouse_id')
             .eq('business_id', businessId)
             .in('status', ['approved', 'ordered', 'partially_received'])
@@ -72,8 +78,12 @@ export default function PurchaseGRN() {
         ]);
         if (partyData) setSuppliers(partyData);
         if (warehouseData) {
-          setWarehouses(warehouseData);
-          if (warehouseData.length === 1) setSelectedWarehouse(warehouseData[0].id);
+          const wh = warehouseData as unknown as WarehouseRow[];
+          setWarehouses(wh);
+          // Pre-select the default warehouse, or the only one if there's just one
+          const defaultWh = wh.find((w) => w.is_default);
+          if (defaultWh) setSelectedWarehouse(defaultWh.id);
+          else if (wh.length === 1) setSelectedWarehouse(wh[0].id);
         }
         if (poData) setPurchaseOrders(poData);
 
@@ -85,6 +95,21 @@ export default function PurchaseGRN() {
     };
     fetchMasterData();
   }, [businessId]);
+
+  // Re-fetch just the warehouse list (used after adding one inline from this screen)
+  const reloadWarehouses = async (selectId?: string) => {
+    if (!businessId) return;
+    const { data, error } = await supabase
+      .from('warehouses')
+      .select('id, warehouse_name, address, is_default, status')
+      .eq('business_id', businessId)
+      .order('is_default', { ascending: false })
+      .order('warehouse_name', { ascending: true });
+    if (!error && data) {
+      setWarehouses(data as unknown as WarehouseRow[]);
+      if (selectId) setSelectedWarehouse(selectId);
+    }
+  };
 
   // When a Purchase Order is selected, auto-fill details and fetch items
   const handlePOChange = async (poId: string) => {
@@ -359,12 +384,30 @@ export default function PurchaseGRN() {
 
           <div className="space-y-2">
             <Label>Warehouse</Label>
-            <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+            <Select
+              value={selectedWarehouse}
+              onValueChange={(v) => {
+                if (v === '__add_new__') { setWarehouseDialogOpen(true); return; }
+                setSelectedWarehouse(v);
+              }}
+            >
               <SelectTrigger><SelectValue placeholder="Select Warehouse" /></SelectTrigger>
               <SelectContent>
-                {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.warehouse_name}{w.is_default ? " (Default)" : ""}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__add_new__" className="text-primary font-medium">
+                  <span className="inline-flex items-center gap-1.5"><PlusCircle className="h-3.5 w-3.5" /> Add Warehouse…</span>
+                </SelectItem>
               </SelectContent>
             </Select>
+            {warehouses.length === 0 && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <WarehouseIcon className="h-3 w-3" /> No warehouses yet — add one above to receive stock.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2 md:col-span-3">
@@ -454,6 +497,14 @@ export default function PurchaseGRN() {
           <XCircle className="h-4 w-4" /> Close GRN
         </Button>
       </div>
+
+      <WarehouseFormDialog
+        open={warehouseDialogOpen}
+        onOpenChange={setWarehouseDialogOpen}
+        businessId={businessId}
+        userId={user?.id ?? null}
+        onSaved={(w) => reloadWarehouses(w.id)}
+      />
     </div>
   );
 }
