@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 export type BusinessRole =
-  | "owner" | "admin" | "manager" | "accountant" | "operator" | "salesman" | "viewer";
+  | "owner" | "admin" | "manager" | "accountant" | "operator" | "salesman"
+  | "purchase" | "store_manager" | "viewer";
 
 export type Business = {
   id: string;
@@ -125,6 +126,8 @@ const PERMS: Record<BusinessRole, string[]> = {
   accountant: ["voucher.create", "voucher.edit", "audit.view", "data.export", "purchase.create", "purchase.approve"],
   operator:   ["voucher.create", "data.export", "purchase.create"],
   salesman:   ["voucher.create", "data.export"],
+  purchase:   ["purchase.create", "data.export"],
+  store_manager: ["data.export"],
   viewer:     ["data.export"],
 };
 
