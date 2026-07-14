@@ -15,7 +15,7 @@ import {
   MapPin,
   Phone,
   CreditCard,
-  FileInvoice,
+  FileInvoice as FileInvoiceIcon,
   Upload,
   X,
   ChevronRight,
@@ -28,7 +28,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 type SectionKey = "identity" | "tax" | "address" | "contact" | "bank" | "invoice";
 
@@ -38,7 +37,7 @@ const sections: { key: SectionKey; label: string; icon: React.ReactNode }[] = [
   { key: "address", label: "Address", icon: <MapPin className="h-4 w-4" /> },
   { key: "contact", label: "Contact", icon: <Phone className="h-4 w-4" /> },
   { key: "bank", label: "Bank", icon: <CreditCard className="h-4 w-4" /> },
-  { key: "invoice", label: "Invoice", icon: <FileInvoice className="h-4 w-4" /> },
+  { key: "invoice", label: "Invoice", icon: <FileInvoiceIcon className="h-4 w-4" /> },
 ];
 
 export default function BusinessProfile() {
@@ -796,7 +795,7 @@ function InvoiceSection({
   return (
     <Section
       id="invoice"
-      icon={<FileInvoice className="h-5 w-5" />}
+      icon={<FileInvoiceIcon className="h-5 w-5" />}
       title="Invoice Settings"
       subtitle="Customize your invoice generation"
       sectionRefs={sectionRefs}
