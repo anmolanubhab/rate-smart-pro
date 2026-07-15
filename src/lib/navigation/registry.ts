@@ -48,6 +48,7 @@ import {
   Barcode,
   Layers,
   ScanLine,
+  LayoutGrid,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -81,6 +82,14 @@ export const NAV_ITEMS: NavItem[] = [
     icon: BarChart3,
     module: "Reports",
     aliases: ["analytics", "insights"],
+  },
+  {
+    id: "reports-center",
+    title: "Report Center",
+    description: "Browse every report by category, search, and open with one click",
+    route: "/reports/center",
+    icon: LayoutGrid,
+    module: "Reports",
   },
   {
     id: "history",
