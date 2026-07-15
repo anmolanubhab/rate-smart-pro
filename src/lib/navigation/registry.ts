@@ -92,15 +92,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: LayoutGrid,
     module: "Reports",
   },
-  {
-    id: "reports-center",
-    title: "Report Center",
-    description: "Browse every report by category, search, and open with one click",
-    route: "/reports/center",
-    icon: LayoutGrid,
-    module: "Reports",
-  },
-  {
+    {
     id: "history",
     title: "History",
     description: "Order and transaction history",
