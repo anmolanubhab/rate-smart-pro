@@ -28,6 +28,7 @@ const ExcelImport = lazy(() => import("./pages/ExcelImport"));
 const Inventory = lazy(() => import("./pages/Inventory"));
 const Reports = lazy(() => import("./pages/Reports"));
 const SalesRegister = lazy(() => import("./pages/reports/SalesRegister"));
+const ReportCenter = lazy(() => import("./pages/reports/ReportCenter"));
 const PurchaseRegister = lazy(() => import("./pages/reports/PurchaseRegister"));
 const OutstandingAgeing = lazy(() => import("./pages/reports/OutstandingAgeing"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -159,6 +160,7 @@ const App = () => (
               <Route path="/inventory" element={L(<Inventory />)} />
               <Route path="/reports" element={L(<Reports />)} />
               <Route path="/reports/sales-register" element={L(<SalesRegister />)} />
+              <Route path="/reports/center" element={L(<ReportCenter />)} />
 
 <Route
   path="/reports/purchase-register"
