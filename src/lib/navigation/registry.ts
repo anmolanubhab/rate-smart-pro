@@ -82,6 +82,15 @@ export const NAV_ITEMS: NavItem[] = [
     icon: BarChart3,
     module: "Reports",
     aliases: ["analytics", "insights"],
+    showInSidebar: false,
+  },
+  {
+    id: "reports-center",
+    title: "Report Center",
+    description: "Browse every report by category, search, and open with one click",
+    route: "/reports/center",
+    icon: LayoutGrid,
+    module: "Reports",
   },
   {
     id: "reports-center",
@@ -99,6 +108,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: History,
     module: "Reports",
     keywords: ["past orders", "activity"],
+    showInSidebar: false,
   },
   {
     id: "reports-sales-register",
@@ -108,6 +118,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: FileText,
     module: "Reports",
     keywords: ["sales", "invoices", "register"],
+    showInSidebar: false,
   },
   {
     id: "reports-purchase-register",
@@ -117,6 +128,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Receipt,
     module: "Reports",
     keywords: ["purchase", "invoices", "supplier"],
+    showInSidebar: false,
   },
   {
     id: "reports-outstanding-ageing",
@@ -126,6 +138,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: CreditCard,
     module: "Reports",
     keywords: ["outstanding", "ageing", "aging", "overdue", "receivables"],
+    showInSidebar: false,
   },
 
   // ==========================================================================

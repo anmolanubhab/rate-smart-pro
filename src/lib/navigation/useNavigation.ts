@@ -68,7 +68,7 @@ export function useNavigation() {
     const tree: NavModuleGroup[] = moduleOrder.map((module) => ({
       module,
       items: visibleItems
-        .filter((item) => item.module === module && !item.parentId)
+        .filter((item) => item.module === module && !item.parentId && item.showInSidebar !== false)
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     }));
 

@@ -40,6 +40,15 @@ export interface NavItem {
   quickAction?: QuickAction;
   /** Sort weight within its group; lower shows first */
   order?: number;
+  /**
+   * Set to false to keep this item fully working (route, Command Search,
+   * breadcrumbs, and lookups via byId/byRoute) while removing it from the
+   * Sidebar tree specifically. Use this for items that have been
+   * consolidated into a hub page (e.g. individual reports now reachable
+   * only through Report Center) — the route and registry entry stay real,
+   * just the sidebar row goes away. Defaults to true.
+   */
+  showInSidebar?: boolean;
 }
 
 /** A NavItem enriched with the fully joined breadcrumb path (root → item) */
