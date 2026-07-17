@@ -90,6 +90,19 @@ const StockTransfers = lazy(() => import("./pages/inventory/StockTransfers"));
 const StockTake = lazy(() => import("./pages/inventory/StockTake"));
 const StockAdjustments = lazy(() => import("./pages/inventory/StockAdjustments"));
 
+// ── Inventory Reports ──────────────────────────────────────────────────────
+const InventoryDashboard   = lazy(() => import("./pages/reports/inventory/InventoryDashboard"));
+const StockSummary         = lazy(() => import("./pages/reports/inventory/StockSummary"));
+const StockGroupSummary    = lazy(() => import("./pages/reports/inventory/StockGroupSummary"));
+const StockCategorySummary = lazy(() => import("./pages/reports/inventory/StockCategorySummary"));
+const WarehouseSummary     = lazy(() => import("./pages/reports/inventory/WarehouseSummary"));
+const StockAgeing          = lazy(() => import("./pages/reports/inventory/StockAgeing"));
+const DeadStock            = lazy(() => import("./pages/reports/inventory/DeadStock"));
+const MovementRegister     = lazy(() => import("./pages/reports/inventory/MovementRegister"));
+const StockValuation       = lazy(() => import("./pages/reports/inventory/StockValuation"));
+const AbcAnalysis          = lazy(() => import("./pages/reports/inventory/AbcAnalysis"));
+const FsnAnalysis          = lazy(() => import("./pages/reports/inventory/FsnAnalysis"));
+
 // Phase 5 — Dedicated Accounts screens
 const JournalVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.JournalVoucher })));
 const ContraVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.ContraVoucher })));
@@ -253,6 +266,20 @@ const App = () => (
               <Route path="/dealer/ledger"       element={<DealerRedirect to="/portal/ledger" />} />
               {/* Internal admin — review dealer applications */}
               <Route path="/settings/dealer-applications" element={L(<DealerApplications />)} />
+
+              {/* ── Inventory Reports ── */}
+              <Route path="/reports/inventory"                   element={L(<InventoryDashboard />)} />
+              <Route path="/reports/inventory/stock-summary"     element={L(<StockSummary />)} />
+              <Route path="/reports/inventory/group-summary"     element={L(<StockGroupSummary />)} />
+              <Route path="/reports/inventory/category-summary"  element={L(<StockCategorySummary />)} />
+              <Route path="/reports/inventory/warehouse-summary" element={L(<WarehouseSummary />)} />
+              <Route path="/reports/inventory/stock-ageing"      element={L(<StockAgeing />)} />
+              <Route path="/reports/inventory/dead-stock"        element={L(<DeadStock />)} />
+              <Route path="/reports/inventory/movement-register" element={L(<MovementRegister />)} />
+              <Route path="/reports/inventory/stock-valuation"   element={L(<StockValuation />)} />
+              <Route path="/reports/inventory/abc-analysis"      element={L(<AbcAnalysis />)} />
+              <Route path="/reports/inventory/fsn-analysis"      element={L(<FsnAnalysis />)} />
+
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
