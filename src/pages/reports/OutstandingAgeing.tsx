@@ -10,7 +10,8 @@ const columns: MockColumn[] = [
   { key: "invoice_date", label: "Date" },
   { key: "days", label: "Days", align: "right", format: "number" },
   { key: "bucket", label: "Bucket", format: "badge" },
-  { key: "grand_total", label: "Amount", align: "right", format: "currency" },
+  { key: "grand_total", label: "Invoice Total", align: "right", format: "currency" },
+  { key: "balance_due", label: "Balance Due", align: "right", format: "currency" },
 ];
 
 function bucketFor(days: number) {
@@ -31,7 +32,7 @@ export default function OutstandingAgeing() {
     if (!business) return [];
     let q = supabase
       .from("sales_invoices")
-      .select("invoice_date, invoice_number, grand_total, status, parties(name)")
+      .select("invoice_date, invoice_number, grand_total, paid_amount, status, parties(name)")
       .eq("business_id", business.id)
       .eq("status", "posted")
       .lte("invoice_date", to)
@@ -42,25 +43,31 @@ export default function OutstandingAgeing() {
     if (error) throw error;
 
     const asOf = new Date(to).getTime();
-    return (data ?? []).map((r: any) => {
-      const days = Math.max(0, Math.floor((asOf - new Date(r.invoice_date).getTime()) / 86400000));
-      const b = bucketFor(days);
-      return {
-        party_name: r.parties?.name ?? "—",
-        invoice_number: r.invoice_number,
-        invoice_date: r.invoice_date,
-        days,
-        bucket: b.label,
-        bucket_tone: b.tone,
-        grand_total: Number(r.grand_total ?? 0),
-      };
-    });
+    return (data ?? [])
+      .map((r: any) => {
+        const balanceDue = Number(r.grand_total ?? 0) - Number(r.paid_amount ?? 0);
+        const days = Math.max(0, Math.floor((asOf - new Date(r.invoice_date).getTime()) / 86400000));
+        const b = bucketFor(days);
+        return {
+          party_name: r.parties?.name ?? "—",
+          invoice_number: r.invoice_number,
+          invoice_date: r.invoice_date,
+          days,
+          bucket: b.label,
+          bucket_tone: b.tone,
+          grand_total: Number(r.grand_total ?? 0),
+          balance_due: balanceDue,
+        };
+      })
+      // Bill-wise paid_amount is now tracked (via Receive Payment), so a
+      // fully-paid invoice is genuinely no longer outstanding.
+      .filter((r) => r.balance_due > 0.01);
   };
 
   const computeKpis = (rows: Record<string, any>[]): MockKpi[] => {
-    const total = rows.reduce((s, r) => s + Number(r.grand_total), 0);
-    const over90 = rows.filter((r) => r.bucket === "90+").reduce((s, r) => s + Number(r.grand_total), 0);
-    const b3160 = rows.filter((r) => r.bucket === "31-60" || r.bucket === "61-90").reduce((s, r) => s + Number(r.grand_total), 0);
+    const total = rows.reduce((s, r) => s + Number(r.balance_due), 0);
+    const over90 = rows.filter((r) => r.bucket === "90+").reduce((s, r) => s + Number(r.balance_due), 0);
+    const b3160 = rows.filter((r) => r.bucket === "31-60" || r.bucket === "61-90").reduce((s, r) => s + Number(r.balance_due), 0);
     return [
       { label: "Total Outstanding", value: `₹ ${total.toLocaleString("en-IN")}` },
       { label: "31-90 Days", value: `₹ ${b3160.toLocaleString("en-IN")}`, tone: "warning" },
@@ -73,7 +80,7 @@ export default function OutstandingAgeing() {
     <ReportRunner
       eyebrow="Party"
       title="Outstanding Ageing"
-      description="All posted invoices as of the selected date, bucketed by age. Note: bill-wise payment matching isn't tracked yet, so this shows invoice totals, not net-of-payment balances — cross-check against the party's ledger balance for the true outstanding figure."
+      description="Invoices with a balance still due, as of the selected date, net of bill-wise payments received."
       columns={columns}
       fetchRows={fetchRows}
       computeKpis={computeKpis}
