@@ -1,5 +1,6 @@
+import { Download, Printer, Search, BarChart3, Package, Activity, Clock, AlertTriangle, Archive, Zap, Building2, FileSpreadsheet, ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { Download, Printer, Search, BarChart3 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
@@ -15,9 +16,21 @@ import { fetchParties, Party } from "@/lib/parties";
 import { supabase } from "@/integrations/supabase/client";
 import { exportSheet } from "@/lib/excelTemplates";
 
+const INV_REPORT_LINKS = [
+  { label: "Stock Summary",      route: "/reports/inventory/stock-summary",     icon: FileSpreadsheet, desc: "Opening · Inward · Outward · Closing" },
+  { label: "Movement Register",  route: "/reports/inventory/movement-register", icon: Activity,        desc: "All stock inflows & outflows" },
+  { label: "Stock Ageing",       route: "/reports/inventory/stock-ageing",      icon: Clock,           desc: "Days since last movement" },
+  { label: "Dead Stock",         route: "/reports/inventory/dead-stock",        icon: AlertTriangle,   desc: "Idle inventory report" },
+  { label: "ABC Analysis",       route: "/reports/inventory/abc-analysis",      icon: BarChart3,       desc: "Pareto classification" },
+  { label: "FSN Analysis",       route: "/reports/inventory/fsn-analysis",      icon: Zap,             desc: "Fast · Slow · Non-moving" },
+  { label: "Stock Valuation",    route: "/reports/inventory/stock-valuation",   icon: Archive,         desc: "Cost, MRP & sale value" },
+  { label: "Warehouse Summary",  route: "/reports/inventory/warehouse-summary", icon: Building2,       desc: "Per warehouse location" },
+];
+
 const inr = (n: number) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 const Reports = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { business } = useBusiness();  // ✅ Bug #1 fixed
   const businessId = business?.id ?? null;  // ✅ Bug #1 fixed
@@ -271,6 +284,32 @@ const Reports = () => {
         <h1 className="font-display text-3xl font-bold mt-1 flex items-center gap-2"><BarChart3 className="h-7 w-7 text-primary" />Reports</h1>
         <p className="text-muted-foreground mt-1 text-sm">Production-grade reports with print, PDF and Excel export.</p>
       </header>
+
+      {/* ── Inventory Reports Module ── */}
+      <section className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-transparent p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold text-foreground">Inventory Reports</h2>
+            <span className="rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">Tally-style</span>
+          </div>
+          <button onClick={() => navigate("/reports/inventory")} className="flex items-center gap-1 text-xs text-primary hover:underline font-medium">
+            Dashboard <ArrowRight className="h-3 w-3" />
+          </button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {INV_REPORT_LINKS.map((l) => (
+            <button key={l.route} onClick={() => navigate(l.route)}
+              className="rounded-xl border border-border bg-card p-3.5 text-left hover:border-primary/40 hover:bg-primary/5 transition-all group shadow-sm">
+              <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center mb-2.5 group-hover:bg-primary/20 transition-colors">
+                <l.icon className="h-4 w-4" />
+              </div>
+              <p className="font-semibold text-sm text-foreground leading-tight">{l.label}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{l.desc}</p>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <Tabs defaultValue="pending" className="space-y-4">
         <TabsList className="flex flex-wrap h-auto">
