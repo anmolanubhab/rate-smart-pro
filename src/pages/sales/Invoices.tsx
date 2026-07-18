@@ -7,7 +7,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchInvoices, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import { fetchInvoices, fetchInvoiceItems, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import InvoicePrint from "@/components/InvoicePrint";
+import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +45,16 @@ export default function InvoicesPage() {
   const [cancelTarget, setCancelTarget] = useState<SalesInvoice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SalesInvoice | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [printData, setPrintData] = useState<any>(null);
+  const [printing, setPrinting] = useState<string | null>(null);
+
+  // Edit (draft-only — posted invoices already have a voucher/ledger
+  // entry, so free-editing them would desync accounting; cancel + issue
+  // a fresh invoice instead for those).
+  const [editTarget, setEditTarget] = useState<SalesInvoice | null>(null);
+  const [editNotes, setEditNotes] = useState("");
+  const [editDiscount, setEditDiscount] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => { document.title = "Sales Invoices — RD Pro"; }, []);
 
@@ -79,11 +91,90 @@ export default function InvoicesPage() {
   const onView = (inv: SalesInvoice) => setViewTarget(inv);
 
   const onEdit = (inv: SalesInvoice) => {
-    toast.info(`Edit invoice ${inv.invoice_number} — coming soon`);
+    if (inv.status === "posted") {
+      toast.info("Posted invoices can't be freely edited (they already have a ledger entry). Cancel and issue a new invoice instead.");
+      return;
+    }
+    setEditTarget(inv);
+    setEditNotes(inv.notes ?? "");
+    setEditDiscount(String(inv.discount_total ?? 0));
   };
 
-  const onPrint = (inv: SalesInvoice) => {
-    toast.info(`Print invoice ${inv.invoice_number} — coming soon`);
+  const onSaveEdit = async () => {
+    if (!editTarget) return;
+    setSavingEdit(true);
+    try {
+      const discount = Number(editDiscount) || 0;
+      const newGrandTotal = Number(editTarget.subtotal) - discount + Number(editTarget.gst_total) + Number(editTarget.shipping_charges ?? 0);
+      const { error } = await supabase
+        .from("sales_invoices")
+        .update({ notes: editNotes || null, discount_total: discount, grand_total: newGrandTotal })
+        .eq("id", editTarget.id);
+      if (error) throw error;
+      toast.success(`Invoice ${editTarget.invoice_number} updated`);
+      setEditTarget(null);
+      refetch();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not update invoice");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const onPrint = async (inv: SalesInvoice) => {
+    setPrinting(inv.id);
+    try {
+      const [items, { data: biz }] = await Promise.all([
+        fetchInvoiceItems(inv.id),
+        supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", inv.business_id).maybeSingle(),
+      ]);
+
+      const party = inv.party_snapshot ?? {};
+      const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
+
+      setPrintData({
+        company: {
+          name: biz?.business_name ?? "—",
+          addressLines,
+          gstin: biz?.gst_number ?? null,
+          logoUrl: biz?.logo_url ?? null,
+        },
+        party: {
+          name: inv.party_name ?? party.name ?? "—",
+          mobile: party.phone ?? null,
+          address: inv.billing_address ?? party.address ?? null,
+          gstNo: party.gst ?? null,
+        },
+        info: {
+          invoiceNumber: inv.invoice_number,
+          date: inv.invoice_date,
+          time: null,
+          paymentMode: null,
+        },
+        items: (items as any[]).map((it) => ({
+          partNumber: it.part_number ?? "",
+          productName: it.description ?? it.name ?? "",
+          qty: Number(it.qty) || 0,
+          rate: Number(it.net_rate ?? it.rate) || 0,
+          gstPct: Number(it.gst_pct) || 0,
+          amount: Number(it.total) || 0,
+        })),
+        totals: {
+          subtotal: Number(inv.subtotal) || 0,
+          discount: Number(inv.discount_total) || 0,
+          tax: Number(inv.gst_total) || 0,
+          grandTotal: Number(inv.grand_total) || 0,
+        },
+      });
+
+      // Render happens synchronously into state; give React a tick to
+      // paint the (off-screen) print container before invoking print.
+      setTimeout(() => window.print(), 50);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not prepare invoice for printing");
+    } finally {
+      setPrinting(null);
+    }
   };
 
   const onCancelConfirm = async () => {
@@ -216,7 +307,7 @@ export default function InvoicesPage() {
                               <Button
                                 size="icon" variant="ghost"
                                 className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
-                                disabled={isCancelled}
+                                disabled={isCancelled || i.status === "posted"}
                                 onClick={() => onEdit(i)}
                               >
                                 <Pencil className="h-4 w-4" />
@@ -238,7 +329,7 @@ export default function InvoicesPage() {
                               <DropdownMenuItem onClick={() => onView(i)}>
                                 <Eye className="h-4 w-4 mr-2" /> View Invoice
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => onEdit(i)} disabled={isCancelled}>
+                              <DropdownMenuItem onClick={() => onEdit(i)} disabled={isCancelled || i.status === "posted"}>
                                 <Pencil className="h-4 w-4 mr-2" /> Edit Invoice
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => onPrint(i)}>
@@ -363,6 +454,45 @@ export default function InvoicesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Edit Invoice (draft only) ── */}
+      <AlertDialog open={!!editTarget} onOpenChange={(o) => !o && setEditTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit Invoice {editTarget?.invoice_number}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-left mt-2">
+                <div>
+                  <label className="text-xs text-muted-foreground">Discount</label>
+                  <Input type="number" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Notes</label>
+                  <Input value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Line items can't be changed here — cancel this invoice and generate a new one from
+                  the order/dispatch if quantities or prices need to change.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingEdit}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onSaveEdit} disabled={savingEdit}>
+              {savingEdit ? "Saving…" : "Save changes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Off-screen print target — CSS in styles/print.css shows only
+          .invoice-print during window.print(), everything else hides. ── */}
+      {printData && (
+        <div style={{ position: "fixed", top: -99999, left: -99999 }}>
+          <InvoicePrint {...printData} />
+        </div>
+      )}
     </div>
   );
 }
