@@ -656,6 +656,7 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Inventory Reports",
     module: "Reports",
     description: "Tally-style inventory reports with drill-down",
+    showInSidebar: false,
   },
   {
     id: "inv-reports-dashboard",
@@ -665,6 +666,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Package,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["stock", "inventory", "dashboard", "kpi", "overview"],
   },
   {
@@ -675,6 +677,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: FileSpreadsheet,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["stock", "summary", "opening", "closing", "inward", "outward", "tally", "stock report"],
     aliases: ["stock summary", "stock report", "inventory summary"],
   },
@@ -686,6 +689,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Boxes,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["group", "product group", "stock group"],
   },
   {
@@ -696,6 +700,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Boxes,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["category", "stock category", "category summary"],
   },
   {
@@ -706,6 +711,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Building2,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["warehouse", "location", "godown", "stock"],
   },
   {
@@ -716,6 +722,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Clock,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["ageing", "aging", "old stock", "slow moving", "days"],
   },
   {
@@ -726,6 +733,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: AlertTriangle,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["dead stock", "idle", "non moving", "stuck inventory"],
   },
   {
@@ -736,6 +744,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Activity,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["movement", "register", "inward", "outward", "purchase", "sales", "transfer", "stock ledger"],
     aliases: ["stock ledger", "movement register", "stock register"],
   },
@@ -747,6 +756,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Archive,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["valuation", "value", "cost", "mrp", "profit", "stock value"],
   },
   {
@@ -757,6 +767,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: BarChart3,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["abc", "pareto", "80-20", "classification", "analysis"],
   },
   {
@@ -767,6 +778,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Zap,
     module: "Reports",
     parentId: "inv-reports-group",
+    showInSidebar: false,
     keywords: ["fsn", "fast", "slow", "non moving", "frequency", "velocity"],
   },
 
