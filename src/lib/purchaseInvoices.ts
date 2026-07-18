@@ -169,41 +169,39 @@ export async function postPurchaseInvoiceToLedger(
   ];
 
   if (invoice.tax_total > 0) {
-    // Same intra-state vs inter-state determination as the sales side
-    // (auto_create_sales_voucher / sales_invoice_autopost): compare the
-    // state-code prefix of the business's and supplier's GSTIN. Falls
-    // back to intra-state (CGST+SGST) when either GSTIN is missing/not
-    // 15 characters, and falls back further to the old combined
-    // "GST Input" ledger if this business hasn't been seeded with the
-    // split ledgers yet.
+    // Single source of truth for intra-state vs inter-state determination
+    // -- same rule the sales-side trigger uses, via the shared
+    // gst_split_amounts() DB function (see consolidate_gst_split_calculation
+    // migration). Falls back to the old combined "GST Input" ledger if
+    // this business hasn't been seeded with the split ledgers yet.
     const [{ data: biz }, { data: supplier }] = await Promise.all([
       supabase.from("businesses").select("gst_number").eq("id", businessId).maybeSingle(),
       supabase.from("parties").select("gst").eq("id", invoice.supplier_id).maybeSingle(),
     ]);
-    const stateCode = (gstin: string | null | undefined) =>
-      gstin && gstin.trim().length === 15 ? gstin.trim().slice(0, 2).toUpperCase() : null;
-    const sellerState = stateCode(biz?.gst_number);
-    const supplierState = stateCode(supplier?.gst);
-    const interstate = !!sellerState && !!supplierState && sellerState !== supplierState;
+    const { data: split, error: splitErr } = await supabase.rpc("gst_split_amounts" as never, {
+      _seller_gstin: biz?.gst_number ?? null,
+      _buyer_gstin: supplier?.gst ?? null,
+      _gst_total: invoice.tax_total,
+    } as never);
+    const s = (Array.isArray(split) ? split[0] : split) as { cgst: number; sgst: number; igst: number; is_interstate: boolean } | undefined;
 
-    if (interstate && igstInLedger) {
+    if (!splitErr && s?.is_interstate && igstInLedger) {
       items.push({
         ledger_account_id: igstInLedger.id,
-        debit: invoice.tax_total,
+        debit: Number(s.igst),
         credit: 0,
         remarks: `IGST on ${invoice.invoice_number}`,
       });
-    } else if (!interstate && cgstInLedger && sgstInLedger) {
-      const half = Math.round((invoice.tax_total / 2) * 100) / 100;
+    } else if (!splitErr && s && !s.is_interstate && cgstInLedger && sgstInLedger) {
       items.push({
         ledger_account_id: cgstInLedger.id,
-        debit: half,
+        debit: Number(s.cgst),
         credit: 0,
         remarks: `CGST on ${invoice.invoice_number}`,
       });
       items.push({
         ledger_account_id: sgstInLedger.id,
-        debit: invoice.tax_total - half,
+        debit: Number(s.sgst),
         credit: 0,
         remarks: `SGST on ${invoice.invoice_number}`,
       });
