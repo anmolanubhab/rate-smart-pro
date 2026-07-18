@@ -62,6 +62,7 @@ const CompanySelection = lazy(() => import("./pages/companies/CompanySelection")
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 const ReceivePayment = lazy(() => import("./pages/sales/ReceivePayment"));
+const PickingList = lazy(() => import("./pages/sales/PickingList"));
 const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
 // Voucher Engine — foundation pages
@@ -219,6 +220,7 @@ const App = () => (
               <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/sales/receive-payment" element={L(<ReceivePayment />)} />
+              <Route path="/sales/picking-list" element={L(<PickingList />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
               <Route path="/purchase/orders" element={L(<PurchaseOrders />)} />
