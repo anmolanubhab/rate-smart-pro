@@ -312,6 +312,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/purchase/reports",
     icon: BarChart3,
     module: "Purchase",
+    showInSidebar: false,
   },
   {
     id: "supplier-ledger",
@@ -438,6 +439,7 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Receivables & Payables",
     module: "Accounts",
     description: "Outstanding dues to be collected or paid",
+    showInSidebar: false,
   },
 
   {
@@ -586,6 +588,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Scale,
     module: "Accounts",
     parentId: "accounts-reports-group",
+    showInSidebar: false,
   },
   {
     id: "accounts-profit-loss",
@@ -596,6 +599,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-reports-group",
     aliases: ["p&l", "pnl", "income statement"],
+    showInSidebar: false,
   },
   {
     id: "accounts-balance-sheet",
@@ -605,6 +609,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: FileSpreadsheet,
     module: "Accounts",
     parentId: "accounts-reports-group",
+    showInSidebar: false,
   },
   {
     id: "accounts-cash-flow",
@@ -614,6 +619,10 @@ export const NAV_ITEMS: NavItem[] = [
     icon: PieChart,
     module: "Accounts",
     parentId: "accounts-reports-group",
+    // NOT hidden / NOT in Report Center yet -- this page is still mock
+    // (verified: 0 real Supabase calls). Stays in the sidebar under its
+    // native "Financial Reports" group until it's wired to real data,
+    // per the no-mock-in-Report-Center rule.
   },
 
   {
@@ -625,6 +634,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-outstanding-group",
     aliases: ["debtors"],
+    showInSidebar: false,
   },
   {
     id: "accounts-payables",
@@ -635,6 +645,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-outstanding-group",
     aliases: ["creditors"],
+    showInSidebar: false,
   },
 
   // ==========================================================================
@@ -770,6 +781,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: FileSpreadsheet,
     module: "GST",
     keywords: ["tax", "gstr", "returns"],
+    showInSidebar: false,
   },
 
   // ==========================================================================
