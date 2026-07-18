@@ -362,7 +362,7 @@ const Orders = () => {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => nav(`/create-order?edit=${o.id}`)} disabled={o.status === "cancelled"}>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => nav(`/orders/edit/${o.id}`)} disabled={o.status === "cancelled"}>
                               <Pencil className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
@@ -376,7 +376,8 @@ const Orders = () => {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-52">
                             <DropdownMenuItem onClick={() => onView(o)}><Eye className="h-4 w-4 mr-2" /> View Order</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => nav(`/create-order?edit=${o.id}`)} disabled={o.status === "cancelled"}><Pencil className="h-4 w-4 mr-2" /> Edit Order</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => nav(`/orders/edit/${o.id}`)} disabled={o.status === "cancelled"}><Pencil className="h-4 w-4 mr-2" /> Edit Order</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => nav(`/orders/edit/${o.id}?print=1`)}><Printer className="h-4 w-4 mr-2" /> Print Order</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => onDuplicate(o)}><Copy className="h-4 w-4 mr-2" /> Duplicate</DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {o.status === "pending" && (
