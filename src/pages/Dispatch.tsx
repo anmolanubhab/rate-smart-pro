@@ -27,6 +27,7 @@ import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
+import DeliveryChallanPrint from "@/components/DeliveryChallanPrint";
 import { fetchUnits, type Unit as MeasureUnit } from "@/lib/units";
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
@@ -230,6 +231,62 @@ const Dispatch = () => {
     } finally {
       setConfirming(false);
     }
+  };
+
+  // ── Print Delivery Challan ──────────────────────────────────────────────
+  const [challanData, setChallanData] = useState<any>(null);
+  const printChallan = async (d: any) => {
+    try {
+      const { data: items } = await supabase
+        .from("dispatch_items")
+        .select("part_number, description, dispatched_qty, order_items(part_number, description)")
+        .eq("dispatch_id", d.id);
+      const { data: biz } = await supabase
+        .from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number")
+        .eq("id", business!.id).maybeSingle();
+      const { data: party } = d.orders?.party_id
+        ? await supabase.from("parties").select("name, address, phone, gst").eq("id", d.orders.party_id).maybeSingle()
+        : { data: null };
+
+      setChallanData({
+        company: {
+          name: biz?.business_name ?? "—",
+          addressLines: [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean),
+          gstin: biz?.gst_number ?? null,
+        },
+        party: {
+          name: party?.name ?? d.orders?.party_name ?? "—",
+          address: party?.address ?? null,
+          mobile: party?.phone ?? null,
+          gstNo: party?.gst ?? null,
+        },
+        info: {
+          challanNumber: d.dispatch_number,
+          date: d.dispatch_date,
+          orderNumber: d.orders?.order_number ?? null,
+          transporter: d.transporter ?? d.transport_name ?? null,
+          vehicleNumber: d.vehicle_number ?? null,
+          lrNumber: d.lr_number ?? null,
+          ewayNumber: d.eway_number ?? null,
+        },
+        items: (items as any[] ?? []).map((it) => ({
+          partNumber: it.part_number ?? it.order_items?.part_number ?? "",
+          description: it.description ?? it.order_items?.description ?? "",
+          qty: Number(it.dispatched_qty) || 0,
+        })),
+      });
+      setTimeout(() => window.print(), 50);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not prepare challan");
+    }
+  };
+
+  // ── Shipment Status ─────────────────────────────────────────────────────
+  const updateShipmentStatus = async (dispatchId: string, status: string) => {
+    const { error } = await supabase.from("dispatches").update({ shipment_status: status } as never).eq("id", dispatchId);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Shipment status updated");
+    reload();
   };
 
   // ── Cancel Dispatch ─────────────────────────────────────────────────────────
@@ -453,6 +510,7 @@ const Dispatch = () => {
                     <th className="text-left px-3 py-2">Order</th>
                     <th className="text-left px-3 py-2">Party</th>
                     <th className="text-left px-3 py-2">Status</th>
+                    <th className="text-left px-3 py-2">Shipment</th>
                     <th className="text-left px-3 py-2">Invoice</th>
                     <th className="text-left px-3 py-2">Notes</th>
                     <th className="text-right px-3 py-2">Actions</th>
@@ -467,6 +525,21 @@ const Dispatch = () => {
                       <td className="px-3 py-1.5">{d.orders?.party_name}</td>
                       <td className="px-3 py-1.5">
                         <DispatchStatusBadge status={(d.status as DispatchStatus) || "draft"} />
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {d.status === "confirmed" ? (
+                          <Select value={d.shipment_status ?? "pending"} onValueChange={(v) => updateShipmentStatus(d.id, v)}>
+                            <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="dispatched">Dispatched</SelectItem>
+                              <SelectItem value="in_transit">In Transit</SelectItem>
+                              <SelectItem value="delivered">Delivered</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-1.5">
                         {d.invoice_id ? (
@@ -492,6 +565,16 @@ const Dispatch = () => {
                       </td>
                       <td className="px-3 py-1.5 text-muted-foreground">{d.notes}</td>
                       <td className="px-3 py-1.5 text-right">
+                        {d.status === "confirmed" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs"
+                            onClick={() => printChallan(d)}
+                          >
+                            <FileText className="h-3.5 w-3.5 mr-0.5" />Challan
+                          </Button>
+                        )}
                         {(d.status === "draft" || d.status === "confirmed") && !d.invoice_id && (
                           <Button
                             size="sm"
@@ -534,6 +617,12 @@ const Dispatch = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {challanData && (
+        <div className="hidden print:block">
+          <DeliveryChallanPrint {...challanData} />
+        </div>
+      )}
     </div>
   );
 };
