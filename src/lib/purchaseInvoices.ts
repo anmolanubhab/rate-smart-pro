@@ -148,7 +148,10 @@ export async function postPurchaseInvoiceToLedger(
   }
 
   const purchaseLedger = ledgers.find((l: any) => l.name === "Purchase Account");
-  const gstLedger = ledgers.find((l: any) => l.name === "GST Input");
+  const cgstInLedger = ledgers.find((l: any) => l.name === "CGST Input");
+  const sgstInLedger = ledgers.find((l: any) => l.name === "SGST Input");
+  const igstInLedger = ledgers.find((l: any) => l.name === "IGST Input");
+  const gstLedgerLegacy = ledgers.find((l: any) => l.name === "GST Input");
   const supplierLedger = ledgers.find((l: any) => l.party_id === invoice.supplier_id);
 
   if (!purchaseLedger || !supplierLedger) {
@@ -165,13 +168,53 @@ export async function postPurchaseInvoiceToLedger(
     },
   ];
 
-  if (invoice.tax_total > 0 && gstLedger) {
-    items.push({
-      ledger_account_id: gstLedger.id,
-      debit: invoice.tax_total,
-      credit: 0,
-      remarks: `GST on ${invoice.invoice_number}`,
-    });
+  if (invoice.tax_total > 0) {
+    // Same intra-state vs inter-state determination as the sales side
+    // (auto_create_sales_voucher / sales_invoice_autopost): compare the
+    // state-code prefix of the business's and supplier's GSTIN. Falls
+    // back to intra-state (CGST+SGST) when either GSTIN is missing/not
+    // 15 characters, and falls back further to the old combined
+    // "GST Input" ledger if this business hasn't been seeded with the
+    // split ledgers yet.
+    const [{ data: biz }, { data: supplier }] = await Promise.all([
+      supabase.from("businesses").select("gst_number").eq("id", businessId).maybeSingle(),
+      supabase.from("parties").select("gst").eq("id", invoice.supplier_id).maybeSingle(),
+    ]);
+    const stateCode = (gstin: string | null | undefined) =>
+      gstin && gstin.trim().length === 15 ? gstin.trim().slice(0, 2).toUpperCase() : null;
+    const sellerState = stateCode(biz?.gst_number);
+    const supplierState = stateCode(supplier?.gst);
+    const interstate = !!sellerState && !!supplierState && sellerState !== supplierState;
+
+    if (interstate && igstInLedger) {
+      items.push({
+        ledger_account_id: igstInLedger.id,
+        debit: invoice.tax_total,
+        credit: 0,
+        remarks: `IGST on ${invoice.invoice_number}`,
+      });
+    } else if (!interstate && cgstInLedger && sgstInLedger) {
+      const half = Math.round((invoice.tax_total / 2) * 100) / 100;
+      items.push({
+        ledger_account_id: cgstInLedger.id,
+        debit: half,
+        credit: 0,
+        remarks: `CGST on ${invoice.invoice_number}`,
+      });
+      items.push({
+        ledger_account_id: sgstInLedger.id,
+        debit: invoice.tax_total - half,
+        credit: 0,
+        remarks: `SGST on ${invoice.invoice_number}`,
+      });
+    } else if (gstLedgerLegacy) {
+      items.push({
+        ledger_account_id: gstLedgerLegacy.id,
+        debit: invoice.tax_total,
+        credit: 0,
+        remarks: `GST on ${invoice.invoice_number}`,
+      });
+    }
   }
 
   items.push({
