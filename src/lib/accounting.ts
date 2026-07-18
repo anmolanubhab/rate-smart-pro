@@ -147,6 +147,9 @@ export async function backfillAccounting(userId: string) {
   await seedAccounts(userId);
   const biz = getActiveBusinessIdSync();
 
+  // Ensure every party has a ledger. Mostly a no-op now that new parties
+  // get one automatically (trg_parties_create_ledger) -- this remains a
+  // safety net for parties created before that trigger existed.
   let pq = supabase.from("parties").select("id").eq("user_id", userId);
   if (biz) pq = pq.eq("business_id", biz);
   const { data: parties } = await pq;
@@ -154,31 +157,18 @@ export async function backfillAccounting(userId: string) {
     await callAccountingRpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id, _business_id: biz });
   }
 
-  let oq = supabase
-    .from("orders")
-    .select("id, status")
-    .eq("user_id", userId)
-    .eq("status", "completed");
-  if (biz) oq = oq.eq("business_id", biz);
-  const { data: orders } = await oq;
-
-  let vq = supabase
-    .from("vouchers")
-    .select("reference_id")
-    .eq("user_id", userId)
-    .eq("reference_type", "order");
-  if (biz) vq = vq.eq("business_id", biz);
-  const { data: existing } = await vq;
-  const posted = new Set((existing ?? []).map((v: any) => v.reference_id));
-
-  let count = 0;
-  for (const o of orders ?? []) {
-    if (posted.has(o.id)) continue;
-    await supabase.from("orders").update({ status: "partial" }).eq("id", o.id);
-    await supabase.from("orders").update({ status: "completed" }).eq("id", o.id);
-    count += 1;
+  // Recalculate every ledger's balance from scratch off the actual
+  // voucher_items history (previously this toggled orders.status hoping
+  // to re-trigger a voucher-posting trigger that doesn't exist -- it did
+  // nothing). This is the real repair path if a balance ever drifts.
+  let recalculated = 0;
+  if (biz) {
+    const { error } = await supabase.rpc("recompute_all_balances" as never, { _business_id: biz } as never);
+    if (error) throw error;
+    recalculated = 1;
   }
-  return { parties: parties?.length ?? 0, ordersPosted: count };
+
+  return { parties: parties?.length ?? 0, recalculated };
 }
 
 export const fmtInr = (n: number) =>
