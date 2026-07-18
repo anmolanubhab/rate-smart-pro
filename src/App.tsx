@@ -41,6 +41,7 @@ const VoucherCenter = lazy(() => import("./pages/accounts/VoucherCenter"));
 const DayBook = lazy(() => import("./pages/accounts/DayBook"));
 const CashBook = lazy(() => import("./pages/accounts/CashBook"));
 const BankBook = lazy(() => import("./pages/accounts/BankBook"));
+const BankAccounts = lazy(() => import("./pages/accounts/BankAccounts"));
 const TrialBalance = lazy(() => import("./pages/accounts/TrialBalance"));
 const ProfitLoss = lazy(() => import("./pages/accounts/ProfitLoss"));
 const BalanceSheet = lazy(() => import("./pages/accounts/BalanceSheet"));
@@ -194,6 +195,7 @@ const App = () => (
               <Route path="/accounts/day-book" element={L(<DayBook />)} />
               <Route path="/accounts/cash-book" element={L(<CashBook />)} />
               <Route path="/accounts/bank-book" element={L(<BankBook />)} />
+              <Route path="/accounts/bank-accounts" element={L(<BankAccounts />)} />
               <Route path="/accounts/trial-balance" element={L(<TrialBalance />)} />
               <Route path="/accounts/profit-loss" element={L(<ProfitLoss />)} />
               <Route path="/accounts/balance-sheet" element={L(<BalanceSheet />)} />
