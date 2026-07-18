@@ -567,6 +567,16 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-books-group",
   },
+  {
+    id: "accounts-bank-accounts",
+    title: "Bank Accounts",
+    description: "Manage your bank accounts — each gets its own ledger automatically",
+    route: "/accounts/bank-accounts",
+    icon: Landmark,
+    module: "Accounts",
+    parentId: "accounts-books-group",
+    keywords: ["ifsc", "account number", "banking"],
+  },
 
   {
     id: "accounts-trial-balance",
