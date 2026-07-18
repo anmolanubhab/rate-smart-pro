@@ -489,7 +489,7 @@ export default function InvoicesPage() {
       {/* ── Off-screen print target — CSS in styles/print.css shows only
           .invoice-print during window.print(), everything else hides. ── */}
       {printData && (
-        <div style={{ position: "fixed", top: -99999, left: -99999 }}>
+        <div className="hidden print:block">
           <InvoicePrint {...printData} />
         </div>
       )}
