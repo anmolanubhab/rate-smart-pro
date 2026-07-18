@@ -205,6 +205,15 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["pick", "warehouse", "pending dispatch"],
   },
   {
+    id: "sales-returns",
+    title: "Sales Returns",
+    description: "Accept customer returns — posts a Credit Note voucher and restores stock",
+    route: "/sales/returns",
+    icon: Repeat,
+    module: "Sales",
+    keywords: ["credit note", "return", "rma"],
+  },
+  {
     id: "excel-import",
     title: "Excel Import",
     description: "Bulk import orders from Excel",
