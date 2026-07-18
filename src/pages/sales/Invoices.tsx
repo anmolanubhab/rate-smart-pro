@@ -8,6 +8,8 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import { createApprovalRequest } from "@/lib/approvals";
+import { canDeleteDirectly } from "@/lib/permissions";
 import InvoicePrint from "@/components/InvoicePrint";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -33,7 +35,7 @@ const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function InvoicesPage() {
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, role } = useBusiness();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
@@ -205,13 +207,28 @@ export default function InvoicesPage() {
     }
   };
 
-  // ── FIX: Direct delete using deleteInvoice() ────────────────────────────
+  // Direct delete for owner/admin; everyone else's delete request goes
+  // through the Approval Center instead (already-built generic engine —
+  // was never wired up to any delete button anywhere in the app).
   const onDeleteConfirm = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !business) return;
     setBusy(deleteTarget.id);
     try {
-      await deleteInvoice(deleteTarget.id);
-      toast.success(`Invoice ${deleteTarget.invoice_number} deleted`);
+      if (canDeleteDirectly(role)) {
+        await deleteInvoice(deleteTarget.id);
+        toast.success(`Invoice ${deleteTarget.invoice_number} deleted`);
+      } else {
+        await createApprovalRequest({
+          business_id: business.id,
+          module: "sales_invoice",
+          record_id: deleteTarget.id,
+          document_no: deleteTarget.invoice_number,
+          action_type: "delete",
+          reason: "Requested from Sales Invoices list",
+          requester_role: role,
+        });
+        toast.success(`Delete request for ${deleteTarget.invoice_number} sent for approval`);
+      }
       refetch();
     } catch (e: any) {
       toast.error(e.message);
@@ -472,9 +489,18 @@ export default function InvoicesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Invoice?</AlertDialogTitle>
             <AlertDialogDescription>
-              Invoice <strong>{deleteTarget?.invoice_number}</strong> will be permanently deleted.
-              {deleteTarget?.order_id && " The linked order will be reset to its previous status."}
-              This cannot be undone.
+              {canDeleteDirectly(role) ? (
+                <>
+                  Invoice <strong>{deleteTarget?.invoice_number}</strong> will be permanently deleted.
+                  {deleteTarget?.order_id && " The linked order will be reset to its previous status."}
+                  {" "}This cannot be undone.
+                </>
+              ) : (
+                <>
+                  You don't have direct delete access — this will send a delete request for
+                  <strong> {deleteTarget?.invoice_number}</strong> to the Approval Center instead.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
