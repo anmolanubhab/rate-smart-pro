@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 
 type Party = { id: string; name: string };
 type OpenInvoice = { id: string; invoice_number: string; invoice_date: string; grand_total: number; paid_amount: number };
+type BankAccount = { id: string; account_name: string; bank_name: string };
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -25,6 +26,8 @@ export default function ReceivePayment() {
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const [amount, setAmount] = useState("");
   const [mode, setMode] = useState("cash");
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [bankAccountId, setBankAccountId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
@@ -34,6 +37,8 @@ export default function ReceivePayment() {
     if (!business) return;
     supabase.from("parties").select("id, name").eq("business_id", business.id).order("name").limit(2000)
       .then(({ data }) => setParties((data as Party[]) ?? []));
+    supabase.from("bank_accounts").select("id, account_name, bank_name").eq("business_id", business.id).order("account_name")
+      .then(({ data }) => setBankAccounts((data as BankAccount[]) ?? []));
   }, [business]);
 
   useEffect(() => {
@@ -93,6 +98,7 @@ export default function ReceivePayment() {
         _reference_number: reference || null,
         _notes: notes || null,
         _allocations: allocList,
+        _bank_account_id: mode !== "cash" ? (bankAccountId || null) : null,
       } as never);
       if (error) throw error;
 
@@ -145,6 +151,22 @@ export default function ReceivePayment() {
               </SelectContent>
             </Select>
           </div>
+          {mode !== "cash" && (
+            <div className="space-y-1.5">
+              <Label>Bank Account</Label>
+              <Select value={bankAccountId} onValueChange={setBankAccountId}>
+                <SelectTrigger><SelectValue placeholder="Select bank account" /></SelectTrigger>
+                <SelectContent>
+                  {bankAccounts.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>{b.account_name} — {b.bank_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {bankAccounts.length === 0 && (
+                <p className="text-xs text-muted-foreground">No bank accounts yet — add one under Accounts → Bank Accounts, or this will post to Cash Account.</p>
+              )}
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Date</Label>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
