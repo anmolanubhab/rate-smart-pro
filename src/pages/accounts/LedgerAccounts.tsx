@@ -87,7 +87,7 @@ export default function LedgerAccounts() {
     setSyncing(true);
     try {
       const r = await backfillAccounting(user.id);
-      toast.success(`Synced ${r.parties} parties · posted ${r.ordersPosted} sales vouchers`);
+      toast.success(`Synced ${r.parties} parties · balances recalculated from voucher history`);
       qc.invalidateQueries({ queryKey: ["ledgers"] });
       qc.invalidateQueries({ queryKey: ["vouchers"] });
     } catch (e: any) {
@@ -127,7 +127,7 @@ export default function LedgerAccounts() {
           </Button>
           <Button variant="outline" onClick={handleSync} disabled={syncing}>
             {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Sync from existing data
+            Recalculate Balances
           </Button>
         </div>
       }
