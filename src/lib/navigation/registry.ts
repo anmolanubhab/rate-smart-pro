@@ -196,6 +196,15 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["receipt", "collection", "bill-wise"],
   },
   {
+    id: "sales-picking-list",
+    title: "Picking List",
+    description: "Items pending dispatch from approved orders, grouped by rack",
+    route: "/sales/picking-list",
+    icon: ClipboardList,
+    module: "Sales",
+    keywords: ["pick", "warehouse", "pending dispatch"],
+  },
+  {
     id: "excel-import",
     title: "Excel Import",
     description: "Bulk import orders from Excel",
