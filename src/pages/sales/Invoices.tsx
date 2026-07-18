@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal,
+  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal, CheckCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchInvoices, fetchInvoiceItems, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
 import InvoicePrint from "@/components/InvoicePrint";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -89,6 +89,19 @@ export default function InvoicesPage() {
   // ── Action handlers ────────────────────────────────────────────────────────
 
   const onView = (inv: SalesInvoice) => setViewTarget(inv);
+
+  const onPost = async (inv: SalesInvoice) => {
+    setBusy(inv.id);
+    try {
+      await postInvoice(inv.id);
+      toast.success(`Invoice ${inv.invoice_number} posted — voucher and ledger entries created`);
+      refetch();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not post invoice");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const onEdit = (inv: SalesInvoice) => {
     if (inv.status === "posted") {
@@ -301,6 +314,23 @@ export default function InvoicesPage() {
                             <TooltipContent>View</TooltipContent>
                           </Tooltip>
 
+                          {/* Post (draft only) */}
+                          {i.status === "draft" && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon" variant="ghost"
+                                  className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                                  disabled={busy === i.id}
+                                  onClick={() => onPost(i)}
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Post Invoice</TooltipContent>
+                            </Tooltip>
+                          )}
+
                           {/* Edit */}
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -329,6 +359,11 @@ export default function InvoicesPage() {
                               <DropdownMenuItem onClick={() => onView(i)}>
                                 <Eye className="h-4 w-4 mr-2" /> View Invoice
                               </DropdownMenuItem>
+                              {i.status === "draft" && (
+                                <DropdownMenuItem onClick={() => onPost(i)} className="text-emerald-600 focus:text-emerald-600">
+                                  <CheckCircle className="h-4 w-4 mr-2" /> Post Invoice
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => onEdit(i)} disabled={isCancelled || i.status === "posted"}>
                                 <Pencil className="h-4 w-4 mr-2" /> Edit Invoice
                               </DropdownMenuItem>
