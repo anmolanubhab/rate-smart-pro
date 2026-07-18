@@ -3,7 +3,7 @@ import { Business } from "@/hooks/useProfileData";
 
 interface Props {
   business?: Business | null;
-  role?: { name: string } | null;
+  role?: string | null;
 }
 
 const CompanyCard = ({ business, role }: Props) => {
@@ -34,7 +34,7 @@ const CompanyCard = ({ business, role }: Props) => {
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Briefcase className="h-4 w-4" />
-          <span>Role: <span className="font-medium text-foreground">{role?.name || "Member"}</span></span>
+          <span>Role: <span className="font-medium text-foreground capitalize">{role || "Member"}</span></span>
         </div>
         <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar className="h-4 w-4" />
