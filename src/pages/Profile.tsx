@@ -14,7 +14,7 @@ import {
 const Profile = () => {
   const { user } = useAuth();
   const { profile, business, role, permissions, preferences, activity, isLoading, error } =
-    useProfileData(user?.id);
+    useProfileData(user?.id, user);
 
   useEffect(() => {
     document.title = "Profile — RD Calculator Pro";
