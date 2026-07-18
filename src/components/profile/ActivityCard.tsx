@@ -17,9 +17,9 @@ const ActivityCard = ({ activity }: Props) => {
 
   // Safe access with defaults
   const lastLogin = activity?.last_login || null;
-  // Note: created_at and last_password_change are not in the Activity type
-  // We'll show them as "—" until they're added
-  const createdAt = null;
+  const createdAt = activity?.created_at || null;
+  // last_password_change isn't tracked yet (Supabase auth doesn't
+  // expose this directly) -- shown as "—" until that's added.
   const lastPasswordChange = null;
 
   return (
