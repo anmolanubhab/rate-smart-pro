@@ -119,7 +119,7 @@ export function useBusiness() {
   };
 }
 
-const PERMS: Record<BusinessRole, string[]> = {
+export const PERMS: Record<BusinessRole, string[]> = {
   owner:      ["*"],
   admin:      ["business.edit", "team.manage", "voucher.create", "voucher.edit", "voucher.delete", "voucher.cancel", "settings.edit", "audit.view", "data.import", "data.export", "purchase.create", "purchase.approve"],
   manager:    ["voucher.create", "voucher.edit", "voucher.cancel", "data.export", "purchase.create", "purchase.approve"],
