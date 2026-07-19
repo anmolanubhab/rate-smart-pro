@@ -21,7 +21,7 @@ const CATALOG: { category: string; ids: string[] }[] = [
   { category: "Purchase", ids: ["reports-purchase-register", "purchase-reports"] },
   { category: "Party & Outstanding", ids: ["reports-outstanding-ageing", "accounts-receivables", "accounts-payables"] },
   { category: "Accounting", ids: ["accounts-trial-balance", "accounts-profit-loss", "accounts-balance-sheet"] },
-  { category: "GST", ids: ["gst-summary", "gst-gstr-3b", "gst-hsn-summary"] },
+  { category: "GST", ids: ["gst-summary", "gst-gstr-3b", "gst-gstr-1", "gst-hsn-summary", "gst-tax-register"] },
   {
     category: "Inventory",
     ids: [
