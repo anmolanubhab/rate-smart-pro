@@ -168,6 +168,23 @@ const SkeletonRow = ({ index }: { index: number }) => (
 const Products = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
+  const [syncingCost, setSyncingCost] = useState(false);
+  const syncCostFromPurchases = async () => {
+    if (!business) return;
+    setSyncingCost(true);
+    try {
+      const { data, error } = await supabase.rpc("sync_cost_price_from_purchases" as never, {
+        _business_id: business.id,
+      } as never);
+      if (error) throw error;
+      const count = Array.isArray(data) ? data[0]?.updated_count : (data as any)?.updated_count;
+      toast.success(count > 0 ? `Updated cost price for ${count} products` : "No purchase history yet to sync from — nothing to update");
+    } catch (e: any) {
+      toast.error(e.message ?? "Sync failed");
+    } finally {
+      setSyncingCost(false);
+    }
+  };
   const businessId = business?.id ?? null;
 
   // Data
@@ -504,6 +521,9 @@ const Products = () => {
           <Link to="/products/bulk-gst">
             <Button variant="outline">Bulk HSN / GST</Button>
           </Link>
+          <Button variant="outline" onClick={syncCostFromPurchases} disabled={syncingCost}>
+            {syncingCost ? "Syncing…" : "Sync Cost from Purchases"}
+          </Button>
           <Button
             onClick={openNew}
             className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant"
