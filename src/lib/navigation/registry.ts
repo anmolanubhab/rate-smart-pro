@@ -813,6 +813,26 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["tax", "gstr", "returns"],
     showInSidebar: false,
   },
+  {
+    id: "gst-gstr-3b",
+    title: "GSTR-3B Summary",
+    description: "Outward tax liability vs input tax credit, net payable",
+    route: "/gst/gstr-3b",
+    icon: FileSpreadsheet,
+    module: "GST",
+    keywords: ["gstr3b", "returns", "filing"],
+    showInSidebar: false,
+  },
+  {
+    id: "gst-hsn-summary",
+    title: "HSN Summary",
+    description: "Sales grouped by HSN code and GST rate",
+    route: "/gst/hsn-summary",
+    icon: FileSpreadsheet,
+    module: "GST",
+    keywords: ["hsn", "gstr1"],
+    showInSidebar: false,
+  },
 
   // ==========================================================================
   // ADMINISTRATION
