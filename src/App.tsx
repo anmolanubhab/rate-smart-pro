@@ -50,6 +50,8 @@ const Receivables = lazy(() => import("./pages/accounts/Receivables"));
 const Payables = lazy(() => import("./pages/accounts/Payables"));
 const GstSummary = lazy(() => import("./pages/gst/GstSummary"));
 const Gstr3B = lazy(() => import("./pages/gst/Gstr3B"));
+const Gstr1 = lazy(() => import("./pages/gst/Gstr1"));
+const TaxRegister = lazy(() => import("./pages/gst/TaxRegister"));
 const HsnSummary = lazy(() => import("./pages/gst/HsnSummary"));
 const AuditLogs = lazy(() => import("./pages/admin/AuditLogs"));
 const BusinessWizard = lazy(() => import("./pages/setup/BusinessWizard"));
@@ -213,6 +215,8 @@ const App = () => (
               <Route path="/accounting/vouchers/:id" element={L(<VoucherDetail />)} />
               <Route path="/gst/summary" element={L(<GstSummary />)} />
               <Route path="/gst/gstr-3b" element={L(<Gstr3B />)} />
+              <Route path="/gst/gstr-1" element={L(<Gstr1 />)} />
+              <Route path="/gst/tax-register" element={L(<TaxRegister />)} />
               <Route path="/gst/hsn-summary" element={L(<HsnSummary />)} />
               <Route path="/admin/audit-logs" element={L(<AuditLogs />)} />
               <Route path="/settings/business-profile" element={L(<BusinessProfile />)} />
