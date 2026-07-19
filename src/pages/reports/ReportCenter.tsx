@@ -33,11 +33,12 @@ const CATALOG: { category: string; ids: string[] }[] = [
   { category: "History", ids: ["history"] },
 ];
 
-const COMING_SOON_IDS = new Set([
-  "inv-reports-dashboard", "inv-stock-summary", "inv-group-summary", "inv-category-summary",
-  "inv-warehouse-summary", "inv-stock-ageing", "inv-dead-stock", "inv-movement-register",
-  "inv-stock-valuation", "inv-abc-analysis", "inv-fsn-analysis",
-]);
+// All 11 inventory reports were previously (incorrectly) marked
+// Coming Soon based on a flawed check (looking for direct supabase.
+// calls in the page file). Re-verified: every one of them calls a real,
+// well-built RPC (get_stock_summary, get_stock_ageing, get_abc_analysis,
+// etc.) via src/lib/inventoryReports.ts. None of them are mock.
+const COMING_SOON_IDS = new Set<string>([]);
 
 export default function ReportCenter() {
   const { byId } = useNavigation();
