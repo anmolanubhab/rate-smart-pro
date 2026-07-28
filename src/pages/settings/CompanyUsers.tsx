@@ -28,13 +28,12 @@ import {
   type Invitation, type LoginControlSettings, defaultLoginControl,
 } from "@/lib/userAccess";
 
-// "operator" kept for backward compatibility with any existing rows /
-// integrations, but no longer offered in the picker — replaced by the
-// more specific "purchase" and "store_manager" roles.
-const ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant", "salesman", "purchase", "store_manager", "viewer"];
+// Mirrors the live public.business_role enum exactly — "operator" and
+// "purchase" were never valid DB values (assigning them errors on insert).
+const ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant", "salesman", "staff", "store_manager", "viewer"];
 const ROLE_LABELS: Record<BusinessRole, string> = {
   owner: "Owner", admin: "Admin", manager: "Manager", accountant: "Accountant",
-  operator: "Operator", salesman: "Sales", purchase: "Purchase", store_manager: "Store", viewer: "Viewer",
+  salesman: "Sales", staff: "Staff", store_manager: "Store", viewer: "Viewer",
 };
 
 type MemberForm = {

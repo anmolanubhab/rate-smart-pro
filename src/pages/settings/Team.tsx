@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { logAudit } from "@/lib/audit";
 
-const ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant", "operator", "viewer"];
+// Mirrors the live public.business_role enum exactly — "operator" was never
+// a valid DB value (assigning it errors on insert).
+const ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant", "salesman", "staff", "store_manager", "viewer"];
 
 const MATRIX: Array<{ key: string; label: string }> = [
   { key: "business.edit", label: "Edit business profile" },

@@ -14,8 +14,9 @@ export const RANK: Record<BusinessRole, number> = {
   admin: 80,
   manager: 60,
   accountant: 50,
-  operator: 30,
   salesman: 30,
+  staff: 30,
+  store_manager: 20,
   viewer: 10,
 };
 

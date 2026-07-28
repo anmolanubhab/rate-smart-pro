@@ -29,7 +29,7 @@ import {
   Order, OrderItem, ActivityLog,
 } from "@/lib/orders";
 import { generateInvoiceFromOrder } from "@/lib/salesInvoices";
-import { useBusiness } from "@/hooks/useBusiness";
+import { useBusiness, can } from "@/hooks/useBusiness";
 import { fetchSalesConfig } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
@@ -50,7 +50,8 @@ type SortKey = "latest" | "amount" | "pending" | "party";
 
 const Orders = () => {
   const { user } = useAuth();
-  const { business, loading: businessLoading } = useBusiness();
+  const { business, role, loading: businessLoading } = useBusiness();
+  const canApproveOrder = can(role, "order.approve");
   const nav = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,6 +175,7 @@ const Orders = () => {
 
   const onApprove = async (o: Order) => {
     if (!user || !business) return;
+    if (!canApproveOrder) { toast.error("You don't have permission to approve orders"); return; }
     setBusy(o.id);
     try {
       await setOrderStatus(o.id, "approved");
@@ -380,7 +382,7 @@ const Orders = () => {
                             <DropdownMenuItem onClick={() => nav(`/orders/edit/${o.id}?print=1`)}><Printer className="h-4 w-4 mr-2" /> Print Order</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => onDuplicate(o)}><Copy className="h-4 w-4 mr-2" /> Duplicate</DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            {o.status === "pending" && (
+                            {o.status === "pending" && canApproveOrder && (
                               <DropdownMenuItem onClick={() => onApprove(o)} className="text-violet-600">
                                 <CheckCircle2 className="h-4 w-4 mr-2" /> Approve
                               </DropdownMenuItem>

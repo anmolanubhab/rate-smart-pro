@@ -3,9 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
+// Must mirror the live public.business_role Postgres enum exactly — assigning
+// a role outside this set fails at the database with an enum error.
 export type BusinessRole =
-  | "owner" | "admin" | "manager" | "accountant" | "operator" | "salesman"
-  | "purchase" | "store_manager" | "viewer";
+  | "owner" | "admin" | "manager" | "accountant" | "salesman"
+  | "store_manager" | "staff" | "viewer";
 
 export type Business = {
   id: string;
@@ -121,12 +123,11 @@ export function useBusiness() {
 
 export const PERMS: Record<BusinessRole, string[]> = {
   owner:      ["*"],
-  admin:      ["business.edit", "team.manage", "voucher.create", "voucher.edit", "voucher.delete", "voucher.cancel", "settings.edit", "audit.view", "data.import", "data.export", "purchase.create", "purchase.approve"],
-  manager:    ["voucher.create", "voucher.edit", "voucher.cancel", "data.export", "purchase.create", "purchase.approve"],
-  accountant: ["voucher.create", "voucher.edit", "audit.view", "data.export", "purchase.create", "purchase.approve"],
-  operator:   ["voucher.create", "data.export", "purchase.create"],
+  admin:      ["business.edit", "team.manage", "voucher.create", "voucher.edit", "voucher.delete", "voucher.cancel", "settings.edit", "audit.view", "data.import", "data.export", "purchase.create", "purchase.approve", "order.approve"],
+  manager:    ["voucher.create", "voucher.edit", "voucher.cancel", "data.export", "purchase.create", "purchase.approve", "order.approve"],
+  accountant: ["voucher.create", "voucher.edit", "audit.view", "data.export", "purchase.create", "purchase.approve", "order.approve"],
   salesman:   ["voucher.create", "data.export"],
-  purchase:   ["purchase.create", "data.export"],
+  staff:      ["voucher.create", "data.export", "purchase.create"],
   store_manager: ["data.export"],
   viewer:     ["data.export"],
 };
