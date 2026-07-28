@@ -232,8 +232,72 @@ export async function postPurchaseInvoiceToLedger(
       items,
     });
     await postVoucher(userId, voucher.id);
+    await supabase.from("purchase_invoices").update({ voucher_id: voucher.id }).eq("id", invoice.id);
   } catch (e: any) {
     console.error("postPurchaseInvoiceToLedger: voucher posting failed", e.message);
+  }
+}
+
+/**
+ * For a GRN-linked purchase invoice, auto-raises a Purchase Debit Note for
+ * any qty the GRN's QC step rejected (received_qty - accepted_qty), grouped
+ * by rejection reason. The original invoice is never touched — this only
+ * calls the create_qc_debit_note RPC, which posts its own reversing voucher
+ * (Dr Supplier / Cr Purchase / Cr GST Input) and reduces products.stock_on_hold
+ * (never products.stock, since rejected qty was never made available).
+ * Idempotent: skips any GRN line that already has a QC-sourced debit note.
+ */
+export async function autoCreateQcDebitNotesForGrn(
+  businessId: string,
+  invoiceId: string,
+  grnId: string
+): Promise<void> {
+  const { data: grnItems, error: grnErr } = await supabase
+    .from("goods_receipt_items")
+    .select("id, product_id, received_qty, accepted_qty, qc_reason_category")
+    .eq("goods_receipt_id", grnId);
+  if (grnErr || !grnItems?.length) return;
+
+  const rejected = grnItems.filter((r: any) => Number(r.received_qty) - Number(r.accepted_qty) > 0.0001);
+  if (!rejected.length) return;
+
+  const { data: existing } = await supabase
+    .from("purchase_returns")
+    .select("goods_receipt_item_id")
+    .eq("source", "qc")
+    .in("goods_receipt_item_id", rejected.map((r: any) => r.id));
+  const already = new Set((existing ?? []).map((r: any) => r.goods_receipt_item_id));
+  const pending = rejected.filter((r: any) => !already.has(r.id));
+  if (!pending.length) return;
+
+  const { data: invItems, error: invErr } = await supabase
+    .from("purchase_invoice_items")
+    .select("id, product_id")
+    .eq("purchase_invoice_id", invoiceId);
+  if (invErr || !invItems) return;
+  const invItemByProduct = new Map<string, string>();
+  invItems.forEach((it: any) => { if (it.product_id) invItemByProduct.set(it.product_id, it.id); });
+
+  const byReason = new Map<string, { purchase_invoice_item_id: string; goods_receipt_item_id: string; qty: number }[]>();
+  for (const r of pending) {
+    const invItemId = invItemByProduct.get(r.product_id);
+    if (!invItemId) continue;
+    const qty = Number(r.received_qty) - Number(r.accepted_qty);
+    const reason = r.qc_reason_category || "other";
+    const list = byReason.get(reason) ?? [];
+    list.push({ purchase_invoice_item_id: invItemId, goods_receipt_item_id: r.id, qty });
+    byReason.set(reason, list);
+  }
+
+  for (const [reason, items] of byReason.entries()) {
+    const { error } = await supabase.rpc("create_qc_debit_note" as never, {
+      _business_id: businessId,
+      _purchase_invoice_id: invoiceId,
+      _goods_receipt_id: grnId,
+      _reason_category: reason,
+      _items: items,
+    } as never);
+    if (error) console.error("autoCreateQcDebitNotesForGrn: failed for reason", reason, error.message);
   }
 }
 
@@ -348,9 +412,16 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
   };
 
   if (isNew && input.createdBy) {
-    postPurchaseInvoiceToLedger(input.createdBy, data).catch((e) =>
-      console.error("Auto-post to ledger failed:", e.message)
-    );
+    // Sequenced (not fire-and-forget-in-parallel): both this call and the QC
+    // debit-note posting below write to the same business's ledger_accounts
+    // via seed_accounting_defaults/ensure_party_ledger, so they run one after
+    // another rather than racing.
+    try {
+      await postPurchaseInvoiceToLedger(input.createdBy, data);
+    } catch (e: any) {
+      console.error("Auto-post to ledger failed:", e.message);
+    }
+
     if (!data.goods_receipt_id) {
       // Direct purchase invoice (no linked GRN) — GRN already posts stock for
       // the GRN-linked path, so only post stock here when there was no GRN,
@@ -358,6 +429,16 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
       postDirectInvoiceStock(input.createdBy, businessId, data.id, data.invoice_number, validItems).catch((e) =>
         console.error("Direct-invoice stock posting failed:", e.message)
       );
+    } else {
+      // GRN-linked invoice was pre-filled with the FULL received qty (what the
+      // supplier billed). Any qty the GRN's QC step rejected (damaged/short)
+      // never became available stock — claw it back from the supplier as a
+      // Debit Note instead of touching this invoice.
+      try {
+        await autoCreateQcDebitNotesForGrn(businessId, data.id, data.goods_receipt_id);
+      } catch (e: any) {
+        console.error("QC debit-note posting failed:", e.message);
+      }
     }
   }
 
@@ -441,28 +522,35 @@ export async function fetchInvoiceItems(invoiceId: string): Promise<PurchaseInvo
   }));
 }
 
-/** Pre-fill invoice items from a received GRN (accepted quantities), joining product rate/gst. */
+/**
+ * Pre-fill invoice items from a received GRN — using the FULL received
+ * quantity (what the supplier actually billed), not just the accepted
+ * portion. QC-rejected quantity (damaged/short) is clawed back separately
+ * via an auto-generated Debit Note (see autoCreateQcDebitNotesForGrn) so the
+ * original invoice always matches the supplier's invoice exactly, per the
+ * enterprise-ERP pattern: invoice unchanged, rejections handled as claims.
+ */
 export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseInvoiceItem[]> {
   const { data, error } = await supabase
     .from("goods_receipt_items")
     .select(`
-      product_id, accepted_qty, unit_id, stock_accepted_qty,
+      product_id, received_qty, unit_id,
       product:products(part_number, name, dealer_rate, gst_pct)
     `)
     .eq("goods_receipt_id", grnId);
   if (error) throw error;
   return (data ?? [])
-    .filter((r: any) => Number(r.accepted_qty) > 0)
+    .filter((r: any) => Number(r.received_qty) > 0)
     .map((r: any) =>
       computeInvoiceItem({
         product_id: r.product_id,
         part_number: r.product?.part_number ?? "",
         description: r.product?.name ?? "",
-        qty: Number(r.accepted_qty),
+        qty: Number(r.received_qty),
         rate: Number(r.product?.dealer_rate ?? 0),
         gst_percent: Number(r.product?.gst_pct ?? 18),
         unit_id: r.unit_id ?? null,
-        stock_qty: r.stock_accepted_qty ?? null,
+        stock_qty: null,
       })
     );
 }

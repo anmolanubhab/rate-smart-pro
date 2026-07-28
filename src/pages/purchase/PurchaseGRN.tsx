@@ -29,9 +29,20 @@ interface GRNItem {
   short_qty: number;
   excess_qty: number;
   quality_remarks: string;
+  qc_reason_category: string | null;
   unit_id: string | null;
   stock_accepted_qty: number | null;
 }
+
+const QC_REASON_OPTIONS: { value: string; label: string }[] = [
+  { value: "short_supply", label: "Short Supply" },
+  { value: "damaged", label: "Damaged Material" },
+  { value: "manufacturing_defect", label: "Manufacturing Defect" },
+  { value: "expired", label: "Expired Goods" },
+  { value: "wrong_item", label: "Wrong Item Supplied" },
+  { value: "rate_difference", label: "Rate Difference" },
+  { value: "other", label: "Other" },
+];
 
 export default function PurchaseGRN() {
   const navigate = useNavigate();
@@ -179,6 +190,7 @@ export default function PurchaseGRN() {
             short_qty: 0,
             excess_qty: 0,
             quality_remarks: '',
+            qc_reason_category: null,
             unit_id: item.unit_id ?? null,
             stock_accepted_qty: pu.length ? toStockQty(remaining, item.unit_id, pu) : null,
           };
@@ -214,6 +226,12 @@ export default function PurchaseGRN() {
   const handleRemarksChange = (index: number, value: string) => {
     const updatedItems = [...items];
     updatedItems[index] = { ...updatedItems[index], quality_remarks: value };
+    setItems(updatedItems);
+  };
+
+  const handleReasonChange = (index: number, value: string) => {
+    const updatedItems = [...items];
+    updatedItems[index] = { ...updatedItems[index], qc_reason_category: value };
     setItems(updatedItems);
   };
 
@@ -265,6 +283,7 @@ export default function PurchaseGRN() {
           short_qty: item.short_qty,
           excess_qty: item.excess_qty,
           quality_remarks: item.quality_remarks || null,
+          qc_reason_category: item.qc_reason_category || null,
           unit_id: item.unit_id,
           stock_accepted_qty: item.stock_accepted_qty,
         }));
@@ -274,58 +293,12 @@ export default function PurchaseGRN() {
           .insert(grnItemsPayload);
 
         if (itemsError) throw itemsError;
-      }
 
-      // ── On "Receive Stock": bump product stock + log movement + advance PO status ──
-      if (status === 'received') {
-        for (const item of items) {
-          if (item.accepted_qty <= 0) continue;
-          // Layer C1: stock always moves in the product's STOCK unit; if this
-          // product has configured units, stock_accepted_qty already holds the
-          // converted amount. Legacy products (no units configured) fall back
-          // to accepted_qty exactly as before this migration.
-          const qtyToPost = item.stock_accepted_qty ?? item.accepted_qty;
-
-          const { data: product, error: prodErr } = await supabase
-            .from('products')
-            .select('stock')
-            .eq('id', item.product_id)
-            .single();
-          if (prodErr) { console.error('Stock lookup failed', prodErr.message); continue; }
-
-          const before = Number(product?.stock) || 0;
-          const after = before + qtyToPost;
-
-          const { error: stockErr } = await supabase
-            .from('products')
-            .update({ stock: after })
-            .eq('id', item.product_id);
-          if (stockErr) { console.error('Stock update failed', stockErr.message); continue; }
-
-          await supabase.from('inventory_movements' as any).insert({
-            user_id: user?.id ?? null,
-            business_id: businessId,
-            product_id: item.product_id,
-            movement_type: 'purchase_grn',
-            qty: qtyToPost,
-            stock_before: before,
-            stock_after: after,
-            reference_id: grn.id,
-            reference_type: 'goods_receipt',
-            notes: `GRN ${grnNumber}${selectedPO ? ' against PO' : ''}` +
-              (item.unit_id && item.stock_accepted_qty != null
-                ? ` — ${item.accepted_qty} ${unitLabel(item.unit_id)} = ${item.stock_accepted_qty} ${(() => {
-                    const su = stockUnitOf(unitsByProduct[item.product_id] ?? []);
-                    return su ? unitLabel(su.unit_id) : "";
-                  })()}`
-                : ""),
-          });
-        }
-
-        // PO status + Ordered/Received/Pending quantities are now recalculated
-        // automatically by a database trigger (trg_gri_recalc / recalc_po_quantities)
-        // the moment goods_receipt_items rows land — no client-side computation needed,
-        // and this stays correct no matter which screen or process wrote the GRN.
+        // Stock (available + on-hold), inventory_movements logging, QC status,
+        // and PO status/qty rollup are all now handled server-side by DB
+        // triggers the moment these goods_receipt_items rows land — no
+        // client-side computation needed, and it stays correct no matter
+        // which screen or process wrote the GRN.
       }
 
       toast({ title: "Success", description: `GRN created as ${status.toUpperCase()}` });
@@ -436,12 +409,13 @@ export default function PurchaseGRN() {
                 <th className="p-3 text-center">Short</th>
                 <th className="p-3 text-center">Excess</th>
                 <th className="p-3">Quality Remarks</th>
+                <th className="p-3">Reason (if damaged/short)</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
+                  <td colSpan={12} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
                 </tr>
               ) : (
                 items.map((item, idx) => (
@@ -477,6 +451,18 @@ export default function PurchaseGRN() {
                         value={item.quality_remarks}
                         onChange={(e) => handleRemarksChange(idx, e.target.value)}
                       />
+                    </td>
+                    <td className="p-3">
+                      {item.damaged_qty > 0 || item.short_qty > 0 ? (
+                        <Select value={item.qc_reason_category ?? ""} onValueChange={(v) => handleReasonChange(idx, v)}>
+                          <SelectTrigger className="w-44 text-xs"><SelectValue placeholder="Select reason" /></SelectTrigger>
+                          <SelectContent>
+                            {QC_REASON_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </td>
                   </tr>
                 ))
