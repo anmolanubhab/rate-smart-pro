@@ -21,7 +21,9 @@ import {
 } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts, fmtInr } from "@/lib/accounting";
+import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
 import {
   VOUCHER_TYPES,
   calculateTotals,
@@ -33,6 +35,7 @@ import {
   type VoucherType,
   type VoucherItem,
   type CreateVoucherInput,
+  type AdjustmentCategorySnapshot,
 } from "@/lib/voucherService";
 
 // ── empty row factory ─────────────────────────────────────────────────────────
@@ -68,6 +71,125 @@ export default function VoucherForm() {
   const [posting, setPosting] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
+  // ── Financial Adjustment mode (Debit Note / Credit Note only) ───────────
+  const isNoteType = vType === "Debit Note" || vType === "Credit Note";
+  const [adjustmentCategoryId, setAdjustmentCategoryId] = useState<string>("");
+  const [linkedInvoiceId, setLinkedInvoiceId] = useState<string>("");
+  const [gstBaseAmount, setGstBaseAmount] = useState<string>("");
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ["note-adjustment-categories-active", business?.id],
+    enabled: !!business?.id && isNoteType,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("note_adjustment_categories" as any)
+        .select("*")
+        .eq("business_id", business!.id)
+        .eq("is_active", true)
+        .eq("is_deleted", false)
+        .order("display_order");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
+  const { data: noteSettings } = useQuery({
+    queryKey: ["financial-note-settings", business?.id],
+    enabled: !!business?.id && isNoteType,
+    queryFn: () => fetchFinancialNoteSettings(business!.id),
+  });
+
+  const { data: linkableInvoices = [] } = useQuery({
+    queryKey: ["linkable-invoices", vType, business?.id],
+    enabled: !!business?.id && isNoteType,
+    queryFn: async () => {
+      if (vType === "Credit Note") {
+        const { data, error } = await supabase
+          .from("sales_invoices").select("id, invoice_number, party_id")
+          .eq("business_id", business!.id).eq("status", "posted")
+          .order("invoice_date", { ascending: false }).limit(200);
+        if (error) throw error;
+        return (data ?? []) as any[];
+      }
+      const { data, error } = await supabase
+        .from("purchase_invoices").select("id, invoice_number, supplier_id")
+        .eq("business_id", business!.id)
+        .order("invoice_date", { ascending: false }).limit(200);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
+  const selectedCategory = categories.find((c) => c.id === adjustmentCategoryId);
+
+  // Precedence: auto_lock (business) always wins; auto_suggest defers to the
+  // category's allow_ledger_override; manual never locks. A role/permission
+  // check (canOverrideAdjustmentLedger) is added on top of this in Phase 8 —
+  // until then this reflects business setting + category flag only.
+  const ledgerMode = noteSettings?.financial_note_ledger_mode ?? "auto_suggest";
+  const ledgerLocked =
+    !!selectedCategory &&
+    ledgerMode !== "manual" &&
+    (ledgerMode === "auto_lock" || !selectedCategory.allow_ledger_override);
+
+  const gstMode = noteSettings?.financial_note_gst_mode ?? "manual_only";
+  const canAutoGst = !!selectedCategory?.gst_applicable && gstMode !== "manual_only" && !!linkedInvoiceId;
+
+  const findLedgerId = (name: string) => ledgers.find((l) => l.name === name)?.id ?? "";
+
+  const onCategoryChange = (id: string) => {
+    setAdjustmentCategoryId(id);
+    const cat = categories.find((c) => c.id === id);
+    if (!cat) return;
+    const defaultLedgerId = vType === "Debit Note" ? cat.debit_default_ledger_id : cat.credit_default_ledger_id;
+    setItems((prev) => {
+      const next = [...prev];
+      if (defaultLedgerId) next[0] = { ...next[0], ledger_account_id: defaultLedgerId };
+      return next;
+    });
+    if (!narration.trim() && cat.default_narration) setNarration(cat.default_narration);
+  };
+
+  const calculateGstFromInvoice = async () => {
+    if (!business || !linkedInvoiceId || !selectedCategory) return;
+    const base = Number(gstBaseAmount) || 0;
+    if (base <= 0) { toast.error("Enter a base amount to calculate GST on"); return; }
+    const rate = Number(selectedCategory.default_gst_rate) || 0;
+    if (rate <= 0) { toast.error("This category has no default GST rate configured"); return; }
+    const gstAmount = Math.round(base * rate) / 100;
+
+    try {
+      if (vType === "Credit Note") {
+        const invoice = linkableInvoices.find((i: any) => i.id === linkedInvoiceId);
+        const [{ data: biz }, { data: party }] = await Promise.all([
+          supabase.from("businesses").select("gst_number").eq("id", business.id).single(),
+          supabase.from("parties").select("gst").eq("id", (invoice as any)?.party_id).maybeSingle(),
+        ]);
+        const { data: split, error } = await supabase.rpc("gst_split_amounts" as never, {
+          _seller_gstin: biz?.gst_number ?? null,
+          _buyer_gstin: party?.gst ?? null,
+          _gst_total: gstAmount,
+        } as never);
+        if (error) throw error;
+        const row: any = Array.isArray(split) ? split[0] : split;
+        const newRows: VoucherItem[] = row.is_interstate
+          ? [{ ledger_account_id: findLedgerId("IGST Output"), debit: 0, credit: Number(row.igst), remarks: "GST (auto)" }]
+          : [
+              { ledger_account_id: findLedgerId("CGST Output"), debit: 0, credit: Number(row.cgst), remarks: "GST (auto)" },
+              { ledger_account_id: findLedgerId("SGST Output"), debit: 0, credit: Number(row.sgst), remarks: "GST (auto)" },
+            ];
+        setItems((prev) => [...prev, ...newRows]);
+      } else {
+        // Mirrors create_purchase_return's convention: a single flat GST
+        // Input ledger, no CGST/SGST/IGST split.
+        setItems((prev) => [...prev, { ledger_account_id: findLedgerId("GST Input"), debit: 0, credit: gstAmount, remarks: "GST (auto)" }]);
+      }
+      toast.success("GST row(s) added — review before posting");
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not calculate GST");
+    }
+  };
+
   // ── load existing voucher (edit mode) ───────────────────────────────────
   const { data: existingVoucher, isLoading: loadingVoucher } = useQuery({
     queryKey: ["voucher-detail", id],
@@ -82,6 +204,10 @@ export default function VoucherForm() {
       setNarration(existingVoucher.narration ?? "");
       if (existingVoucher.items && existingVoucher.items.length > 0) {
         setItems(existingVoucher.items);
+      }
+      if (existingVoucher.adjustment_category_id) setAdjustmentCategoryId(existingVoucher.adjustment_category_id);
+      if (existingVoucher.reference_id && existingVoucher.note_mode === "financial_adjustment") {
+        setLinkedInvoiceId(existingVoucher.reference_id);
       }
     }
   }, [existingVoucher]);
@@ -134,6 +260,20 @@ export default function VoucherForm() {
     voucher_date: vDate,
     narration: narration.trim() || undefined,
     items,
+    ...(isNoteType && {
+      note_mode: "financial_adjustment",
+      adjustment_category_id: adjustmentCategoryId || null,
+      adjustment_category_snapshot: selectedCategory
+        ? ({
+            category_name: selectedCategory.category_name,
+            debit_ledger_name: ledgers.find((l) => l.id === selectedCategory.debit_default_ledger_id)?.name ?? null,
+            credit_ledger_name: ledgers.find((l) => l.id === selectedCategory.credit_default_ledger_id)?.name ?? null,
+            default_narration: selectedCategory.default_narration ?? null,
+          } as AdjustmentCategorySnapshot)
+        : null,
+      reference_type: linkedInvoiceId ? (vType === "Credit Note" ? "sales_invoice" : "purchase_invoice") : undefined,
+      reference_id: linkedInvoiceId || undefined,
+    }),
   });
 
   // ── save draft ───────────────────────────────────────────────────────────
@@ -325,6 +465,63 @@ export default function VoucherForm() {
         </div>
       </div>
 
+      {/* Financial Adjustment fields — Debit Note / Credit Note only */}
+      {isNoteType && (
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              Financial Adjustment
+            </h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Categories are managed in Settings → Financial Note Categories. For a physical goods
+              return, use {vType === "Credit Note" ? "Sales Returns" : "Purchase Returns"} instead.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Adjustment Category</Label>
+              <Select value={adjustmentCategoryId} onValueChange={onCategoryChange}>
+                <SelectTrigger><SelectValue placeholder="Select category…" /></SelectTrigger>
+                <SelectContent>
+                  {categories.map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>{c.category_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {ledgerLocked && (
+                <p className="text-xs text-amber-600">Ledger is locked by this category/policy — the first row below can't be changed.</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Link Invoice (optional)</Label>
+              <Select value={linkedInvoiceId || "__none"} onValueChange={(v) => setLinkedInvoiceId(v === "__none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">None</SelectItem>
+                  {linkableInvoices.map((i: any) => (
+                    <SelectItem key={i.id} value={i.id}>{i.invoice_number}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {canAutoGst && (
+            <div className="flex flex-col sm:flex-row gap-3 items-end rounded-lg border border-dashed p-3">
+              <div className="flex-1 space-y-1.5">
+                <Label className="text-xs">Base Amount (for GST calc)</Label>
+                <Input type="number" min="0" step="0.01" value={gstBaseAmount} onChange={(e) => setGstBaseAmount(e.target.value)} placeholder="0.00" />
+              </div>
+              <Button type="button" variant="outline" onClick={calculateGstFromInvoice}>
+                Calculate GST from Invoice
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Double-entry table */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
@@ -355,6 +552,7 @@ export default function VoucherForm() {
                     <Select
                       value={row.ledger_account_id}
                       onValueChange={(v) => updateRow(idx, { ledger_account_id: v })}
+                      disabled={idx === 0 && ledgerLocked}
                     >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue placeholder={ledgersLoading ? "Loading ledgers…" : "Select ledger…"} />

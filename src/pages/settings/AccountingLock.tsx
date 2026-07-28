@@ -8,8 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { fetchLockDate, setLockDate } from "@/lib/accountingLock";
+import {
+  fetchLockDate, setLockDate, fetchFinancialNoteSettings, setFinancialNoteSettings,
+  type FinancialNoteGstMode, type FinancialNoteLedgerMode,
+} from "@/lib/accountingLock";
 import { logAudit } from "@/lib/audit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function AccountingLock() {
   const { user } = useAuth();
@@ -31,6 +35,23 @@ export default function AccountingLock() {
   }, [lock?.lock_date]);
 
   const tableMissing = error && /Could not find the table|PGRST205/i.test((error as any).message ?? "");
+
+  const { data: noteSettings } = useQuery({
+    queryKey: ["financial-note-settings", business?.id],
+    enabled: !!business?.id,
+    queryFn: () => fetchFinancialNoteSettings(business!.id),
+  });
+
+  const updateNoteSetting = async (patch: { financial_note_gst_mode?: FinancialNoteGstMode; financial_note_ledger_mode?: FinancialNoteLedgerMode }) => {
+    if (!business?.id) return;
+    try {
+      await setFinancialNoteSettings(business.id, patch);
+      await logAudit({ business_id: business.id, action: "FINANCIAL_NOTE_SETTINGS_UPDATE", entity_type: "accounting_settings", new_value: patch });
+      qc.invalidateQueries({ queryKey: ["financial-note-settings", business.id] });
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
 
   const applyLock = async () => {
     if (!business?.id || !user?.id || !draftDate) return;
@@ -120,6 +141,52 @@ export default function AccountingLock() {
               You don't have permission to change the accounting lock. Contact an admin.
             </p>
           )}
+        </section>
+      )}
+
+      {!tableMissing && (
+        <section className="rounded-2xl bg-card border p-6 space-y-5">
+          <div>
+            <h2 className="font-semibold text-sm">Financial Adjustment Note Settings</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Governs the Financial Adjustment mode on Debit &amp; Credit Notes — see Settings → Financial Note Categories
+              for the category-to-ledger mappings these modes apply to.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">GST Calculation</Label>
+              <Select
+                disabled={!editable}
+                value={noteSettings?.financial_note_gst_mode ?? "manual_only"}
+                onValueChange={(v) => updateNoteSetting({ financial_note_gst_mode: v as FinancialNoteGstMode })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual_only">Manual only</SelectItem>
+                  <SelectItem value="auto_default_editable">Auto-calculate (editable)</SelectItem>
+                  <SelectItem value="auto_locked">Auto-calculate (locked)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Ledger Selection</Label>
+              <Select
+                disabled={!editable}
+                value={noteSettings?.financial_note_ledger_mode ?? "auto_suggest"}
+                onValueChange={(v) => updateNoteSetting({ financial_note_ledger_mode: v as FinancialNoteLedgerMode })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual">Manual selection</SelectItem>
+                  <SelectItem value="auto_suggest">Auto-suggest (editable)</SelectItem>
+                  <SelectItem value="auto_lock">Auto-lock</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </section>
       )}
     </div>

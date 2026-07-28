@@ -901,6 +901,15 @@ export const NAV_ITEMS: NavItem[] = [
     perm: "settings.edit",
   },
   {
+    id: "financial-note-categories",
+    title: "Financial Note Categories",
+    description: "Debit/Credit Note adjustment categories and default ledgers",
+    route: "/settings/financial-note-categories",
+    icon: Tags,
+    module: "Administration",
+    perm: "settings.edit",
+  },
+  {
     id: "accounting-lock",
     title: "Accounting Lock",
     description: "Lock accounting periods from further edits",

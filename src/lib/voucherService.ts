@@ -41,6 +41,18 @@ export interface VoucherItem {
   remarks: string;
 }
 
+/** Point-in-time copy of the category as it was when a Financial Adjustment
+ *  note was posted, so a later rename/edit in Settings never changes what an
+ *  already-posted voucher displays. */
+export interface AdjustmentCategorySnapshot {
+  category_name: string;
+  debit_ledger_name?: string | null;
+  credit_ledger_name?: string | null;
+  default_narration?: string | null;
+}
+
+export type NoteMode = "financial_adjustment" | "material_return";
+
 export interface Voucher {
   id: string;
   business_id: string;
@@ -57,6 +69,10 @@ export interface Voucher {
   created_at: string;
   updated_at: string;
   items?: VoucherItem[];
+  // Debit/Credit Note mode discriminator — null for every other voucher type.
+  note_mode?: NoteMode | null;
+  adjustment_category_id?: string | null;
+  adjustment_category_snapshot?: AdjustmentCategorySnapshot | null;
   // computed
   total_debit?: number;
   total_credit?: number;
@@ -69,6 +85,9 @@ export interface CreateVoucherInput {
   reference_type?: string;
   reference_id?: string;
   items: VoucherItem[];
+  note_mode?: NoteMode;
+  adjustment_category_id?: string | null;
+  adjustment_category_snapshot?: AdjustmentCategorySnapshot | null;
 }
 
 export interface UpdateVoucherInput extends Partial<CreateVoucherInput> {
@@ -257,6 +276,9 @@ export async function createVoucher(
       reference_id: input.reference_id ?? null,
       total_amount: totalDebit,
       status: "draft",
+      note_mode: input.note_mode ?? null,
+      adjustment_category_id: input.adjustment_category_id ?? null,
+      adjustment_category_snapshot: input.adjustment_category_snapshot ?? null,
     })
     .select("*")
     .single();
@@ -302,6 +324,9 @@ export async function updateVoucher(
   if (input.voucher_type) patch.voucher_type = typeToDb(input.voucher_type);
   if (input.voucher_date) patch.voucher_date = input.voucher_date;
   if (input.narration !== undefined) patch.narration = input.narration;
+  if (input.note_mode !== undefined) patch.note_mode = input.note_mode;
+  if (input.adjustment_category_id !== undefined) patch.adjustment_category_id = input.adjustment_category_id;
+  if (input.adjustment_category_snapshot !== undefined) patch.adjustment_category_snapshot = input.adjustment_category_snapshot;
   if (input.items) {
     patch.total_amount = input.items.reduce(
       (s, it) => s + (Number(it.debit) || 0),
@@ -552,6 +577,9 @@ function _mapVoucher(row: any, items: VoucherItem[]): Voucher {
     created_at: row.created_at,
     updated_at: row.updated_at,
     items,
+    note_mode: (row.note_mode as NoteMode) ?? null,
+    adjustment_category_id: row.adjustment_category_id ?? null,
+    adjustment_category_snapshot: row.adjustment_category_snapshot ?? null,
     total_debit: totals.totalDebit || Number(row.total_amount) || 0,
     total_credit: totals.totalCredit || Number(row.total_amount) || 0,
   };

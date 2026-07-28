@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useBusiness } from "@/hooks/useBusiness";
 import {
   Building2, Users, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight, ShieldAlert, Ruler,
+  ChevronRight, ShieldAlert, Ruler, Tags,
 } from "lucide-react";
 
 const items = [
@@ -29,6 +29,18 @@ const items = [
     icon: Hash,
     title: "Voucher Numbering",
     desc: "Set prefix and starting number for orders, invoices, dispatches, vouchers",
+  },
+  {
+    to: "/settings/financial-note-categories",
+    icon: Tags,
+    title: "Financial Note Categories",
+    desc: "Freight, Discount, Commission and other Debit/Credit Note adjustment categories",
+  },
+  {
+    to: "/settings/accounting-lock",
+    icon: ShieldAlert,
+    title: "Accounting Lock",
+    desc: "Lock a date to prevent edits before it, and configure Financial Adjustment note defaults",
   },
   {
     to: "/settings/team",

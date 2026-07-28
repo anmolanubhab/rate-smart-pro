@@ -61,6 +61,7 @@ const CompanyUsers = lazy(() => import("./pages/settings/CompanyUsers"));
 const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
 const MeasurementUnits = lazy(() => import("./pages/settings/MeasurementUnits"));
 const AccountingLock = lazy(() => import("./pages/settings/AccountingLock"));
+const FinancialNoteCategories = lazy(() => import("./pages/settings/FinancialNoteCategories"));
 const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
@@ -227,6 +228,7 @@ const App = () => (
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="/settings/measurement-units" element={L(<MeasurementUnits />)} />
               <Route path="/settings/accounting-lock" element={L(<AccountingLock />)} />
+              <Route path="/settings/financial-note-categories" element={L(<FinancialNoteCategories />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
               <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />

@@ -55,3 +55,46 @@ export function isDateLocked(voucherDate: string, lock: AccountingLock | null): 
   if (!lock?.lock_date) return false;
   return voucherDate <= lock.lock_date;
 }
+
+// ── Financial Adjustment note settings ──────────────────────────────────────
+// Same accounting_settings row as the lock date above (one row per business),
+// so these share the isMissingTable guard and upsert shape rather than
+// duplicating a second fetch/set pair against a new table.
+
+export type FinancialNoteGstMode = "manual_only" | "auto_default_editable" | "auto_locked";
+export type FinancialNoteLedgerMode = "manual" | "auto_suggest" | "auto_lock";
+
+export interface FinancialNoteSettings {
+  business_id: string;
+  financial_note_gst_mode: FinancialNoteGstMode;
+  financial_note_ledger_mode: FinancialNoteLedgerMode;
+}
+
+export async function fetchFinancialNoteSettings(businessId: string): Promise<FinancialNoteSettings | null> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("business_id, financial_note_gst_mode, financial_note_ledger_mode")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data as unknown as FinancialNoteSettings) ?? null;
+}
+
+export async function setFinancialNoteSettings(
+  businessId: string,
+  patch: Partial<Pick<FinancialNoteSettings, "financial_note_gst_mode" | "financial_note_ledger_mode">>
+): Promise<void> {
+  const { error } = await supabase.from("accounting_settings" as any).upsert({
+    business_id: businessId,
+    ...patch,
+  });
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("Financial Adjustment settings aren't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
+  }
+}
