@@ -142,6 +142,15 @@ export const NAV_ITEMS: NavItem[] = [
   // SALES
   // ==========================================================================
   {
+    id: "sales-quotations",
+    title: "Quotations",
+    description: "Send price quotes to customers before they commit to a Sales Order",
+    route: "/sales/quotations",
+    icon: PlusSquare,
+    module: "Sales",
+    keywords: ["quote", "estimate", "proforma"],
+  },
+  {
     id: "orders-new",
     title: "Create Order",
     description: "Start a new sales order",
@@ -303,6 +312,14 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Purchase Returns",
     description: "Return goods to a supplier",
     route: "/purchase/returns",
+    icon: Repeat,
+    module: "Purchase",
+  },
+  {
+    id: "vendor-claim-register",
+    title: "Vendor Claim Register",
+    description: "All debit notes — manual returns and QC rejections — by supplier",
+    route: "/purchase/vendor-claims",
     icon: Repeat,
     module: "Purchase",
   },

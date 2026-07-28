@@ -67,6 +67,7 @@ const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 const ReceivePayment = lazy(() => import("./pages/sales/ReceivePayment"));
 const PickingList = lazy(() => import("./pages/sales/PickingList"));
+const Quotations = lazy(() => import("./pages/sales/Quotations"));
 const SalesReturns = lazy(() => import("./pages/sales/SalesReturns"));
 const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
@@ -85,6 +86,7 @@ const CreatePurchaseOrder = lazy(() => import("./pages/purchase/CreatePurchaseOr
 
 // Phase 3 — Purchase mock screens
 const PurchaseReturns = lazy(() => import("./pages/purchase/PurchaseReturns"));
+const VendorClaimRegister = lazy(() => import("./pages/purchase/VendorClaimRegister"));
 const PurchaseApprovals = lazy(() => import("./pages/purchase/PurchaseApprovals"));
 const SupplierLedger = lazy(() => import("./pages/purchase/SupplierLedger"));
 
@@ -230,6 +232,7 @@ const App = () => (
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/sales/receive-payment" element={L(<ReceivePayment />)} />
               <Route path="/sales/picking-list" element={L(<PickingList />)} />
+              <Route path="/sales/quotations" element={L(<Quotations />)} />
               <Route path="/sales/returns" element={L(<SalesReturns />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
@@ -242,6 +245,7 @@ const App = () => (
               <Route path="/purchase/reports" element={L(<PurchaseReports />)} />
               {/* Phase 3 — Purchase mocks */}
               <Route path="/purchase/returns" element={L(<PurchaseReturns />)} />
+              <Route path="/purchase/vendor-claims" element={L(<VendorClaimRegister />)} />
               <Route path="/purchase/approvals" element={L(<PurchaseApprovals />)} />
               <Route path="/purchase/supplier-ledger" element={L(<SupplierLedger />)} />
               {/* Phase 4 — Inventory mocks */}

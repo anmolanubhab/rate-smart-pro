@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { WorkflowPreset, InvoiceTiming } from "@/lib/salesWorkflow";
 
 export type SalesConfig = {
   id?: string;
@@ -17,6 +18,15 @@ export type SalesConfig = {
   enable_partial_dispatch: boolean;
   enable_invoice_approval: boolean;
   stock_reduction_point: "dispatch" | "invoice";
+  // Sales Workflow Engine (Step A foundation) — see src/lib/salesWorkflow.ts
+  workflow_preset: WorkflowPreset;
+  enable_lead: boolean;
+  enable_quotation: boolean;
+  enable_picking: boolean;
+  enable_packing: boolean;
+  invoice_timing: InvoiceTiming;
+  payment_required_before_closing: boolean;
+  enable_closing: boolean;
 };
 
 export const DEFAULT_SALES_CONFIG: Omit<SalesConfig, "business_id" | "id"> = {
@@ -34,6 +44,14 @@ export const DEFAULT_SALES_CONFIG: Omit<SalesConfig, "business_id" | "id"> = {
   enable_partial_dispatch: true,
   enable_invoice_approval: false,
   stock_reduction_point: "dispatch",
+  workflow_preset: "advanced",
+  enable_lead: false,
+  enable_quotation: true,
+  enable_picking: true,
+  enable_packing: true,
+  invoice_timing: "after_dispatch",
+  payment_required_before_closing: true,
+  enable_closing: true,
 };
 
 export async function fetchSalesConfig(businessId: string): Promise<SalesConfig> {
