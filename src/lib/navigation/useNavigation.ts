@@ -16,6 +16,23 @@ import type { NavItem, NavItemWithPath } from "./types";
 import { scoreItem } from "./fuzzy";
 import { useBusiness, can } from "@/hooks/useBusiness";
 
+// Explicit sidebar module sequence — business workflow order (transactional
+// modules first, then compliance/analytics, then admin/settings last). Any
+// module not listed here falls back to first-seen position, appended after
+// the ones that are, so a new module never silently disappears.
+const MODULE_ORDER = [
+  "Dashboard",
+  "Sales",
+  "Purchase",
+  "Inventory",
+  "Accounts",
+  "GST",
+  "Reports",
+  "Administration",
+  "Configuration",
+  "Settings",
+];
+
 export interface NavModuleGroup {
   module: string;
   /** Top-level items in this module (no parentId) */
@@ -58,12 +75,17 @@ export function useNavigation() {
 
     const childrenOf = buildChildrenMap(visibleItems);
 
-    // Module order follows first-seen order in the registry so it stays
-    // predictable without needing a manually maintained order list.
-    const moduleOrder: string[] = [];
+    // Module order follows MODULE_ORDER above; any module not listed there
+    // (shouldn't normally happen) falls back to first-seen registry position,
+    // appended after the known ones.
+    const seenModules: string[] = [];
     for (const item of visibleItems) {
-      if (!moduleOrder.includes(item.module)) moduleOrder.push(item.module);
+      if (!seenModules.includes(item.module)) seenModules.push(item.module);
     }
+    const moduleOrder = [
+      ...MODULE_ORDER.filter((m) => seenModules.includes(m)),
+      ...seenModules.filter((m) => !MODULE_ORDER.includes(m)),
+    ];
 
     const tree: NavModuleGroup[] = moduleOrder.map((module) => ({
       module,

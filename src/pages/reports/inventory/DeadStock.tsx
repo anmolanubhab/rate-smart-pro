@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchDeadStock, DeadStockRow, fmtInr, fmtQty } from "@/lib/inventoryReports";
 import { exportSheet } from "@/lib/excelTemplates";
+import { useFormatDate } from "@/lib/dateFormat";
 
 export default function DeadStock() {
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const [days, setDays] = useState(180);
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().slice(0, 10));
   const [rows, setRows] = useState<DeadStockRow[]>([]);
@@ -100,7 +102,7 @@ export default function DeadStock() {
                   <td className="px-4 py-2.5 capitalize">{r.category||"—"}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{fmtQty(r.closing_qty)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-amber-600 font-semibold">{fmtInr(r.closing_value)}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{r.last_movement_date ? new Date(r.last_movement_date).toLocaleDateString("en-IN") : <span className="text-destructive">Never moved</span>}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{r.last_movement_date ? fd(r.last_movement_date) : <span className="text-destructive">Never moved</span>}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">
                     <span className={r.days_idle > 365 ? "text-destructive font-bold" : r.days_idle > 180 ? "text-rose-600 font-semibold" : "text-amber-600"}>
                       {r.days_idle}

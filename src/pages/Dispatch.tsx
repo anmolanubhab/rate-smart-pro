@@ -29,6 +29,7 @@ import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/sales
 import { supabase } from "@/integrations/supabase/client";
 import DeliveryChallanPrint from "@/components/DeliveryChallanPrint";
 import { fetchUnits, type Unit as MeasureUnit } from "@/lib/units";
+import { useFormatDate } from "@/lib/dateFormat";
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
 function DispatchStatusBadge({ status }: { status: DispatchStatus }) {
@@ -44,6 +45,7 @@ function DispatchStatusBadge({ status }: { status: DispatchStatus }) {
 const Dispatch = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderId, setOrderId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
@@ -520,7 +522,7 @@ const Dispatch = () => {
                   {recent.slice(0, 30).map((d) => (
                     <tr key={d.id} className="border-t border-border">
                       <td className="px-3 py-1.5 font-mono text-xs">{d.dispatch_number}</td>
-                      <td className="px-3 py-1.5">{d.dispatch_date}</td>
+                      <td className="px-3 py-1.5">{fd(d.dispatch_date)}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">{d.orders?.order_number}</td>
                       <td className="px-3 py-1.5">{d.orders?.party_name}</td>
                       <td className="px-3 py-1.5">

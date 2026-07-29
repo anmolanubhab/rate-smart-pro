@@ -86,6 +86,7 @@ export type Database = {
       accounting_settings: {
         Row: {
           business_id: string
+          date_format: string
           financial_note_gst_mode: string
           financial_note_ledger_mode: string
           lock_date: string | null
@@ -95,6 +96,7 @@ export type Database = {
         }
         Insert: {
           business_id: string
+          date_format?: string
           financial_note_gst_mode?: string
           financial_note_ledger_mode?: string
           lock_date?: string | null
@@ -104,6 +106,7 @@ export type Database = {
         }
         Update: {
           business_id?: string
+          date_format?: string
           financial_note_gst_mode?: string
           financial_note_ledger_mode?: string
           lock_date?: string | null

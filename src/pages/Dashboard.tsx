@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const InventoryWidgets = lazy(() => import("@/components/InventoryWidgets"));
 const ErpDashboardCards = lazy(() => import("@/components/ErpDashboardCards"));
@@ -49,6 +50,7 @@ const Dashboard = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
   const businessId = business?.id ?? null;
+  const fd = useFormatDate();
 
   // --- Display name state ---
   const [displayName, setDisplayName] = useState("");
@@ -350,7 +352,7 @@ const Dashboard = () => {
                     <div className="text-xs text-muted-foreground">
                       {c.mode === "CD"
                         ? `${c.bill_discount}% + ${fmtPct(c.cd_discount)}% (CD)`
-                        : `${c.bill_discount}% → ${c.required_discount}%`}{" "}• {new Date(c.created_at).toLocaleDateString()}
+                        : `${c.bill_discount}% → ${c.required_discount}%`}{" "}• {fd(c.created_at)}
                       {c.invoice_number && <> • {c.invoice_number}</>}
                     </div>
                   </div>

@@ -11,6 +11,7 @@ import {
   fmtInr, fmtQty, fyStart, getMovementLabel,
 } from "@/lib/inventoryReports";
 import { exportSheet } from "@/lib/excelTemplates";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const MOVEMENT_TYPES = [
   "initial","purchase_grn","purchase","dispatch","sales_invoice",
@@ -19,6 +20,7 @@ const MOVEMENT_TYPES = [
 
 export default function MovementRegister() {
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const bId = business?.id;
 
   const [fromDate, setFromDate] = useState(fyStart());
@@ -172,7 +174,7 @@ export default function MovementRegister() {
                 return (
                   <tr key={i} className="border-t border-border hover:bg-muted/20">
                     <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground text-xs">
-                      {new Date(r.movement_date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"2-digit"})}
+                      {fd(r.movement_date)}
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="font-medium">{r.product_name}</div>

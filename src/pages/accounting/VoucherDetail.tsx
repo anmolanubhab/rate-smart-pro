@@ -19,6 +19,7 @@ import {
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { fmtInr } from "@/lib/accounting";
+import { useFormatDate } from "@/lib/dateFormat";
 import {
   getVoucher, postVoucher, deleteVoucher,
   calculateTotals,
@@ -50,6 +51,7 @@ export default function VoucherDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const fd = useFormatDate();
   const qc = useQueryClient();
 
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -225,7 +227,7 @@ export default function VoucherDetail() {
           <div className="px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-4 border-b border-border text-sm">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wider">Date</p>
-              <p className="font-semibold mt-0.5">{voucher.voucher_date}</p>
+              <p className="font-semibold mt-0.5">{fd(voucher.voucher_date)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wider">Type</p>

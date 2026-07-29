@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { exportSheet } from "@/lib/excelTemplates";
 import InvoiceReturnDialog, { type ReturnKind } from "@/components/returns/InvoiceReturnDialog";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -58,6 +59,7 @@ interface Props {
 
 export default function ReturnsListPanel({ kind, hideHeader }: Props) {
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const copy = COPY[kind];
   const [rows, setRows] = useState<ReturnRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,7 +126,7 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
             ) : rows.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-mono text-sm">{r.return_number}</TableCell>
-                <TableCell>{r.return_date}</TableCell>
+                <TableCell>{fd(r.return_date)}</TableCell>
                 <TableCell>{r.parties?.name ?? "—"}</TableCell>
                 <TableCell className="font-mono text-xs">{r.invoice?.invoice_number ?? "—"}</TableCell>
                 <TableCell className="text-right font-semibold">{inr(r.total_amount)}</TableCell>

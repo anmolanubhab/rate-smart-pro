@@ -32,6 +32,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fmtInr } from "@/lib/accounting";
+import { useFormatDate } from "@/lib/dateFormat";
 
 // ── tone helpers ──────────────────────────────────────────────────────────────
 
@@ -83,6 +84,7 @@ export default function VoucherList() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const qc = useQueryClient();
 
   useEffect(() => { document.title = "Vouchers — RD Pro"; }, []);
@@ -316,7 +318,7 @@ export default function VoucherList() {
                         {v.voucher_no}
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
-                        {v.voucher_date}
+                        {fd(v.voucher_date)}
                       </td>
                       <td className="px-4 py-2.5">
                         <Badge variant="outline" className={typeTone[v.voucher_type] ?? ""}>

@@ -5,11 +5,13 @@ import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { useFormatDate } from "@/lib/dateFormat";
 
 export default function Payables() {
   useEffect(() => { document.title = "Outstanding Payables — RD Pro"; }, []);
   const { user } = useAuth();
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const navigate = useNavigate();
   const { data: ledgers = [], isLoading } = useQuery({
     queryKey: ["payables", user?.id, business?.id],
@@ -47,7 +49,7 @@ export default function Payables() {
         { label: "Total Payable", value: `₹ ${fmtInr(total)}`, tone: "warning" },
         { label: "Suppliers", value: rows.length },
         { label: "Supplier Ledgers", value: ledgers.filter(l => l.ledger_type === "supplier").length },
-        { label: "As On", value: new Date().toLocaleDateString("en-IN") },
+        { label: "As On", value: fd(new Date().toISOString().slice(0, 10)) },
       ]}
       columns={[
         { key: "supplier", label: "Supplier" },

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { generateInvoicePdf, shareOnWhatsApp } from "@/lib/invoice";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type Calc = {
   id: string;
@@ -27,6 +28,7 @@ const fmt = (n: number) => new Intl.NumberFormat("en-IN", { maximumFractionDigit
 
 const History = () => {
   const { user } = useAuth();
+  const fd = useFormatDate();
   const [calcs, setCalcs] = useState<Calc[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -138,7 +140,7 @@ const History = () => {
                 return (
                   <TableRow key={c.id} className="transition-smooth">
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                      {new Date(c.created_at).toLocaleDateString()}
+                      {fd(c.created_at)}
                     </TableCell>
                     <TableCell className="text-sm">{c.party_name || <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell className="text-sm">{c.invoice_number || <span className="text-muted-foreground">—</span>}</TableCell>

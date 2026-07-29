@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type Invoice = {
   id: string;
@@ -27,6 +28,7 @@ function daysOverdue(invoiceDate: string) {
 
 export default function DealerOutstanding() {
   const { portalUser } = useDealerAuth();
+  const fd = useFormatDate();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [creditLimit, setCreditLimit] = useState(0);
   const [outstanding, setOutstanding] = useState(0);
@@ -112,7 +114,7 @@ export default function DealerOutstanding() {
                   return (
                     <TableRow key={i.id}>
                       <TableCell className="font-mono text-sm">{i.invoice_number}</TableCell>
-                      <TableCell>{i.invoice_date}</TableCell>
+                      <TableCell>{fd(i.invoice_date)}</TableCell>
                       <TableCell className="text-right font-semibold">{inr(i.grand_total)}</TableCell>
                       <TableCell>
                         {od > 0 ? <Badge variant="destructive">Overdue {od}d</Badge> : <Badge variant="secondary">{i.status}</Badge>}

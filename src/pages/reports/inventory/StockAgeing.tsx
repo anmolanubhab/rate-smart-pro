@@ -11,6 +11,7 @@ import {
   AgeingRow, fmtInr, fmtQty,
 } from "@/lib/inventoryReports";
 import { exportSheet } from "@/lib/excelTemplates";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const BUCKET_LABELS = ["0-30 Days","31-60 Days","61-90 Days","91-180 Days","181-365 Days","365+ Days","Never Moved"];
 const BUCKET_COLORS: Record<string, string> = {
@@ -25,6 +26,7 @@ const BUCKET_COLORS: Record<string, string> = {
 
 export default function StockAgeing() {
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().slice(0, 10));
   const [warehouse, setWarehouse] = useState("");
   const [brand, setBrand] = useState("");
@@ -151,7 +153,7 @@ export default function StockAgeing() {
                   <td className="px-3 py-2.5 text-xs capitalize">{r.category||"—"}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{fmtQty(r.closing_qty)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{fmtInr(r.closing_value)}</td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.last_movement_date ? new Date(r.last_movement_date).toLocaleDateString("en-IN") : "Never"}</td>
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.last_movement_date ? fd(r.last_movement_date) : "Never"}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{r.days_since_movement ?? "—"}</td>
                   <td className="px-3 py-2.5">
                     <Badge variant="outline" className={`text-xs ${BUCKET_COLORS[r.ageing_bucket] ?? ""}`}>{r.ageing_bucket}</Badge>

@@ -33,6 +33,7 @@ import { useBusiness, can } from "@/hooks/useBusiness";
 import { fetchSalesConfig } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const statusColor: Record<string, string> = {
   draft: "border-muted-foreground/30 text-muted-foreground bg-muted/40",
@@ -52,6 +53,7 @@ const Orders = () => {
   const { user } = useAuth();
   const { business, role, loading: businessLoading } = useBusiness();
   const canApproveOrder = can(role, "order.approve");
+  const fd = useFormatDate();
   const nav = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -330,7 +332,7 @@ const Orders = () => {
                     <td className="px-3 py-2 font-mono text-xs font-medium">
                       <button className="hover:underline text-primary" onClick={() => onView(o)}>{o.order_number}</button>
                     </td>
-                    <td className="px-3 py-2 text-muted-foreground">{o.order_date}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{fd(o.order_date)}</td>
                     <td className="px-3 py-2">
                       {o.party_id ? (
                         <button
@@ -421,7 +423,7 @@ const Orders = () => {
           <SheetHeader>
             <SheetTitle className="font-mono">{viewOrder?.order_number}</SheetTitle>
             <SheetDescription>
-              {viewOrder?.party_name} · {viewOrder?.order_date}
+              {viewOrder?.party_name} · {fd(viewOrder?.order_date)}
               {viewOrder && <Badge variant="outline" className={`ml-2 ${statusColor[viewOrder.status]}`}>{viewOrder.status}</Badge>}
             </SheetDescription>
           </SheetHeader>

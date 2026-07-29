@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import PartyActivityTimeline from "@/components/parties/PartyActivityTimeline";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type PartyRow = {
   id: string;
@@ -38,6 +39,7 @@ export default function PartyDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { business } = useBusiness();
+  const fd = useFormatDate();
 
   const [party, setParty] = useState<PartyRow | null>(null);
   const [group, setGroup] = useState<GroupRow | null>(null);
@@ -157,7 +159,7 @@ export default function PartyDashboard() {
                     return (
                       <TableRow key={i.id}>
                         <TableCell className="font-mono text-sm">{i.invoice_number}</TableCell>
-                        <TableCell>{i.invoice_date}{od > 0 && <Badge variant="destructive" className="ml-2 text-xs">{od}d overdue</Badge>}</TableCell>
+                        <TableCell>{fd(i.invoice_date)}{od > 0 && <Badge variant="destructive" className="ml-2 text-xs">{od}d overdue</Badge>}</TableCell>
                         <TableCell className="text-right">{fmtInr(i.grand_total)}</TableCell>
                       </TableRow>
                     );
@@ -180,7 +182,7 @@ export default function PartyDashboard() {
                     <TableRow><TableCell colSpan={4} className="text-center py-6 text-sm text-muted-foreground">No ledger entries yet</TableCell></TableRow>
                   ) : ledgerLines.map((l, idx) => (
                     <TableRow key={idx}>
-                      <TableCell>{l.date}</TableCell>
+                      <TableCell>{fd(l.date)}</TableCell>
                       <TableCell className="font-mono text-sm">{l.voucher_number}</TableCell>
                       <TableCell className="text-right">{l.dr ? fmtInr(l.dr) : "—"}</TableCell>
                       <TableCell className="text-right">{l.cr ? fmtInr(l.cr) : "—"}</TableCell>

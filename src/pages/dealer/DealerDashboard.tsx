@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { Link } from "react-router-dom";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type RecentOrder = {
   id: string;
@@ -27,6 +28,7 @@ const inr = (n: number | null | undefined) =>
 
 export default function DealerDashboard() {
   const { portalUser } = useDealerAuth();
+  const fd = useFormatDate();
   const [party, setParty] = useState<PartyInfo | null>(null);
   const [orders, setOrders] = useState<RecentOrder[]>([]);
   const [mtdCount, setMtdCount] = useState<number>(0);
@@ -112,7 +114,7 @@ export default function DealerDashboard() {
           <CardTitle className="text-base">Recent Orders</CardTitle>
           {lastOrder && (
             <div className="text-xs text-muted-foreground">
-              Last order: {new Date(lastOrder.order_date).toLocaleDateString("en-IN")}
+              Last order: {fd(lastOrder.order_date)}
             </div>
           )}
         </CardHeader>
@@ -147,7 +149,7 @@ export default function DealerDashboard() {
                 orders.map((o) => (
                   <TableRow key={o.id}>
                     <TableCell className="font-mono text-sm">{o.order_number}</TableCell>
-                    <TableCell>{new Date(o.order_date).toLocaleDateString("en-IN")}</TableCell>
+                    <TableCell>{fd(o.order_date)}</TableCell>
                     <TableCell className="text-right">{o.pending_items_count ?? 0}</TableCell>
                     <TableCell className="text-right">{inr(o.grand_total)}</TableCell>
                     <TableCell>

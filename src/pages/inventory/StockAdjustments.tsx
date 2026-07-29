@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -24,6 +25,7 @@ type Product = { id: string; part_number: string; name: string; stock: number };
 
 export default function StockAdjustments() {
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const [rows, setRows] = useState<AdjRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -130,7 +132,7 @@ export default function StockAdjustments() {
             ) : rows.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-mono text-sm">{r.adjustment_number}</TableCell>
-                <TableCell>{new Date(r.created_at).toLocaleDateString("en-IN")}</TableCell>
+                <TableCell>{fd(r.created_at)}</TableCell>
                 <TableCell className="font-mono text-sm">{r.products?.part_number ?? "—"}</TableCell>
                 <TableCell><Badge variant={r.adjustment_type === "increase" ? "default" : "destructive"}>{r.adjustment_type}</Badge></TableCell>
                 <TableCell className="text-right">{r.qty}</TableCell>

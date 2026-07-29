@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { AlertTriangle, Download, Lock, ShieldAlert, Trash2 } from "lucide-react";
 import { fetchCompanyImpactCounts, fetchDeletePreflight, verifyCurrentPassword, type Preflight } from "@/lib/companySafety";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -37,6 +38,7 @@ export function DeleteCompanyWizard({
   businessName: string;
   onDeleted?: () => void;
 }) {
+  const fd = useFormatDate();
   const [step, setStep] = useState<Step>(1);
   const [impact, setImpact] = useState<Record<string, number> | null>(null);
   const [pre, setPre] = useState<Preflight | null>(null);
@@ -69,7 +71,7 @@ export function DeleteCompanyWizard({
     const out: string[] = [];
     if (!pre) return out;
     if (pre.pendingApprovals > 0) out.push(`${pre.pendingApprovals} pending approval request(s) must be resolved first.`);
-    if (pre.hasPendingDeleteRequest) out.push(`A permanent-delete request is already pending for this company${pre.deleteEligibleAt ? ` (eligible ${new Date(pre.deleteEligibleAt).toLocaleDateString()})` : ""}.`);
+    if (pre.hasPendingDeleteRequest) out.push(`A permanent-delete request is already pending for this company${pre.deleteEligibleAt ? ` (eligible ${fd(pre.deleteEligibleAt)})` : ""}.`);
     return out;
   }, [pre]);
 

@@ -24,6 +24,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const statusTone: Record<string, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
@@ -37,6 +38,7 @@ export default function InvoicesPage() {
   const { user } = useAuth();
   const { business, role } = useBusiness();
   const navigate = useNavigate();
+  const fd = useFormatDate();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [page, setPage] = useState(1);
@@ -301,7 +303,7 @@ export default function InvoicesPage() {
                   return (
                     <tr key={i.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-2.5 font-mono text-xs">{i.invoice_number}</td>
-                      <td className="px-4 py-2.5">{i.invoice_date}</td>
+                      <td className="px-4 py-2.5">{fd(i.invoice_date)}</td>
                       <td className="px-4 py-2.5">
                         {i.party_id ? (
                           <button
@@ -446,7 +448,7 @@ export default function InvoicesPage() {
               <AlertDialogTitle>Invoice {viewTarget.invoice_number}</AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-2 text-sm text-left mt-2">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Date</span><span>{viewTarget.invoice_date}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Date</span><span>{fd(viewTarget.invoice_date)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Party</span><span>{viewTarget.party_name ?? "—"}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Status</span><Badge variant="outline" className={statusTone[viewTarget.status]}>{viewTarget.status}</Badge></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span className="tabular-nums">₹{Number(viewTarget.gst_total).toFixed(2)}</span></div>

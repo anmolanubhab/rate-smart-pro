@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type Party = { id: string; name: string };
 type OpenInvoice = { id: string; invoice_number: string; invoice_date: string; grand_total: number; paid_amount: number };
@@ -18,6 +19,7 @@ const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFra
 
 export default function ReceivePayment() {
   const { business } = useBusiness();
+  const fd = useFormatDate();
   useEffect(() => { document.title = "Receive Payment — RD Pro"; }, []);
 
   const [parties, setParties] = useState<Party[]>([]);
@@ -209,7 +211,7 @@ export default function ReceivePayment() {
                   return (
                     <TableRow key={inv.id}>
                       <TableCell className="font-mono text-sm">{inv.invoice_number}</TableCell>
-                      <TableCell>{inv.invoice_date}</TableCell>
+                      <TableCell>{fd(inv.invoice_date)}</TableCell>
                       <TableCell className="text-right">{inr(inv.grand_total)}</TableCell>
                       <TableCell className="text-right text-amber-600">{inr(due)}</TableCell>
                       <TableCell className="text-right">

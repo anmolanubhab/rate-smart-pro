@@ -21,6 +21,7 @@ import { logAudit } from "@/lib/audit";
 import { toast } from "sonner";
 import { EditCompanyWizard } from "@/components/company/EditCompanyWizard";
 import { ArchiveCompanyDialog } from "@/components/company/ArchiveCompanyDialog";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type Row = {
   business_id: string;
@@ -51,6 +52,7 @@ const currentFY = (startMonth: number) => {
 
 export default function CompanySelection() {
   const { user, session, loading: authLoading, signOut } = useAuth();
+  const fd = useFormatDate();
   const nav = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -283,7 +285,7 @@ export default function CompanySelection() {
                       </div>
                       <div className="flex justify-between gap-2">
                         <dt className="text-muted-foreground">Created</dt>
-                        <dd>{new Date(b.created_at).toLocaleDateString()}</dd>
+                        <dd>{fd(b.created_at)}</dd>
                       </div>
                     </dl>
                     {!archived && (

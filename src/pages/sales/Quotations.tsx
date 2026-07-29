@@ -11,6 +11,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import CreateQuotationDialog from "@/components/sales/CreateQuotationDialog";
 import { fetchQuotations, convertQuotationToOrder, type Quotation } from "@/lib/quotations";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -25,6 +26,7 @@ export default function Quotations() {
   const { user } = useAuth();
   const { business } = useBusiness();
   const businessId = business?.id ?? getActiveBusinessIdSync();
+  const fd = useFormatDate();
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [converting, setConverting] = useState<string | null>(null);
@@ -110,8 +112,8 @@ export default function Quotations() {
               <TableRow key={q.id}>
                 <TableCell className="font-mono text-sm">{q.quotation_number}</TableCell>
                 <TableCell>{q.party_name ?? "—"}</TableCell>
-                <TableCell>{q.quotation_date}</TableCell>
-                <TableCell>{q.valid_until ?? "—"}</TableCell>
+                <TableCell>{fd(q.quotation_date)}</TableCell>
+                <TableCell>{fd(q.valid_until)}</TableCell>
                 <TableCell className="text-right font-semibold">{inr(q.grand_total)}</TableCell>
                 <TableCell><Badge variant={STATUS_VARIANT[q.status] ?? "secondary"}>{q.status}</Badge></TableCell>
                 <TableCell className="text-right">

@@ -1,6 +1,7 @@
 // MOCK DATA - to be wired to Supabase in Phase X
 import MockScreen from "@/components/mock/MockScreen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const rows = [
   { section: "Operating", item: "Net Profit before Tax", amount: 342000 },
@@ -21,6 +22,7 @@ const rows = [
 const fmt = (n: number) => `${n < 0 ? "-" : ""}₹ ${Math.abs(n).toLocaleString("en-IN")}`;
 
 export default function CashFlow() {
+  const fd = useFormatDate();
   const opening = 120000;
   const change = 363000 - 73000 + 60000;
   const closing = opening + change;
@@ -34,7 +36,7 @@ export default function CashFlow() {
         <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Opening Cash</CardTitle></CardHeader><CardContent><div className="text-lg font-semibold">{fmt(opening)}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Net Change</CardTitle></CardHeader><CardContent><div className="text-lg font-semibold text-emerald-600">{fmt(change)}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Closing Cash</CardTitle></CardHeader><CardContent><div className="text-lg font-semibold">{fmt(closing)}</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">As On</CardTitle></CardHeader><CardContent><div className="text-lg font-semibold">{new Date().toLocaleDateString("en-IN")}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">As On</CardTitle></CardHeader><CardContent><div className="text-lg font-semibold">{fd(new Date().toISOString().slice(0, 10))}</div></CardContent></Card>
       </div>
 
       <div className="rounded-md border bg-card overflow-x-auto">

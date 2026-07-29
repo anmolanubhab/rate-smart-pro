@@ -27,6 +27,7 @@ import {
   invitationLink, createUserWithTempPassword,
   type Invitation, type LoginControlSettings, defaultLoginControl,
 } from "@/lib/userAccess";
+import { useFormatDate } from "@/lib/dateFormat";
 
 // Mirrors the live public.business_role enum exactly — "operator" and
 // "purchase" were never valid DB values (assigning them errors on insert).
@@ -62,6 +63,7 @@ const STATUS_BADGE: Record<Invitation["status"], { label: string; variant: "defa
 export default function CompanyUsers() {
   const { user } = useAuth();
   const { business, role } = useBusiness();
+  const fd = useFormatDate();
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -351,9 +353,9 @@ export default function CompanyUsers() {
                       <TableCell className="text-sm">{r.department || "—"}</TableCell>
                       <TableCell className="text-xs flex items-center gap-1">
                         <Clock className="h-3 w-3 text-muted-foreground" />
-                        {new Date(r.invited_at).toLocaleDateString()}
+                        {fd(r.invited_at)}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{new Date(r.expires_at).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{fd(r.expires_at)}</TableCell>
                       <TableCell className="text-right space-x-1">
                         {canManage && (
                           <>
@@ -404,7 +406,7 @@ export default function CompanyUsers() {
                       <TableCell className="text-sm">{r.email}</TableCell>
                       <TableCell><Badge variant="outline">{ROLE_LABELS[r.role as BusinessRole] ?? r.role}</Badge></TableCell>
                       <TableCell><Badge variant={STATUS_BADGE[r.status].variant}>{STATUS_BADGE[r.status].label}</Badge></TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{new Date(r.invited_at).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{fd(r.invited_at)}</TableCell>
                       <TableCell className="text-right">
                         {canManage && r.status !== "pending" && (
                           <Button size="sm" variant="ghost" className="text-destructive" onClick={() => doDelete(r)}>
@@ -621,7 +623,7 @@ function MembersTable({
                   ? <Badge variant="destructive" className="text-[10px]">Blocked</Badge>
                   : <Badge variant="outline" className="text-[10px]">Enabled</Badge>}
               </TableCell>
-              <TableCell className="text-xs">{new Date(r.created_at).toLocaleDateString()}</TableCell>
+              <TableCell className="text-xs">{fd(r.created_at)}</TableCell>
               <TableCell className="text-right space-x-1">
                 {canManage && (
                   <>

@@ -5,11 +5,13 @@ import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { useFormatDate } from "@/lib/dateFormat";
 
 export default function BalanceSheet() {
   useEffect(() => { document.title = "Balance Sheet — RD Pro"; }, []);
   const { user } = useAuth();
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const navigate = useNavigate();
   const { data: ledgers = [], isLoading } = useQuery({
     queryKey: ["balance-sheet", user?.id, business?.id],
@@ -56,7 +58,7 @@ export default function BalanceSheet() {
         { label: "Total Assets", value: `₹ ${fmtInr(data.asset)}`, tone: "success" },
         { label: "Total Liabilities", value: `₹ ${fmtInr(data.liab)}`, tone: "warning" },
         { label: "Difference", value: `₹ ${fmtInr(data.asset - data.liab)}`, tone: Math.abs(data.asset - data.liab) < 1 ? "success" : "danger" },
-        { label: "As On", value: new Date().toLocaleDateString("en-IN") },
+        { label: "As On", value: fd(new Date().toISOString().slice(0, 10)) },
       ]}
       columns={[
         { key: "side", label: "Side", format: "badge" },

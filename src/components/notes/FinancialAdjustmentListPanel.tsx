@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useBusiness } from "@/hooks/useBusiness";
 import { listVouchers, typeToDb, type VoucherType } from "@/lib/voucherService";
 import { fmtInr } from "@/lib/accounting";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const statusTone: Record<string, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
@@ -31,6 +32,7 @@ interface Props {
 export default function FinancialAdjustmentListPanel({ type, hideHeader }: Props) {
   const navigate = useNavigate();
   const { business } = useBusiness();
+  const fd = useFormatDate();
   const [page, setPage] = useState(1);
   const limit = 25;
 
@@ -91,7 +93,7 @@ export default function FinancialAdjustmentListPanel({ type, hideHeader }: Props
             ) : rows.map((v) => (
               <TableRow key={v.id} className="cursor-pointer" onClick={() => navigate(`/accounting/vouchers/${v.id}`)}>
                 <TableCell className="font-mono text-sm">{v.voucher_no}</TableCell>
-                <TableCell>{v.voucher_date}</TableCell>
+                <TableCell>{fd(v.voucher_date)}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{v.adjustment_category_snapshot?.category_name ?? "—"}</TableCell>
                 <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate">{v.narration || "—"}</TableCell>
                 <TableCell className="text-right font-semibold">₹ {fmtInr(v.total_debit ?? 0)}</TableCell>

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchPendingItems, generatePendingOrder } from "@/lib/orders";
 import { fetchParties, Party } from "@/lib/parties";
+import { useFormatDate } from "@/lib/dateFormat";
 
 interface PendingRow {
   id: string;
@@ -23,6 +24,7 @@ interface PendingRow {
 
 const PendingOrders = () => {
   const { user } = useAuth();
+  const fd = useFormatDate();
   const [rows, setRows] = useState<PendingRow[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,7 +131,7 @@ const PendingOrders = () => {
                     </div>
                     <div><div className="text-xs text-muted-foreground">Pending Qty</div><div className="font-semibold tabular-nums">{totalQty.toFixed(2)}</div></div>
                     <div><div className="text-xs text-muted-foreground">Pending Value</div><div className="font-semibold tabular-nums">₹{totalValue.toFixed(2)}</div></div>
-                    <div><div className="text-xs text-muted-foreground">Last Order</div><div className="font-medium tabular-nums">{lastDate}</div></div>
+                    <div><div className="text-xs text-muted-foreground">Last Order</div><div className="font-medium tabular-nums">{fd(lastDate)}</div></div>
                     <div className="flex items-center justify-end">
                       <Button size="sm" disabled={generating === g.partyId} onClick={(e) => { e.stopPropagation(); handleGenerate(g.partyId, g.partyName); }} className="gradient-primary text-white border-0">
                         <Wand2 className="h-4 w-4" />{generating === g.partyId ? "Generating..." : "Generate Pending Order"}
@@ -151,7 +153,7 @@ const PendingOrders = () => {
                             {oOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                               <div className="font-mono text-xs">{o.order_number}</div>
-                              <div className="tabular-nums">{o.order_date}</div>
+                              <div className="tabular-nums">{fd(o.order_date)}</div>
                               <div>{oItems.length} item{oItems.length > 1 ? "s" : ""}</div>
                               <div className="tabular-nums">{oPending.toFixed(2)} pending</div>
                               <div className="flex items-center justify-between">

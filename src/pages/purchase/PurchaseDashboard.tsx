@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const fmtInr = (n: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(n));
@@ -47,6 +48,7 @@ export default function PurchaseDashboard() {
   useEffect(() => { document.title = "Purchase — RD Pro"; }, []);
   const { business } = useBusiness();
   const businessId = business?.id ?? getActiveBusinessIdSync();
+  const fd = useFormatDate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["purchase-dashboard", businessId],
@@ -207,7 +209,7 @@ export default function PurchaseDashboard() {
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{po.po_number}</p>
-                  <p className="text-xs text-muted-foreground">{po.supplier?.name ?? "—"} · {po.po_date}</p>
+                  <p className="text-xs text-muted-foreground">{po.supplier?.name ?? "—"} · {fd(po.po_date)}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-semibold tabular-nums">₹{fmtInr(Number(po.grand_total ?? 0))}</span>

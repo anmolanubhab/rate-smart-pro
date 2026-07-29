@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { logAudit } from "@/lib/audit";
+import { useFormatDate } from "@/lib/dateFormat";
 
 // Mirrors the live public.business_role enum exactly — "operator" was never
 // a valid DB value (assigning it errors on insert).
@@ -29,6 +30,7 @@ const MATRIX: Array<{ key: string; label: string }> = [
 
 export default function Team() {
   const { business, role } = useBusiness();
+  const fd = useFormatDate();
   const qc = useQueryClient();
   const [inviteUserId, setInviteUserId] = useState("");
   const [inviteRole, setInviteRole] = useState<BusinessRole>("viewer");
@@ -126,7 +128,7 @@ export default function Team() {
                       </Select>
                     ) : m.role}
                   </TableCell>
-                  <TableCell className="text-xs">{new Date(m.created_at).toLocaleDateString()}</TableCell>
+                  <TableCell className="text-xs">{fd(m.created_at)}</TableCell>
                   <TableCell>
                     {canManage && m.role !== "owner" && (
                       <Button size="sm" variant="ghost" onClick={() => remove(m.id)}>Remove</Button>

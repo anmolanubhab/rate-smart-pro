@@ -13,9 +13,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useFormatDate } from "@/lib/dateFormat";
 
 export default function DangerZone() {
   const { business, role, loading } = useBusiness();
+  const fd = useFormatDate();
   const nav = useNavigate();
   const qc = useQueryClient();
   const [openDelete, setOpenDelete] = useState(false);
@@ -125,7 +127,7 @@ export default function DangerZone() {
               <Badge variant="destructive">Pending</Badge>
               <Clock className="h-4 w-4 text-muted-foreground" />
               <span>
-                Requested {new Date(req.data.requested_at).toLocaleString()} · Eligible {eligible?.toLocaleDateString()} ({daysLeft} day{daysLeft === 1 ? "" : "s"} remaining)
+                Requested {new Date(req.data.requested_at).toLocaleString()} · Eligible {fd(req.data.eligible_at)} ({daysLeft} day{daysLeft === 1 ? "" : "s"} remaining)
               </span>
             </div>
             <div className="flex gap-2">
@@ -136,7 +138,7 @@ export default function DangerZone() {
                 variant="destructive"
                 disabled={!canExecute}
                 onClick={() => setOpenExecute(true)}
-                title={!canExecute ? `Available after ${eligible?.toLocaleDateString()}` : "Permanent, irreversible erase"}
+                title={!canExecute ? `Available after ${fd(req.data.eligible_at)}` : "Permanent, irreversible erase"}
               >
                 <Lock className="h-4 w-4 mr-2" />
                 {canExecute ? "Execute permanent delete" : `Locked · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`}

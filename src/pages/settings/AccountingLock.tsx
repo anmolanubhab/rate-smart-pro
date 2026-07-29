@@ -14,6 +14,7 @@ import {
 } from "@/lib/accountingLock";
 import { logAudit } from "@/lib/audit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useDateFormat, setDateFormat, formatDate, DATE_FORMAT_OPTIONS, type DateFormatCode } from "@/lib/dateFormat";
 
 export default function AccountingLock() {
   const { user } = useAuth();
@@ -41,6 +42,18 @@ export default function AccountingLock() {
     enabled: !!business?.id,
     queryFn: () => fetchFinancialNoteSettings(business!.id),
   });
+
+  const dateFormat = useDateFormat();
+  const updateDateFormat = async (format: DateFormatCode) => {
+    if (!business?.id) return;
+    try {
+      await setDateFormat(business.id, format);
+      await logAudit({ business_id: business.id, action: "DATE_FORMAT_UPDATE", entity_type: "accounting_settings", new_value: { date_format: format } });
+      qc.invalidateQueries({ queryKey: ["date-format", business.id] });
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
 
   const updateNoteSetting = async (patch: { financial_note_gst_mode?: FinancialNoteGstMode; financial_note_ledger_mode?: FinancialNoteLedgerMode }) => {
     if (!business?.id) return;
@@ -141,6 +154,29 @@ export default function AccountingLock() {
               You don't have permission to change the accounting lock. Contact an admin.
             </p>
           )}
+        </section>
+      )}
+
+      {!tableMissing && (
+        <section className="rounded-2xl bg-card border p-6 space-y-5">
+          <div>
+            <h2 className="font-semibold text-sm">Display Preferences</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Controls how dates are shown throughout the app — dashboard, invoices, vouchers,
+              reports and every list page.
+            </p>
+          </div>
+
+          <div className="space-y-1.5 max-w-xs">
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Date Format</Label>
+            <Select disabled={!editable} value={dateFormat} onValueChange={(v) => updateDateFormat(v as DateFormatCode)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {DATE_FORMAT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Preview: {formatDate(new Date().toISOString(), dateFormat)}</p>
+          </div>
         </section>
       )}
 

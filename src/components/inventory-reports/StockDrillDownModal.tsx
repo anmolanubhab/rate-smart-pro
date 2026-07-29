@@ -4,6 +4,7 @@ import { X, TrendingUp, TrendingDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchStockDrillDown, DrillDownRow, fmtInr, fmtQty, getMovementLabel } from "@/lib/inventoryReports";
+import { useFormatDate } from "@/lib/dateFormat";
 
 interface Props {
   businessId: string;
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function StockDrillDownModal({ businessId, productId, productName, fromDate, toDate, onClose }: Props) {
+  const fd = useFormatDate();
   const [rows, setRows] = useState<DrillDownRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +45,7 @@ export default function StockDrillDownModal({ businessId, productId, productName
             <h2 className="font-display text-lg font-bold mt-0.5">{productName}</h2>
             {(fromDate || toDate) && (
               <p className="text-xs text-muted-foreground mt-0.5">
-                {fromDate && new Date(fromDate).toLocaleDateString("en-IN")} — {toDate && new Date(toDate).toLocaleDateString("en-IN")}
+                {fromDate && fd(fromDate)} — {toDate && fd(toDate)}
               </p>
             )}
           </div>
@@ -95,7 +97,7 @@ export default function StockDrillDownModal({ businessId, productId, productName
                   return (
                     <tr key={i} className="border-t border-border hover:bg-muted/20 transition-colors">
                       <td className="px-3 py-2 whitespace-nowrap text-muted-foreground text-xs">
-                        {new Date(r.transaction_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}
+                        {fd(r.transaction_date)}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span className={`text-xs font-medium ${mvt.color}`}>{mvt.label}</span>

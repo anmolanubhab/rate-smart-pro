@@ -15,6 +15,7 @@ import { fetchProducts, Product } from "@/lib/products";
 import { fetchParties, Party } from "@/lib/parties";
 import { supabase } from "@/integrations/supabase/client";
 import { exportSheet } from "@/lib/excelTemplates";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const INV_REPORT_LINKS = [
   { label: "Stock Summary",      route: "/reports/inventory/stock-summary",     icon: FileSpreadsheet, desc: "Opening · Inward · Outward · Closing" },
@@ -34,6 +35,7 @@ const Reports = () => {
   const { user } = useAuth();
   const { business } = useBusiness();  // ✅ Bug #1 fixed
   const businessId = business?.id ?? null;  // ✅ Bug #1 fixed
+  const fd = useFormatDate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [dispatches, setDispatches] = useState<any[]>([]);
   const [pending, setPending] = useState<any[]>([]);
@@ -339,7 +341,7 @@ const Reports = () => {
                     {pendingRows.map((r, i) => (
                       <tr key={i} className="border-t border-border">
                         <td className="px-2 py-1.5 font-mono">{r.OrderNo}</td>
-                        <td className="px-2 py-1.5">{r.Date}</td>
+                        <td className="px-2 py-1.5">{fd(r.Date)}</td>
                         <td className="px-2 py-1.5">{r.Party}</td>
                         <td className="px-2 py-1.5 font-mono">{r.PartNo}</td>
                         <td className="px-2 py-1.5">{r.Description}</td>

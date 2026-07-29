@@ -12,6 +12,7 @@ import { useBusiness, can } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { approvePurchaseOrder, rejectPurchaseOrder } from "@/lib/purchaseOrders";
 import { logAudit } from "@/lib/audit";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type Row = {
   id: string;
@@ -30,6 +31,7 @@ export default function PurchaseApprovals() {
   const { user } = useAuth();
   const { business, role } = useBusiness();
   const businessId = business?.id ?? getActiveBusinessIdSync();
+  const fd = useFormatDate();
   const queryClient = useQueryClient();
 
   const canApprove = can(role, "purchase.approve");
@@ -137,7 +139,7 @@ export default function PurchaseApprovals() {
                     {row.po_number}
                   </TableCell>
                   <TableCell>{row.supplier?.name ?? "—"}</TableCell>
-                  <TableCell>{row.po_date}</TableCell>
+                  <TableCell>{fd(row.po_date)}</TableCell>
                   <TableCell className="text-center">{row.total_qty}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     ₹ {Number(row.grand_total ?? 0).toLocaleString("en-IN")}

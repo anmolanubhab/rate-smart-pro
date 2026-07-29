@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
+import { useFormatDate } from "@/lib/dateFormat";
 
 type Row = {
   date: string;
@@ -18,6 +19,7 @@ const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFra
 
 export default function DealerLedger() {
   const { portalUser } = useDealerAuth();
+  const fd = useFormatDate();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -102,7 +104,7 @@ export default function DealerLedger() {
               ) : (
                 rows.map((r, i) => (
                   <TableRow key={i}>
-                    <TableCell>{r.date}</TableCell>
+                    <TableCell>{fd(r.date)}</TableCell>
                     <TableCell className="font-mono text-sm">{r.ref}</TableCell>
                     <TableCell>{r.particulars}</TableCell>
                     <TableCell className="text-right">{r.dr ? inr(r.dr) : "—"}</TableCell>

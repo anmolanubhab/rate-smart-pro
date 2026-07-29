@@ -20,6 +20,7 @@ import {
   type PartyLedgerLine,
 } from "@/lib/accounting";
 import { fetchParties } from "@/lib/parties";
+import { useFormatDate } from "@/lib/dateFormat";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,7 @@ export default function PartyLedger() {
   const { partyId } = useParams<{ partyId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const fd = useFormatDate();
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { document.title = "Party Ledger — RD Pro"; }, []);
@@ -363,7 +365,7 @@ export default function PartyLedger() {
                   <tbody>
                     {/* Opening balance row */}
                     <tr className="border-t border-border bg-muted/20">
-                      <td className="px-4 py-2.5 text-muted-foreground text-xs">{from}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground text-xs">{fd(from)}</td>
                       <td className="px-4 py-2.5 text-muted-foreground text-xs" colSpan={3}>Opening Balance</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">—</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">—</td>
@@ -392,7 +394,7 @@ export default function PartyLedger() {
                       filteredLines.map((line: PartyLedgerLine, i: number) => (
                         <tr key={i} className="border-t border-border hover:bg-muted/30">
                           <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
-                            {line.date}
+                            {fd(line.date)}
                           </td>
                           {/* Clickable voucher number */}
                           <td className="px-4 py-2.5">
@@ -463,8 +465,8 @@ export default function PartyLedger() {
 
             {/* ── Print-only footer ── */}
             <div className="print-only mt-8 border-t pt-4 text-xs text-muted-foreground flex justify-between">
-              <span>Generated on {new Date().toLocaleDateString("en-IN")}</span>
-              <span>Period: {from} to {to}</span>
+              <span>Generated on {fd(new Date().toISOString().slice(0, 10))}</span>
+              <span>Period: {fd(from)} to {fd(to)}</span>
             </div>
           </>
         )}
