@@ -11,6 +11,7 @@ import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInv
 import { createApprovalRequest } from "@/lib/approvals";
 import { canDeleteDirectly } from "@/lib/permissions";
 import InvoicePrint from "@/components/InvoicePrint";
+import EInvoiceEwayDialog from "@/components/sales/EInvoiceEwayDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ export default function InvoicesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [printData, setPrintData] = useState<any>(null);
   const [printing, setPrinting] = useState<string | null>(null);
+  const [complianceTarget, setComplianceTarget] = useState<SalesInvoice | null>(null);
 
   // Edit (draft-only — posted invoices already have a voucher/ledger
   // entry, so free-editing them would desync accounting; cancel + issue
@@ -396,6 +398,11 @@ export default function InvoicesPage() {
                               <DropdownMenuItem onClick={() => onPrint(i)}>
                                 <Printer className="h-4 w-4 mr-2" /> Print Invoice
                               </DropdownMenuItem>
+                              {i.status === "posted" && (
+                                <DropdownMenuItem onClick={() => setComplianceTarget(i)}>
+                                  <FileText className="h-4 w-4 mr-2" /> e-Invoice / e-Way Bill
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               {!isCancelled && (
                                 <DropdownMenuItem
@@ -562,6 +569,15 @@ export default function InvoicesPage() {
         <div className="hidden print:block">
           <InvoicePrint {...printData} />
         </div>
+      )}
+
+      {complianceTarget && (
+        <EInvoiceEwayDialog
+          open={!!complianceTarget}
+          onOpenChange={(o) => !o && setComplianceTarget(null)}
+          invoiceId={complianceTarget.id}
+          invoiceNumber={complianceTarget.invoice_number}
+        />
       )}
     </div>
   );

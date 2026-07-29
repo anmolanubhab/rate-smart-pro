@@ -870,6 +870,36 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["hsn", "gstr1"],
     showInSidebar: false,
   },
+  {
+    id: "gst-filing",
+    title: "GST Filing",
+    description: "Prepare, generate, file, and revise GSTR-1/3B returns with period locking and approvals",
+    route: "/gst/filing",
+    icon: FileSpreadsheet,
+    module: "GST",
+    keywords: ["gstr1", "gstr3b", "filing", "arn", "return", "lock", "approval", "revision"],
+    showInSidebar: false,
+  },
+  {
+    id: "gst-gstr-2-reconciliation",
+    title: "GSTR-2A/2B Reconciliation",
+    description: "Import GSTR-2A/2B and reconcile against the purchase register for ITC matching",
+    route: "/gst/gstr-2-reconciliation",
+    icon: FileSpreadsheet,
+    module: "GST",
+    keywords: ["gstr2a", "gstr2b", "itc", "reconciliation", "import"],
+    showInSidebar: false,
+  },
+  {
+    id: "gst-gstr-9",
+    title: "GSTR-9 / 9C",
+    description: "Annual summary and books-vs-filed-returns reconciliation",
+    route: "/gst/gstr-9",
+    icon: FileSpreadsheet,
+    module: "GST",
+    keywords: ["gstr9", "gstr9c", "annual", "reconciliation"],
+    showInSidebar: false,
+  },
 
   // ==========================================================================
   // ADMINISTRATION
