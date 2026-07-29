@@ -49,6 +49,20 @@ export interface NavItem {
    * just the sidebar row goes away. Defaults to true.
    */
   showInSidebar?: boolean;
+  /**
+   * Marks a planned-but-not-yet-built page. A disabled item must NOT carry
+   * a `route` — there is no page to link to yet, so it renders as a
+   * greyed-out, non-interactive placeholder (no click, no keyboard focus,
+   * a tooltip explaining why) instead of a real NavLink. It's excluded from
+   * Command Search automatically (search only indexes items with a route).
+   * This is a generic navigation-framework feature, not GST-specific — any
+   * module can use it to show its planned structure ahead of the pages
+   * actually existing. Once the real page ships, just add its `route` and
+   * remove `disabled` — no other change needed.
+   */
+  disabled?: boolean;
+  /** Tooltip shown on a disabled item. Defaults to "Coming soon" when omitted. */
+  disabledReason?: string;
 }
 
 /** A NavItem enriched with the fully joined breadcrumb path (root → item) */

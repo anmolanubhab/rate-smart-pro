@@ -29,6 +29,34 @@ export default function SidebarNavItem({
 }: SidebarNavItemProps) {
   const children = childrenOf.get(item.id) ?? [];
 
+  // Planned-but-not-built page: greyed out, not a link, not tab-reachable.
+  // No route exists for it yet, so there's nowhere real to send a click.
+  if (item.disabled) {
+    const Icon = item.icon;
+    return (
+      <div
+        aria-disabled="true"
+        tabIndex={-1}
+        title={item.disabledReason ?? "Coming soon"}
+        className={cn(
+          "flex cursor-not-allowed select-none items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium text-sidebar-foreground/35",
+          collapsed && "justify-center px-0",
+          depth > 0 && !collapsed && "py-2 text-[13px]",
+        )}
+      >
+        {Icon && <Icon className={cn("h-5 w-5 shrink-0", depth > 0 && !collapsed && "h-4 w-4")} />}
+        {!collapsed && (
+          <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            <span className="truncate">{item.title}</span>
+            <span className="shrink-0 rounded-full border border-sidebar-border/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/40">
+              Soon
+            </span>
+          </span>
+        )}
+      </div>
+    );
+  }
+
   if (item.route) {
     const Icon = item.icon;
     return (
