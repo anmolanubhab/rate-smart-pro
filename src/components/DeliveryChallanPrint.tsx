@@ -1,3 +1,5 @@
+import { useFormatDate } from "@/lib/dateFormat";
+
 type ChallanItem = {
   partNumber: string;
   description: string;
@@ -38,6 +40,7 @@ export default function DeliveryChallanPrint({
   items: ChallanItem[];
   purpose?: string;
 }) {
+  const fd = useFormatDate();
   return (
     <div id="invoice-print" className="invoice-print bg-white text-black font-sans">
       <div className="border-2 border-black">
@@ -58,7 +61,7 @@ export default function DeliveryChallanPrint({
               </div>
               <div className="mt-2 text-[11px] leading-snug">
                 <div className="flex justify-end gap-2"><span className="w-28 text-left font-semibold">Challan No</span><span className="w-36 text-left">{info.challanNumber}</span></div>
-                <div className="flex justify-end gap-2"><span className="w-28 text-left font-semibold">Date</span><span className="w-36 text-left">{info.date}</span></div>
+                <div className="flex justify-end gap-2"><span className="w-28 text-left font-semibold">Date</span><span className="w-36 text-left">{fd(info.date)}</span></div>
                 {info.orderNumber && <div className="flex justify-end gap-2"><span className="w-28 text-left font-semibold">Order No</span><span className="w-36 text-left">{info.orderNumber}</span></div>}
               </div>
             </div>

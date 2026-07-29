@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const inr = (n: number) =>
   "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
@@ -59,6 +60,7 @@ function ItemSkeleton() {
 export default function RecentActivityFeed() {
   const { user } = useAuth();
   const { business } = useBusiness();
+  const fd = useFormatDate();
 
   const salesQ = useQuery({
     queryKey: ["activity-sales", business?.id],
@@ -177,36 +179,36 @@ export default function RecentActivityFeed() {
     return {
       sales: (salesQ.data ?? []).map((o) => ({
         title: `${o.order_number} · ${o.party_name || "—"}`,
-        meta: `${o.order_date} · ${o.status}`,
+        meta: `${fd(o.order_date)} · ${o.status}`,
         right: inr(o.grand_total || 0),
         badge: toStatusBadge(o.status),
       })),
       purchases: (purchasesQ.data ?? []).map((v) => ({
         title: `${v.voucher_number}`,
-        meta: `${v.voucher_date}`,
+        meta: `${fd(v.voucher_date)}`,
         right: inr(v.total_amount || 0),
         badge: toStatusBadge(v.status),
       })),
       parties: (partiesQ.data ?? []).map((p) => ({
         title: p.name,
-        meta: new Date(p.created_at).toLocaleDateString("en-IN"),
+        meta: fd(p.created_at),
       })),
       products: (productsQ.data ?? []).map((p) => ({
         title: `${p.part_number} · ${p.name}`,
-        meta: new Date(p.created_at).toLocaleDateString("en-IN"),
+        meta: fd(p.created_at),
       })),
       dispatches: (dispatchesQ.data ?? []).map((d) => ({
         title: `${d.dispatch_number} · ${d.orders?.order_number || "—"}`,
-        meta: `${d.dispatch_date} · ${d.orders?.party_name || "—"}`,
+        meta: `${fd(d.dispatch_date)} · ${d.orders?.party_name || "—"}`,
       })),
       payments: (paymentsQ.data ?? []).map((v) => ({
         title: `${v.voucher_number}`,
-        meta: `${v.voucher_date}`,
+        meta: `${fd(v.voucher_date)}`,
         right: inr(v.total_amount || 0),
         badge: toStatusBadge(v.status),
       })),
     };
-  }, [dispatchesQ.data, partiesQ.data, paymentsQ.data, productsQ.data, purchasesQ.data, salesQ.data]);
+  }, [dispatchesQ.data, partiesQ.data, paymentsQ.data, productsQ.data, purchasesQ.data, salesQ.data, fd]);
 
   return (
     <section className="space-y-3">

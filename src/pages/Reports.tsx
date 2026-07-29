@@ -472,7 +472,7 @@ const Reports = () => {
                     {dispatchRows.map((r, i) => (
                       <tr key={i} className="border-t border-border">
                         <td className="px-3 py-1.5 font-mono text-xs">{r.DispatchNo}</td>
-                        <td className="px-3 py-1.5">{r.Date}</td>
+                        <td className="px-3 py-1.5">{fd(r.Date)}</td>
                         <td className="px-3 py-1.5 font-mono text-xs">{r.Order}</td>
                         <td className="px-3 py-1.5">{r.Party}</td>
                         <td className="px-3 py-1.5 text-muted-foreground">{r.Notes}</td>
