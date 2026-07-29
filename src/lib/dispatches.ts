@@ -50,6 +50,7 @@ export async function createDispatch(input: {
   partyId: string | null;
   dispatchDate: string;
   notes?: string | null;
+  warehouseId?: string | null;
   items: DispatchItemInput[];
   packing?: {
     box_count?: number;
@@ -85,6 +86,7 @@ export async function createDispatch(input: {
     dispatch_number,
     dispatch_date: input.dispatchDate,
     notes: input.notes ?? null,
+    warehouse_id: input.warehouseId ?? null,
     status: "draft",           // always starts as draft
     invoice_id: null,
     packing_slip_number,

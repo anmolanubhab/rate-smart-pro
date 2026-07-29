@@ -55,6 +55,8 @@ const Dispatch = () => {
   const [recent, setRecent] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [cfg, setCfg] = useState<SalesConfig>({ business_id: "", ...DEFAULT_SALES_CONFIG });
+  const [warehouses, setWarehouses] = useState<{ id: string; warehouse_name: string; is_default: boolean }[]>([]);
+  const [warehouseId, setWarehouseId] = useState("");
 
   // Draft dispatch just saved — waiting for Confirm
   const [draftDispatch, setDraftDispatch] = useState<{ id: string; dispatch_number: string } | null>(null);
@@ -116,6 +118,22 @@ const Dispatch = () => {
     if (business) fetchSalesConfig(business.id).then(setCfg).catch(() => {});
     /* eslint-disable-next-line */
   }, [user, business?.id]);
+
+  useEffect(() => {
+    if (!business) return;
+    supabase
+      .from("warehouses")
+      .select("id, warehouse_name, is_default")
+      .eq("business_id", business.id)
+      .eq("status", "active")
+      .order("warehouse_name", { ascending: true })
+      .then(({ data }) => {
+        const wh = (data as any[]) ?? [];
+        setWarehouses(wh);
+        const def = wh.find((w) => w.is_default);
+        setWarehouseId(def?.id ?? wh[0]?.id ?? "");
+      });
+  }, [business?.id]);
 
   const order = useMemo(() => orders.find((o) => o.id === orderId) || null, [orders, orderId]);
 
@@ -182,7 +200,7 @@ const Dispatch = () => {
     try {
       setSaving(true);
       const dispatch = await createDispatch({
-        userId: user.id, orderId, partyId: order.party_id, dispatchDate, notes, items: lines,
+        userId: user.id, orderId, partyId: order.party_id, dispatchDate, notes, warehouseId: warehouseId || null, items: lines,
         packing: cfg.enable_packing_slip ? {
           auto_packing_slip: autoPackingSlip,
           box_count: cfg.enable_box_packing ? boxCount : 0,
@@ -380,6 +398,17 @@ const Dispatch = () => {
           <Label>Dispatch Date</Label>
           <Input type="date" value={dispatchDate} onChange={(e) => setDispatchDate(e.target.value)} className="mt-1" />
         </div>
+        {warehouses.length > 1 && (
+          <div>
+            <Label>Warehouse</Label>
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="Select…" /></SelectTrigger>
+              <SelectContent>
+                {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="md:col-span-3">
           <Label>Notes</Label>
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1" />

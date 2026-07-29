@@ -37,6 +37,8 @@ export default function StockAdjustments() {
   const [type, setType] = useState<"increase" | "decrease">("decrease");
   const [qty, setQty] = useState("");
   const [reason, setReason] = useState("");
+  const [warehouses, setWarehouses] = useState<{ id: string; warehouse_name: string; is_default: boolean }[]>([]);
+  const [warehouseId, setWarehouseId] = useState("");
 
   useEffect(() => { document.title = "Stock Adjustments — RD Pro"; }, []);
 
@@ -54,6 +56,22 @@ export default function StockAdjustments() {
   };
 
   useEffect(() => { load(); }, [business]);
+
+  useEffect(() => {
+    if (!business) return;
+    supabase
+      .from("warehouses")
+      .select("id, warehouse_name, is_default")
+      .eq("business_id", business.id)
+      .eq("status", "active")
+      .order("warehouse_name", { ascending: true })
+      .then(({ data }) => {
+        const wh = (data as any[]) ?? [];
+        setWarehouses(wh);
+        const def = wh.find((w) => w.is_default);
+        setWarehouseId(def?.id ?? wh[0]?.id ?? "");
+      });
+  }, [business]);
 
   useEffect(() => {
     if (!business || !open || search.trim().length < 2) { setProducts([]); return; }
@@ -84,6 +102,7 @@ export default function StockAdjustments() {
         _adjustment_type: type,
         _qty: Number(qty),
         _reason: reason || null,
+        _warehouse_id: warehouseId || null,
       } as never);
       if (error) throw error;
       toast.success("Stock adjustment posted");
@@ -197,6 +216,17 @@ export default function StockAdjustments() {
                 <Input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
               </div>
             </div>
+            {warehouses.length > 1 && (
+              <div className="space-y-1.5">
+                <Label>Warehouse</Label>
+                <Select value={warehouseId} onValueChange={setWarehouseId}>
+                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Reason</Label>
               <Textarea rows={2} placeholder="e.g. Physical count correction, damaged in storage" value={reason} onChange={(e) => setReason(e.target.value)} />
