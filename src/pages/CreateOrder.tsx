@@ -768,7 +768,9 @@ const CreateOrder = () => {
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="font-mono font-semibold">{p.part_number}</span>
                                   <span className={`text-[10px] ${isHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                                    Stk {p.stock}
+                                    {Number(p.reserved_qty) > 0
+                                      ? `Avail ${Math.max(Number(p.stock) - Number(p.reserved_qty), 0)} (Stk ${p.stock})`
+                                      : `Stk ${p.stock}`}
                                   </span>
                                 </div>
                                 <div className="text-[11px] truncate">{p.name}</div>

@@ -68,6 +68,7 @@ const PRODUCT_COLUMNS = `
   mrp,
   dealer_rate,
   stock,
+  reserved_qty,
   low_stock_threshold,
   gst_pct,
   status,
@@ -608,6 +609,11 @@ const Products = () => {
                         )}
                         {(low || out) && (
                           <AlertTriangle className="inline-block h-3.5 w-3.5 ml-1 -mt-0.5 text-amber-500" />
+                        )}
+                        {Number(p.reserved_qty) > 0 && (
+                          <div className="text-[10px] text-muted-foreground whitespace-nowrap" title="Reserved against approved orders not yet dispatched">
+                            {Number(p.reserved_qty)} reserved · {Math.max(Number(p.stock) - Number(p.reserved_qty), 0)} available
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{p.gst_pct}%</td>

@@ -27,7 +27,7 @@ function InventoryStockImportTrigger({ onDone }: { onDone: () => void }) {
   );
 }
 
-const INVENTORY_COLUMNS = "id, part_number, description, stock, low_stock_threshold, mrp, hsn_code, gst_pct, unit";
+const INVENTORY_COLUMNS = "id, part_number, description, stock, reserved_qty, low_stock_threshold, mrp, hsn_code, gst_pct, unit";
 
 export default function Inventory() {
   const { user } = useAuth();
@@ -143,7 +143,14 @@ export default function Inventory() {
                 <TableCell className="font-mono text-sm">{p.part_number}</TableCell>
                 <TableCell className="max-w-[200px] truncate">{p.description}</TableCell>
                 <TableCell className="text-right">₹{Number(p.mrp ?? 0).toFixed(2)}</TableCell>
-                <TableCell className="text-right font-semibold">{p.stock ?? 0}</TableCell>
+                <TableCell className="text-right font-semibold">
+                  {p.stock ?? 0}
+                  {Number(p.reserved_qty) > 0 && (
+                    <div className="text-[10px] font-normal text-muted-foreground" title="Reserved against approved orders not yet dispatched">
+                      {Number(p.reserved_qty)} reserved · {Math.max(Number(p.stock ?? 0) - Number(p.reserved_qty), 0)} avail
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell className="text-right text-muted-foreground">{p.low_stock_threshold ?? 0}</TableCell>
                 <TableCell>{stockStatus(p)}</TableCell>
                 <TableCell>

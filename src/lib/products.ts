@@ -14,6 +14,8 @@ category: ProductCategory;
 mrp: number;
 dealer_rate: number;
 stock: number;
+/** Held against approved-but-undispatched orders. Available-to-sell = stock - reserved_qty. */
+reserved_qty?: number;
 low_stock_threshold: number;
 gst_pct: number;
 barcode: string | null;
