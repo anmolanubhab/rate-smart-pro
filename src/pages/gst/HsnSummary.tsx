@@ -9,6 +9,9 @@ const columns: MockColumn[] = [
   { key: "gst_pct", label: "GST %", align: "right" },
   { key: "qty", label: "Qty", align: "right", format: "number" },
   { key: "taxable", label: "Taxable Value", align: "right", format: "currency" },
+  { key: "cgst", label: "CGST", align: "right", format: "currency" },
+  { key: "sgst", label: "SGST", align: "right", format: "currency" },
+  { key: "igst", label: "IGST", align: "right", format: "currency" },
   { key: "tax", label: "Tax Amount", align: "right", format: "currency" },
 ];
 
@@ -30,11 +33,11 @@ export default function HsnSummary() {
 
     const { data: items, error } = await supabase
       .from("sales_invoice_items")
-      .select("hsn, gst_pct, qty, net_rate, rate, total, product_id, products(hsn_code)")
+      .select("hsn, gst_pct, qty, net_rate, rate, total, product_id, cgst_amount, sgst_amount, igst_amount, products(hsn_code)")
       .in("invoice_id", invoiceIds);
     if (error) throw error;
 
-    const groups = new Map<string, { hsn: string; gst_pct: number; qty: number; taxable: number; tax: number }>();
+    const groups = new Map<string, { hsn: string; gst_pct: number; qty: number; taxable: number; cgst: number; sgst: number; igst: number }>();
     for (const it of (items as any[]) ?? []) {
       // Line-level HSN was never populated historically — fall back to
       // the product master's HSN so this report works with real data
@@ -44,11 +47,12 @@ export default function HsnSummary() {
       const pct = Number(it.gst_pct) || 0;
       const key = `${hsn}__${pct}`;
       const taxable = it.net_rate != null ? Number(it.net_rate) * Number(it.qty) : Number(it.total) / (1 + pct / 100);
-      const tax = taxable * (pct / 100);
-      const g = groups.get(key) ?? { hsn, gst_pct: pct, qty: 0, taxable: 0, tax: 0 };
+      const g = groups.get(key) ?? { hsn, gst_pct: pct, qty: 0, taxable: 0, cgst: 0, sgst: 0, igst: 0 };
       g.qty += Number(it.qty) || 0;
       g.taxable += taxable;
-      g.tax += tax;
+      g.cgst += Number(it.cgst_amount) || 0;
+      g.sgst += Number(it.sgst_amount) || 0;
+      g.igst += Number(it.igst_amount) || 0;
       groups.set(key, g);
     }
 
@@ -59,7 +63,10 @@ export default function HsnSummary() {
         gst_pct: `${g.gst_pct}%`,
         qty: Math.round(g.qty),
         taxable: Math.round(g.taxable),
-        tax: Math.round(g.tax),
+        cgst: Math.round(g.cgst),
+        sgst: Math.round(g.sgst),
+        igst: Math.round(g.igst),
+        tax: Math.round(g.cgst + g.sgst + g.igst),
       }));
   };
 
@@ -84,6 +91,8 @@ export default function HsnSummary() {
       fetchRows={fetchRows}
       computeKpis={computeKpis}
       exportFileName="hsn-summary"
+      xmlRootTag="HsnSummary"
+      xmlRowTag="HsnGroup"
     />
   );
 }

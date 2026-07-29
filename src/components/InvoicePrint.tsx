@@ -1,15 +1,22 @@
 type InvoicePrintItem = {
   partNumber: string;
   productName: string;
+  hsn?: string | null;
   qty: number;
   rate: number;
   gstPct: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
   amount: number;
 };
 
 type InvoicePrintTotals = {
   subtotal: number;
   discount: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
   tax: number;
   grandTotal: number;
 };
@@ -33,6 +40,8 @@ type InvoicePrintInfo = {
   date: string;
   time?: string | null;
   paymentMode?: string | null;
+  placeOfSupply?: string | null;
+  reverseCharge?: boolean;
 };
 
 export default function InvoicePrint({
@@ -42,6 +51,7 @@ export default function InvoicePrint({
   items,
   totals,
   terms = ["Goods once sold will not be taken back.", "E. & O.E."],
+  documentLabel = "TAX INVOICE",
 }: {
   company: InvoicePrintCompany;
   party: InvoicePrintParty;
@@ -49,7 +59,10 @@ export default function InvoicePrint({
   items: InvoicePrintItem[];
   totals: InvoicePrintTotals;
   terms?: string[];
+  documentLabel?: string;
 }) {
+  const isInterstate = (totals.igst ?? 0) > 0;
+  const hasGstSplit = totals.cgst != null || totals.sgst != null || totals.igst != null;
   const fmt = (n: number) =>
     Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -82,7 +95,7 @@ export default function InvoicePrint({
 
             <div className="text-right">
               <div className="text-[12px] font-semibold border border-black px-3 py-1 inline-block">
-                TAX INVOICE
+                {documentLabel}
               </div>
               <div className="mt-2 text-[11px] leading-snug">
                 <div className="flex justify-end gap-2">
@@ -101,6 +114,18 @@ export default function InvoicePrint({
                   <span className="w-24 text-left font-semibold">Payment</span>
                   <span className="w-40 text-left">{info.paymentMode || "—"}</span>
                 </div>
+                {info.placeOfSupply && (
+                  <div className="flex justify-end gap-2">
+                    <span className="w-24 text-left font-semibold">Place of Supply</span>
+                    <span className="w-40 text-left">{info.placeOfSupply}</span>
+                  </div>
+                )}
+                {info.reverseCharge && (
+                  <div className="flex justify-end gap-2">
+                    <span className="w-24 text-left font-semibold">Reverse Charge</span>
+                    <span className="w-40 text-left">Yes</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -129,8 +154,26 @@ export default function InvoicePrint({
                 <div className="col-span-6 text-right tabular-nums">{fmt(totals.subtotal)}</div>
                 <div className="col-span-6">Discount</div>
                 <div className="col-span-6 text-right tabular-nums">{fmt(totals.discount)}</div>
-                <div className="col-span-6">Tax</div>
-                <div className="col-span-6 text-right tabular-nums">{fmt(totals.tax)}</div>
+                {hasGstSplit ? (
+                  isInterstate ? (
+                    <>
+                      <div className="col-span-6">IGST</div>
+                      <div className="col-span-6 text-right tabular-nums">{fmt(totals.igst || 0)}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="col-span-6">CGST</div>
+                      <div className="col-span-6 text-right tabular-nums">{fmt(totals.cgst || 0)}</div>
+                      <div className="col-span-6">SGST</div>
+                      <div className="col-span-6 text-right tabular-nums">{fmt(totals.sgst || 0)}</div>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <div className="col-span-6">Tax</div>
+                    <div className="col-span-6 text-right tabular-nums">{fmt(totals.tax)}</div>
+                  </>
+                )}
                 <div className="col-span-12 border-t border-black mt-1 pt-1 flex items-center justify-between">
                   <div className="font-bold">GRAND TOTAL</div>
                   <div className="font-extrabold text-[14px] tabular-nums">{fmt(totals.grandTotal)}</div>
@@ -145,7 +188,8 @@ export default function InvoicePrint({
             <thead className="bg-white">
               <tr className="border-b border-black">
                 <th className="p-1.5 text-left w-8">Sr</th>
-                <th className="p-1.5 text-left w-28">Part No</th>
+                <th className="p-1.5 text-left w-24">Part No</th>
+                <th className="p-1.5 text-left w-20">HSN</th>
                 <th className="p-1.5 text-left">Product Name</th>
                 <th className="p-1.5 text-right w-14">Qty</th>
                 <th className="p-1.5 text-right w-20">Rate</th>
@@ -159,6 +203,7 @@ export default function InvoicePrint({
                   <tr key={`${it.partNumber}-${idx}`} className="border-b border-black last:border-b-0">
                     <td className="p-1.5 align-top">{idx + 1}</td>
                     <td className="p-1.5 align-top font-semibold">{it.partNumber}</td>
+                    <td className="p-1.5 align-top">{it.hsn || "—"}</td>
                     <td className="p-1.5 align-top">{it.productName}</td>
                     <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.qty)}</td>
                     <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.rate)}</td>
@@ -168,7 +213,7 @@ export default function InvoicePrint({
                 ))
               ) : (
                 <tr>
-                  <td className="p-2 text-center" colSpan={7}>
+                  <td className="p-2 text-center" colSpan={8}>
                     No items
                   </td>
                 </tr>
@@ -194,8 +239,26 @@ export default function InvoicePrint({
                 <div className="col-span-6 text-right tabular-nums">{fmt(totals.subtotal)}</div>
                 <div className="col-span-6">Discount</div>
                 <div className="col-span-6 text-right tabular-nums">{fmt(totals.discount)}</div>
-                <div className="col-span-6">Tax</div>
-                <div className="col-span-6 text-right tabular-nums">{fmt(totals.tax)}</div>
+                {hasGstSplit ? (
+                  isInterstate ? (
+                    <>
+                      <div className="col-span-6">IGST</div>
+                      <div className="col-span-6 text-right tabular-nums">{fmt(totals.igst || 0)}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="col-span-6">CGST</div>
+                      <div className="col-span-6 text-right tabular-nums">{fmt(totals.cgst || 0)}</div>
+                      <div className="col-span-6">SGST</div>
+                      <div className="col-span-6 text-right tabular-nums">{fmt(totals.sgst || 0)}</div>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <div className="col-span-6">Tax</div>
+                    <div className="col-span-6 text-right tabular-nums">{fmt(totals.tax)}</div>
+                  </>
+                )}
                 <div className="col-span-12 border-t border-black mt-1 pt-1 flex items-center justify-between">
                   <div className="font-bold">Grand Total</div>
                   <div className="font-extrabold text-[14px] tabular-nums">{fmt(totals.grandTotal)}</div>

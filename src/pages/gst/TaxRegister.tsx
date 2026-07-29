@@ -22,53 +22,76 @@ export default function TaxRegister() {
 
   const fetchRows = async ({ from, to, search }: ReportFilters) => {
     if (!business) return [];
-    const { data: biz } = await supabase.from("businesses").select("gst_number").eq("id", business.id).maybeSingle();
-    const sellerGstin = biz?.gst_number ?? null;
     const rows: any[] = [];
 
-    // Output tax — sales
+    // Output tax — sales. Reads the CGST/SGST/IGST split as actually
+    // posted per line item instead of recomputing it here.
     let sq = supabase
       .from("sales_invoices")
-      .select("invoice_date, invoice_number, subtotal, discount_total, gst_total, parties(name, gst)")
+      .select("id, invoice_date, invoice_number, subtotal, discount_total, gst_total, parties(name, gst)")
       .eq("business_id", business.id).eq("status", "posted")
       .gte("invoice_date", from).lte("invoice_date", to);
     if (search.trim()) sq = sq.or(`invoice_number.ilike.%${search.trim()}%`);
     const { data: sales } = await sq;
-    for (const inv of (sales as any[]) ?? []) {
-      const gst = Number(inv.gst_total ?? 0);
-      const { data: split } = await supabase.rpc("gst_split_amounts" as never, {
-        _seller_gstin: sellerGstin, _buyer_gstin: inv.parties?.gst ?? null, _gst_total: gst,
-      } as never);
-      const s = (Array.isArray(split) ? split[0] : split) as any;
+    const salesInvoices = (sales as any[]) ?? [];
+    const salesIds = salesInvoices.map((i) => i.id);
+    const salesSplit = new Map<string, { cgst: number; sgst: number; igst: number }>();
+    if (salesIds.length) {
+      const { data: items } = await supabase
+        .from("sales_invoice_items")
+        .select("invoice_id, cgst_amount, sgst_amount, igst_amount")
+        .in("invoice_id", salesIds);
+      for (const it of items ?? []) {
+        const s = salesSplit.get(it.invoice_id) ?? { cgst: 0, sgst: 0, igst: 0 };
+        s.cgst += Number(it.cgst_amount) || 0;
+        s.sgst += Number(it.sgst_amount) || 0;
+        s.igst += Number(it.igst_amount) || 0;
+        salesSplit.set(it.invoice_id, s);
+      }
+    }
+    for (const inv of salesInvoices) {
+      const s = salesSplit.get(inv.id) ?? { cgst: 0, sgst: 0, igst: 0 };
       rows.push({
         date: inv.invoice_date, doc_number: inv.invoice_number, party_name: inv.parties?.name ?? "—",
         direction: "Output", direction_tone: "success",
         taxable: Math.round(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
-        cgst: Math.round(Number(s?.cgst ?? 0)), sgst: Math.round(Number(s?.sgst ?? 0)), igst: Math.round(Number(s?.igst ?? 0)),
-        total_tax: Math.round(gst),
+        cgst: Math.round(s.cgst), sgst: Math.round(s.sgst), igst: Math.round(s.igst),
+        total_tax: Math.round(s.cgst + s.sgst + s.igst),
       });
     }
 
-    // Input tax — purchases
+    // Input tax — purchases. Same pattern against purchase_invoice_items.
     let pq = supabase
       .from("purchase_invoices")
-      .select("invoice_date, invoice_number, subtotal, discount_total, gst_total, parties:supplier_id(name, gst)")
+      .select("id, invoice_date, invoice_number, subtotal, discount_total, gst_total, parties:supplier_id(name, gst)")
       .eq("business_id", business.id).neq("status", "cancelled")
       .gte("invoice_date", from).lte("invoice_date", to);
     if (search.trim()) pq = pq.or(`invoice_number.ilike.%${search.trim()}%`);
     const { data: purchases } = await pq;
-    for (const inv of (purchases as any[]) ?? []) {
-      const gst = Number(inv.gst_total ?? 0);
-      const { data: split } = await supabase.rpc("gst_split_amounts" as never, {
-        _seller_gstin: inv.parties?.gst ?? null, _buyer_gstin: sellerGstin, _gst_total: gst,
-      } as never);
-      const s = (Array.isArray(split) ? split[0] : split) as any;
+    const purchaseInvoices = (purchases as any[]) ?? [];
+    const purchaseIds = purchaseInvoices.map((i) => i.id);
+    const purchaseSplit = new Map<string, { cgst: number; sgst: number; igst: number }>();
+    if (purchaseIds.length) {
+      const { data: items } = await supabase
+        .from("purchase_invoice_items")
+        .select("purchase_invoice_id, cgst_amount, sgst_amount, igst_amount")
+        .in("purchase_invoice_id", purchaseIds);
+      for (const it of items ?? []) {
+        const s = purchaseSplit.get(it.purchase_invoice_id) ?? { cgst: 0, sgst: 0, igst: 0 };
+        s.cgst += Number(it.cgst_amount) || 0;
+        s.sgst += Number(it.sgst_amount) || 0;
+        s.igst += Number(it.igst_amount) || 0;
+        purchaseSplit.set(it.purchase_invoice_id, s);
+      }
+    }
+    for (const inv of purchaseInvoices) {
+      const s = purchaseSplit.get(inv.id) ?? { cgst: 0, sgst: 0, igst: 0 };
       rows.push({
         date: inv.invoice_date, doc_number: inv.invoice_number, party_name: inv.parties?.name ?? "—",
         direction: "Input", direction_tone: "warning",
         taxable: Math.round(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
-        cgst: Math.round(Number(s?.cgst ?? 0)), sgst: Math.round(Number(s?.sgst ?? 0)), igst: Math.round(Number(s?.igst ?? 0)),
-        total_tax: Math.round(gst),
+        cgst: Math.round(s.cgst), sgst: Math.round(s.sgst), igst: Math.round(s.igst),
+        total_tax: Math.round(s.cgst + s.sgst + s.igst),
       });
     }
 
@@ -95,6 +118,8 @@ export default function TaxRegister() {
       fetchRows={fetchRows}
       computeKpis={computeKpis}
       exportFileName="tax-register"
+      xmlRootTag="TaxRegister"
+      xmlRowTag="Entry"
     />
   );
 }

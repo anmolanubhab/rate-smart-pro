@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
+import ExportMenu from "@/components/reports/ExportMenu";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +14,15 @@ type Row = {
   igst: number;
   total: number;
 };
+
+const columns = [
+  { key: "rate", label: "GST Rate" },
+  { key: "taxable", label: "Taxable", align: "right" as const, format: "currency" as const },
+  { key: "cgst", label: "CGST", align: "right" as const, format: "currency" as const },
+  { key: "sgst", label: "SGST", align: "right" as const, format: "currency" as const },
+  { key: "igst", label: "IGST", align: "right" as const, format: "currency" as const },
+  { key: "total", label: "Invoice Total", align: "right" as const, format: "currency" as const },
+];
 
 export default function GstSummary() {
   useEffect(() => { document.title = "GST Summary — RD Pro"; }, []);
@@ -37,39 +47,39 @@ export default function GstSummary() {
       const invoiceIds = (invoices ?? []).map((i) => i.id);
       if (invoiceIds.length === 0) return [];
 
+      // Read the CGST/SGST/IGST split as actually posted per line item
+      // (computed once, correctly, at invoice-creation time) rather than
+      // recomputing it here — this also means an interstate invoice
+      // correctly reports IGST instead of being force-split 50/50.
       const { data: items, error } = await supabase
         .from("sales_invoice_items")
-        .select("gst_pct, qty, net_rate, total")
+        .select("gst_pct, net_rate, qty, total, cgst_amount, sgst_amount, igst_amount")
         .in("invoice_id", invoiceIds);
       if (error) throw error;
 
-      const byRate = new Map<number, { taxable: number; tax: number }>();
+      const byRate = new Map<number, { taxable: number; cgst: number; sgst: number; igst: number }>();
       for (const it of items ?? []) {
         const pct = Number(it.gst_pct) || 0;
-        // Prefer net_rate*qty as the taxable base; fall back to backing it
-        // out of `total` if net_rate isn't populated for older rows.
         const taxable = it.net_rate != null
           ? Number(it.net_rate) * Number(it.qty)
           : Number(it.total) / (1 + pct / 100);
-        const tax = taxable * (pct / 100);
-        const bucket = byRate.get(pct) ?? { taxable: 0, tax: 0 };
+        const bucket = byRate.get(pct) ?? { taxable: 0, cgst: 0, sgst: 0, igst: 0 };
         bucket.taxable += taxable;
-        bucket.tax += tax;
+        bucket.cgst += Number(it.cgst_amount) || 0;
+        bucket.sgst += Number(it.sgst_amount) || 0;
+        bucket.igst += Number(it.igst_amount) || 0;
         byRate.set(pct, bucket);
       }
 
-      // Split evenly into CGST/SGST — assumes intra-state (Bihar) sales.
-      // Inter-state (IGST-only) invoices aren't distinguished yet; revisit
-      // once place-of-supply is tracked on sales_invoices.
       return Array.from(byRate.entries())
         .sort((a, b) => a[0] - b[0])
         .map(([pct, v]) => ({
           rate: `${pct}%`,
           taxable: Math.round(v.taxable),
-          cgst: Math.round(v.tax / 2),
-          sgst: Math.round(v.tax / 2),
-          igst: 0,
-          total: Math.round(v.taxable + v.tax),
+          cgst: Math.round(v.cgst),
+          sgst: Math.round(v.sgst),
+          igst: Math.round(v.igst),
+          total: Math.round(v.taxable + v.cgst + v.sgst + v.igst),
         }));
     },
   });
@@ -88,15 +98,18 @@ export default function GstSummary() {
         { label: "ITC Available", value: "Not tracked yet", tone: "success" },
         { label: "Net Payable", value: `₹ ${out.toLocaleString("en-IN")}`, tone: "danger" },
       ]}
-      columns={[
-        { key: "rate", label: "GST Rate" },
-        { key: "taxable", label: "Taxable", align: "right", format: "currency" },
-        { key: "cgst", label: "CGST", align: "right", format: "currency" },
-        { key: "sgst", label: "SGST", align: "right", format: "currency" },
-        { key: "igst", label: "IGST", align: "right", format: "currency" },
-        { key: "total", label: "Invoice Total", align: "right", format: "currency" },
-      ]}
+      columns={columns}
       rows={rows}
+      actions={
+        <ExportMenu
+          rows={rows}
+          columns={columns}
+          baseName="gst-summary"
+          title="GST Summary"
+          xmlRootTag="GstSummary"
+          xmlRowTag="Slab"
+        />
+      }
     />
   );
 }

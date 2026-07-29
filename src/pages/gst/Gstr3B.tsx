@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import ExportMenu from "@/components/reports/ExportMenu";
+import type { MockColumn } from "@/components/accounts/MockTablePage";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -30,56 +32,59 @@ export default function Gstr3B() {
     if (!business) return;
     (async () => {
       setLoading(true);
-      const { data: biz } = await supabase.from("businesses").select("gst_number").eq("id", business.id).maybeSingle();
-      const sellerGstin = biz?.gst_number ?? null;
 
-      // ── Outward supplies (sales) ──
+      // ── Outward supplies (sales) ── reads the CGST/SGST/IGST split as
+      // actually posted per line item instead of recomputing it here.
       const { data: sInvoices } = await supabase
         .from("sales_invoices")
-        .select("id, subtotal, discount_total, gst_total, party_id, parties(gst)")
+        .select("id, subtotal, discount_total")
         .eq("business_id", business.id)
         .eq("status", "posted")
         .gte("invoice_date", from)
         .lte("invoice_date", to);
+      const sIds = ((sInvoices as any[]) ?? []).map((i) => i.id);
 
       const out: TaxLine = { taxable: 0, cgst: 0, sgst: 0, igst: 0 };
       for (const inv of (sInvoices as any[]) ?? []) {
-        const taxable = Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0);
-        const gst = Number(inv.gst_total ?? 0);
-        const buyerGstin = inv.parties?.gst ?? null;
-        const { data: split } = await supabase.rpc("gst_split_amounts" as never, {
-          _seller_gstin: sellerGstin, _buyer_gstin: buyerGstin, _gst_total: gst,
-        } as never);
-        const s = (Array.isArray(split) ? split[0] : split) as any;
-        out.taxable += taxable;
-        out.cgst += Number(s?.cgst ?? 0);
-        out.sgst += Number(s?.sgst ?? 0);
-        out.igst += Number(s?.igst ?? 0);
+        out.taxable += Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0);
+      }
+      if (sIds.length) {
+        const { data: sItems } = await supabase
+          .from("sales_invoice_items")
+          .select("cgst_amount, sgst_amount, igst_amount")
+          .in("invoice_id", sIds);
+        for (const it of sItems ?? []) {
+          out.cgst += Number(it.cgst_amount) || 0;
+          out.sgst += Number(it.sgst_amount) || 0;
+          out.igst += Number(it.igst_amount) || 0;
+        }
       }
       setOutward(out);
 
       // ── Input Tax Credit (purchases) ──
       const { data: pInvoices } = await supabase
         .from("purchase_invoices")
-        .select("id, subtotal, discount_total, gst_total, supplier_id, parties:supplier_id(gst)")
+        .select("id, subtotal, discount_total")
         .eq("business_id", business.id)
         .neq("status", "cancelled")
         .gte("invoice_date", from)
         .lte("invoice_date", to);
+      const pIds = ((pInvoices as any[]) ?? []).map((i) => i.id);
 
       const inItc: TaxLine = { taxable: 0, cgst: 0, sgst: 0, igst: 0 };
       for (const inv of (pInvoices as any[]) ?? []) {
-        const taxable = Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0);
-        const gst = Number(inv.gst_total ?? 0);
-        const supplierGstin = inv.parties?.gst ?? null;
-        const { data: split } = await supabase.rpc("gst_split_amounts" as never, {
-          _seller_gstin: supplierGstin, _buyer_gstin: sellerGstin, _gst_total: gst,
-        } as never);
-        const s = (Array.isArray(split) ? split[0] : split) as any;
-        inItc.taxable += taxable;
-        inItc.cgst += Number(s?.cgst ?? 0);
-        inItc.sgst += Number(s?.sgst ?? 0);
-        inItc.igst += Number(s?.igst ?? 0);
+        inItc.taxable += Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0);
+      }
+      if (pIds.length) {
+        const { data: pItems } = await supabase
+          .from("purchase_invoice_items")
+          .select("cgst_amount, sgst_amount, igst_amount")
+          .in("purchase_invoice_id", pIds);
+        for (const it of pItems ?? []) {
+          inItc.cgst += Number(it.cgst_amount) || 0;
+          inItc.sgst += Number(it.sgst_amount) || 0;
+          inItc.igst += Number(it.igst_amount) || 0;
+        }
       }
       setItc(inItc);
       setLoading(false);
@@ -91,15 +96,40 @@ export default function Gstr3B() {
   const netIgst = outward.igst - itc.igst;
   const netTotal = netCgst + netSgst + netIgst;
 
+  const exportColumns: MockColumn[] = [
+    { key: "section", label: "Section" },
+    { key: "taxable", label: "Taxable Value", align: "right", format: "currency" },
+    { key: "cgst", label: "CGST", align: "right", format: "currency" },
+    { key: "sgst", label: "SGST", align: "right", format: "currency" },
+    { key: "igst", label: "IGST", align: "right", format: "currency" },
+  ];
+  const exportRows = [
+    { section: "Outward Taxable Supplies", taxable: Math.round(outward.taxable), cgst: Math.round(outward.cgst), sgst: Math.round(outward.sgst), igst: Math.round(outward.igst) },
+    { section: "Eligible Input Tax Credit", taxable: Math.round(itc.taxable), cgst: Math.round(itc.cgst), sgst: Math.round(itc.sgst), igst: Math.round(itc.igst) },
+    { section: "Net Tax Payable", taxable: 0, cgst: Math.round(Math.max(netCgst, 0)), sgst: Math.round(Math.max(netSgst, 0)), igst: Math.round(Math.max(netIgst, 0)) },
+  ];
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">GST</p>
-        <h1 className="text-2xl font-bold mt-1">GSTR-3B Summary</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Outward tax liability vs. input tax credit for the period — computed from posted invoices, using the same
-          CGST/SGST/IGST split logic as ledger posting.
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm text-muted-foreground">GST</p>
+          <h1 className="text-2xl font-bold mt-1">GSTR-3B Summary</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Outward tax liability vs. input tax credit for the period — computed from posted invoices, using the same
+            CGST/SGST/IGST split logic as ledger posting.
+          </p>
+        </div>
+        <ExportMenu
+          rows={exportRows}
+          columns={exportColumns}
+          baseName="gstr-3b-summary"
+          title="GSTR-3B Summary"
+          subtitle={`${from} to ${to}`}
+          xmlRootTag="Gstr3BSummary"
+          xmlRowTag="Section"
+          disabled={loading}
+        />
       </div>
 
       <div className="flex gap-3">
@@ -176,7 +206,7 @@ export default function Gstr3B() {
               </Table>
               {netTotal < 0 && (
                 <p className="text-xs text-muted-foreground p-3">
-                  ITC exceeds output tax this period — excess credit carries forward (₹{inr(Math.abs(netTotal))}).
+                  ITC exceeds output tax this period — excess credit carries forward ({inr(Math.abs(netTotal))}).
                 </p>
               )}
             </CardContent>

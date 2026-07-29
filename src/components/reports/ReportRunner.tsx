@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { Download, Printer, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import MockTablePage, { MockColumn, MockKpi } from "@/components/accounts/MockTablePage";
-import { exportSheet } from "@/lib/excelTemplates";
+import ExportMenu from "@/components/reports/ExportMenu";
 
 export type ReportFilters = { from: string; to: string; search: string };
 
@@ -18,6 +17,8 @@ interface Props {
   computeKpis?: (rows: Record<string, any>[]) => MockKpi[];
   defaultDays?: number; // how far back "from" defaults to
   exportFileName: string;
+  xmlRootTag?: string;
+  xmlRowTag?: string;
 }
 
 function isoDaysAgo(days: number) {
@@ -27,7 +28,7 @@ function isoDaysAgo(days: number) {
 }
 
 export default function ReportRunner({
-  eyebrow, title, description, columns, fetchRows, computeKpis, defaultDays = 30, exportFileName,
+  eyebrow, title, description, columns, fetchRows, computeKpis, defaultDays = 30, exportFileName, xmlRootTag, xmlRowTag,
 }: Props) {
   const [from, setFrom] = useState(isoDaysAgo(defaultDays));
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
@@ -49,10 +50,6 @@ export default function ReportRunner({
   }, [from, to, search]);
 
   const kpis = computeKpis ? computeKpis(rows) : undefined;
-
-  const doExport = () => {
-    exportSheet(rows, exportFileName, title.slice(0, 30));
-  };
 
   return (
     <MockTablePage
@@ -76,12 +73,15 @@ export default function ReportRunner({
               className="pl-8 w-40"
             />
           </div>
-          <Button variant="outline" size="sm" onClick={doExport} disabled={rows.length === 0}>
-            <Download className="h-3.5 w-3.5 mr-1" /> Export
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="h-3.5 w-3.5 mr-1" /> Print
-          </Button>
+          <ExportMenu
+            rows={rows}
+            columns={columns}
+            baseName={exportFileName}
+            title={title}
+            subtitle={`${from} to ${to}`}
+            xmlRootTag={xmlRootTag}
+            xmlRowTag={xmlRowTag}
+          />
         </div>
       }
     />

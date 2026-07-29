@@ -23,12 +23,10 @@ export default function Gstr1() {
 
   const fetchRows = async ({ from, to, search }: ReportFilters) => {
     if (!business) return [];
-    const { data: biz } = await supabase.from("businesses").select("gst_number").eq("id", business.id).maybeSingle();
-    const sellerGstin = biz?.gst_number ?? null;
 
     let q = supabase
       .from("sales_invoices")
-      .select("invoice_date, invoice_number, subtotal, discount_total, gst_total, grand_total, party_id, parties(name, gst)")
+      .select("id, invoice_date, invoice_number, subtotal, discount_total, gst_total, grand_total, party_id, parties(name, gst)")
       .eq("business_id", business.id)
       .eq("status", "posted")
       .gte("invoice_date", from)
@@ -38,16 +36,31 @@ export default function Gstr1() {
     if (search.trim()) q = q.or(`invoice_number.ilike.%${search.trim()}%`);
     const { data, error } = await q;
     if (error) throw error;
+    const invoices = (data as any[]) ?? [];
+    const invoiceIds = invoices.map((i) => i.id);
 
-    const rows = [];
-    for (const inv of (data as any[]) ?? []) {
+    // Read the CGST/SGST/IGST split as actually posted per line item,
+    // aggregated back up to invoice level, instead of recomputing it here.
+    const splitByInvoice = new Map<string, { cgst: number; sgst: number; igst: number }>();
+    if (invoiceIds.length) {
+      const { data: items, error: itemsErr } = await supabase
+        .from("sales_invoice_items")
+        .select("invoice_id, cgst_amount, sgst_amount, igst_amount")
+        .in("invoice_id", invoiceIds);
+      if (itemsErr) throw itemsErr;
+      for (const it of items ?? []) {
+        const s = splitByInvoice.get(it.invoice_id) ?? { cgst: 0, sgst: 0, igst: 0 };
+        s.cgst += Number(it.cgst_amount) || 0;
+        s.sgst += Number(it.sgst_amount) || 0;
+        s.igst += Number(it.igst_amount) || 0;
+        splitByInvoice.set(it.invoice_id, s);
+      }
+    }
+
+    return invoices.map((inv) => {
       const buyerGstin = inv.parties?.gst ?? null;
-      const gst = Number(inv.gst_total ?? 0);
-      const { data: split } = await supabase.rpc("gst_split_amounts" as never, {
-        _seller_gstin: sellerGstin, _buyer_gstin: buyerGstin, _gst_total: gst,
-      } as never);
-      const s = (Array.isArray(split) ? split[0] : split) as any;
-      rows.push({
+      const s = splitByInvoice.get(inv.id) ?? { cgst: 0, sgst: 0, igst: 0 };
+      return {
         invoice_date: inv.invoice_date,
         invoice_number: inv.invoice_number,
         party_name: inv.parties?.name ?? "—",
@@ -55,13 +68,12 @@ export default function Gstr1() {
         supply_type: buyerGstin && buyerGstin.length === 15 ? "B2B" : "B2C",
         supply_type_tone: buyerGstin && buyerGstin.length === 15 ? "success" : "default",
         taxable: Math.round(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
-        cgst: Math.round(Number(s?.cgst ?? 0)),
-        sgst: Math.round(Number(s?.sgst ?? 0)),
-        igst: Math.round(Number(s?.igst ?? 0)),
+        cgst: Math.round(s.cgst),
+        sgst: Math.round(s.sgst),
+        igst: Math.round(s.igst),
         total: Math.round(Number(inv.grand_total ?? 0)),
-      });
-    }
-    return rows;
+      };
+    });
   };
 
   const computeKpis = (rows: Record<string, any>[]): MockKpi[] => {
@@ -85,6 +97,8 @@ export default function Gstr1() {
       fetchRows={fetchRows}
       computeKpis={computeKpis}
       exportFileName="gstr-1"
+      xmlRootTag="Gstr1"
+      xmlRowTag="Invoice"
     />
   );
 }
