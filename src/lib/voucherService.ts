@@ -109,6 +109,10 @@ export interface ValidationResult {
 export interface ListVouchersOptions {
   voucher_type?: VoucherType | "All";
   status?: VoucherStatus | "All";
+  /** Excludes a specific note_mode (e.g. pass 'material_return' to list only
+   *  Financial Adjustment / legacy notes). Vouchers with note_mode = null
+   *  (pre-dating this feature) are always included, never hidden. */
+  excludeNoteMode?: NoteMode;
   from?: string;
   to?: string;
   search?: string;
@@ -135,7 +139,7 @@ async function assertNotLocked(businessId: string, voucherDate: string): Promise
 }
 
 /** Map UI VoucherType → DB voucher_type string (snake_case) */
-function typeToDb(t: VoucherType): string {
+export function typeToDb(t: VoucherType): string {
   const map: Record<VoucherType, string> = {
     Sales: "sales",
     Purchase: "purchase",
@@ -496,6 +500,7 @@ export async function listVouchers(
   const {
     voucher_type,
     status,
+    excludeNoteMode,
     from,
     to,
     search,
@@ -516,6 +521,9 @@ export async function listVouchers(
   }
   if (status && status !== "All") {
     q = q.eq("status", status);
+  }
+  if (excludeNoteMode) {
+    q = q.or(`note_mode.is.null,note_mode.neq.${excludeNoteMode}`);
   }
   if (from) q = q.gte("voucher_date", from);
   if (to) q = q.lte("voucher_date", to);

@@ -27,6 +27,7 @@ const VOUCHER_UNLOCK_ROLES: BusinessRole[] = ["owner", "admin"];
 const FREEZE_OVERRIDE_ROLES: BusinessRole[] = ["owner"];
 const PERIOD_CLOSE_ROLES: BusinessRole[] = ["owner"];
 const READ_ONLY_ROLES: BusinessRole[] = ["viewer"];
+const ADJUSTMENT_LEDGER_OVERRIDE_ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant"];
 
 export function hasRole(role: BusinessRole | null | undefined, allowed: BusinessRole[]): boolean {
   if (!role) return false;
@@ -61,6 +62,17 @@ export function canCloseAccountingPeriod(role: BusinessRole | null): boolean {
 
 export function isReadOnly(role: BusinessRole | null): boolean {
   return hasRole(role, READ_ONLY_ROLES);
+}
+
+/**
+ * Can this role override a ledger that a Financial Adjustment note category
+ * would otherwise auto-suggest? Only meaningful when the business's
+ * financial_note_ledger_mode is 'auto_suggest' and the category itself
+ * allows override — 'auto_lock' is absolute and is never unlocked by
+ * permission (see VoucherForm.tsx's ledger-lock precedence).
+ */
+export function canOverrideAdjustmentLedger(role: BusinessRole | null): boolean {
+  return hasRole(role, ADJUSTMENT_LEDGER_OVERRIDE_ROLES);
 }
 
 /**

@@ -118,8 +118,8 @@ const JournalVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m
 const ContraVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.ContraVoucher })));
 const PaymentVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.PaymentVoucher })));
 const ReceiptVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.ReceiptVoucher })));
-const DebitNote = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.DebitNote })));
-const CreditNote = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.CreditNote })));
+const DebitNote = lazy(() => import("./pages/accounts/DebitNote"));
+const CreditNote = lazy(() => import("./pages/accounts/CreditNote"));
 const CashFlow = lazy(() => import("./pages/accounts/CashFlow"));
 
 // Phase 6 — Dealer portal (separate namespace, no AppLayout)

@@ -2,7 +2,7 @@
 // Routes: /accounting/vouchers/new  |  /accounting/vouchers/:id/edit
 
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -24,6 +24,8 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts, fmtInr } from "@/lib/accounting";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
+import { canOverrideAdjustmentLedger } from "@/lib/permissions";
+import { logAudit } from "@/lib/audit";
 import {
   VOUCHER_TYPES,
   calculateTotals,
@@ -36,6 +38,7 @@ import {
   type VoucherItem,
   type CreateVoucherInput,
   type AdjustmentCategorySnapshot,
+  typeFromDb,
 } from "@/lib/voucherService";
 
 // ── empty row factory ─────────────────────────────────────────────────────────
@@ -53,8 +56,9 @@ export default function VoucherForm() {
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, role } = useBusiness();
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -63,7 +67,11 @@ export default function VoucherForm() {
 
   // ── form state ──────────────────────────────────────────────────────────
   const today = new Date().toISOString().slice(0, 10);
-  const [vType, setVType] = useState<VoucherType>("Journal");
+  // ?type=debit_note / credit_note (etc.) pre-sets the voucher type when
+  // arriving from a dedicated entry point (e.g. the Debit/Credit Note pages'
+  // "New" button) — edit mode always uses the loaded voucher's own type.
+  const presetType = !isEdit && searchParams.get("type") ? typeFromDb(searchParams.get("type")!) : null;
+  const [vType, setVType] = useState<VoucherType>(presetType ?? "Journal");
   const [vDate, setVDate] = useState(today);
   const [narration, setNarration] = useState("");
   const [items, setItems] = useState<VoucherItem[]>([emptyRow(), emptyRow()]);
@@ -122,15 +130,24 @@ export default function VoucherForm() {
 
   const selectedCategory = categories.find((c) => c.id === adjustmentCategoryId);
 
-  // Precedence: auto_lock (business) always wins; auto_suggest defers to the
-  // category's allow_ledger_override; manual never locks. A role/permission
-  // check (canOverrideAdjustmentLedger) is added on top of this in Phase 8 —
-  // until then this reflects business setting + category flag only.
+  // Precedence (final, approved rule):
+  //   auto_lock    → always locked, absolute — permission never unlocks it.
+  //   auto_suggest → locked unless the category allows override AND the
+  //                  acting role has accounting override permission.
+  //   manual       → never locked.
   const ledgerMode = noteSettings?.financial_note_ledger_mode ?? "auto_suggest";
-  const ledgerLocked =
-    !!selectedCategory &&
-    ledgerMode !== "manual" &&
-    (ledgerMode === "auto_lock" || !selectedCategory.allow_ledger_override);
+  const ledgerLockReason: string | null = !selectedCategory
+    ? null
+    : ledgerMode === "manual"
+    ? null
+    : ledgerMode === "auto_lock"
+    ? "locked by business policy (Auto Lock)"
+    : !selectedCategory.allow_ledger_override
+    ? "locked by this category"
+    : !canOverrideAdjustmentLedger(role)
+    ? "requires accounting permission to override"
+    : null;
+  const ledgerLocked = !!ledgerLockReason;
 
   const gstMode = noteSettings?.financial_note_gst_mode ?? "manual_only";
   const canAutoGst = !!selectedCategory?.gst_applicable && gstMode !== "manual_only" && !!linkedInvoiceId;
@@ -276,6 +293,28 @@ export default function VoucherForm() {
     }),
   });
 
+  // If the acting user overrode the category's suggested ledger (only
+  // possible when canOverrideAdjustmentLedger granted it), record it —
+  // separate from the category CRUD audit trail (Phase 2), this is about
+  // the override actually being exercised on a specific voucher.
+  const logLedgerOverrideIfAny = async (voucherId: string) => {
+    if (!business || !selectedCategory) return;
+    const defaultLedgerId = vType === "Debit Note" ? selectedCategory.debit_default_ledger_id : selectedCategory.credit_default_ledger_id;
+    const actualLedgerId = items[0]?.ledger_account_id;
+    if (!defaultLedgerId || !actualLedgerId || actualLedgerId === defaultLedgerId) return;
+    await logAudit({
+      business_id: business.id,
+      action: "ADJUSTMENT_LEDGER_OVERRIDE",
+      entity_type: "vouchers",
+      entity_id: voucherId,
+      new_value: {
+        category: selectedCategory.category_name,
+        default_ledger: ledgers.find((l) => l.id === defaultLedgerId)?.name ?? defaultLedgerId,
+        overridden_to: ledgers.find((l) => l.id === actualLedgerId)?.name ?? actualLedgerId,
+      },
+    });
+  };
+
   // ── save draft ───────────────────────────────────────────────────────────
 
   const handleSaveDraft = async () => {
@@ -293,6 +332,7 @@ export default function VoucherForm() {
         toast.success("Voucher updated.");
       } else {
         const v = await createVoucher(user.id, input);
+        if (isNoteType) await logLedgerOverrideIfAny(v.id);
         toast.success(`Voucher ${v.voucher_no} saved as draft.`);
         qc.invalidateQueries({ queryKey: ["vouchers-list"] });
         navigate(`/accounting/vouchers/${v.id}`);
@@ -325,6 +365,7 @@ export default function VoucherForm() {
       if (!isEdit) {
         const v = await createVoucher(user.id, input);
         targetId = v.id;
+        if (isNoteType) await logLedgerOverrideIfAny(v.id);
       } else {
         await updateVoucher(user.id, { id: id!, ...input });
       }
@@ -490,7 +531,7 @@ export default function VoucherForm() {
                 </SelectContent>
               </Select>
               {ledgerLocked && (
-                <p className="text-xs text-amber-600">Ledger is locked by this category/policy — the first row below can't be changed.</p>
+                <p className="text-xs text-amber-600">Ledger {ledgerLockReason} — the first row below can't be changed.</p>
               )}
             </div>
 
