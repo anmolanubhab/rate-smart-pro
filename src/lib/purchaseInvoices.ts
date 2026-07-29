@@ -357,9 +357,22 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
 
   const validItems = input.items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
   if (validItems.length) {
+    // Interstate vs intra-state is the same for every line on this invoice
+    // (one supplier, one business) — resolved once via the GST Engine's own
+    // gst_is_interstate(), not assumed. This used to always split CGST+SGST
+    // regardless of actual state, which is wrong for any interstate supplier
+    // (found while building GST Engine Milestone 4's reconciliation report).
+    const [{ data: biz }, { data: supplier }] = await Promise.all([
+      supabase.from("businesses").select("gst_number").eq("id", businessId).maybeSingle(),
+      supabase.from("parties").select("gst").eq("id", input.supplier_id).maybeSingle(),
+    ]);
+    const { data: interstateData, error: interstateErr } = await supabase.rpc("gst_is_interstate" as never, {
+      _seller_gstin: supplier?.gst ?? null,
+      _buyer_gstin: biz?.gst_number ?? null,
+    } as never);
+    const isInterstate = interstateErr ? false : !!interstateData;
+
     const rows = validItems.map((it, idx) => {
-      // No state-comparison helper exists yet — default to intra-state
-      // (CGST+SGST split). A future phase can make this place-of-supply aware.
       const half = +(it.tax_amount / 2).toFixed(2);
       return {
         purchase_invoice_id: invId!,
@@ -372,12 +385,12 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         discount_percent: it.discount_percent,
         gst_percent: it.gst_percent,
         line_total: it.total_amount,
-        cgst_rate: it.gst_percent / 2,
-        sgst_rate: it.gst_percent / 2,
-        igst_rate: 0,
-        cgst_amount: half,
-        sgst_amount: it.tax_amount - half,
-        igst_amount: 0,
+        cgst_rate: isInterstate ? 0 : it.gst_percent / 2,
+        sgst_rate: isInterstate ? 0 : it.gst_percent / 2,
+        igst_rate: isInterstate ? it.gst_percent : 0,
+        cgst_amount: isInterstate ? 0 : half,
+        sgst_amount: isInterstate ? 0 : it.tax_amount - half,
+        igst_amount: isInterstate ? it.tax_amount : 0,
         cess_amount: 0,
         position: idx,
         unit_id: it.unit_id ?? null,

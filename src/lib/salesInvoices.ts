@@ -84,7 +84,7 @@ export async function generateInvoiceFromDispatch(opts: {
   // 1. Load dispatch + its items
   const { data: dispatch, error: de } = await supabase
     .from("dispatches")
-    .select("*, dispatch_items(*, order_items(part_number, description, vehicle_model, mrp, net_rate, discount_pct, gst_pct, product_id))")
+    .select("*, dispatch_items(*, order_items(part_number, description, vehicle_model, mrp, net_rate, discount_pct, gst_pct, product_id, products(hsn)))")
     .eq("id", opts.dispatchId)
     .single();
   if (de) throw de;
@@ -94,6 +94,22 @@ export async function generateInvoiceFromDispatch(opts: {
 
   // 2. Load order for party / address info
   const order = await fetchOrder(dispatch.order_id);
+
+  // Interstate vs intra-state is the same for every line on this invoice
+  // (one party, one business) — resolved once via the GST Engine, not
+  // assumed. Previously this was never computed at all: every sales invoice
+  // item was left with cgst_amount/sgst_amount/igst_amount at their column
+  // default of 0 regardless of gst_pct, which is why GST Engine Milestone 4's
+  // reports summed to zero output tax despite real invoices existing.
+  const [{ data: biz }, { data: party }] = await Promise.all([
+    supabase.from("businesses").select("gst_number").eq("id", opts.businessId ?? "").maybeSingle(),
+    supabase.from("parties").select("gst").eq("id", order.party_id ?? "").maybeSingle(),
+  ]);
+  const { data: interstateData, error: interstateErr } = await supabase.rpc("gst_is_interstate" as never, {
+    _seller_gstin: biz?.gst_number ?? null,
+    _buyer_gstin: party?.gst ?? null,
+  } as never);
+  const isInterstate = interstateErr ? false : !!interstateData;
 
   // 3. Build invoice line items from dispatch_items
   const dispatchItems: any[] = (dispatch as any).dispatch_items || [];
@@ -107,12 +123,15 @@ export async function generateInvoiceFromDispatch(opts: {
     const disc = Number(oi?.discount_pct ?? 0);
     const gstPct = Number(oi?.gst_pct ?? 0);
     const lineNet = +(net_rate * qty).toFixed(2);
-    const total = +(lineNet * (1 + gstPct / 100)).toFixed(2);
+    const gstAmount = +(lineNet * gstPct / 100).toFixed(2);
+    const total = +(lineNet + gstAmount).toFixed(2);
+    const half = +(gstAmount / 2).toFixed(2);
     return {
       product_id: oi?.product_id ?? null,
       part_number: oi?.part_number ?? "",
       description: oi?.description ?? "",
       vehicle_model: oi?.vehicle_model ?? null,
+      hsn: oi?.products?.hsn ?? null,
       mrp: Number(oi?.mrp ?? 0),
       net_rate,
       rate: net_rate,
@@ -120,11 +139,17 @@ export async function generateInvoiceFromDispatch(opts: {
       dispatch_item_id: di.id,
       discount_pct: disc,
       gst_pct: gstPct,
+      cgst_rate: isInterstate ? 0 : gstPct / 2,
+      sgst_rate: isInterstate ? 0 : gstPct / 2,
+      igst_rate: isInterstate ? gstPct : 0,
+      cgst_amount: isInterstate ? 0 : half,
+      sgst_amount: isInterstate ? 0 : gstAmount - half,
+      igst_amount: isInterstate ? gstAmount : 0,
       unit_id: di.unit_id ?? null,
       stock_qty: di.stock_dispatched_qty ?? null,
       // for totals computation
       _lineNet: lineNet,
-      _gst: +(lineNet * gstPct / 100).toFixed(2),
+      _gst: gstAmount,
       total,
     };
   });
@@ -173,12 +198,19 @@ export async function generateInvoiceFromDispatch(opts: {
     part_number: it.part_number,
     description: it.description,
     vehicle_model: it.vehicle_model,
+    hsn: it.hsn,
     mrp: it.mrp,
     rate: it.net_rate,
     qty: it.qty,
     discount_pct: it.discount_pct,
     net_rate: it.net_rate,
     gst_pct: it.gst_pct,
+    cgst_rate: it.cgst_rate,
+    sgst_rate: it.sgst_rate,
+    igst_rate: it.igst_rate,
+    cgst_amount: it.cgst_amount,
+    sgst_amount: it.sgst_amount,
+    igst_amount: it.igst_amount,
     total: it.total,
     position: idx,
     unit_id: it.unit_id ?? null,
@@ -250,6 +282,18 @@ export async function generateInvoiceFromOrder(opts: {
   if (!items.length) throw new Error("Order has no items");
   const totals = computeTotals(items as any, order.shipping_charges || 0);
 
+  // Same fix as generateInvoiceFromDispatch — resolved once per invoice via
+  // the GST Engine, not left at the column default of 0.
+  const [{ data: biz }, { data: party }] = await Promise.all([
+    supabase.from("businesses").select("gst_number").eq("id", opts.businessId ?? "").maybeSingle(),
+    supabase.from("parties").select("gst").eq("id", order.party_id ?? "").maybeSingle(),
+  ]);
+  const { data: interstateData, error: interstateErr } = await supabase.rpc("gst_is_interstate" as never, {
+    _seller_gstin: biz?.gst_number ?? null,
+    _buyer_gstin: party?.gst ?? null,
+  } as never);
+  const isInterstate = interstateErr ? false : !!interstateData;
+
   const invoice_number = await nextInvoiceNumber(opts.userId);
   const status = opts.requireApproval ? "draft" : "posted";
 
@@ -281,22 +325,40 @@ export async function generateInvoiceFromOrder(opts: {
     .single();
   if (error) throw error;
 
-  const rows = items.map((it: any, idx) => ({
-    user_id: opts.userId,
-    invoice_id: inv.id,
-    product_id: it.product_id,
-    part_number: it.part_number,
-    description: it.description,
-    vehicle_model: it.vehicle_model,
-    mrp: it.mrp,
-    rate: it.net_rate,
-    qty: it.qty,
-    discount_pct: it.discount_pct,
-    net_rate: it.net_rate,
-    gst_pct: it.gst_pct,
-    total: it.total,
-    position: idx,
-  }));
+  const productIds = Array.from(new Set(items.map((it: any) => it.product_id).filter(Boolean)));
+  const { data: productsData } = productIds.length
+    ? await supabase.from("products").select("id, hsn").in("id", productIds as string[])
+    : { data: [] as { id: string; hsn: string | null }[] };
+  const hsnByProduct = new Map((productsData || []).map((p: any) => [p.id, p.hsn]));
+
+  const rows = items.map((it: any, idx) => {
+    const lineTaxable = (it.net_rate || 0) * (it.qty || 0);
+    const lineGst = +(lineTaxable * ((it.gst_pct || 0) / 100)).toFixed(2);
+    const half = +(lineGst / 2).toFixed(2);
+    return {
+      user_id: opts.userId,
+      invoice_id: inv.id,
+      product_id: it.product_id,
+      part_number: it.part_number,
+      description: it.description,
+      vehicle_model: it.vehicle_model,
+      mrp: it.mrp,
+      rate: it.net_rate,
+      qty: it.qty,
+      discount_pct: it.discount_pct,
+      net_rate: it.net_rate,
+      gst_pct: it.gst_pct,
+      hsn: it.product_id ? hsnByProduct.get(it.product_id) ?? null : null,
+      cgst_rate: isInterstate ? 0 : it.gst_pct / 2,
+      sgst_rate: isInterstate ? 0 : it.gst_pct / 2,
+      igst_rate: isInterstate ? it.gst_pct : 0,
+      cgst_amount: isInterstate ? 0 : half,
+      sgst_amount: isInterstate ? 0 : lineGst - half,
+      igst_amount: isInterstate ? lineGst : 0,
+      total: it.total,
+      position: idx,
+    };
+  });
   const { error: e2 } = await supabase.from("sales_invoice_items").insert(rows);
   if (e2) {
     await supabase.from("sales_invoices").delete().eq("id", inv.id);
