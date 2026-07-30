@@ -409,6 +409,49 @@ export async function postVoucher(
   return _mapVoucher(vRow, voucher.items ?? []);
 }
 
+// ─── 5b. cancelVoucher ────────────────────────────────────────────────────────
+
+/**
+ * Cancels a posted voucher — the reversal path deleteVoucher() has always
+ * pointed users to ("Cancel it first") without this function existing.
+ * Never deletes: flips status to "cancelled" so the original entry stays
+ * visible for audit. fetchLedgersWithBalance/fetchPartyLedger (accounting.ts)
+ * only count "posted" vouchers, so a cancelled voucher's financial effect
+ * is fully excluded from balances without altering history.
+ */
+export async function cancelVoucher(
+  userId: string,
+  voucherId: string,
+  reason?: string
+): Promise<Voucher> {
+  const businessId = requireBusiness();
+
+  const voucher = await getVoucher(voucherId);
+  if (!voucher) throw new Error("Voucher not found.");
+  if (voucher.status !== "posted") {
+    throw new Error("Only posted vouchers can be cancelled.");
+  }
+
+  await assertNotLocked(businessId, voucher.voucher_date);
+
+  const { data: vRow, error } = await supabase
+    .from("vouchers")
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: userId,
+      cancelled_reason: reason ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", voucherId)
+    .eq("business_id", businessId)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(`cancelVoucher: ${error.message}`);
+  return _mapVoucher(vRow, voucher.items ?? []);
+}
+
 // ─── 6. deleteVoucher ────────────────────────────────────────────────────────
 
 /**

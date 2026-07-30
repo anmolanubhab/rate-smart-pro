@@ -237,24 +237,34 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
   }
 
   if (input.items.length) {
-    const rows = input.items.map((it, idx) => ({
-      order_id: orderId!,
-      user_id: input.userId,
-      product_id: it.product_id,
-      part_number: it.part_number,
-      description: it.description,
-      vehicle_model: it.vehicle_model ?? null,
-      mrp: it.mrp,
-      rate: it.net_rate,
-      qty: it.qty,
-      discount_pct: it.discount_pct,
-      net_rate: it.net_rate,
-      gst_pct: it.gst_pct,
-      total: it.total,
-      position: idx,
-      unit_id: it.unit_id ?? null,
-      stock_qty: it.stock_qty ?? null,
-    }));
+    // Items are deleted and reinserted wholesale above rather than diffed —
+    // dispatched_qty/pending_qty must be carried forward explicitly here or
+    // an edit silently wipes a dispatch's progress. computeItem() (used to
+    // hydrate the edit form) already preserves dispatched_qty from the
+    // loaded row, so it's present on `it` whenever this is an edit.
+    const rows = input.items.map((it, idx) => {
+      const dispatchedQty = Number(it.dispatched_qty) || 0;
+      return {
+        order_id: orderId!,
+        user_id: input.userId,
+        product_id: it.product_id,
+        part_number: it.part_number,
+        description: it.description,
+        vehicle_model: it.vehicle_model ?? null,
+        mrp: it.mrp,
+        rate: it.net_rate,
+        qty: it.qty,
+        dispatched_qty: dispatchedQty,
+        pending_qty: Math.max(0, Number(it.qty) - dispatchedQty),
+        discount_pct: it.discount_pct,
+        net_rate: it.net_rate,
+        gst_pct: it.gst_pct,
+        total: it.total,
+        position: idx,
+        unit_id: it.unit_id ?? null,
+        stock_qty: it.stock_qty ?? null,
+      };
+    });
     const { error } = await supabase.from("order_items").insert(rows);
     if (error) throw error;
   }

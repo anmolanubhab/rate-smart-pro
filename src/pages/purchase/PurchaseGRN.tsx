@@ -302,7 +302,7 @@ export default function PurchaseGRN() {
       }
 
       toast({ title: "Success", description: `GRN created as ${status.toUpperCase()}` });
-      navigate('/purchase');
+      navigate(`/purchase/grn/${grn.id}`);
 
     } catch (error: any) {
       toast({ title: "Operation Failed", description: error.message, variant: "destructive" });

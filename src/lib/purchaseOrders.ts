@@ -250,6 +250,24 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
       })
       .eq("id", poId);
     if (error) throw error;
+
+    // Line items are deleted and reinserted wholesale below (not diffed),
+    // which would silently sever goods_receipt_items.purchase_order_item_id
+    // (ON DELETE SET NULL) once a GRN has been recorded against this PO —
+    // disconnecting the receiving history from its PO line. Header fields
+    // above have already saved at this point; only the item rewrite is
+    // blocked here.
+    const { count: grnCount, error: grnErr } = await supabase
+      .from("goods_receipts")
+      .select("id", { count: "exact", head: true })
+      .eq("purchase_order_id", poId);
+    if (grnErr) throw grnErr;
+    if ((grnCount ?? 0) > 0) {
+      throw new Error(
+        "Header details were saved, but line items can't be changed once goods have been received against this PO. Create a new PO for additional items."
+      );
+    }
+
     await supabase.from("purchase_order_items").delete().eq("purchase_order_id", poId);
   }
 

@@ -87,10 +87,13 @@ export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow
   const { data: ledgers, error } = await lq;
   if (error) throw error;
 
+  // Only posted vouchers affect a ledger's balance — draft (unconfirmed)
+  // and cancelled vouchers must not.
   let iq = supabase
     .from("voucher_items")
-    .select("ledger_account_id, dr_amount, cr_amount")
-    .eq("user_id", userId);
+    .select("ledger_account_id, dr_amount, cr_amount, vouchers!inner(status)")
+    .eq("user_id", userId)
+    .eq("vouchers.status", "posted");
   if (biz) iq = iq.eq("business_id", biz);
   const { data: items, error: e2 } = await iq;
   if (e2) throw e2;
@@ -335,7 +338,10 @@ export async function fetchPartyLedger(
     )
     .eq("ledger_account_id", ledger.id)
     .eq("business_id", businessId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    // Only posted vouchers count toward the ledger — draft (unconfirmed)
+    // and cancelled vouchers must not appear in the statement or balance.
+    .eq("vouchers.status", "posted");
 
   // Apply date filter if provided
   if (opts?.from) {

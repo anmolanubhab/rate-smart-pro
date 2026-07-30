@@ -6,11 +6,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Pencil, CheckCircle, Trash2, Printer, Share2,
+  ArrowLeft, Pencil, CheckCircle, Trash2, Printer, Share2, Ban,
   AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -22,7 +23,7 @@ import { fmtInr } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getVoucher, postVoucher, deleteVoucher,
+  getVoucher, postVoucher, deleteVoucher, cancelVoucher,
   calculateTotals,
 } from "@/lib/voucherService";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
@@ -70,6 +71,8 @@ export default function VoucherDetail() {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [postOpen, setPostOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [busy, setBusy] = useState(false);
 
   const [printData, setPrintData] = useState<{
@@ -108,6 +111,23 @@ export default function VoucherDetail() {
     } finally {
       setBusy(false);
       setPostOpen(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!user?.id || !id) return;
+    setBusy(true);
+    try {
+      const cancelled = await cancelVoucher(user.id, id, cancelReason.trim() || undefined);
+      toast.success(`Voucher ${cancelled.voucher_no} cancelled.`);
+      qc.invalidateQueries({ queryKey: ["voucher-detail", id] });
+      qc.invalidateQueries({ queryKey: ["vouchers-list"] });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setBusy(false);
+      setCancelOpen(false);
+      setCancelReason("");
     }
   };
 
@@ -257,6 +277,16 @@ export default function VoucherDetail() {
                   <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
                 </Button>
               </>
+            )}
+            {voucher.status === "posted" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-orange-600 border-orange-500/40 hover:bg-orange-500/10"
+                onClick={() => setCancelOpen(true)}
+              >
+                <Ban className="h-3.5 w-3.5 mr-1" /> Cancel
+              </Button>
             )}
           </div>
         </div>
@@ -462,6 +492,38 @@ export default function VoucherDetail() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel confirmation dialog */}
+      <AlertDialog open={cancelOpen} onOpenChange={(o) => { setCancelOpen(o); if (!o) setCancelReason(""); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Voucher?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Voucher <strong>{voucher.voucher_no}</strong> will be marked cancelled and excluded from
+              ledger balances. The entry stays visible for audit — this does not delete it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Reason (optional)</label>
+            <Textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Why is this voucher being cancelled?"
+              rows={2}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep Voucher</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCancel}
+              disabled={busy}
+              className="bg-orange-600 text-white hover:bg-orange-700"
+            >
+              Cancel Voucher
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

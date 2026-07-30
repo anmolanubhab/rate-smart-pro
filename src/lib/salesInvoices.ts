@@ -434,9 +434,17 @@ export async function deleteInvoice(invoiceId: string) {
   // Load invoice
   const { data: inv } = await supabase
     .from("sales_invoices")
-    .select("order_id, dispatch_id")
+    .select("order_id, dispatch_id, status")
     .eq("id", invoiceId)
     .single();
+
+  // Docstring says draft-only, but nothing enforced that — a posted
+  // invoice already has an auto-posted ledger voucher (see
+  // sales_invoice_autopost trigger) that this function never reverses,
+  // so deleting it would silently orphan those ledger entries.
+  if ((inv as any)?.status && (inv as any).status !== "draft") {
+    throw new Error("Only draft invoices can be deleted. Cancel a posted invoice instead.");
+  }
 
   // Delete line items first (FK constraint)
   const { error: e1 } = await supabase

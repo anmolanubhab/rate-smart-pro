@@ -85,6 +85,8 @@ const VoucherDetail = lazy(() => import("./pages/accounting/VoucherDetail"));
 const PurchaseDashboard = lazy(() => import("./pages/purchase/PurchaseDashboard"));
 const PurchaseOrders = lazy(() => import("./pages/purchase/PurchaseOrders"));
 const PurchaseGRN = lazy(() => import("./pages/purchase/PurchaseGRN"));
+const GRNList = lazy(() => import("./pages/purchase/GRNList"));
+const GRNDetail = lazy(() => import("./pages/purchase/GRNDetail"));
 const PurchaseInvoices = lazy(() => import("./pages/purchase/PurchaseInvoices"));
 const PurchasePayments = lazy(() => import("./pages/purchase/PurchasePayments"));
 const PurchaseReports = lazy(() => import("./pages/purchase/PurchaseReports"));
@@ -252,7 +254,9 @@ const App = () => (
               <Route path="/purchase/orders" element={L(<PurchaseOrders />)} />
               <Route path="/purchase/orders/new" element={L(<CreatePurchaseOrder />)} />
               <Route path="/purchase/orders/edit/:id" element={L(<CreatePurchaseOrder />)} />
-              <Route path="/purchase/grn" element={L(<PurchaseGRN />)} />
+              <Route path="/purchase/grn" element={L(<GRNList />)} />
+              <Route path="/purchase/grn/new" element={L(<PurchaseGRN />)} />
+              <Route path="/purchase/grn/:id" element={L(<GRNDetail />)} />
               <Route path="/purchase/invoices" element={L(<PurchaseInvoices />)} />
               <Route path="/purchase/payments" element={L(<PurchasePayments />)} />
               <Route path="/purchase/reports" element={L(<PurchaseReports />)} />

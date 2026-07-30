@@ -16,6 +16,7 @@ import {
   nextOrderNumber,
   saveOrder,
   OrderItem,
+  OrderStatus,
   fetchOrder,
   fetchOrderItems,
 } from "@/lib/orders";
@@ -48,7 +49,7 @@ const CreateOrder = () => {
   const printOnLoad = params.get("print") === "1";
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [editStatus, setEditStatus] = useState<string>("draft");
+  const [editStatus, setEditStatus] = useState<OrderStatus>("draft");
   const baseTitle = printOnLoad ? "Order" : "Invoice Entry — Spare Parts OMS";
 
   const [parties, setParties] = useState<Party[]>([]);
@@ -429,6 +430,12 @@ const CreateOrder = () => {
       toast.error("Select party and add at least one item");
       return;
     }
+    // A "draft" save (manual "Save Draft"/Ctrl+S, or the 30s autosave) must
+    // never downgrade an order that has already moved past draft — e.g.
+    // approved, partial, or completed — back to draft. Only ever write
+    // "draft" when the order is actually still a draft (or brand new).
+    const statusToSave: OrderStatus =
+      status === "draft" && editMode && editStatus !== "draft" ? editStatus : status;
     try {
       setSaving(true);
       const saved = await saveOrder({
@@ -445,22 +452,23 @@ const CreateOrder = () => {
         notes: narration,
         remarks: refNo ? `Ref: ${refNo}` : null,
         mode: party?.discount_type ?? null,
-        status,
+        status: statusToSave,
         items: valid,
       });
-      
+
       // Instantly pin saved id to prevent dual inserts
       setDraftId(saved.id);
       draftIdRef.current = saved.id;
       if (saved.order_number) {
         setOrderNumber(saved.order_number);
       }
+      setEditStatus(statusToSave);
 
       if (status === "pending") {
         toast.success("Invoice confirmed");
         navigate(`/orders?highlight=${saved.id}`);
       } else {
-        toast.success("Draft saved", { duration: 1500 });
+        toast.success(statusToSave === "draft" ? "Draft saved" : "Saved", { duration: 1500 });
       }
     } catch (e: any) {
       toast.error(e.message);
