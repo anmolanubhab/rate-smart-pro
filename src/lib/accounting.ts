@@ -173,6 +173,83 @@ export async function backfillAccounting(userId: string) {
 
 export const fmtInr = (n: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
+
+export type SupplierLedgerSummary = {
+  party_id: string;
+  name: string;
+  gstin: string | null;
+  credit_limit: number;
+  outstanding: number;
+  last_txn: string | null;
+};
+
+/**
+ * Suppliers, with outstanding balance and last transaction date.
+ *
+ * `ledger_accounts.ledger_type` can't be trusted to mean "this is a
+ * supplier" — every party ledger is auto-created with ledger_type
+ * 'customer' by the ensure_party_ledger trigger regardless of how the
+ * party is actually used, and nothing currently sets it to 'supplier'.
+ * So a party is identified as a supplier here by actual usage — it has
+ * been the supplier on a purchase order or purchase invoice — not by
+ * the (unreliable) ledger_type column.
+ *
+ * Note: src/lib/supplierPayments.ts writes to a `supplier_payments`
+ * table that does not exist in the database (confirmed via schema
+ * inspection — "Could not find the table 'public.supplier_payments'"),
+ * so that flow is currently non-functional and isn't queried here.
+ */
+export async function fetchSupplierLedgerSummary(userId: string): Promise<SupplierLedgerSummary[]> {
+  const biz = getActiveBusinessIdSync();
+  if (!biz) return [];
+
+  const [poRes, invRes] = await Promise.all([
+    supabase.from("purchase_orders").select("supplier_id").eq("business_id", biz).not("supplier_id", "is", null),
+    supabase.from("purchase_invoices").select("supplier_id, invoice_date").eq("business_id", biz).not("supplier_id", "is", null),
+  ]);
+  if (poRes.error) throw poRes.error;
+  if (invRes.error) throw invRes.error;
+
+  const supplierIds = new Set<string>();
+  const lastTxnByParty = new Map<string, string>();
+  const bump = (id: string | null, date: string | null) => {
+    if (!id) return;
+    supplierIds.add(id);
+    if (date && (!lastTxnByParty.has(id) || date > lastTxnByParty.get(id)!)) lastTxnByParty.set(id, date);
+  };
+  (poRes.data ?? []).forEach((r: any) => bump(r.supplier_id, null));
+  (invRes.data ?? []).forEach((r: any) => bump(r.supplier_id, r.invoice_date));
+
+  if (!supplierIds.size) return [];
+  const ids = Array.from(supplierIds);
+
+  const [{ data: parties, error: partiesErr }, ledgers] = await Promise.all([
+    supabase.from("parties").select("id, name, gst, credit_limit").in("id", ids),
+    fetchLedgersWithBalance(userId),
+  ]);
+  if (partiesErr) throw partiesErr;
+
+  const partyMap = new Map((parties ?? []).map((p: any) => [p.id, p]));
+  const ledgerByParty = new Map(
+    ledgers.filter((l) => l.party_id && supplierIds.has(l.party_id)).map((l) => [l.party_id as string, l])
+  );
+
+  return ids
+    .map((id) => {
+      const party = partyMap.get(id);
+      const ledger = ledgerByParty.get(id);
+      const balance = ledger?.balance ?? 0;
+      return {
+        party_id: id,
+        name: party?.name ?? "—",
+        gstin: party?.gst ?? null,
+        credit_limit: Number(party?.credit_limit ?? 0),
+        outstanding: balance < 0 ? Math.abs(balance) : 0,
+        last_txn: lastTxnByParty.get(id) ?? null,
+      };
+    })
+    .sort((a, b) => b.outstanding - a.outstanding);
+}
 // ───────────────────────────────────────────────────────────────
 // NEW: Party Ledger exports (append to end of file)
 // ───────────────────────────────────────────────────────────────
