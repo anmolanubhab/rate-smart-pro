@@ -54,6 +54,9 @@ type FormState = {
   show_amount: boolean;
   show_discount: boolean;
   show_transport_section: boolean;
+  show_mrp: boolean;
+  show_discount_column: boolean;
+  show_warehouse: boolean;
   purpose_text: string;
   show_watermark: boolean;
   watermark_text: string;
@@ -109,6 +112,9 @@ function blankForm(documentType: PrintDocumentType): FormState {
     show_amount: isProductDoc,
     show_discount: isProductDoc,
     show_transport_section: documentType === "delivery_challan",
+    show_mrp: false,
+    show_discount_column: false,
+    show_warehouse: false,
     purpose_text: documentType === "delivery_challan" ? "Sale on approval / Goods sent for delivery" : "",
     show_watermark: false,
     watermark_text: "",
@@ -143,6 +149,9 @@ function profileToForm(p: PrintProfile): FormState {
     show_amount: p.show_amount,
     show_discount: p.show_discount,
     show_transport_section: p.show_transport_section,
+    show_mrp: p.show_mrp,
+    show_discount_column: p.show_discount_column,
+    show_warehouse: p.show_warehouse,
     purpose_text: p.purpose_text ?? "",
     show_watermark: p.show_watermark,
     watermark_text: p.watermark_text ?? "",
@@ -180,6 +189,9 @@ function formToPayload(form: FormState, documentType: PrintDocumentType) {
     show_amount: form.show_amount,
     show_discount: form.show_discount,
     show_transport_section: form.show_transport_section,
+    show_mrp: form.show_mrp,
+    show_discount_column: form.show_discount_column,
+    show_warehouse: form.show_warehouse,
     purpose_text: form.purpose_text || null,
     show_watermark: form.show_watermark,
     watermark_text: form.watermark_text || null,
@@ -412,6 +424,7 @@ export default function PrintProfiles() {
                 ["show_header", "Header"], ["show_footer", "Footer"], ["show_signature", "Signature"],
                 ["show_hsn", "HSN column"], ["show_rate", "Rate column"], ["show_amount", "Amount + totals"],
                 ["show_discount", "Discount row"], ["show_gst_summary", "GST summary"], ["show_transport_section", "Transport details"],
+                ["show_mrp", "MRP column"], ["show_discount_column", "Discount % column"], ["show_warehouse", "Warehouse column"],
               ] as [keyof FormState, string][]).map(([key, label]) => (
                 <div key={key} className="flex items-center gap-2">
                   <Switch checked={form[key] as boolean} onCheckedChange={(v) => set(key, v as never)} />

@@ -17,6 +17,11 @@ export type PrintItem = {
   sgstAmount?: number;
   igstAmount?: number;
   amount?: number | null;
+  /** Optional item-grid columns (product mode only) — shown when the
+   *  matching PrintConfig flag is enabled. */
+  mrp?: number | null;
+  discountPct?: number | null;
+  warehouse?: string | null;
   /** Ledger grid mode only (itemGridMode: "ledger") — Dr/Cr amount for this line. */
   debit?: number | null;
   credit?: number | null;
@@ -108,6 +113,11 @@ export type PrintConfig = {
    *  columns for double-entry voucher documents (Debit Note, Credit Note,
    *  Payment Receipt) which have no per-line price or party. */
   itemGridMode?: "product" | "ledger";
+  /** Optional item-grid columns (product mode only). Off by default so
+   *  existing profiles keep their current printed layout. */
+  showMrp?: boolean;
+  showDiscountColumn?: boolean;
+  showWarehouse?: boolean;
 };
 
 const DEFAULT_TERMS = ["Goods once sold will not be taken back.", "E. & O.E."];
@@ -158,6 +168,9 @@ export default function PrintDocument({
     bankDetails,
     showParty = true,
     itemGridMode = "product",
+    showMrp = false,
+    showDiscountColumn = false,
+    showWarehouse = false,
   } = config;
 
   const t = totals ?? {};
@@ -169,7 +182,8 @@ export default function PrintDocument({
   const isLedger = itemGridMode === "ledger";
   const colCount = isLedger
     ? 4 /* Sr, Ledger, Debit, Credit */
-    : 3 + (showHsn ? 1 : 0) + 1 /* qty */ + (showRate ? 1 : 0) + (showGst ? 1 : 0) + (showAmount ? 1 : 0);
+    : 3 + (showHsn ? 1 : 0) + (showWarehouse ? 1 : 0) + 1 /* qty */
+      + (showMrp ? 1 : 0) + (showDiscountColumn ? 1 : 0) + (showRate ? 1 : 0) + (showGst ? 1 : 0) + (showAmount ? 1 : 0);
   const totalDebit = isLedger ? items.reduce((s, it) => s + (Number(it.debit) || 0), 0) : 0;
   const totalCredit = isLedger ? items.reduce((s, it) => s + (Number(it.credit) || 0), 0) : 0;
 
@@ -368,8 +382,11 @@ export default function PrintDocument({
                   <th className="p-1.5 text-left w-8">Sr</th>
                   <th className="p-1.5 text-left w-24">Part No</th>
                   {showHsn && <th className="p-1.5 text-left w-20">HSN</th>}
+                  {showWarehouse && <th className="p-1.5 text-left w-20">Warehouse</th>}
                   <th className="p-1.5 text-left">Description</th>
                   <th className="p-1.5 text-right w-14">Qty</th>
+                  {showMrp && <th className="p-1.5 text-right w-20">MRP</th>}
+                  {showDiscountColumn && <th className="p-1.5 text-right w-16">Disc %</th>}
                   {showRate && <th className="p-1.5 text-right w-20">Rate</th>}
                   {showGst && <th className="p-1.5 text-right w-14">GST %</th>}
                   {showAmount && <th className="p-1.5 text-right w-24">Amount</th>}
@@ -391,8 +408,11 @@ export default function PrintDocument({
                       <td className="p-1.5 align-top">{idx + 1}</td>
                       <td className="p-1.5 align-top font-semibold">{it.partNumber}</td>
                       {showHsn && <td className="p-1.5 align-top">{it.hsn || "—"}</td>}
+                      {showWarehouse && <td className="p-1.5 align-top">{it.warehouse || "—"}</td>}
                       <td className="p-1.5 align-top">{it.description}</td>
                       <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.qty)} {it.unit ?? ""}</td>
+                      {showMrp && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.mrp)}</td>}
+                      {showDiscountColumn && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.discountPct)}</td>}
                       {showRate && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.rate)}</td>}
                       {showGst && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.gstPct)}</td>}
                       {showAmount && <td className="p-1.5 align-top text-right tabular-nums font-semibold">{fmt(it.amount)}</td>}

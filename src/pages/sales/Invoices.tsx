@@ -188,6 +188,8 @@ export default function InvoicesPage() {
           rate: Number(it.net_rate ?? it.rate) || 0,
           gstPct: Number(it.gst_pct) || 0,
           amount: Number(it.total) || 0,
+          mrp: it.mrp != null ? Number(it.mrp) : null,
+          discountPct: it.discount_pct != null ? Number(it.discount_pct) : null,
         })),
         totals: {
           subtotal: Number(inv.subtotal) || 0,

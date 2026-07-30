@@ -49,6 +49,9 @@ export type PrintProfile = {
   terms: string[];
   item_grid_mode: "product" | "ledger";
   show_party: boolean;
+  show_mrp: boolean;
+  show_discount_column: boolean;
+  show_warehouse: boolean;
 };
 
 /** The profile a print flow should actually use — seeds sane per-document
@@ -128,5 +131,8 @@ export function profileToPrintConfig(profile: PrintProfile): PrintConfig {
     bankDetails: profile.bank_details,
     showParty: profile.show_party,
     itemGridMode: profile.item_grid_mode,
+    showMrp: profile.show_mrp,
+    showDiscountColumn: profile.show_discount_column,
+    showWarehouse: profile.show_warehouse,
   };
 }

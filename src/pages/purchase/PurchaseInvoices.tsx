@@ -111,6 +111,7 @@ export default function PurchaseInvoices() {
           rate: Number(it.purchase_price) || 0,
           gstPct: Number(it.gst_percent) || 0,
           amount: Number(it.line_total) || 0,
+          discountPct: it.discount_percent != null ? Number(it.discount_percent) : null,
         })),
         totals: {
           subtotal: Number(inv.subtotal) || 0,

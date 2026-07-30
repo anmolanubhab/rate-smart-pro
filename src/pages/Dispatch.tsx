@@ -267,6 +267,8 @@ const Dispatch = () => {
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
   const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
   const [printConfigOverride, setPrintConfigOverride] = useState<PrintConfig | null>(null);
+  const warehouseName = (id: string | null | undefined) => warehouses.find((w) => w.id === id)?.warehouse_name ?? null;
+
   const printChallan = async (d: any) => {
     try {
       const { data: items } = await supabase
@@ -311,6 +313,7 @@ const Dispatch = () => {
           partNumber: it.part_number ?? it.order_items?.part_number ?? "",
           description: it.description ?? it.order_items?.description ?? "",
           qty: Number(it.dispatched_qty) || 0,
+          warehouse: warehouseName(d.warehouse_id),
         })),
       });
       setPrintProfile(profile);
@@ -369,6 +372,7 @@ const Dispatch = () => {
           partNumber: it.part_number ?? it.order_items?.part_number ?? "",
           description: it.description ?? it.order_items?.description ?? "",
           qty: Number(it.dispatched_qty) || 0,
+          warehouse: warehouseName(d.warehouse_id),
         })),
       });
       setPrintProfile(profile);

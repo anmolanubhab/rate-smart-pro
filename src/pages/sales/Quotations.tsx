@@ -90,7 +90,11 @@ export default function Quotations() {
         company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
         party: { name: q.party_name ?? party?.name ?? "—", mobile: party?.phone ?? null, address: party?.address ?? null, gstNo: party?.gst ?? null },
         meta: { number: q.quotation_number, numberLabel: "Quotation No", date: q.quotation_date },
-        items: items.map((it) => ({ partNumber: it.part_number ?? "", description: it.description ?? "", hsn: null, qty: Number(it.qty) || 0, rate: Number(it.net_rate) || 0, gstPct: Number(it.gst_pct) || 0, amount: Number(it.total) || 0 })),
+        items: items.map((it) => ({
+          partNumber: it.part_number ?? "", description: it.description ?? "", hsn: null,
+          qty: Number(it.qty) || 0, rate: Number(it.net_rate) || 0, gstPct: Number(it.gst_pct) || 0, amount: Number(it.total) || 0,
+          mrp: it.mrp != null ? Number(it.mrp) : null, discountPct: it.discount_pct != null ? Number(it.discount_pct) : null,
+        })),
         totals: { subtotal: Number(q.subtotal) || 0, discount: Number(q.discount_total) || 0, tax: Number(q.gst_total) || 0, grandTotal: Number(q.grand_total) || 0 },
       });
       setPrintProfile(profile);

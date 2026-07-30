@@ -493,6 +493,7 @@ export default function CreatePurchaseOrder() {
           rate: Number(it.rate) || 0,
           gstPct: Number(it.gst_percent) || 0,
           amount: Number(it.total_amount) || 0,
+          discountPct: it.discount_percent != null ? Number(it.discount_percent) : null,
         })),
         totals: {
           subtotal: Number(totals.subtotal) || 0,
