@@ -16,6 +16,12 @@ import {
   fetchPrintProfiles, createPrintProfile, updatePrintProfile, deletePrintProfile, setDefaultPrintProfile,
   type PrintProfile, type PrintDocumentType, type PrintPageSize, type PrintOrientation, type PrintLogoPosition,
 } from "@/lib/printProfiles";
+import type { PrintLanguage } from "@/components/print/printLabels";
+
+const LANGUAGES: { value: PrintLanguage; label: string }[] = [
+  { value: "en", label: "English" },
+  { value: "hi", label: "Hindi (हिंदी)" },
+];
 
 const DOCUMENT_TYPES: { value: PrintDocumentType; label: string }[] = [
   { value: "sales_invoice", label: "Sales Invoice" },
@@ -57,6 +63,8 @@ type FormState = {
   show_mrp: boolean;
   show_discount_column: boolean;
   show_warehouse: boolean;
+  language: PrintLanguage;
+  show_qr_code: boolean;
   purpose_text: string;
   show_watermark: boolean;
   watermark_text: string;
@@ -115,6 +123,8 @@ function blankForm(documentType: PrintDocumentType): FormState {
     show_mrp: false,
     show_discount_column: false,
     show_warehouse: false,
+    language: "en",
+    show_qr_code: false,
     purpose_text: documentType === "delivery_challan" ? "Sale on approval / Goods sent for delivery" : "",
     show_watermark: false,
     watermark_text: "",
@@ -152,6 +162,8 @@ function profileToForm(p: PrintProfile): FormState {
     show_mrp: p.show_mrp,
     show_discount_column: p.show_discount_column,
     show_warehouse: p.show_warehouse,
+    language: p.language,
+    show_qr_code: p.show_qr_code,
     purpose_text: p.purpose_text ?? "",
     show_watermark: p.show_watermark,
     watermark_text: p.watermark_text ?? "",
@@ -192,6 +204,8 @@ function formToPayload(form: FormState, documentType: PrintDocumentType) {
     show_mrp: form.show_mrp,
     show_discount_column: form.show_discount_column,
     show_warehouse: form.show_warehouse,
+    language: form.language,
+    show_qr_code: form.show_qr_code,
     purpose_text: form.purpose_text || null,
     show_watermark: form.show_watermark,
     watermark_text: form.watermark_text || null,
@@ -401,6 +415,14 @@ export default function PrintProfiles() {
               <div className="space-y-1.5"><Label className="text-xs">Right (mm)</Label><Input type="number" value={form.margin_right_mm} onChange={(e) => set("margin_right_mm", Number(e.target.value))} /></div>
             </div>
 
+            <div className="space-y-1.5">
+              <Label className="text-xs">Language (fixed labels — column headers, section titles)</Label>
+              <Select value={form.language} onValueChange={(v) => set("language", v as PrintLanguage)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Party Block Label</Label>
@@ -425,6 +447,7 @@ export default function PrintProfiles() {
                 ["show_hsn", "HSN column"], ["show_rate", "Rate column"], ["show_amount", "Amount + totals"],
                 ["show_discount", "Discount row"], ["show_gst_summary", "GST summary"], ["show_transport_section", "Transport details"],
                 ["show_mrp", "MRP column"], ["show_discount_column", "Discount % column"], ["show_warehouse", "Warehouse column"],
+                ["show_qr_code", "QR code"],
               ] as [keyof FormState, string][]).map(([key, label]) => (
                 <div key={key} className="flex items-center gap-2">
                   <Switch checked={form[key] as boolean} onCheckedChange={(v) => set(key, v as never)} />

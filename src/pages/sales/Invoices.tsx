@@ -152,11 +152,12 @@ export default function InvoicesPage() {
   const onPrint = async (inv: SalesInvoice) => {
     setPrinting(inv.id);
     try {
-      const [items, { data: biz }, types, profile] = await Promise.all([
+      const [items, { data: biz }, types, profile, { data: einvoice }] = await Promise.all([
         fetchInvoiceItems(inv.id),
         supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", inv.business_id).maybeSingle(),
         fetchEnabledPrintCopyTypes(inv.business_id),
         fetchDefaultPrintProfile(inv.business_id, "sales_invoice"),
+        supabase.from("einvoice_records").select("signed_qr_code").eq("invoice_id", inv.id).not("signed_qr_code", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
 
       const party = inv.party_snapshot ?? {};
@@ -179,6 +180,7 @@ export default function InvoicesPage() {
           number: inv.invoice_number,
           numberLabel: "Invoice No",
           date: inv.invoice_date,
+          qrCodeValue: einvoice?.signed_qr_code ?? null,
         },
         items: (items as any[]).map((it) => ({
           partNumber: it.part_number ?? "",
@@ -201,7 +203,7 @@ export default function InvoicesPage() {
           grandTotal: Number(inv.grand_total) || 0,
         },
       });
-      setPrintProfile(profile);
+      setPrintProfile(einvoice?.signed_qr_code ? { ...profile, show_qr_code: true } : profile);
       setCopyTypes(types);
       setCopyDialogOpen(true);
     } catch (e: any) {

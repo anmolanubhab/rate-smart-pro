@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { PrintConfig } from "@/components/print/PrintDocument";
+import type { PrintLanguage } from "@/components/print/printLabels";
 
 export type PrintDocumentType =
   | "sales_invoice" | "purchase_invoice" | "delivery_challan"
@@ -52,6 +53,8 @@ export type PrintProfile = {
   show_mrp: boolean;
   show_discount_column: boolean;
   show_warehouse: boolean;
+  language: PrintLanguage;
+  show_qr_code: boolean;
 };
 
 /** The profile a print flow should actually use — seeds sane per-document
@@ -134,5 +137,8 @@ export function profileToPrintConfig(profile: PrintProfile): PrintConfig {
     showMrp: profile.show_mrp,
     showDiscountColumn: profile.show_discount_column,
     showWarehouse: profile.show_warehouse,
+    language: profile.language,
+    showQrCode: profile.show_qr_code,
+    layoutMode: profile.page_size.startsWith("Thermal_") ? "thermal" : "standard",
   };
 }
