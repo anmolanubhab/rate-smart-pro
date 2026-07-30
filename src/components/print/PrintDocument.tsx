@@ -17,6 +17,9 @@ export type PrintItem = {
   sgstAmount?: number;
   igstAmount?: number;
   amount?: number | null;
+  /** Ledger grid mode only (itemGridMode: "ledger") — Dr/Cr amount for this line. */
+  debit?: number | null;
+  credit?: number | null;
 };
 
 export type PrintParty = {
@@ -57,6 +60,8 @@ export type PrintMeta = {
   vehicleNumber?: string | null;
   lrNumber?: string | null;
   ewayNumber?: string | null;
+  /** Voucher narration — shown when the party block is hidden (ledger-mode documents). */
+  narration?: string | null;
 };
 
 export type PrintConfig = {
@@ -95,6 +100,14 @@ export type PrintConfig = {
   /** Small bank-details block in the footer area. */
   showBankDetails?: boolean;
   bankDetails?: { accountName?: string; accountNumber?: string; ifsc?: string; bankName?: string; branch?: string } | null;
+  /** Show the party block (BILL TO/DELIVER TO/etc). Default true — ledger-mode
+   *  documents (vouchers with no structural party) set this false. */
+  showParty?: boolean;
+  /** "product" (default): Part No/HSN/Qty/Rate/GST/Amount columns, the shape
+   *  every invoice-like document uses. "ledger": Ledger Account/Debit/Credit
+   *  columns for double-entry voucher documents (Debit Note, Credit Note,
+   *  Payment Receipt) which have no per-line price or party. */
+  itemGridMode?: "product" | "ledger";
 };
 
 const DEFAULT_TERMS = ["Goods once sold will not be taken back.", "E. & O.E."];
@@ -143,6 +156,8 @@ export default function PrintDocument({
     watermarkText,
     showBankDetails = false,
     bankDetails,
+    showParty = true,
+    itemGridMode = "product",
   } = config;
 
   const t = totals ?? {};
@@ -151,7 +166,12 @@ export default function PrintDocument({
   const fmt = (n?: number | null) =>
     Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const colCount = 3 + (showHsn ? 1 : 0) + 1 /* qty */ + (showRate ? 1 : 0) + (showGst ? 1 : 0) + (showAmount ? 1 : 0);
+  const isLedger = itemGridMode === "ledger";
+  const colCount = isLedger
+    ? 4 /* Sr, Ledger, Debit, Credit */
+    : 3 + (showHsn ? 1 : 0) + 1 /* qty */ + (showRate ? 1 : 0) + (showGst ? 1 : 0) + (showAmount ? 1 : 0);
+  const totalDebit = isLedger ? items.reduce((s, it) => s + (Number(it.debit) || 0), 0) : 0;
+  const totalCredit = isLedger ? items.reduce((s, it) => s + (Number(it.credit) || 0), 0) : 0;
 
   const TaxSummaryRows = () =>
     hasGstSplit ? (
@@ -267,7 +287,9 @@ export default function PrintDocument({
         </div>
         )}
 
-        {/* ── Party block + (transport details or totals-preview box) ───── */}
+        {/* ── Party block + (transport details or totals-preview box), or a
+             narration strip for ledger-mode documents with no structural party ── */}
+        {showParty ? (
         <div className="grid grid-cols-2 border-b-2 border-black">
           <div className="p-3 border-r-2 border-black">
             <div className="text-[12px] font-bold">{partyLabel}</div>
@@ -320,6 +342,12 @@ export default function PrintDocument({
             )}
           </div>
         </div>
+        ) : meta.narration ? (
+          <div className="p-3 border-b-2 border-black">
+            <div className="text-[12px] font-bold">Narration</div>
+            <div className="mt-1 text-[11px] leading-snug whitespace-pre-wrap">{meta.narration}</div>
+          </div>
+        ) : null}
 
         {/* ── Item grid ───────────────────────────────────────────────── */}
         <div className="p-3">
@@ -328,40 +356,65 @@ export default function PrintDocument({
           )}
           <table className="w-full border border-black text-[11px]">
             <thead className="bg-white">
-              <tr className="border-b border-black">
-                <th className="p-1.5 text-left w-8">Sr</th>
-                <th className="p-1.5 text-left w-24">Part No</th>
-                {showHsn && <th className="p-1.5 text-left w-20">HSN</th>}
-                <th className="p-1.5 text-left">Description</th>
-                <th className="p-1.5 text-right w-14">Qty</th>
-                {showRate && <th className="p-1.5 text-right w-20">Rate</th>}
-                {showGst && <th className="p-1.5 text-right w-14">GST %</th>}
-                {showAmount && <th className="p-1.5 text-right w-24">Amount</th>}
-              </tr>
+              {isLedger ? (
+                <tr className="border-b border-black">
+                  <th className="p-1.5 text-left w-8">Sr</th>
+                  <th className="p-1.5 text-left">Ledger Account</th>
+                  <th className="p-1.5 text-right w-28">Debit</th>
+                  <th className="p-1.5 text-right w-28">Credit</th>
+                </tr>
+              ) : (
+                <tr className="border-b border-black">
+                  <th className="p-1.5 text-left w-8">Sr</th>
+                  <th className="p-1.5 text-left w-24">Part No</th>
+                  {showHsn && <th className="p-1.5 text-left w-20">HSN</th>}
+                  <th className="p-1.5 text-left">Description</th>
+                  <th className="p-1.5 text-right w-14">Qty</th>
+                  {showRate && <th className="p-1.5 text-right w-20">Rate</th>}
+                  {showGst && <th className="p-1.5 text-right w-14">GST %</th>}
+                  {showAmount && <th className="p-1.5 text-right w-24">Amount</th>}
+                </tr>
+              )}
             </thead>
             <tbody>
               {items.length ? (
-                items.map((it, idx) => (
-                  <tr key={`${it.partNumber}-${idx}`} className="border-b border-black last:border-b-0">
-                    <td className="p-1.5 align-top">{idx + 1}</td>
-                    <td className="p-1.5 align-top font-semibold">{it.partNumber}</td>
-                    {showHsn && <td className="p-1.5 align-top">{it.hsn || "—"}</td>}
-                    <td className="p-1.5 align-top">{it.description}</td>
-                    <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.qty)} {it.unit ?? ""}</td>
-                    {showRate && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.rate)}</td>}
-                    {showGst && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.gstPct)}</td>}
-                    {showAmount && <td className="p-1.5 align-top text-right tabular-nums font-semibold">{fmt(it.amount)}</td>}
-                  </tr>
-                ))
+                items.map((it, idx) =>
+                  isLedger ? (
+                    <tr key={`${it.description}-${idx}`} className="border-b border-black last:border-b-0">
+                      <td className="p-1.5 align-top">{idx + 1}</td>
+                      <td className="p-1.5 align-top font-semibold">{it.description}</td>
+                      <td className="p-1.5 align-top text-right tabular-nums">{it.debit ? fmt(it.debit) : ""}</td>
+                      <td className="p-1.5 align-top text-right tabular-nums">{it.credit ? fmt(it.credit) : ""}</td>
+                    </tr>
+                  ) : (
+                    <tr key={`${it.partNumber}-${idx}`} className="border-b border-black last:border-b-0">
+                      <td className="p-1.5 align-top">{idx + 1}</td>
+                      <td className="p-1.5 align-top font-semibold">{it.partNumber}</td>
+                      {showHsn && <td className="p-1.5 align-top">{it.hsn || "—"}</td>}
+                      <td className="p-1.5 align-top">{it.description}</td>
+                      <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.qty)} {it.unit ?? ""}</td>
+                      {showRate && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.rate)}</td>}
+                      {showGst && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.gstPct)}</td>}
+                      {showAmount && <td className="p-1.5 align-top text-right tabular-nums font-semibold">{fmt(it.amount)}</td>}
+                    </tr>
+                  )
+                )
               ) : (
                 <tr>
                   <td className="p-2 text-center" colSpan={colCount}>No items</td>
                 </tr>
               )}
+              {isLedger && items.length > 0 && (
+                <tr className="border-t-2 border-black font-bold">
+                  <td className="p-1.5" colSpan={2}>Total</td>
+                  <td className="p-1.5 text-right tabular-nums">{fmt(totalDebit)}</td>
+                  <td className="p-1.5 text-right tabular-nums">{fmt(totalCredit)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
 
-          {/* ── Footer: totals+terms for GST docs, signature block for challan-style ── */}
+          {/* ── Footer: totals+terms for GST docs, signature block for challan-style/ledger-mode ── */}
           {showFooter && (showAmount ? (
             <div className="grid grid-cols-2 gap-4 mt-3">
               <div className="border border-black p-2">
@@ -407,6 +460,15 @@ export default function PrintDocument({
                 )}
               </div>
             </div>
+          ) : isLedger ? (
+            showSignature && (
+              <div className="mt-8 flex justify-end text-[11px]">
+                <div className="text-right">
+                  <p className="font-semibold mb-8">For {company.name}</p>
+                  <div className="border-t border-black pt-1 inline-block">Authorized Signatory</div>
+                </div>
+              </div>
+            )
           ) : (
             <div className="mt-6 grid grid-cols-2 gap-8 text-[11px]">
               <div>

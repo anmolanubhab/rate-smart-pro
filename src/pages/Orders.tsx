@@ -34,6 +34,11 @@ import { fetchSalesConfig } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
 import { useFormatDate } from "@/lib/dateFormat";
+import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
+import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
+import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
+import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
 
 const statusColor: Record<string, string> = {
   draft: "border-muted-foreground/30 text-muted-foreground bg-muted/40",
@@ -72,6 +77,13 @@ const Orders = () => {
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+
+  // Print
+  const [printData, setPrintData] = useState<{ company: any; party: any; meta: any; items: any[]; totals: any } | null>(null);
+  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
+  const [copyLabels, setCopyLabels] = useState<string[]>([]);
 
   // ── FIX: Wait for BOTH user AND business before fetching ──────────────────
   const reload = async () => {
@@ -162,6 +174,55 @@ const Orders = () => {
       await reload();
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(null); }
+  };
+
+  const onPrint = async (o: Order) => {
+    if (!business?.id) return;
+    setBusy(o.id);
+    try {
+      const [items, { data: biz }, { data: party }, types, profile] = await Promise.all([
+        fetchOrderItems(o.id),
+        supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", business.id).maybeSingle(),
+        o.party_id ? supabase.from("parties").select("name, address, phone, gst").eq("id", o.party_id).maybeSingle() : Promise.resolve({ data: null }),
+        fetchEnabledPrintCopyTypes(business.id),
+        fetchDefaultPrintProfile(business.id, "sales_order"),
+      ]);
+
+      const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
+
+      setPrintData({
+        company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
+        party: {
+          name: o.party_name ?? party?.name ?? "—",
+          mobile: party?.phone ?? null,
+          address: o.billing_address ?? party?.address ?? null,
+          gstNo: party?.gst ?? null,
+        },
+        meta: { number: o.order_number, numberLabel: "Order No", date: o.order_date },
+        items: items.map((it) => ({
+          partNumber: it.part_number ?? "",
+          description: it.description ?? "",
+          hsn: null,
+          qty: Number(it.qty) || 0,
+          rate: Number(it.net_rate) || 0,
+          gstPct: Number(it.gst_pct) || 0,
+          amount: Number(it.total) || 0,
+        })),
+        totals: {
+          subtotal: Number(o.subtotal) || 0,
+          discount: Number(o.discount_total) || 0,
+          tax: Number(o.gst_total) || 0,
+          grandTotal: Number(o.grand_total) || 0,
+        },
+      });
+      setPrintProfile(profile);
+      setCopyTypes(types);
+      setCopyDialogOpen(true);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not prepare order for printing");
+    } finally {
+      setBusy(null);
+    }
   };
 
   const onDuplicate = async (o: Order) => {
@@ -381,7 +442,7 @@ const Orders = () => {
                           <DropdownMenuContent align="end" className="w-52">
                             <DropdownMenuItem onClick={() => onView(o)}><Eye className="h-4 w-4 mr-2" /> View Order</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => nav(`/orders/edit/${o.id}`)} disabled={o.status === "cancelled"}><Pencil className="h-4 w-4 mr-2" /> Edit Order</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => nav(`/orders/edit/${o.id}?print=1`)}><Printer className="h-4 w-4 mr-2" /> Print Order</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onPrint(o)}><Printer className="h-4 w-4 mr-2" /> Print Order</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => onDuplicate(o)}><Copy className="h-4 w-4 mr-2" /> Duplicate</DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {o.status === "pending" && canApproveOrder && (
@@ -529,6 +590,31 @@ const Orders = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {printData && printProfile && (
+        <PrintCopyDialog
+          open={copyDialogOpen}
+          onOpenChange={setCopyDialogOpen}
+          copyTypes={copyTypes}
+          onConfirm={(labels) => {
+            applyPrintPageStyle(printProfile);
+            setCopyLabels(labels);
+            setTimeout(() => window.print(), 50);
+          }}
+        />
+      )}
+      {printData && printProfile && copyLabels.length > 0 && (
+        <MultiCopyPrintRun
+          copyLabels={copyLabels}
+          config={profileToPrintConfig(printProfile)}
+          company={printData.company}
+          party={printData.party}
+          meta={printData.meta}
+          items={printData.items}
+          totals={printData.totals}
+          contentWidthMm={contentWidthMm(printProfile)}
+        />
+      )}
     </div>
   );
 };

@@ -21,7 +21,16 @@ const DOCUMENT_TYPES: { value: PrintDocumentType; label: string }[] = [
   { value: "sales_invoice", label: "Sales Invoice" },
   { value: "purchase_invoice", label: "Purchase Invoice" },
   { value: "delivery_challan", label: "Delivery Challan" },
+  { value: "sales_order", label: "Sales Order" },
+  { value: "purchase_order", label: "Purchase Order" },
+  { value: "quotation", label: "Quotation" },
+  { value: "packing_slip", label: "Packing Slip" },
+  { value: "debit_note", label: "Debit Note" },
+  { value: "credit_note", label: "Credit Note" },
+  { value: "payment_receipt", label: "Payment Receipt" },
 ];
+
+const LEDGER_DOCUMENT_TYPES: PrintDocumentType[] = ["debit_note", "credit_note", "payment_receipt"];
 
 const PAGE_SIZES: PrintPageSize[] = ["A4", "A5", "Letter", "Thermal_80mm", "Thermal_58mm"];
 
@@ -57,8 +66,29 @@ type FormState = {
   terms: string;
 };
 
+const DOCUMENT_LABELS: Record<PrintDocumentType, string> = {
+  sales_invoice: "TAX INVOICE",
+  purchase_invoice: "PURCHASE INVOICE",
+  delivery_challan: "DELIVERY CHALLAN",
+  sales_order: "SALES ORDER",
+  purchase_order: "PURCHASE ORDER",
+  quotation: "QUOTATION",
+  packing_slip: "PACKING SLIP",
+  debit_note: "DEBIT NOTE",
+  credit_note: "CREDIT NOTE",
+  payment_receipt: "PAYMENT VOUCHER",
+};
+
+const PARTY_LABELS: Record<PrintDocumentType, string> = {
+  sales_invoice: "BILL TO", purchase_invoice: "BILL TO", delivery_challan: "DELIVER TO",
+  sales_order: "BILL TO", purchase_order: "SUPPLIER", quotation: "TO", packing_slip: "DELIVER TO",
+  debit_note: "", credit_note: "", payment_receipt: "",
+};
+
 function blankForm(documentType: PrintDocumentType): FormState {
-  const isChallan = documentType === "delivery_challan";
+  const isChallanLike = documentType === "delivery_challan" || documentType === "packing_slip";
+  const isLedger = LEDGER_DOCUMENT_TYPES.includes(documentType);
+  const isProductDoc = !isChallanLike && !isLedger;
   return {
     name: "",
     page_size: "A4",
@@ -71,15 +101,15 @@ function blankForm(documentType: PrintDocumentType): FormState {
     show_footer: true,
     logo_position: "left",
     show_signature: true,
-    document_label: documentType === "sales_invoice" ? "TAX INVOICE" : documentType === "purchase_invoice" ? "PURCHASE INVOICE" : "DELIVERY CHALLAN",
-    party_label: isChallan ? "DELIVER TO" : "BILL TO",
-    show_hsn: !isChallan,
-    show_rate: !isChallan,
-    show_gst_summary: !isChallan,
-    show_amount: !isChallan,
-    show_discount: !isChallan,
-    show_transport_section: isChallan,
-    purpose_text: isChallan ? "Sale on approval / Goods sent for delivery" : "",
+    document_label: DOCUMENT_LABELS[documentType],
+    party_label: PARTY_LABELS[documentType],
+    show_hsn: isProductDoc,
+    show_rate: isProductDoc,
+    show_gst_summary: isProductDoc,
+    show_amount: isProductDoc,
+    show_discount: isProductDoc,
+    show_transport_section: documentType === "delivery_challan",
+    purpose_text: documentType === "delivery_challan" ? "Sale on approval / Goods sent for delivery" : "",
     show_watermark: false,
     watermark_text: "",
     show_bank_details: false,
@@ -126,9 +156,12 @@ function profileToForm(p: PrintProfile): FormState {
   };
 }
 
-function formToPayload(form: FormState) {
+function formToPayload(form: FormState, documentType: PrintDocumentType) {
+  const isLedger = LEDGER_DOCUMENT_TYPES.includes(documentType);
   return {
     name: form.name,
+    item_grid_mode: (isLedger ? "ledger" : "product") as "product" | "ledger",
+    show_party: !isLedger,
     page_size: form.page_size,
     orientation: form.orientation,
     margin_top_mm: Number(form.margin_top_mm) || 0,
@@ -198,7 +231,7 @@ export default function PrintProfiles() {
     if (!business?.id || !form.name.trim() || !form.document_label.trim()) return;
     setSaving(true);
     try {
-      const payload = formToPayload(form);
+      const payload = formToPayload(form, documentType);
       if (editingId) {
         await updatePrintProfile(editingId, payload);
         toast.success("Profile updated");

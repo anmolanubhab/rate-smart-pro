@@ -1,7 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { PrintConfig } from "@/components/print/PrintDocument";
 
-export type PrintDocumentType = "sales_invoice" | "purchase_invoice" | "delivery_challan";
+export type PrintDocumentType =
+  | "sales_invoice" | "purchase_invoice" | "delivery_challan"
+  | "sales_order" | "purchase_order" | "quotation" | "packing_slip"
+  | "debit_note" | "credit_note" | "payment_receipt";
 export type PrintPageSize = "A4" | "A5" | "Letter" | "Thermal_80mm" | "Thermal_58mm";
 export type PrintOrientation = "portrait" | "landscape";
 export type PrintLogoPosition = "left" | "center" | "none";
@@ -44,6 +47,8 @@ export type PrintProfile = {
   show_bank_details: boolean;
   bank_details: BankDetails | null;
   terms: string[];
+  item_grid_mode: "product" | "ledger";
+  show_party: boolean;
 };
 
 /** The profile a print flow should actually use — seeds sane per-document
@@ -121,5 +126,7 @@ export function profileToPrintConfig(profile: PrintProfile): PrintConfig {
     watermarkText: profile.watermark_text,
     showBankDetails: profile.show_bank_details,
     bankDetails: profile.bank_details,
+    showParty: profile.show_party,
+    itemGridMode: profile.item_grid_mode,
   };
 }

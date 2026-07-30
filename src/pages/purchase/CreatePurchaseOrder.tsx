@@ -13,7 +13,13 @@ import {
   ChevronUp,
   AlertCircle,
   Upload,
+  Printer,
 } from "lucide-react";
+import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
+import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
+import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
+import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
 import {
   fetchProductUnits, fetchUnits, purchaseUnitOf, stockUnitOf, toStockQty,
   type ProductUnit, type Unit as MeasureUnit,
@@ -137,6 +143,13 @@ export default function CreatePurchaseOrder() {
   const [savedPO, setSavedPO] = useState<PurchaseOrder | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+
+  // Print
+  const [printData, setPrintData] = useState<{ company: any; party: any; meta: any; items: any[]; totals: any } | null>(null);
+  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
+  const [copyLabels, setCopyLabels] = useState<string[]>([]);
 
   const poIdRef = useRef<string | null>(editId || null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
@@ -453,6 +466,49 @@ export default function CreatePurchaseOrder() {
     exportPOToExcel(savedPO, validItems(), supplier?.name);
   };
 
+  const handlePrint = async () => {
+    if (!savedPO || !businessId) { toast.error("Save the PO first to print"); return; }
+    try {
+      const [{ data: biz }, types, profile] = await Promise.all([
+        supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", businessId).maybeSingle(),
+        fetchEnabledPrintCopyTypes(businessId),
+        fetchDefaultPrintProfile(businessId, "purchase_order"),
+      ]);
+      const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
+
+      setPrintData({
+        company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
+        party: {
+          name: supplier?.name ?? "—",
+          mobile: supplier?.phone ?? null,
+          address: supplier?.address ?? null,
+          gstNo: supplier?.gst ?? null,
+        },
+        meta: { number: poNumber, numberLabel: "PO No", date: poDate },
+        items: validItems().map((it) => ({
+          partNumber: it.part_number ?? "",
+          description: it.description ?? "",
+          hsn: null,
+          qty: Number(it.qty) || 0,
+          rate: Number(it.rate) || 0,
+          gstPct: Number(it.gst_percent) || 0,
+          amount: Number(it.total_amount) || 0,
+        })),
+        totals: {
+          subtotal: Number(totals.subtotal) || 0,
+          discount: Number(totals.discount_total) || 0,
+          tax: Number(totals.tax_total) || 0,
+          grandTotal: finalTotal,
+        },
+      });
+      setPrintProfile(profile);
+      setCopyTypes(types);
+      setCopyDialogOpen(true);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not prepare purchase order for printing");
+    }
+  };
+
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   // Show skeleton while auth or business context is resolving — prevents white flash
@@ -517,6 +573,11 @@ export default function CreatePurchaseOrder() {
           <Button size="sm" variant="outline" onClick={handleExport} className="h-8 text-xs">
             <FileDown className="h-3.5 w-3.5 mr-1" />Export XLS
           </Button>
+          {editMode && (
+            <Button size="sm" variant="outline" onClick={handlePrint} className="h-8 text-xs">
+              <Printer className="h-3.5 w-3.5 mr-1" />Print
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving} className="h-8 text-xs" title="Ctrl+S">
             <Save className="h-3.5 w-3.5 mr-1" />Save Draft
           </Button>
@@ -1121,6 +1182,31 @@ export default function CreatePurchaseOrder() {
         :root { --invoice-bg: 60 30% 96%; }
         .dark { --invoice-bg: 240 8% 12%; }
       `}</style>
+
+      {printData && printProfile && (
+        <PrintCopyDialog
+          open={copyDialogOpen}
+          onOpenChange={setCopyDialogOpen}
+          copyTypes={copyTypes}
+          onConfirm={(labels) => {
+            applyPrintPageStyle(printProfile);
+            setCopyLabels(labels);
+            setTimeout(() => window.print(), 50);
+          }}
+        />
+      )}
+      {printData && printProfile && copyLabels.length > 0 && (
+        <MultiCopyPrintRun
+          copyLabels={copyLabels}
+          config={profileToPrintConfig(printProfile)}
+          company={printData.company}
+          party={printData.party}
+          meta={printData.meta}
+          items={printData.items}
+          totals={printData.totals}
+          contentWidthMm={contentWidthMm(printProfile)}
+        />
+      )}
     </div>
   );
 }

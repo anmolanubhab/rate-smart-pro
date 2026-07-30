@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusCircle, ArrowRightCircle } from "lucide-react";
+import { PlusCircle, ArrowRightCircle, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,9 +9,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { supabase } from "@/integrations/supabase/client";
 import CreateQuotationDialog from "@/components/sales/CreateQuotationDialog";
-import { fetchQuotations, convertQuotationToOrder, type Quotation } from "@/lib/quotations";
+import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, type Quotation } from "@/lib/quotations";
 import { useFormatDate } from "@/lib/dateFormat";
+import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
+import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
+import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
+import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
+import type { PrintItem } from "@/components/print/PrintDocument";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -30,6 +37,15 @@ export default function Quotations() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [converting, setConverting] = useState<string | null>(null);
+  const [printing, setPrinting] = useState<string | null>(null);
+  const [printData, setPrintData] = useState<{
+    company: any; party: any; meta: any; items: PrintItem[];
+    totals: { subtotal: number; discount: number; tax: number; grandTotal: number };
+  } | null>(null);
+  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
+  const [copyLabels, setCopyLabels] = useState<string[]>([]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["quotations", businessId],
@@ -55,6 +71,35 @@ export default function Quotations() {
       toast.error(e.message ?? "Failed to convert quotation");
     } finally {
       setConverting(null);
+    }
+  };
+
+  const onPrint = async (q: Quotation) => {
+    if (!businessId) return;
+    setPrinting(q.id);
+    try {
+      const [items, { data: biz }, { data: party }, types, profile] = await Promise.all([
+        fetchQuotationItems(q.id),
+        supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", businessId).maybeSingle(),
+        q.party_id ? supabase.from("parties").select("name, address, phone, gst").eq("id", q.party_id).maybeSingle() : Promise.resolve({ data: null }),
+        fetchEnabledPrintCopyTypes(businessId),
+        fetchDefaultPrintProfile(businessId, "quotation"),
+      ]);
+      const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
+      setPrintData({
+        company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
+        party: { name: q.party_name ?? party?.name ?? "—", mobile: party?.phone ?? null, address: party?.address ?? null, gstNo: party?.gst ?? null },
+        meta: { number: q.quotation_number, numberLabel: "Quotation No", date: q.quotation_date },
+        items: items.map((it) => ({ partNumber: it.part_number ?? "", description: it.description ?? "", hsn: null, qty: Number(it.qty) || 0, rate: Number(it.net_rate) || 0, gstPct: Number(it.gst_pct) || 0, amount: Number(it.total) || 0 })),
+        totals: { subtotal: Number(q.subtotal) || 0, discount: Number(q.discount_total) || 0, tax: Number(q.gst_total) || 0, grandTotal: Number(q.grand_total) || 0 },
+      });
+      setPrintProfile(profile);
+      setCopyTypes(types);
+      setCopyDialogOpen(true);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not prepare quotation for printing");
+    } finally {
+      setPrinting(null);
     }
   };
 
@@ -117,18 +162,28 @@ export default function Quotations() {
                 <TableCell className="text-right font-semibold">{inr(q.grand_total)}</TableCell>
                 <TableCell><Badge variant={STATUS_VARIANT[q.status] ?? "secondary"}>{q.status}</Badge></TableCell>
                 <TableCell className="text-right">
-                  {q.status === "converted" ? (
-                    <span className="text-xs text-muted-foreground">Converted</span>
-                  ) : (
+                  <div className="flex items-center justify-end gap-2">
                     <Button
                       size="sm" variant="outline"
-                      disabled={converting === q.id}
-                      onClick={() => handleConvert(q)}
+                      disabled={printing === q.id}
+                      onClick={() => onPrint(q)}
                     >
-                      <ArrowRightCircle className="h-3.5 w-3.5 mr-1.5" />
-                      {converting === q.id ? "Converting…" : "Convert to Order"}
+                      <Printer className="h-3.5 w-3.5 mr-1.5" />
+                      {printing === q.id ? "Preparing…" : "Print"}
                     </Button>
-                  )}
+                    {q.status === "converted" ? (
+                      <span className="text-xs text-muted-foreground">Converted</span>
+                    ) : (
+                      <Button
+                        size="sm" variant="outline"
+                        disabled={converting === q.id}
+                        onClick={() => handleConvert(q)}
+                      >
+                        <ArrowRightCircle className="h-3.5 w-3.5 mr-1.5" />
+                        {converting === q.id ? "Converting…" : "Convert to Order"}
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -142,6 +197,31 @@ export default function Quotations() {
         userId={user?.id ?? null}
         onSaved={() => qc.invalidateQueries({ queryKey: ["quotations", businessId] })}
       />
+
+      {printData && printProfile && (
+        <PrintCopyDialog
+          open={copyDialogOpen}
+          onOpenChange={setCopyDialogOpen}
+          copyTypes={copyTypes}
+          onConfirm={(labels) => {
+            applyPrintPageStyle(printProfile);
+            setCopyLabels(labels);
+            setTimeout(() => window.print(), 50);
+          }}
+        />
+      )}
+      {printData && printProfile && copyLabels.length > 0 && (
+        <MultiCopyPrintRun
+          copyLabels={copyLabels}
+          config={profileToPrintConfig(printProfile)}
+          company={printData.company}
+          party={printData.party}
+          meta={printData.meta}
+          items={printData.items}
+          totals={printData.totals}
+          contentWidthMm={contentWidthMm(printProfile)}
+        />
+      )}
     </div>
   );
 }

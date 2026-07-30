@@ -32,6 +32,7 @@ import PrintCopyDialog from "@/components/print/PrintCopyDialog";
 import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
+import type { PrintConfig } from "@/components/print/PrintDocument";
 import { fetchUnits, type Unit as MeasureUnit } from "@/lib/units";
 import { useFormatDate } from "@/lib/dateFormat";
 
@@ -265,6 +266,7 @@ const Dispatch = () => {
   const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
   const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
+  const [printConfigOverride, setPrintConfigOverride] = useState<PrintConfig | null>(null);
   const printChallan = async (d: any) => {
     try {
       const { data: items } = await supabase
@@ -312,10 +314,69 @@ const Dispatch = () => {
         })),
       });
       setPrintProfile(profile);
+      setPrintConfigOverride(null);
       setCopyTypes(types);
       setCopyDialogOpen(true);
     } catch (e: any) {
       toast.error(e.message ?? "Could not prepare challan");
+    }
+  };
+
+  // ── Print Packing Slip ───────────────────────────────────────────────────
+  const printPackingSlip = async (d: any) => {
+    try {
+      const { data: items } = await supabase
+        .from("dispatch_items")
+        .select("part_number, description, dispatched_qty, order_items(part_number, description)")
+        .eq("dispatch_id", d.id);
+      const { data: biz } = await supabase
+        .from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number")
+        .eq("id", business!.id).maybeSingle();
+      const { data: party } = d.orders?.party_id
+        ? await supabase.from("parties").select("name, address, phone, gst").eq("id", d.orders.party_id).maybeSingle()
+        : { data: null };
+      const [types, profile] = await Promise.all([
+        fetchEnabledPrintCopyTypes(business!.id),
+        fetchDefaultPrintProfile(business!.id, "packing_slip"),
+      ]);
+
+      const packingParts = [
+        d.box_count ? `Boxes: ${d.box_count}` : null,
+        d.case_count ? `Cases: ${d.case_count}` : null,
+        d.packing_remarks || null,
+      ].filter(Boolean);
+
+      setChallanData({
+        company: {
+          name: biz?.business_name ?? "—",
+          addressLines: [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean),
+          gstin: biz?.gst_number ?? null,
+        },
+        party: {
+          name: party?.name ?? d.orders?.party_name ?? "—",
+          address: party?.address ?? null,
+          mobile: party?.phone ?? null,
+          gstNo: party?.gst ?? null,
+        },
+        meta: {
+          number: d.dispatch_number,
+          numberLabel: "Packing Slip No",
+          date: d.dispatch_date,
+          refNumber: d.orders?.order_number ?? null,
+          refLabel: "Order No",
+        },
+        items: (items as any[] ?? []).map((it) => ({
+          partNumber: it.part_number ?? it.order_items?.part_number ?? "",
+          description: it.description ?? it.order_items?.description ?? "",
+          qty: Number(it.dispatched_qty) || 0,
+        })),
+      });
+      setPrintProfile(profile);
+      setPrintConfigOverride(packingParts.length ? { ...profileToPrintConfig(profile), purpose: packingParts.join(" · ") } : null);
+      setCopyTypes(types);
+      setCopyDialogOpen(true);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not prepare packing slip");
     }
   };
 
@@ -624,6 +685,16 @@ const Dispatch = () => {
                             <FileText className="h-3.5 w-3.5 mr-0.5" />Challan
                           </Button>
                         )}
+                        {d.status === "confirmed" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs"
+                            onClick={() => printPackingSlip(d)}
+                          >
+                            <Package className="h-3.5 w-3.5 mr-0.5" />Packing Slip
+                          </Button>
+                        )}
                         {(d.status === "draft" || d.status === "confirmed") && !d.invoice_id && (
                           <Button
                             size="sm"
@@ -682,7 +753,7 @@ const Dispatch = () => {
       {challanData && printProfile && copyLabels.length > 0 && (
         <MultiCopyPrintRun
           copyLabels={copyLabels}
-          config={profileToPrintConfig(printProfile)}
+          config={printConfigOverride ?? profileToPrintConfig(printProfile)}
           company={challanData.company}
           party={challanData.party}
           meta={challanData.meta}
