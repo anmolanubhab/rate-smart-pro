@@ -101,6 +101,7 @@ const Serials = lazy(() => import("./pages/inventory/Serials"));
 const Barcodes = lazy(() => import("./pages/inventory/Barcodes"));
 const StockTransfers = lazy(() => import("./pages/inventory/StockTransfers"));
 const StockTake = lazy(() => import("./pages/inventory/StockTake"));
+const StockTakeDetail = lazy(() => import("./pages/inventory/StockTakeDetail"));
 const StockAdjustments = lazy(() => import("./pages/inventory/StockAdjustments"));
 
 // ── Inventory Reports ──────────────────────────────────────────────────────
@@ -263,6 +264,7 @@ const App = () => (
               <Route path="/inventory/barcodes" element={L(<Barcodes />)} />
               <Route path="/inventory/transfers" element={L(<StockTransfers />)} />
               <Route path="/inventory/stock-take" element={L(<StockTake />)} />
+              <Route path="/inventory/stock-take/:id" element={L(<StockTakeDetail />)} />
               <Route path="/inventory/adjustments" element={L(<StockAdjustments />)} />
               {/* Phase 5 — Dedicated Accounts */}
               <Route path="/accounts/journal" element={L(<JournalVoucher />)} />
