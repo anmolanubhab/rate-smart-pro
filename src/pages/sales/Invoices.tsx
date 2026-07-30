@@ -10,7 +10,10 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
 import { createApprovalRequest } from "@/lib/approvals";
 import { canDeleteDirectly } from "@/lib/permissions";
-import InvoicePrint from "@/components/InvoicePrint";
+import { type PrintConfig } from "@/components/print/PrintDocument";
+import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
+import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import EInvoiceEwayDialog from "@/components/sales/EInvoiceEwayDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -33,6 +36,15 @@ const statusTone: Record<string, string> = {
   cancelled: "border-destructive/40 text-destructive bg-destructive/10",
 };
 
+const SALES_INVOICE_PRINT_CONFIG: PrintConfig = {
+  documentLabel: "TAX INVOICE",
+  showHsn: true,
+  showRate: true,
+  showGst: true,
+  showAmount: true,
+  showDiscount: true,
+};
+
 const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function InvoicesPage() {
@@ -53,6 +65,9 @@ export default function InvoicesPage() {
   const [printData, setPrintData] = useState<any>(null);
   const [printing, setPrinting] = useState<string | null>(null);
   const [complianceTarget, setComplianceTarget] = useState<SalesInvoice | null>(null);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
+  const [copyLabels, setCopyLabels] = useState<string[]>([]);
 
   // Edit (draft-only — posted invoices already have a voucher/ledger
   // entry, so free-editing them would desync accounting; cancel + issue
@@ -143,9 +158,10 @@ export default function InvoicesPage() {
   const onPrint = async (inv: SalesInvoice) => {
     setPrinting(inv.id);
     try {
-      const [items, { data: biz }] = await Promise.all([
+      const [items, { data: biz }, types] = await Promise.all([
         fetchInvoiceItems(inv.id),
         supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", inv.business_id).maybeSingle(),
+        fetchEnabledPrintCopyTypes(inv.business_id),
       ]);
 
       const party = inv.party_snapshot ?? {};
@@ -164,22 +180,18 @@ export default function InvoicesPage() {
           address: inv.billing_address ?? party.address ?? null,
           gstNo: party.gst ?? null,
         },
-        info: {
-          invoiceNumber: inv.invoice_number,
+        meta: {
+          number: inv.invoice_number,
+          numberLabel: "Invoice No",
           date: inv.invoice_date,
-          time: null,
-          paymentMode: null,
         },
         items: (items as any[]).map((it) => ({
           partNumber: it.part_number ?? "",
-          productName: it.description ?? it.name ?? "",
+          description: it.description ?? it.name ?? "",
           hsn: it.hsn ?? null,
           qty: Number(it.qty) || 0,
           rate: Number(it.net_rate ?? it.rate) || 0,
           gstPct: Number(it.gst_pct) || 0,
-          cgstAmount: Number(it.cgst_amount) || 0,
-          sgstAmount: Number(it.sgst_amount) || 0,
-          igstAmount: Number(it.igst_amount) || 0,
           amount: Number(it.total) || 0,
         })),
         totals: {
@@ -192,10 +204,8 @@ export default function InvoicesPage() {
           grandTotal: Number(inv.grand_total) || 0,
         },
       });
-
-      // Render happens synchronously into state; give React a tick to
-      // paint the (off-screen) print container before invoking print.
-      setTimeout(() => window.print(), 50);
+      setCopyTypes(types);
+      setCopyDialogOpen(true);
     } catch (e: any) {
       toast.error(e.message ?? "Could not prepare invoice for printing");
     } finally {
@@ -564,11 +574,28 @@ export default function InvoicesPage() {
       </AlertDialog>
 
       {/* ── Off-screen print target — CSS in styles/print.css shows only
-          .invoice-print during window.print(), everything else hides. ── */}
+          .print-copy-run during window.print(), everything else hides. ── */}
       {printData && (
-        <div className="hidden print:block">
-          <InvoicePrint {...printData} />
-        </div>
+        <PrintCopyDialog
+          open={copyDialogOpen}
+          onOpenChange={setCopyDialogOpen}
+          copyTypes={copyTypes}
+          onConfirm={(labels) => {
+            setCopyLabels(labels);
+            setTimeout(() => window.print(), 50);
+          }}
+        />
+      )}
+      {printData && copyLabels.length > 0 && (
+        <MultiCopyPrintRun
+          copyLabels={copyLabels}
+          config={SALES_INVOICE_PRINT_CONFIG}
+          company={printData.company}
+          party={printData.party}
+          meta={printData.meta}
+          items={printData.items}
+          totals={printData.totals}
+        />
       )}
 
       {complianceTarget && (

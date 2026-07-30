@@ -10,7 +10,19 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import RecordPurchaseInvoiceDialog from "@/components/purchase/RecordPurchaseInvoiceDialog";
-import InvoicePrint from "@/components/InvoicePrint";
+import { type PrintConfig } from "@/components/print/PrintDocument";
+import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
+import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
+
+const PURCHASE_INVOICE_PRINT_CONFIG: PrintConfig = {
+  documentLabel: "PURCHASE INVOICE",
+  showHsn: true,
+  showRate: true,
+  showGst: true,
+  showAmount: true,
+  showDiscount: true,
+};
 
 export default function PurchaseInvoices() {
   useEffect(() => { document.title = "Purchase Invoices — RD Pro"; }, []);
@@ -22,6 +34,9 @@ export default function PurchaseInvoices() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [printData, setPrintData] = useState<any>(null);
   const [printing, setPrinting] = useState<string | null>(null);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
+  const [copyLabels, setCopyLabels] = useState<string[]>([]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["purchase-invoices", businessId],
@@ -66,17 +81,17 @@ export default function PurchaseInvoices() {
         .single();
       if (error) throw error;
 
-      const [{ data: items }, { data: biz }, { data: supplier }] = await Promise.all([
+      const [{ data: items }, { data: biz }, { data: supplier }, types] = await Promise.all([
         supabase.from("purchase_invoice_items").select("*").eq("purchase_invoice_id", invoiceId).order("position", { ascending: true }),
         supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", inv.business_id).maybeSingle(),
         supabase.from("parties").select("name, phone, address, gst").eq("id", inv.supplier_id).maybeSingle(),
+        fetchEnabledPrintCopyTypes(inv.business_id),
       ]);
 
       const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
       const itemRows = (items ?? []) as any[];
 
       setPrintData({
-        documentLabel: "PURCHASE INVOICE",
         company: {
           name: biz?.business_name ?? "—",
           addressLines,
@@ -89,20 +104,18 @@ export default function PurchaseInvoices() {
           address: supplier?.address ?? null,
           gstNo: supplier?.gst ?? null,
         },
-        info: {
-          invoiceNumber: inv.invoice_number,
+        meta: {
+          number: inv.invoice_number,
+          numberLabel: "Invoice No",
           date: inv.invoice_date,
         },
         items: itemRows.map((it) => ({
           partNumber: it.part_number ?? "",
-          productName: it.description ?? "",
+          description: it.description ?? "",
           hsn: it.hsn ?? null,
           qty: Number(it.quantity) || 0,
           rate: Number(it.purchase_price) || 0,
           gstPct: Number(it.gst_percent) || 0,
-          cgstAmount: Number(it.cgst_amount) || 0,
-          sgstAmount: Number(it.sgst_amount) || 0,
-          igstAmount: Number(it.igst_amount) || 0,
           amount: Number(it.line_total) || 0,
         })),
         totals: {
@@ -115,8 +128,8 @@ export default function PurchaseInvoices() {
           grandTotal: Number(inv.grand_total) || 0,
         },
       });
-
-      setTimeout(() => window.print(), 50);
+      setCopyTypes(types);
+      setCopyDialogOpen(true);
     } catch (e: any) {
       toast.error(e.message ?? "Could not prepare invoice for printing");
     } finally {
@@ -168,9 +181,26 @@ export default function PurchaseInvoices() {
       />
 
       {printData && (
-        <div className="hidden print:block">
-          <InvoicePrint {...printData} />
-        </div>
+        <PrintCopyDialog
+          open={copyDialogOpen}
+          onOpenChange={setCopyDialogOpen}
+          copyTypes={copyTypes}
+          onConfirm={(labels) => {
+            setCopyLabels(labels);
+            setTimeout(() => window.print(), 50);
+          }}
+        />
+      )}
+      {printData && copyLabels.length > 0 && (
+        <MultiCopyPrintRun
+          copyLabels={copyLabels}
+          config={PURCHASE_INVOICE_PRINT_CONFIG}
+          company={printData.company}
+          party={printData.party}
+          meta={printData.meta}
+          items={printData.items}
+          totals={printData.totals}
+        />
       )}
     </>
   );

@@ -27,9 +27,19 @@ import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
-import DeliveryChallanPrint from "@/components/DeliveryChallanPrint";
+import { type PrintConfig } from "@/components/print/PrintDocument";
+import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
+import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import { fetchUnits, type Unit as MeasureUnit } from "@/lib/units";
 import { useFormatDate } from "@/lib/dateFormat";
+
+const CHALLAN_PRINT_CONFIG: PrintConfig = {
+  documentLabel: "DELIVERY CHALLAN",
+  partyLabel: "DELIVER TO",
+  showTransport: true,
+  purpose: "Sale on approval / Goods sent for delivery",
+};
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
 function DispatchStatusBadge({ status }: { status: DispatchStatus }) {
@@ -254,7 +264,12 @@ const Dispatch = () => {
   };
 
   // ── Print Delivery Challan ──────────────────────────────────────────────
-  const [challanData, setChallanData] = useState<any>(null);
+  const [challanData, setChallanData] = useState<{
+    company: any; party: any; meta: any; items: any[];
+  } | null>(null);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
+  const [copyLabels, setCopyLabels] = useState<string[]>([]);
   const printChallan = async (d: any) => {
     try {
       const { data: items } = await supabase
@@ -267,6 +282,7 @@ const Dispatch = () => {
       const { data: party } = d.orders?.party_id
         ? await supabase.from("parties").select("name, address, phone, gst").eq("id", d.orders.party_id).maybeSingle()
         : { data: null };
+      const types = await fetchEnabledPrintCopyTypes(business!.id);
 
       setChallanData({
         company: {
@@ -280,10 +296,12 @@ const Dispatch = () => {
           mobile: party?.phone ?? null,
           gstNo: party?.gst ?? null,
         },
-        info: {
-          challanNumber: d.dispatch_number,
+        meta: {
+          number: d.dispatch_number,
+          numberLabel: "Challan No",
           date: d.dispatch_date,
-          orderNumber: d.orders?.order_number ?? null,
+          refNumber: d.orders?.order_number ?? null,
+          refLabel: "Order No",
           transporter: d.transporter ?? d.transport_name ?? null,
           vehicleNumber: d.vehicle_number ?? null,
           lrNumber: d.lr_number ?? null,
@@ -295,7 +313,8 @@ const Dispatch = () => {
           qty: Number(it.dispatched_qty) || 0,
         })),
       });
-      setTimeout(() => window.print(), 50);
+      setCopyTypes(types);
+      setCopyDialogOpen(true);
     } catch (e: any) {
       toast.error(e.message ?? "Could not prepare challan");
     }
@@ -650,9 +669,25 @@ const Dispatch = () => {
       </AlertDialog>
 
       {challanData && (
-        <div className="hidden print:block">
-          <DeliveryChallanPrint {...challanData} />
-        </div>
+        <PrintCopyDialog
+          open={copyDialogOpen}
+          onOpenChange={setCopyDialogOpen}
+          copyTypes={copyTypes}
+          onConfirm={(labels) => {
+            setCopyLabels(labels);
+            setTimeout(() => window.print(), 50);
+          }}
+        />
+      )}
+      {challanData && copyLabels.length > 0 && (
+        <MultiCopyPrintRun
+          copyLabels={copyLabels}
+          config={CHALLAN_PRINT_CONFIG}
+          company={challanData.company}
+          party={challanData.party}
+          meta={challanData.meta}
+          items={challanData.items}
+        />
       )}
     </div>
   );

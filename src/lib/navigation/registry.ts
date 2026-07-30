@@ -1066,6 +1066,16 @@ export const NAV_ITEMS: NavItem[] = [
     perm: "settings.edit",
   },
   {
+    id: "print-copy-configuration",
+    title: "Print Copy Configuration",
+    description: "Configure the copy labels offered when printing any document (Original, Duplicate, Office Copy, etc.)",
+    route: "/settings/print-copies",
+    icon: FileText,
+    module: "Administration",
+    perm: "settings.edit",
+    keywords: ["print", "copy", "original", "duplicate", "transporter"],
+  },
+  {
     id: "financial-note-categories",
     title: "Financial Note Categories",
     description: "Debit/Credit Note adjustment categories and default ledgers",

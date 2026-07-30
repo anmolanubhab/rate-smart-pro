@@ -73,4 +73,32 @@
     page-break-inside: avoid;
     break-inside: avoid;
   }
+
+  /* Multi-copy print run: one .print-copy-page per selected copy, stacked so
+     a single window.print() produces one physical page per copy. The run
+     itself owns positioning/visibility (mirroring .invoice-print above);
+     each page inside it is a plain block, not independently positioned. */
+  .print-copy-run,
+  .print-copy-run * {
+    visibility: visible !important;
+  }
+
+  .print-copy-run {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 190mm;
+    max-width: 190mm;
+    transform: translateX(-50%);
+  }
+
+  .print-copy-run .print-copy-page {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .print-copy-run .print-copy-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
 }
