@@ -15,6 +15,7 @@ import PrintCopyDialog from "@/components/print/PrintCopyDialog";
 import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
+import { fetchProductWeights } from "@/lib/productWeights";
 import EInvoiceEwayDialog from "@/components/sales/EInvoiceEwayDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -162,6 +163,7 @@ export default function InvoicesPage() {
 
       const party = inv.party_snapshot ?? {};
       const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
+      const weights = await fetchProductWeights((items as any[]).map((it) => it.product_id));
 
       setPrintData({
         company: {
@@ -192,6 +194,7 @@ export default function InvoicesPage() {
           amount: Number(it.total) || 0,
           mrp: it.mrp != null ? Number(it.mrp) : null,
           discountPct: it.discount_pct != null ? Number(it.discount_pct) : null,
+          weight: it.product_id ? weights.get(it.product_id) ?? null : null,
         })),
         totals: {
           subtotal: Number(inv.subtotal) || 0,

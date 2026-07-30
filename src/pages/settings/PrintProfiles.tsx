@@ -63,6 +63,7 @@ type FormState = {
   show_mrp: boolean;
   show_discount_column: boolean;
   show_warehouse: boolean;
+  show_weight: boolean;
   language: PrintLanguage;
   show_qr_code: boolean;
   purpose_text: string;
@@ -123,6 +124,7 @@ function blankForm(documentType: PrintDocumentType): FormState {
     show_mrp: false,
     show_discount_column: false,
     show_warehouse: false,
+    show_weight: false,
     language: "en",
     show_qr_code: false,
     purpose_text: documentType === "delivery_challan" ? "Sale on approval / Goods sent for delivery" : "",
@@ -162,6 +164,7 @@ function profileToForm(p: PrintProfile): FormState {
     show_mrp: p.show_mrp,
     show_discount_column: p.show_discount_column,
     show_warehouse: p.show_warehouse,
+    show_weight: p.show_weight,
     language: p.language,
     show_qr_code: p.show_qr_code,
     purpose_text: p.purpose_text ?? "",
@@ -204,6 +207,7 @@ function formToPayload(form: FormState, documentType: PrintDocumentType) {
     show_mrp: form.show_mrp,
     show_discount_column: form.show_discount_column,
     show_warehouse: form.show_warehouse,
+    show_weight: form.show_weight,
     language: form.language,
     show_qr_code: form.show_qr_code,
     purpose_text: form.purpose_text || null,
@@ -447,7 +451,7 @@ export default function PrintProfiles() {
                 ["show_hsn", "HSN column"], ["show_rate", "Rate column"], ["show_amount", "Amount + totals"],
                 ["show_discount", "Discount row"], ["show_gst_summary", "GST summary"], ["show_transport_section", "Transport details"],
                 ["show_mrp", "MRP column"], ["show_discount_column", "Discount % column"], ["show_warehouse", "Warehouse column"],
-                ["show_qr_code", "QR code"],
+                ["show_weight", "Weight column"], ["show_qr_code", "QR code"],
               ] as [keyof FormState, string][]).map(([key, label]) => (
                 <div key={key} className="flex items-center gap-2">
                   <Switch checked={form[key] as boolean} onCheckedChange={(v) => set(key, v as never)} />

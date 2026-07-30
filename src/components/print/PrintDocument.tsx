@@ -29,6 +29,7 @@ export type PrintItem = {
   mrp?: number | null;
   discountPct?: number | null;
   warehouse?: string | null;
+  weight?: number | null;
   /** Ledger grid mode only (itemGridMode: "ledger") — Dr/Cr amount for this line. */
   debit?: number | null;
   credit?: number | null;
@@ -128,6 +129,7 @@ export type PrintConfig = {
   showMrp?: boolean;
   showDiscountColumn?: boolean;
   showWarehouse?: boolean;
+  showWeight?: boolean;
   /** Language for the engine's fixed chrome text (column headers, section
    *  titles). Per-document text (documentLabel, partyLabel, terms) is typed
    *  directly on the profile, so it can already be in any language. */
@@ -191,6 +193,7 @@ export default function PrintDocument({
     showMrp = false,
     showDiscountColumn = false,
     showWarehouse = false,
+    showWeight = false,
     language = "en",
     showQrCode = false,
     layoutMode = "standard",
@@ -207,7 +210,7 @@ export default function PrintDocument({
   const colCount = isLedger
     ? 4 /* Sr, Ledger, Debit, Credit */
     : 3 + (showHsn ? 1 : 0) + (showWarehouse ? 1 : 0) + 1 /* qty */
-      + (showMrp ? 1 : 0) + (showDiscountColumn ? 1 : 0) + (showRate ? 1 : 0) + (showGst ? 1 : 0) + (showAmount ? 1 : 0);
+      + (showMrp ? 1 : 0) + (showDiscountColumn ? 1 : 0) + (showWeight ? 1 : 0) + (showRate ? 1 : 0) + (showGst ? 1 : 0) + (showAmount ? 1 : 0);
   const totalDebit = isLedger ? items.reduce((s, it) => s + (Number(it.debit) || 0), 0) : 0;
   const totalCredit = isLedger ? items.reduce((s, it) => s + (Number(it.credit) || 0), 0) : 0;
 
@@ -294,6 +297,7 @@ export default function PrintDocument({
                     <div className="flex justify-between">
                       <span className="tabular-nums">
                         {fmt(it.qty)} {it.unit ?? ""} {showRate ? `x ${fmt(it.rate)}` : ""}
+                        {showWeight && it.weight != null ? ` · ${fmt(it.weight)} kg` : ""}
                       </span>
                       {showAmount && <span className="tabular-nums font-semibold">{fmt(it.amount)}</span>}
                     </div>
@@ -538,6 +542,7 @@ export default function PrintDocument({
                   <th className="p-1.5 text-right w-14">{L.qty}</th>
                   {showMrp && <th className="p-1.5 text-right w-20">{L.mrp}</th>}
                   {showDiscountColumn && <th className="p-1.5 text-right w-16">{L.discPct}</th>}
+                  {showWeight && <th className="p-1.5 text-right w-16">{L.weight}</th>}
                   {showRate && <th className="p-1.5 text-right w-20">{L.rate}</th>}
                   {showGst && <th className="p-1.5 text-right w-14">{L.gstPct}</th>}
                   {showAmount && <th className="p-1.5 text-right w-24">{L.amount}</th>}
@@ -564,6 +569,7 @@ export default function PrintDocument({
                       <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.qty)} {it.unit ?? ""}</td>
                       {showMrp && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.mrp)}</td>}
                       {showDiscountColumn && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.discountPct)}</td>}
+                      {showWeight && <td className="p-1.5 align-top text-right tabular-nums">{it.weight != null ? fmt(it.weight) : "—"}</td>}
                       {showRate && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.rate)}</td>}
                       {showGst && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.gstPct)}</td>}
                       {showAmount && <td className="p-1.5 align-top text-right tabular-nums font-semibold">{fmt(it.amount)}</td>}

@@ -18,6 +18,7 @@ import PrintCopyDialog from "@/components/print/PrintCopyDialog";
 import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
+import { fetchProductWeights } from "@/lib/productWeights";
 import type { PrintItem } from "@/components/print/PrintDocument";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -86,6 +87,7 @@ export default function Quotations() {
         fetchDefaultPrintProfile(businessId, "quotation"),
       ]);
       const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
+      const weights = await fetchProductWeights(items.map((it) => it.product_id));
       setPrintData({
         company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
         party: { name: q.party_name ?? party?.name ?? "—", mobile: party?.phone ?? null, address: party?.address ?? null, gstNo: party?.gst ?? null },
@@ -94,6 +96,7 @@ export default function Quotations() {
           partNumber: it.part_number ?? "", description: it.description ?? "", hsn: null,
           qty: Number(it.qty) || 0, rate: Number(it.net_rate) || 0, gstPct: Number(it.gst_pct) || 0, amount: Number(it.total) || 0,
           mrp: it.mrp != null ? Number(it.mrp) : null, discountPct: it.discount_pct != null ? Number(it.discount_pct) : null,
+          weight: it.product_id ? weights.get(it.product_id) ?? null : null,
         })),
         totals: { subtotal: Number(q.subtotal) || 0, discount: Number(q.discount_total) || 0, tax: Number(q.gst_total) || 0, grandTotal: Number(q.grand_total) || 0 },
       });

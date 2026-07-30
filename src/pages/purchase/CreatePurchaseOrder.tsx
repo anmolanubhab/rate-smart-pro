@@ -20,6 +20,7 @@ import PrintCopyDialog from "@/components/print/PrintCopyDialog";
 import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
+import { fetchProductWeights } from "@/lib/productWeights";
 import {
   fetchProductUnits, fetchUnits, purchaseUnitOf, stockUnitOf, toStockQty,
   type ProductUnit, type Unit as MeasureUnit,
@@ -475,6 +476,8 @@ export default function CreatePurchaseOrder() {
         fetchDefaultPrintProfile(businessId, "purchase_order"),
       ]);
       const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
+      const items = validItems();
+      const weights = await fetchProductWeights(items.map((it) => it.product_id));
 
       setPrintData({
         company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
@@ -485,7 +488,7 @@ export default function CreatePurchaseOrder() {
           gstNo: supplier?.gst ?? null,
         },
         meta: { number: poNumber, numberLabel: "PO No", date: poDate },
-        items: validItems().map((it) => ({
+        items: items.map((it) => ({
           partNumber: it.part_number ?? "",
           description: it.description ?? "",
           hsn: null,
@@ -494,6 +497,7 @@ export default function CreatePurchaseOrder() {
           gstPct: Number(it.gst_percent) || 0,
           amount: Number(it.total_amount) || 0,
           discountPct: it.discount_percent != null ? Number(it.discount_percent) : null,
+          weight: it.product_id ? weights.get(it.product_id) ?? null : null,
         })),
         totals: {
           subtotal: Number(totals.subtotal) || 0,

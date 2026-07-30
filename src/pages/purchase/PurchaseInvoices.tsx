@@ -15,6 +15,7 @@ import PrintCopyDialog from "@/components/print/PrintCopyDialog";
 import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
+import { fetchProductWeights } from "@/lib/productWeights";
 
 export default function PurchaseInvoices() {
   useEffect(() => { document.title = "Purchase Invoices — RD Pro"; }, []);
@@ -84,6 +85,7 @@ export default function PurchaseInvoices() {
 
       const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
       const itemRows = (items ?? []) as any[];
+      const weights = await fetchProductWeights(itemRows.map((it) => it.product_id));
 
       setPrintData({
         company: {
@@ -112,6 +114,7 @@ export default function PurchaseInvoices() {
           gstPct: Number(it.gst_percent) || 0,
           amount: Number(it.line_total) || 0,
           discountPct: it.discount_percent != null ? Number(it.discount_percent) : null,
+          weight: it.product_id ? weights.get(it.product_id) ?? null : null,
         })),
         totals: {
           subtotal: Number(inv.subtotal) || 0,

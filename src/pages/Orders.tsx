@@ -39,6 +39,7 @@ import PrintCopyDialog from "@/components/print/PrintCopyDialog";
 import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
+import { fetchProductWeights } from "@/lib/productWeights";
 
 const statusColor: Record<string, string> = {
   draft: "border-muted-foreground/30 text-muted-foreground bg-muted/40",
@@ -189,6 +190,7 @@ const Orders = () => {
       ]);
 
       const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
+      const weights = await fetchProductWeights(items.map((it) => it.product_id));
 
       setPrintData({
         company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
@@ -209,6 +211,7 @@ const Orders = () => {
           amount: Number(it.total) || 0,
           mrp: it.mrp != null ? Number(it.mrp) : null,
           discountPct: it.discount_pct != null ? Number(it.discount_pct) : null,
+          weight: it.product_id ? weights.get(it.product_id) ?? null : null,
         })),
         totals: {
           subtotal: Number(o.subtotal) || 0,

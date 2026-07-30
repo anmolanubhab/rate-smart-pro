@@ -53,6 +53,7 @@ export type PrintProfile = {
   show_mrp: boolean;
   show_discount_column: boolean;
   show_warehouse: boolean;
+  show_weight: boolean;
   language: PrintLanguage;
   show_qr_code: boolean;
 };
@@ -137,6 +138,7 @@ export function profileToPrintConfig(profile: PrintProfile): PrintConfig {
     showMrp: profile.show_mrp,
     showDiscountColumn: profile.show_discount_column,
     showWarehouse: profile.show_warehouse,
+    showWeight: profile.show_weight,
     language: profile.language,
     showQrCode: profile.show_qr_code,
     layoutMode: profile.page_size.startsWith("Thermal_") ? "thermal" : "standard",

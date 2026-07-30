@@ -47,6 +47,7 @@ const EMPTY_FORM = {
   low_stock_threshold: "5",
   gst_pct: "18",
   barcode: "",
+  weight_kg: "",
   status: "active",
   // Measurement Engine (Layer B) — all optional; legacy products keep working without these
   measurement_category_id: "",
@@ -73,6 +74,7 @@ const PRODUCT_COLUMNS = `
   gst_pct,
   status,
   barcode,
+  weight_kg,
   measurement_category_id,
   base_unit_id
 `.trim();
@@ -373,6 +375,7 @@ const Products = () => {
       low_stock_threshold: String(p.low_stock_threshold),
       gst_pct: String(p.gst_pct),
       barcode: p.barcode || "",
+      weight_kg: p.weight_kg != null ? String(p.weight_kg) : "",
       status: p.status,
       measurement_category_id: p.measurement_category_id || "",
       base_unit_id: p.base_unit_id || "",
@@ -417,6 +420,7 @@ const Products = () => {
         low_stock_threshold: parseFloat(form.low_stock_threshold) || 0,
         gst_pct: parseFloat(form.gst_pct) || 0,
         barcode: form.barcode.trim() || null,
+        weight_kg: form.weight_kg.trim() ? parseFloat(form.weight_kg) : null,
         status: form.status,
         measurement_category_id: form.measurement_category_id || null,
         base_unit_id: form.base_unit_id || null,
@@ -745,6 +749,15 @@ const Products = () => {
               <Input
                 value={form.barcode}
                 onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Weight (kg)</Label>
+              <Input
+                type="number"
+                value={form.weight_kg}
+                onChange={(e) => setForm({ ...form, weight_kg: e.target.value })}
                 placeholder="Optional"
               />
             </div>
