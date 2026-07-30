@@ -10,19 +10,11 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import RecordPurchaseInvoiceDialog from "@/components/purchase/RecordPurchaseInvoiceDialog";
-import { type PrintConfig } from "@/components/print/PrintDocument";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
-
-const PURCHASE_INVOICE_PRINT_CONFIG: PrintConfig = {
-  documentLabel: "PURCHASE INVOICE",
-  showHsn: true,
-  showRate: true,
-  showGst: true,
-  showAmount: true,
-  showDiscount: true,
-};
+import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
 
 export default function PurchaseInvoices() {
   useEffect(() => { document.title = "Purchase Invoices — RD Pro"; }, []);
@@ -37,6 +29,7 @@ export default function PurchaseInvoices() {
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
+  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["purchase-invoices", businessId],
@@ -81,11 +74,12 @@ export default function PurchaseInvoices() {
         .single();
       if (error) throw error;
 
-      const [{ data: items }, { data: biz }, { data: supplier }, types] = await Promise.all([
+      const [{ data: items }, { data: biz }, { data: supplier }, types, profile] = await Promise.all([
         supabase.from("purchase_invoice_items").select("*").eq("purchase_invoice_id", invoiceId).order("position", { ascending: true }),
         supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", inv.business_id).maybeSingle(),
         supabase.from("parties").select("name, phone, address, gst").eq("id", inv.supplier_id).maybeSingle(),
         fetchEnabledPrintCopyTypes(inv.business_id),
+        fetchDefaultPrintProfile(inv.business_id, "purchase_invoice"),
       ]);
 
       const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
@@ -128,6 +122,7 @@ export default function PurchaseInvoices() {
           grandTotal: Number(inv.grand_total) || 0,
         },
       });
+      setPrintProfile(profile);
       setCopyTypes(types);
       setCopyDialogOpen(true);
     } catch (e: any) {
@@ -180,26 +175,28 @@ export default function PurchaseInvoices() {
         onSaved={() => qc.invalidateQueries({ queryKey: ["purchase-invoices", businessId] })}
       />
 
-      {printData && (
+      {printData && printProfile && (
         <PrintCopyDialog
           open={copyDialogOpen}
           onOpenChange={setCopyDialogOpen}
           copyTypes={copyTypes}
           onConfirm={(labels) => {
+            applyPrintPageStyle(printProfile);
             setCopyLabels(labels);
             setTimeout(() => window.print(), 50);
           }}
         />
       )}
-      {printData && copyLabels.length > 0 && (
+      {printData && printProfile && copyLabels.length > 0 && (
         <MultiCopyPrintRun
           copyLabels={copyLabels}
-          config={PURCHASE_INVOICE_PRINT_CONFIG}
+          config={profileToPrintConfig(printProfile)}
           company={printData.company}
           party={printData.party}
           meta={printData.meta}
           items={printData.items}
           totals={printData.totals}
+          contentWidthMm={contentWidthMm(printProfile)}
         />
       )}
     </>

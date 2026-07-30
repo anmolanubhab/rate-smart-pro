@@ -1076,6 +1076,16 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["print", "copy", "original", "duplicate", "transporter"],
   },
   {
+    id: "print-profiles",
+    title: "Print Profiles",
+    description: "Page size, margins, sections, and watermark for each document's default print layout",
+    route: "/settings/print-profiles",
+    icon: FileText,
+    module: "Administration",
+    perm: "settings.edit",
+    keywords: ["print", "template", "page size", "margin", "watermark", "layout"],
+  },
+  {
     id: "financial-note-categories",
     title: "Financial Note Categories",
     description: "Debit/Credit Note adjustment categories and default ledgers",

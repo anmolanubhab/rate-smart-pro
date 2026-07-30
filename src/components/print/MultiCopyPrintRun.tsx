@@ -12,6 +12,7 @@ export default function MultiCopyPrintRun({
   meta,
   items,
   totals,
+  contentWidthMm,
 }: {
   copyLabels: string[];
   config: PrintConfig;
@@ -20,10 +21,16 @@ export default function MultiCopyPrintRun({
   meta: PrintMeta;
   items: PrintItem[];
   totals?: PrintTotals;
+  /** Overrides the print.css default 190mm width — pass the active print
+   *  profile's page width minus margins so non-A4 sizes render correctly. */
+  contentWidthMm?: number;
 }) {
   if (!copyLabels.length) return null;
   return (
-    <div className="hidden print:block print-copy-run">
+    <div
+      className="hidden print:block print-copy-run"
+      style={contentWidthMm ? { width: `${contentWidthMm}mm`, maxWidth: `${contentWidthMm}mm` } : undefined}
+    >
       {copyLabels.map((label, idx) => (
         <div key={`${label}-${idx}`} className="print-copy-page">
           <PrintDocument

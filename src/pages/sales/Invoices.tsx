@@ -10,10 +10,11 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
 import { createApprovalRequest } from "@/lib/approvals";
 import { canDeleteDirectly } from "@/lib/permissions";
-import { type PrintConfig } from "@/components/print/PrintDocument";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
+import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
 import EInvoiceEwayDialog from "@/components/sales/EInvoiceEwayDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -36,14 +37,6 @@ const statusTone: Record<string, string> = {
   cancelled: "border-destructive/40 text-destructive bg-destructive/10",
 };
 
-const SALES_INVOICE_PRINT_CONFIG: PrintConfig = {
-  documentLabel: "TAX INVOICE",
-  showHsn: true,
-  showRate: true,
-  showGst: true,
-  showAmount: true,
-  showDiscount: true,
-};
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
@@ -68,6 +61,7 @@ export default function InvoicesPage() {
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
+  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
 
   // Edit (draft-only — posted invoices already have a voucher/ledger
   // entry, so free-editing them would desync accounting; cancel + issue
@@ -158,10 +152,11 @@ export default function InvoicesPage() {
   const onPrint = async (inv: SalesInvoice) => {
     setPrinting(inv.id);
     try {
-      const [items, { data: biz }, types] = await Promise.all([
+      const [items, { data: biz }, types, profile] = await Promise.all([
         fetchInvoiceItems(inv.id),
         supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", inv.business_id).maybeSingle(),
         fetchEnabledPrintCopyTypes(inv.business_id),
+        fetchDefaultPrintProfile(inv.business_id, "sales_invoice"),
       ]);
 
       const party = inv.party_snapshot ?? {};
@@ -204,6 +199,7 @@ export default function InvoicesPage() {
           grandTotal: Number(inv.grand_total) || 0,
         },
       });
+      setPrintProfile(profile);
       setCopyTypes(types);
       setCopyDialogOpen(true);
     } catch (e: any) {
@@ -575,26 +571,28 @@ export default function InvoicesPage() {
 
       {/* ── Off-screen print target — CSS in styles/print.css shows only
           .print-copy-run during window.print(), everything else hides. ── */}
-      {printData && (
+      {printData && printProfile && (
         <PrintCopyDialog
           open={copyDialogOpen}
           onOpenChange={setCopyDialogOpen}
           copyTypes={copyTypes}
           onConfirm={(labels) => {
+            applyPrintPageStyle(printProfile);
             setCopyLabels(labels);
             setTimeout(() => window.print(), 50);
           }}
         />
       )}
-      {printData && copyLabels.length > 0 && (
+      {printData && printProfile && copyLabels.length > 0 && (
         <MultiCopyPrintRun
           copyLabels={copyLabels}
-          config={SALES_INVOICE_PRINT_CONFIG}
+          config={profileToPrintConfig(printProfile)}
           company={printData.company}
           party={printData.party}
           meta={printData.meta}
           items={printData.items}
           totals={printData.totals}
+          contentWidthMm={contentWidthMm(printProfile)}
         />
       )}
 

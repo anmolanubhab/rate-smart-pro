@@ -27,19 +27,13 @@ import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
-import { type PrintConfig } from "@/components/print/PrintDocument";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
+import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
+import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
 import { fetchUnits, type Unit as MeasureUnit } from "@/lib/units";
 import { useFormatDate } from "@/lib/dateFormat";
-
-const CHALLAN_PRINT_CONFIG: PrintConfig = {
-  documentLabel: "DELIVERY CHALLAN",
-  partyLabel: "DELIVER TO",
-  showTransport: true,
-  purpose: "Sale on approval / Goods sent for delivery",
-};
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
 function DispatchStatusBadge({ status }: { status: DispatchStatus }) {
@@ -270,6 +264,7 @@ const Dispatch = () => {
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
+  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
   const printChallan = async (d: any) => {
     try {
       const { data: items } = await supabase
@@ -282,7 +277,10 @@ const Dispatch = () => {
       const { data: party } = d.orders?.party_id
         ? await supabase.from("parties").select("name, address, phone, gst").eq("id", d.orders.party_id).maybeSingle()
         : { data: null };
-      const types = await fetchEnabledPrintCopyTypes(business!.id);
+      const [types, profile] = await Promise.all([
+        fetchEnabledPrintCopyTypes(business!.id),
+        fetchDefaultPrintProfile(business!.id, "delivery_challan"),
+      ]);
 
       setChallanData({
         company: {
@@ -313,6 +311,7 @@ const Dispatch = () => {
           qty: Number(it.dispatched_qty) || 0,
         })),
       });
+      setPrintProfile(profile);
       setCopyTypes(types);
       setCopyDialogOpen(true);
     } catch (e: any) {
@@ -668,25 +667,27 @@ const Dispatch = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {challanData && (
+      {challanData && printProfile && (
         <PrintCopyDialog
           open={copyDialogOpen}
           onOpenChange={setCopyDialogOpen}
           copyTypes={copyTypes}
           onConfirm={(labels) => {
+            applyPrintPageStyle(printProfile);
             setCopyLabels(labels);
             setTimeout(() => window.print(), 50);
           }}
         />
       )}
-      {challanData && copyLabels.length > 0 && (
+      {challanData && printProfile && copyLabels.length > 0 && (
         <MultiCopyPrintRun
           copyLabels={copyLabels}
-          config={CHALLAN_PRINT_CONFIG}
+          config={profileToPrintConfig(printProfile)}
           company={challanData.company}
           party={challanData.party}
           meta={challanData.meta}
           items={challanData.items}
+          contentWidthMm={contentWidthMm(printProfile)}
         />
       )}
     </div>

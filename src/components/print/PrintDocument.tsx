@@ -81,6 +81,20 @@ export type PrintConfig = {
   terms?: string[];
   /** Delivery-challan-style purpose-of-movement line, shown above the item grid. */
   purpose?: string;
+  /** Show the company/logo/document-meta header block. Default true. */
+  showHeader?: boolean;
+  /** Show the footer (terms/totals or the challan signature block). Default true. */
+  showFooter?: boolean;
+  /** Where the logo renders in the header, or omit it entirely. Default "left". */
+  logoPosition?: "left" | "center" | "none";
+  /** Show the Authorized Signature line/block. Default true. */
+  showSignature?: boolean;
+  /** Diagonal overlay text, e.g. "DRAFT", "DUPLICATE", "CANCELLED", "PAID". */
+  showWatermark?: boolean;
+  watermarkText?: string | null;
+  /** Small bank-details block in the footer area. */
+  showBankDetails?: boolean;
+  bankDetails?: { accountName?: string; accountNumber?: string; ifsc?: string; bankName?: string; branch?: string } | null;
 };
 
 const DEFAULT_TERMS = ["Goods once sold will not be taken back.", "E. & O.E."];
@@ -121,6 +135,14 @@ export default function PrintDocument({
     showTransport = false,
     terms = DEFAULT_TERMS,
     purpose,
+    showHeader = true,
+    showFooter = true,
+    logoPosition = "left",
+    showSignature = true,
+    showWatermark = false,
+    watermarkText,
+    showBankDetails = false,
+    bankDetails,
   } = config;
 
   const t = totals ?? {};
@@ -156,20 +178,30 @@ export default function PrintDocument({
   return (
     <div
       id={variant === "standalone" ? "invoice-print" : undefined}
-      className={variant === "standalone" ? "invoice-print bg-white text-black font-sans" : "bg-white text-black font-sans"}
+      className={variant === "standalone" ? "invoice-print bg-white text-black font-sans relative" : "bg-white text-black font-sans relative"}
     >
+      {showWatermark && watermarkText && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden z-10">
+          <span className="text-[90px] font-black uppercase tracking-widest text-black/10 -rotate-45 whitespace-nowrap">
+            {watermarkText}
+          </span>
+        </div>
+      )}
       <div className="border-2 border-black">
         {/* ── Header: company + document meta ───────────────────────────── */}
+        {showHeader && (
         <div className="p-3 border-b-2 border-black">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="h-14 w-14 border border-black flex items-center justify-center overflow-hidden">
-                {company.logoUrl ? (
-                  <img src={company.logoUrl} alt="Company Logo" className="h-full w-full object-contain" />
-                ) : (
-                  <div className="text-[10px] font-semibold tracking-wide">LOGO</div>
-                )}
-              </div>
+          <div className={`flex items-start gap-3 ${logoPosition === "center" ? "flex-col items-center text-center" : "justify-between"}`}>
+            <div className={`flex items-start gap-3 ${logoPosition === "center" ? "flex-col items-center text-center" : ""}`}>
+              {logoPosition !== "none" && (
+                <div className="h-14 w-14 border border-black flex items-center justify-center overflow-hidden">
+                  {company.logoUrl ? (
+                    <img src={company.logoUrl} alt="Company Logo" className="h-full w-full object-contain" />
+                  ) : (
+                    <div className="text-[10px] font-semibold tracking-wide">LOGO</div>
+                  )}
+                </div>
+              )}
               <div>
                 <div className="text-[18px] font-extrabold leading-tight tracking-wide">{company.name}</div>
                 <div className="mt-0.5 text-[11px] leading-snug">
@@ -233,6 +265,7 @@ export default function PrintDocument({
             </div>
           </div>
         </div>
+        )}
 
         {/* ── Party block + (transport details or totals-preview box) ───── */}
         <div className="grid grid-cols-2 border-b-2 border-black">
@@ -329,13 +362,23 @@ export default function PrintDocument({
           </table>
 
           {/* ── Footer: totals+terms for GST docs, signature block for challan-style ── */}
-          {showAmount ? (
+          {showFooter && (showAmount ? (
             <div className="grid grid-cols-2 gap-4 mt-3">
               <div className="border border-black p-2">
                 <div className="text-[11px] font-bold mb-1">Terms & Conditions</div>
                 <ul className="list-disc pl-4 text-[11px] space-y-0.5">
                   {terms.filter(Boolean).map((term) => <li key={term}>{term}</li>)}
                 </ul>
+                {showBankDetails && bankDetails && (
+                  <div className="mt-3 border-t border-black pt-2 text-[11px]">
+                    <div className="font-bold mb-0.5">Bank Details</div>
+                    {bankDetails.accountName && <div>A/c Name: {bankDetails.accountName}</div>}
+                    {bankDetails.accountNumber && <div>A/c No: {bankDetails.accountNumber}</div>}
+                    {bankDetails.bankName && <div>Bank: {bankDetails.bankName}</div>}
+                    {bankDetails.branch && <div>Branch: {bankDetails.branch}</div>}
+                    {bankDetails.ifsc && <div>IFSC: {bankDetails.ifsc}</div>}
+                  </div>
+                )}
                 <div className="mt-3 text-[11px] font-semibold">Thank you for your business.</div>
               </div>
 
@@ -356,10 +399,12 @@ export default function PrintDocument({
                     <div className="font-extrabold text-[14px] tabular-nums">{fmt(t.grandTotal)}</div>
                   </div>
                 </div>
-                <div className="mt-8 text-right">
-                  <div className="text-[11px] font-semibold">Authorized Signature</div>
-                  <div className="mt-10 border-t border-black" />
-                </div>
+                {showSignature && (
+                  <div className="mt-8 text-right">
+                    <div className="text-[11px] font-semibold">Authorized Signature</div>
+                    <div className="mt-10 border-t border-black" />
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -368,12 +413,14 @@ export default function PrintDocument({
                 <p className="font-semibold mb-8">Received the above goods in good condition.</p>
                 <div className="border-t border-black pt-1">Receiver's Signature</div>
               </div>
-              <div className="text-right">
-                <p className="font-semibold mb-8">For {company.name}</p>
-                <div className="border-t border-black pt-1 inline-block">Authorized Signatory</div>
-              </div>
+              {showSignature && (
+                <div className="text-right">
+                  <p className="font-semibold mb-8">For {company.name}</p>
+                  <div className="border-t border-black pt-1 inline-block">Authorized Signatory</div>
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       </div>
     </div>
