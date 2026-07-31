@@ -1134,15 +1134,6 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Configuration",
     perm: "team.manage",
   },
-  {
-    id: "team",
-    title: "Team & Roles",
-    description: "Manage team members and their roles",
-    route: "/settings/team",
-    icon: Users,
-    module: "Configuration",
-    perm: "team.manage",
-  },
 
   // ==========================================================================
   // SETTINGS (personal account)

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useBusiness } from "@/hooks/useBusiness";
 import {
-  Building2, Users, Hash, SlidersHorizontal, UserCog, Handshake,
+  Building2, Hash, SlidersHorizontal, UserCog, Handshake,
   ChevronRight, ShieldAlert, Ruler, Tags,
 } from "lucide-react";
 
@@ -41,12 +41,6 @@ const items = [
     icon: ShieldAlert,
     title: "Accounting Lock",
     desc: "Lock a date to prevent edits before it, and configure Financial Adjustment note defaults",
-  },
-  {
-    to: "/settings/team",
-    icon: Users,
-    title: "Team & Roles",
-    desc: "Invite team members and manage their roles",
   },
   {
     to: "/settings/company-users",
