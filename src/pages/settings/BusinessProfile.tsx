@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,7 +42,7 @@ const sections: { key: SectionKey; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function BusinessProfile() {
-  const { business, role, loading, refetch } = useBusiness();
+  const { business, role, permissions, loading, refetch } = useBusiness();
   const nav = useNavigate();
   const [form, setForm] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
@@ -61,7 +62,7 @@ export default function BusinessProfile() {
     }
   }, [business]);
 
-  const editable = can(role, "business.edit");
+  const editable = canGranular(role, "business.edit", permissions);
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
   const hasChanges = JSON.stringify(form) !== JSON.stringify(originalForm);

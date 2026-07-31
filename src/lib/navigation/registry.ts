@@ -1134,6 +1134,22 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Configuration",
     perm: "team.manage",
   },
+  {
+    id: "security-group",
+    title: "Security",
+    module: "Configuration",
+    description: "Permission and access settings",
+  },
+  {
+    id: "permission-system",
+    title: "Permission System",
+    description: "Choose how permissions work for this company",
+    route: "/settings/permission-system",
+    icon: ShieldCheck,
+    module: "Configuration",
+    parentId: "security-group",
+    perm: "team.manage",
+  },
 
   // ==========================================================================
   // SETTINGS (personal account)

@@ -3,7 +3,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { isOwner as isOwnerRole } from "@/lib/permissions";
 import {
   Building2, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight, ShieldAlert, Ruler, Tags,
+  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags,
 } from "lucide-react";
 
 const items = [
@@ -57,6 +57,15 @@ const items = [
   },
 ];
 
+const securityItems = [
+  {
+    to: "/settings/permission-system",
+    icon: ShieldCheck,
+    title: "Permission System",
+    desc: "Choose how permissions work for this company — Individual or Role Based",
+  },
+];
+
 export default function Settings() {
   const navigate = useNavigate();
   const { business, role } = useBusiness();
@@ -89,6 +98,28 @@ export default function Settings() {
             <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           </button>
         ))}
+      </div>
+
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1 mb-2">Security</h2>
+        <div className="divide-y divide-border rounded-xl border bg-card shadow-sm overflow-hidden">
+          {securityItems.map((item) => (
+            <button
+              key={item.to}
+              onClick={() => navigate(item.to)}
+              className="w-full flex items-center gap-4 px-5 py-4 hover:bg-muted/50 transition-colors text-left"
+            >
+              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <item.icon className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm">{item.title}</div>
+                <div className="text-xs text-muted-foreground mt-0.5 truncate">{item.desc}</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            </button>
+          ))}
+        </div>
       </div>
 
       {isOwner && (

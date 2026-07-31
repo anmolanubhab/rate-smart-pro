@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness, can, type BusinessRole } from "@/hooks/useBusiness";
+import { useBusiness, type BusinessRole } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,8 @@ import {
 } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 import { ownerMinimumViolation, diffBusiness } from "@/lib/companySafety";
-import { isOwner } from "@/lib/permissions";
+import { isOwner, canGranular } from "@/lib/permissions";
+import { usePermissionMode } from "@/lib/permissionMode";
 import {
   listInvitations, sendInvitation, resendInvitation, cancelInvitation, deleteInvitation,
   invitationLink, createUserWithTempPassword,
@@ -66,7 +67,7 @@ const STATUS_BADGE: Record<Invitation["status"], { label: string; variant: "defa
 
 export default function CompanyUsers() {
   const { user } = useAuth();
-  const { business, role } = useBusiness();
+  const { business, role, permissions } = useBusiness();
   const fd = useFormatDate();
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
@@ -79,7 +80,8 @@ export default function CompanyUsers() {
   const [addForm, setAddForm] = useState<AddForm>(emptyAdd);
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
-  const canManage = can(role, "team.manage");
+  const canManage = canGranular(role, "team.manage", permissions);
+  const permissionMode = usePermissionMode();
 
   // ── Per-user permission overrides ──
   const [permTarget, setPermTarget] = useState<{ id: string; role: BusinessRole; full_name: string | null } | null>(null);
@@ -87,12 +89,14 @@ export default function CompanyUsers() {
   const [permHasOverride, setPermHasOverride] = useState(false);
   const [permLoading, setPermLoading] = useState(false);
   const [permSaving, setPermSaving] = useState(false);
+  const [savingAsTemplate, setSavingAsTemplate] = useState(false);
 
   // ── Per-business role templates ──
   const [templateRole, setTemplateRole] = useState<BusinessRole>("manager");
   const [templateValue, setTemplateValue] = useState<PermissionMatrix>(emptyPermissionMatrix());
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateSaving, setTemplateSaving] = useState(false);
+  const [applyingToAll, setApplyingToAll] = useState(false);
 
   useEffect(() => { document.title = "Company Users — RD Pro"; }, []);
 
@@ -412,28 +416,72 @@ export default function CompanyUsers() {
     }
   };
 
+  const upsertRoleTemplate = async (targetRole: BusinessRole, permissions: PermissionMatrix) => {
+    if (!business) return;
+    const { error } = await supabase.from("permission_templates").upsert(
+      {
+        business_id: business.id, role: targetRole,
+        name: `${ROLE_LABELS[targetRole]} (Custom)`, permissions, is_system: false,
+      } as never,
+      { onConflict: "business_id,role" },
+    );
+    if (error) throw error;
+    await logAudit({
+      business_id: business.id, action: "ROLE_TEMPLATE_UPDATED",
+      entity_type: "permission_template", entity_id: targetRole, new_value: permissions,
+    });
+  };
+
   const saveTemplate = async () => {
     if (!business) return;
     setTemplateSaving(true);
     try {
-      const { error } = await supabase.from("permission_templates").upsert(
-        {
-          business_id: business.id, role: templateRole,
-          name: `${ROLE_LABELS[templateRole]} (Custom)`, permissions: templateValue, is_system: false,
-        } as never,
-        { onConflict: "business_id,role" },
-      );
-      if (error) throw error;
-      await logAudit({
-        business_id: business.id, action: "ROLE_TEMPLATE_UPDATED",
-        entity_type: "permission_template", entity_id: templateRole, new_value: templateValue,
-      });
+      await upsertRoleTemplate(templateRole, templateValue);
       toast.success(`${ROLE_LABELS[templateRole]} template updated for this company`);
     } catch (e: any) {
       toast.error(e.message ?? "Could not save role template");
     } finally {
       setTemplateSaving(false);
     }
+  };
+
+  const saveCurrentAsRoleTemplate = async () => {
+    if (!permTarget) return;
+    setSavingAsTemplate(true);
+    try {
+      await upsertRoleTemplate(permTarget.role, permValue);
+      toast.success(`${ROLE_LABELS[permTarget.role]} template updated from ${permTarget.full_name || "this user"}'s permissions`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not save role template");
+    } finally {
+      setSavingAsTemplate(false);
+    }
+  };
+
+  const applyTemplateToAllUsers = async () => {
+    if (!business) return;
+    const usersOfRole = (list.data ?? []).filter((r) => r.role === templateRole && r.status === "active");
+    if (usersOfRole.length === 0) {
+      toast.error(`No active ${ROLE_LABELS[templateRole]} users found`);
+      return;
+    }
+    if (!confirm(
+      `Apply these permissions directly to ${usersOfRole.length} ${ROLE_LABELS[templateRole]} user(s) as their individual permissions? ` +
+      `Each gets a personal override — future template changes won't affect them unless reset.`
+    )) return;
+    setApplyingToAll(true);
+    let ok = 0, failed = 0;
+    for (const u of usersOfRole) {
+      const { error } = await supabase.rpc("save_user_permissions", { _business_user_id: u.id, _permissions: templateValue });
+      if (error) failed++; else ok++;
+    }
+    await logAudit({
+      business_id: business.id, action: "ROLE_TEMPLATE_APPLIED_TO_USERS",
+      entity_type: "business_role", entity_id: templateRole, new_value: { role: templateRole, applied: ok, failed },
+    });
+    if (failed > 0) toast.error(`Applied to ${ok} user(s), ${failed} failed`);
+    else toast.success(`Applied to ${ok} ${ROLE_LABELS[templateRole]} user(s)`);
+    setApplyingToAll(false);
   };
 
   return (
@@ -466,7 +514,7 @@ export default function CompanyUsers() {
               <TabsTrigger value="pending">Pending Invitations ({pendingInvites.length})</TabsTrigger>
               <TabsTrigger value="disabled">Disabled Users ({disabledRows.length})</TabsTrigger>
               <TabsTrigger value="history">Invitation History ({closedInvites.length})</TabsTrigger>
-              {canManage && <TabsTrigger value="templates">Role Templates</TabsTrigger>}
+              {canManage && permissionMode === "role_based" && <TabsTrigger value="templates">Role Templates</TabsTrigger>}
             </TabsList>
           </div>
 
@@ -573,7 +621,7 @@ export default function CompanyUsers() {
             </div>
           </TabsContent>
 
-          {canManage && (
+          {canManage && permissionMode === "role_based" && (
             <TabsContent value="templates" className="mt-0 p-4 space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-sm text-muted-foreground flex-1 min-w-[200px]">
@@ -595,7 +643,14 @@ export default function CompanyUsers() {
                     roleOptions={roleOptions}
                     onCopyFromRole={(r) => copyRoleTemplateInto(r, setTemplateValue)}
                   />
-                  <div className="flex justify-end">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={applyTemplateToAllUsers}
+                      disabled={applyingToAll || templateSaving || isOwner(templateRole)}
+                    >
+                      {applyingToAll ? "Applying…" : `Apply to all current ${ROLE_LABELS[templateRole]} users`}
+                    </Button>
                     <Button onClick={saveTemplate} disabled={templateSaving || isOwner(templateRole)}>
                       {templateSaving ? "Saving…" : `Save ${ROLE_LABELS[templateRole]} Template`}
                     </Button>
@@ -767,11 +822,28 @@ export default function CompanyUsers() {
             <p className="text-sm text-muted-foreground py-8 text-center">Loading…</p>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground">
-                {permHasOverride
-                  ? "This user has custom permissions that override their role's template."
-                  : "This user currently follows their role's template. Editing and saving creates a personal override."}
-              </p>
+              {permissionMode === "role_based" ? (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+                  <div>
+                    <p className="text-sm font-medium">Follow role template</p>
+                    <p className="text-xs text-muted-foreground">
+                      {permHasOverride
+                        ? "Off — this user has a custom override that no longer follows their role's template."
+                        : "On — this user follows their role's template. Editing and saving switches this off."}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={!permHasOverride}
+                    disabled={permSaving}
+                    onCheckedChange={(checked) => { if (checked) resetPermissions(); else setPermHasOverride(true); }}
+                  />
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Set exactly what {permTarget?.full_name || "this user"} can do. Their role is just a label —
+                  it doesn't grant or limit anything on its own.
+                </p>
+              )}
               <PermissionMatrixEditor
                 value={permValue}
                 onChange={setPermValue}
@@ -781,8 +853,12 @@ export default function CompanyUsers() {
             </>
           )}
           <DialogFooter className="flex items-center justify-between sm:justify-between">
-            <Button variant="outline" onClick={resetPermissions} disabled={!permHasOverride || permSaving || permLoading}>
-              Reset to role default
+            <Button
+              variant="outline"
+              onClick={saveCurrentAsRoleTemplate}
+              disabled={savingAsTemplate || permSaving || permLoading || !permTarget || isOwner(permTarget.role)}
+            >
+              {savingAsTemplate ? "Saving…" : `Save as ${permTarget ? ROLE_LABELS[permTarget.role] : ""} template`}
             </Button>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setPermTarget(null)} disabled={permSaving}>Cancel</Button>

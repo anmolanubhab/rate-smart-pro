@@ -14,7 +14,8 @@ import { useMemo } from "react";
 import { NAV_ITEMS } from "./registry";
 import type { NavItem, NavItemWithPath } from "./types";
 import { scoreItem } from "./fuzzy";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 
 // Explicit sidebar module sequence — business workflow order (transactional
 // modules first, then compliance/analytics, then admin/settings last). Any
@@ -54,11 +55,11 @@ function buildChildrenMap(items: NavItem[]): Map<string, NavItem[]> {
 }
 
 export function useNavigation() {
-  const { role } = useBusiness();
+  const { role, permissions } = useBusiness();
 
   const isVisible = useMemo(() => {
-    return (item: NavItem) => !item.perm || can(role, item.perm);
-  }, [role]);
+    return (item: NavItem) => !item.perm || canGranular(role, item.perm, permissions);
+  }, [role, permissions]);
 
   // Everything below depends only on the static registry + role, so it's
   // rebuilt at most once per role change — not on every render/keystroke.

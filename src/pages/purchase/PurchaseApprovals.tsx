@@ -8,7 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { approvePurchaseOrder, rejectPurchaseOrder } from "@/lib/purchaseOrders";
 import { logAudit } from "@/lib/audit";
@@ -29,12 +30,12 @@ export default function PurchaseApprovals() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
-  const { business, role } = useBusiness();
+  const { business, role, permissions } = useBusiness();
   const businessId = business?.id ?? getActiveBusinessIdSync();
   const fd = useFormatDate();
   const queryClient = useQueryClient();
 
-  const canApprove = can(role, "purchase.approve");
+  const canApprove = canGranular(role, "purchase.approve", permissions);
 
   const { data, isLoading } = useQuery({
     queryKey: ["purchase-approvals", businessId],

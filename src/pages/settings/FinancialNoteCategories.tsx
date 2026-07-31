@@ -13,7 +13,8 @@ import { toast } from "sonner";
 import { Plus, Pencil, Copy, Trash2, Lock, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts, type LedgerRow } from "@/lib/accounting";
 import { logAudit } from "@/lib/audit";
 import { Button } from "@/components/ui/button";
@@ -66,9 +67,9 @@ const blankForm = (nextOrder: number): FormState => ({
 
 export default function FinancialNoteCategories() {
   const { user } = useAuth();
-  const { business, role } = useBusiness();
+  const { business, role, permissions } = useBusiness();
   const qc = useQueryClient();
-  const editable = can(role, "settings.edit");
+  const editable = canGranular(role, "settings.edit", permissions);
 
   useEffect(() => { document.title = "Financial Note Categories — RD Pro"; }, []);
 
