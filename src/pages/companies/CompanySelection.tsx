@@ -22,6 +22,7 @@ import { isOwner as isOwnerRole } from "@/lib/permissions";
 import { toast } from "sonner";
 import { EditCompanyWizard } from "@/components/company/EditCompanyWizard";
 import { ArchiveCompanyDialog } from "@/components/company/ArchiveCompanyDialog";
+import CompanyAvatar from "@/components/company/CompanyAvatar";
 import { useFormatDate } from "@/lib/dateFormat";
 
 type Row = {
@@ -37,6 +38,7 @@ type Row = {
     setup_completed: boolean;
     created_at: string;
     archived_at: string | null;
+    logo_url: string | null;
   } | null;
 };
 
@@ -209,9 +211,7 @@ export default function CompanySelection() {
                   className="text-left rounded-2xl border bg-card p-5 hover:border-primary/40 hover:shadow-md transition-all group relative"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Building2 className="h-5 w-5 text-primary" />
-                    </div>
+                    <CompanyAvatar company={{ business_name: b.business_name, logo_url: b.logo_url }} size="md" />
                     <div className="flex items-center gap-1">
                       <Badge variant={archived ? "outline" : b.setup_completed ? "default" : "secondary"}>
                         {archived ? "Archived" : b.setup_completed ? "Active" : "Setup pending"}
