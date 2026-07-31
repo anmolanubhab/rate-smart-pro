@@ -6,6 +6,7 @@ import {
   canApproveRequestFrom,
 } from "@/lib/permissions";
 import type { BusinessRole } from "@/hooks/useBusiness";
+import type { PermissionMatrix } from "@/lib/permissionMatrix";
 
 export type ApprovalAction = "edit" | "delete" | "cancel" | "unlock" | "reopen";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -117,8 +118,9 @@ export async function getPendingApprovalCount(businessId: string): Promise<numbe
 export async function approveRequest(
   req: ApprovalRequest,
   approverRole: BusinessRole | null,
+  approverPermissions?: PermissionMatrix | null,
 ): Promise<void> {
-  if (!canApproveRequestFrom(approverRole, req.requested_by_role)) {
+  if (!canApproveRequestFrom(approverRole, req.requested_by_role, approverPermissions, req.module)) {
     throw new Error("You do not have permission to approve this request.");
   }
   const { data: { user } } = await supabase.auth.getUser();
@@ -201,8 +203,9 @@ export async function rejectRequest(
   req: ApprovalRequest,
   approverRole: BusinessRole | null,
   rejectionReason: string,
+  approverPermissions?: PermissionMatrix | null,
 ): Promise<void> {
-  if (!canApproveRequestFrom(approverRole, req.requested_by_role)) {
+  if (!canApproveRequestFrom(approverRole, req.requested_by_role, approverPermissions, req.module)) {
     throw new Error("You do not have permission to reject this request.");
   }
   if (!rejectionReason.trim()) throw new Error("Rejection reason is required.");

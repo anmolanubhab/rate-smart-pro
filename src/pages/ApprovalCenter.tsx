@@ -37,7 +37,7 @@ const MODULE_OPTIONS: { value: ApprovalModule | "all"; label: string }[] = [
 ];
 
 export default function ApprovalCenter() {
-  const { business, role, loading } = useBusiness();
+  const { business, role, permissions, loading } = useBusiness();
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -58,7 +58,7 @@ export default function ApprovalCenter() {
   const query = useApprovalRequests(filters);
 
   const approveMut = useMutation({
-    mutationFn: async (req: ApprovalRequest) => approveRequest(req, role),
+    mutationFn: async (req: ApprovalRequest) => approveRequest(req, role, permissions),
     onSuccess: () => {
       toast({ title: "Request approved", description: "Change applied." });
       qc.invalidateQueries({ queryKey: ["approvals"] });
@@ -162,7 +162,7 @@ export default function ApprovalCenter() {
                       </TableCell></TableRow>
                     )}
                     {rows.map((r) => {
-                      const canAct = canApproveRequestFrom(role, r.requested_by_role);
+                      const canAct = canApproveRequestFrom(role, r.requested_by_role, permissions, r.module);
                       return (
                         <TableRow key={r.id}>
                           <TableCell>{MODULE_LABEL[r.module]}</TableCell>

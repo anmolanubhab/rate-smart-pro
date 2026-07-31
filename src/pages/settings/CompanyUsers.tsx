@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 import { ownerMinimumViolation, diffBusiness } from "@/lib/companySafety";
+import { isOwner } from "@/lib/permissions";
 import {
   listInvitations, sendInvitation, resendInvitation, cancelInvitation, deleteInvitation,
   invitationLink, createUserWithTempPassword,
@@ -249,8 +250,8 @@ export default function CompanyUsers() {
   const saveEdit = async () => {
     if (!business || !editingId) return;
     const original = list.data?.find((r) => r.id === editingId);
-    const losesOwnerStatus = original && original.role === "owner" && original.status === "active"
-      && (memberForm.role !== "owner" || memberForm.status !== "active" || !memberForm.login_enabled);
+    const losesOwnerStatus = original && isOwner(original.role) && original.status === "active"
+      && (!isOwner(memberForm.role) || memberForm.status !== "active" || !memberForm.login_enabled);
     if (losesOwnerStatus) {
       const err = ownerMinimumViolation(list.data ?? [], editingId);
       if (err) { toast.error(err); return; }
@@ -595,11 +596,11 @@ export default function CompanyUsers() {
                     onCopyFromRole={(r) => copyRoleTemplateInto(r, setTemplateValue)}
                   />
                   <div className="flex justify-end">
-                    <Button onClick={saveTemplate} disabled={templateSaving || templateRole === "owner"}>
+                    <Button onClick={saveTemplate} disabled={templateSaving || isOwner(templateRole)}>
                       {templateSaving ? "Saving…" : `Save ${ROLE_LABELS[templateRole]} Template`}
                     </Button>
                   </div>
-                  {templateRole === "owner" && (
+                  {isOwner(templateRole) && (
                     <p className="text-xs text-muted-foreground text-right">Owner permissions cannot be restricted.</p>
                   )}
                 </>
@@ -849,7 +850,7 @@ function MembersTable({
                 {canManage && (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => onEdit(r)}>Edit</Button>
-                    {r.role !== "owner" && !isSelf(r) && (
+                    {!isOwner(r.role) && !isSelf(r) && (
                       <Button size="sm" variant="ghost" onClick={() => onPermissions(r)}>Permissions</Button>
                     )}
                     <Tooltip>

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { isOwner } from "@/lib/permissions";
 
 /** Re-authenticates the current user with their password.
  *  Returns null on success, or an error message. Silently no-ops if there's no session. */
@@ -76,7 +77,7 @@ export async function fetchDeletePreflight(businessId: string): Promise<Prefligh
  * — see fetchDeletePreflight() above.
  */
 export function activeOwnerCount(rows: { role: string; status: string }[]): number {
-  return rows.filter((r) => r.role === "owner" && r.status === "active").length;
+  return rows.filter((r) => isOwner(r.role) && r.status === "active").length;
 }
 
 /**
@@ -93,7 +94,7 @@ export function ownerMinimumViolation(
   // Only relevant if the target itself is currently an active owner —
   // removing/disabling/re-roling a non-owner or inactive user never
   // reduces the active-owner count.
-  if (target.role !== "owner" || target.status !== "active") return null;
+  if (!isOwner(target.role) || target.status !== "active") return null;
   if (activeOwnerCount(rows) <= 1) return "At least one active owner is required.";
   return null;
 }

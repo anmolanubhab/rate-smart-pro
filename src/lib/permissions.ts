@@ -1,4 +1,5 @@
 import type { BusinessRole } from "@/hooks/useBusiness";
+import type { PermissionMatrix } from "@/lib/permissionMatrix";
 
 /**
  * RD-Pro permission matrix (Phase 1).
@@ -32,6 +33,21 @@ const ADJUSTMENT_LEDGER_OVERRIDE_ROLES: BusinessRole[] = ["owner", "admin", "man
 export function hasRole(role: BusinessRole | null | undefined, allowed: BusinessRole[]): boolean {
   if (!role) return false;
   return allowed.includes(role);
+}
+
+/** Single source of truth for "is this the Owner role" — do not re-check `role === "owner"` elsewhere.
+ *  Accepts a plain string too, since some call sites read `role` as an unrefined DB column. */
+export function isOwner(role: string | null | undefined): boolean {
+  return role === "owner";
+}
+
+/** Safe lookup into an effective-permissions matrix; false on any missing key. */
+export function hasModulePermission(
+  perms: PermissionMatrix | null | undefined,
+  module: string,
+  action: string,
+): boolean {
+  return !!perms?.[module]?.[action];
 }
 
 /** Can this role finalize (approve / reject) approval requests at all? */
@@ -88,16 +104,33 @@ export function requiresApprovalForMutation(role: BusinessRole | null): boolean 
 
 /**
  * Can this role approve a request created by `requesterRole`?
- * Approval must come from a strictly higher rank, AND the approver must
- * be in the APPROVERS set.
+ * Approval must come from a strictly higher rank (a hard requirement — this
+ * hierarchy check has no equivalent in the granular permission matrix and
+ * must never be bypassed), AND the approver must have approval rights.
+ *
+ * When `approverPermissions` + `module` are supplied and the module maps to
+ * one of the 13 permission-matrix modules, approval rights come from that
+ * module's `approve` flag (real per-user/per-role-template control). Otherwise
+ * this falls back to the blanket APPROVERS role list — identical to the
+ * behavior before per-module rights existed.
  */
 export function canApproveRequestFrom(
   approverRole: BusinessRole | null,
   requesterRole: BusinessRole | null | undefined,
+  approverPermissions?: PermissionMatrix | null,
+  module?: ApprovalModule,
 ): boolean {
-  if (!canApproveRequests(approverRole)) return false;
-  if (!requesterRole) return true; // unknown requester rank → only by virtue of being an approver
-  return RANK[approverRole!] > RANK[requesterRole];
+  if (!requesterRole) {
+    // unknown requester rank → only by virtue of being an approver
+  } else if (!approverRole || RANK[approverRole] <= RANK[requesterRole]) {
+    return false;
+  }
+
+  const mappedModule = module ? APPROVAL_MODULE_TO_PERMISSION_MODULE[module] : undefined;
+  if (approverPermissions && mappedModule) {
+    return hasModulePermission(approverPermissions, mappedModule, "approve");
+  }
+  return canApproveRequests(approverRole);
 }
 
 /** Permission to delete a record directly (bypassing approval). */
@@ -140,4 +173,25 @@ export const MODULE_TABLE: Record<ApprovalModule, string> = {
   inventory_adjustment: "inventory_adjustments",
   party: "parties",
   product: "products",
+};
+
+/**
+ * Maps each ApprovalModule onto one of the 13 permission-matrix modules, so
+ * per-module `approve` rights (set via Role Templates / per-user Permissions)
+ * can gate approvals. Several of these are judgment calls, not exact 1:1
+ * matches — the permission matrix predates and is coarser than the approval
+ * system's module list:
+ *   - dispatch and order are sales-fulfillment steps, mapped to "sales"
+ *   - voucher is an accounting entry, mapped to "accounts"
+ *   - product is mapped to "inventory" (its closer master-data home)
+ *   - party (customers/suppliers) has no clean home; defaulted to "sales"
+ */
+export const APPROVAL_MODULE_TO_PERMISSION_MODULE: Record<ApprovalModule, string> = {
+  sales_invoice: "sales",
+  dispatch: "sales",
+  order: "sales",
+  voucher: "accounts",
+  inventory_adjustment: "inventory",
+  party: "sales",
+  product: "inventory",
 };
