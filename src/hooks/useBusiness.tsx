@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import type { PermissionMatrix } from "@/lib/permissionMatrix";
 
 // Must mirror the live public.business_role Postgres enum exactly — assigning
 // a role outside this set fails at the database with an enum error.
@@ -67,13 +68,16 @@ export function useBusiness() {
     queryFn: async () => {
       const { data: memberships, error: e1 } = await supabase
         .from("business_users")
-        .select("business_id, role, created_at")
+        .select("id, business_id, role, created_at")
         .eq("user_id", user!.id)
         .eq("status", "active")
         .order("created_at", { ascending: true });
       if (e1) throw e1;
       if (!memberships || memberships.length === 0) {
-        return { business: null as Business | null, role: null as BusinessRole | null, memberships: [] };
+        return {
+          business: null as Business | null, role: null as BusinessRole | null,
+          memberships: [], membershipId: null as string | null,
+        };
       }
 
       const activeId = getActiveBusinessId();
@@ -98,7 +102,20 @@ export function useBusiness() {
         business: (biz ?? null) as Business | null,
         role: chosen.role as BusinessRole,
         memberships,
+        membershipId: chosen.id as string,
       };
+    },
+  });
+
+  const membershipId = q.data?.membershipId ?? null;
+  const permsQ = useQuery({
+    queryKey: ["effective-permissions", membershipId],
+    enabled: !!membershipId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_effective_permissions", { _business_user_id: membershipId! });
+      if (error) throw error;
+      return (data as PermissionMatrix | null) ?? null;
     },
   });
 
@@ -112,10 +129,15 @@ export function useBusiness() {
     return () => window.removeEventListener("rdpro:active-business-changed", handler);
   }, [q, queryClient]);
 
+  const permissions = permsQ.data ?? null;
+
   return {
     business: q.data?.business ?? null,
     role: q.data?.role ?? null,
     memberships: q.data?.memberships ?? [],
+    membershipId,
+    permissions,
+    hasPerm: (module: string, action: string) => !!permissions?.[module]?.[action],
     loading: q.isLoading,
     refetch: q.refetch,
   };

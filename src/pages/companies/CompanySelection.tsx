@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Building2, Plus, Search, LogOut, MoreVertical, Pencil, Users, Settings, Archive, ArchiveRestore, Loader2, ShieldAlert } from "lucide-react";
 import { logAudit } from "@/lib/audit";
+import { isOwner as isOwnerRole } from "@/lib/permissions";
 import { toast } from "sonner";
 import { EditCompanyWizard } from "@/components/company/EditCompanyWizard";
 import { ArchiveCompanyDialog } from "@/components/company/ArchiveCompanyDialog";
@@ -201,7 +202,7 @@ export default function CompanySelection() {
             {rows.map((r) => {
               const b = r.businesses!;
               const archived = !!b.archived_at;
-              const isOwner = r.role === "owner";
+              const isOwner = isOwnerRole(r.role);
               return (
                 <div
                   key={b.id}

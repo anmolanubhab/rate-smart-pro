@@ -20,7 +20,7 @@ export function RejectRequestDialog({
   onOpenChange: (v: boolean) => void;
   request: ApprovalRequest | null;
 }) {
-  const { role } = useBusiness();
+  const { role, permissions } = useBusiness();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [reason, setReason] = useState("");
@@ -28,7 +28,7 @@ export function RejectRequestDialog({
   const mut = useMutation({
     mutationFn: async () => {
       if (!request) throw new Error("No request selected.");
-      await rejectRequest(request, role, reason.trim());
+      await rejectRequest(request, role, reason.trim(), permissions);
     },
     onSuccess: () => {
       toast({ title: "Request rejected" });

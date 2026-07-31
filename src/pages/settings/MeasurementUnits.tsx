@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Trash2, Lock, Ruler } from "lucide-react";
 import { useBusiness, can } from "@/hooks/useBusiness";
+import { isOwner } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,7 @@ import {
 export default function MeasurementUnits() {
   useEffect(() => { document.title = "Measurement Units — RD Pro"; }, []);
   const { role } = useBusiness();
-  const canEdit = can(role, "settings.edit") || role === "owner";
+  const canEdit = can(role, "settings.edit") || isOwner(role);
   const qc = useQueryClient();
 
   const { data: categories, isLoading: catLoading } = useQuery({

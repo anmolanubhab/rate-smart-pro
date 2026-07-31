@@ -5,20 +5,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search } from "lucide-react";
+import {
+  PERMISSION_MODULES, PERMISSION_ACTIONS,
+  type PermissionModule, type PermissionAction, type PermissionMatrix,
+} from "@/lib/permissionMatrix";
 
-export const PERMISSION_MODULES = [
-  "dashboard", "sales", "purchase", "inventory", "accounts", "gst",
-  "reports", "administration", "settings", "configuration", "crm",
-  "payroll", "dealer_portal",
-] as const;
-
-export const PERMISSION_ACTIONS = [
-  "view", "create", "edit", "delete", "cancel", "approve", "print", "export", "import", "restore",
-] as const;
-
-export type PermissionModule = (typeof PERMISSION_MODULES)[number];
-export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
-export type PermissionMatrix = Record<string, Record<string, boolean>>;
+export { PERMISSION_MODULES, PERMISSION_ACTIONS, emptyPermissionMatrix } from "@/lib/permissionMatrix";
+export type { PermissionModule, PermissionAction, PermissionMatrix } from "@/lib/permissionMatrix";
 
 const MODULE_LABEL: Record<PermissionModule, string> = {
   dashboard: "Dashboard", sales: "Sales", purchase: "Purchase", inventory: "Inventory",
@@ -31,15 +24,6 @@ const ACTION_LABEL: Record<PermissionAction, string> = {
   view: "View", create: "Create", edit: "Edit", delete: "Delete", cancel: "Cancel",
   approve: "Approve", print: "Print", export: "Export", import: "Import", restore: "Restore",
 };
-
-export function emptyPermissionMatrix(): PermissionMatrix {
-  const out: PermissionMatrix = {};
-  for (const m of PERMISSION_MODULES) {
-    out[m] = {};
-    for (const a of PERMISSION_ACTIONS) out[m][a] = false;
-  }
-  return out;
-}
 
 export function PermissionMatrixEditor({
   value, onChange, readOnly, roleOptions, onCopyFromRole,

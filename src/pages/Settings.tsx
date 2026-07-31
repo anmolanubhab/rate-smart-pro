@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useBusiness } from "@/hooks/useBusiness";
+import { isOwner as isOwnerRole } from "@/lib/permissions";
 import {
   Building2, Hash, SlidersHorizontal, UserCog, Handshake,
   ChevronRight, ShieldAlert, Ruler, Tags,
@@ -59,7 +60,7 @@ const items = [
 export default function Settings() {
   const navigate = useNavigate();
   const { business, role } = useBusiness();
-  const isOwner = role === "owner";
+  const isOwner = isOwnerRole(role);
 
 
   return (

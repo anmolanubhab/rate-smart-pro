@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useBusiness } from "@/hooks/useBusiness";
+import { isOwner } from "@/lib/permissions";
 import { fetchSalesConfig, upsertSalesConfig, SalesConfig } from "@/lib/salesConfig";
 import {
   PRESETS, STAGE_LABEL, applyPreset, getEnabledStages, reconcileDependencies,
@@ -77,7 +78,7 @@ export default function SalesConfigPage() {
   const { business, role } = useBusiness();
   const [cfg, setCfg] = useState<SalesConfig | null>(null);
   const [saving, setSaving] = useState(false);
-  const canEdit = role === "owner" || role === "admin";
+  const canEdit = isOwner(role) || role === "admin";
 
   useEffect(() => {
     document.title = "Sales Configuration — RD Pro";

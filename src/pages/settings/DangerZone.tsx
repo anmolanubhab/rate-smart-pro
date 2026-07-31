@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { ShieldAlert, ArrowLeft, Trash2, Undo2, Clock, Lock } from "lucide-react";
 import { DeleteCompanyWizard } from "@/components/company/DeleteCompanyWizard";
 import { verifyCurrentPassword } from "@/lib/companySafety";
+import { isOwner } from "@/lib/permissions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,7 +45,7 @@ export default function DangerZone() {
 
   if (loading) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
   if (!business) return <div className="p-8">No company selected.</div>;
-  if (role !== "owner") {
+  if (!isOwner(role)) {
     return (
       <div className="p-8 max-w-2xl">
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 flex gap-3">
