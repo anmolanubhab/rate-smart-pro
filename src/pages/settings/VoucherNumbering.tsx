@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,9 +47,9 @@ const blank = (t: VType): Omit<Series, "id"> => ({
 
 export default function VoucherNumbering() {
   const { user } = useAuth();
-  const { business, role } = useBusiness();
+  const { business, role, permissions } = useBusiness();
   const qc = useQueryClient();
-  const editable = can(role, "settings.edit");
+  const editable = canGranular(role, "settings.edit", permissions);
   const [type, setType] = useState<VType>("sales");
 
   useEffect(() => { document.title = "Voucher Numbering — RD Pro"; }, []);

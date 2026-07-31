@@ -1,4 +1,5 @@
 import type { BusinessRole } from "@/hooks/useBusiness";
+import { can } from "@/hooks/useBusiness";
 import type { PermissionMatrix } from "@/lib/permissionMatrix";
 
 /**
@@ -48,6 +49,45 @@ export function hasModulePermission(
   action: string,
 ): boolean {
   return !!perms?.[module]?.[action];
+}
+
+/**
+ * Maps legacy `can(role, perm)` string permissions (useBusiness.tsx's PERMS
+ * map) onto the granular 13-module matrix, for strings confirmed to produce
+ * IDENTICAL results for every role as the old static map (verified against
+ * the live permission_templates system defaults — see Stage 3 notes).
+ * `voucher.create` and the unused voucher.edit/delete/cancel + data.import/
+ * export strings are intentionally omitted — no clean single-module mapping
+ * exists for `voucher.create` (it straddles sales/purchase/accounts
+ * depending on role), and the others are never actually used as gates.
+ */
+const STRING_PERM_TO_MODULE_ACTION: Record<string, [module: string, action: string]> = {
+  "settings.edit": ["settings", "edit"],
+  "team.manage": ["administration", "edit"],
+  "business.edit": ["configuration", "edit"],
+  "audit.view": ["administration", "view"],
+  "purchase.approve": ["purchase", "approve"],
+  "order.approve": ["sales", "approve"],
+  "purchase.create": ["purchase", "create"],
+};
+
+/**
+ * Matrix-aware replacement for `can(role, perm)`: consults the effective
+ * permission matrix for the 7 strings mapped above when available, falling
+ * back to the legacy role-based `can()` check otherwise (unmapped string,
+ * or permissions not loaded yet) — identical behavior to `can()` alone for
+ * every business that hasn't customized a template or per-user override.
+ */
+export function canGranular(
+  role: BusinessRole | null,
+  perm: string,
+  permissions: PermissionMatrix | null | undefined,
+): boolean {
+  const mapped = STRING_PERM_TO_MODULE_ACTION[perm];
+  if (mapped && permissions) {
+    return hasModulePermission(permissions, mapped[0], mapped[1]);
+  }
+  return can(role, perm);
 }
 
 /** Can this role finalize (approve / reject) approval requests at all? */

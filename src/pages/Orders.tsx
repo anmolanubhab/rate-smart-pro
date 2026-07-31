@@ -29,7 +29,8 @@ import {
   Order, OrderItem, ActivityLog,
 } from "@/lib/orders";
 import { generateInvoiceFromOrder } from "@/lib/salesInvoices";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 import { fetchSalesConfig } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
@@ -57,8 +58,8 @@ type SortKey = "latest" | "amount" | "pending" | "party";
 
 const Orders = () => {
   const { user } = useAuth();
-  const { business, role, loading: businessLoading } = useBusiness();
-  const canApproveOrder = can(role, "order.approve");
+  const { business, role, permissions, loading: businessLoading } = useBusiness();
+  const canApproveOrder = canGranular(role, "order.approve", permissions);
   const fd = useFormatDate();
   const nav = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);

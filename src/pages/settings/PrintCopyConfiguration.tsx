@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -13,9 +14,9 @@ import {
 
 export default function PrintCopyConfiguration() {
   useEffect(() => { document.title = "Print Copy Configuration — RD Pro"; }, []);
-  const { business, role } = useBusiness();
+  const { business, role, permissions } = useBusiness();
   const qc = useQueryClient();
-  const editable = can(role, "settings.edit");
+  const editable = canGranular(role, "settings.edit", permissions);
 
   const list = useQuery({
     queryKey: ["print-copy-types", business?.id],

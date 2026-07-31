@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PlusCircle, Trash2, Star } from "lucide-react";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -227,9 +228,9 @@ function formToPayload(form: FormState, documentType: PrintDocumentType) {
 
 export default function PrintProfiles() {
   useEffect(() => { document.title = "Print Profiles — RD Pro"; }, []);
-  const { business, role } = useBusiness();
+  const { business, role, permissions } = useBusiness();
   const qc = useQueryClient();
-  const editable = can(role, "settings.edit");
+  const editable = canGranular(role, "settings.edit", permissions);
 
   const [documentType, setDocumentType] = useState<PrintDocumentType>("sales_invoice");
   const [dialogOpen, setDialogOpen] = useState(false);

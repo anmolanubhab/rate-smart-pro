@@ -28,7 +28,8 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useBusiness, can } from "@/hooks/useBusiness";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canGranular } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { Button } from "@/components/ui/button";
@@ -79,8 +80,8 @@ const STATUS_BADGE: Record<POStatus, string> = {
 
 export default function CreatePurchaseOrder() {
   const { user, loading: authLoading } = useAuth();
-  const { role } = useBusiness();
-  const canApprove = can(role, "purchase.approve");
+  const { role, permissions } = useBusiness();
+  const canApprove = canGranular(role, "purchase.approve", permissions);
   const businessId = getActiveBusinessIdSync();
   const navigate = useNavigate();
   const { id: editId } = useParams<{ id?: string }>();
