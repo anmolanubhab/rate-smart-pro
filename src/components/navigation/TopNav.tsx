@@ -16,7 +16,6 @@ import {
   HelpCircle,
   ChevronDown,
   User,
-  Building2,
   Settings as SettingsIcon,
   Keyboard,
   LifeBuoy,
@@ -36,6 +35,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import CompanyAvatar from "@/components/company/CompanyAvatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
 import { useTheme } from "@/hooks/useTheme";
@@ -194,7 +194,7 @@ export default function TopNav() {
               <User className="h-4 w-4" /> Profile
             </DropdownMenuItem>
             <DropdownMenuItem onClick={switchCompany} className="gap-2">
-              <Building2 className="h-4 w-4" />
+              <CompanyAvatar company={business} size="sm" className="border-none shadow-none" />
               <span className="flex-1">Company</span>
               <span className="max-w-[90px] truncate text-xs text-muted-foreground">
                 {business?.business_name}

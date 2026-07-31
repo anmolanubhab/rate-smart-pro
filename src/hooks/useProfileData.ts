@@ -19,6 +19,12 @@ export interface Business {
   legal_type: string;
   financial_year_start: string;
   financial_year_end: string;
+  // Real businesses table columns (the ones above don't exist on the row —
+  // kept for back-compat since nothing else reads them). Used by CompanyCard
+  // for the avatar/name shown on the Profile page.
+  business_name?: string | null;
+  business_type?: string | null;
+  logo_url?: string | null;
 }
 
 export interface Membership {

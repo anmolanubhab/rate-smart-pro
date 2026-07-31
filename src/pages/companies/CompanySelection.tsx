@@ -312,7 +312,14 @@ export default function CompanySelection() {
           open={!!editing}
           onOpenChange={(v) => !v && setEditing(null)}
           business={editing.row as unknown as Record<string, unknown> & { id: string; business_name: string }}
-          onSaved={() => queryClient.invalidateQueries({ queryKey: ["company-list"] })}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ["company-list"] });
+            // The edited company may be the currently active one (e.g. its
+            // logo_url changed) — invalidate current-business too so the
+            // sidebar/header avatar updates instantly instead of only after
+            // the next company switch or manual refresh.
+            queryClient.invalidateQueries({ queryKey: ["current-business"] });
+          }}
         />
       )}
       {archiving && (

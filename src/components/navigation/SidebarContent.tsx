@@ -4,10 +4,11 @@
 // between the desktop <aside> in AppLayout and the mobile Sheet drawer, so
 // there's exactly one implementation to keep in sync with the registry.
 
-import { Building2, ChevronDown, ChevronRight, Repeat, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Repeat, Star } from "lucide-react";
 import type { NavItem } from "@/lib/navigation/types";
 import type { NavModuleGroup } from "@/lib/navigation/useNavigation";
 import SidebarNavItem from "@/components/navigation/SidebarNavItem";
+import CompanyAvatar from "@/components/company/CompanyAvatar";
 
 interface SidebarContentProps {
   collapsed?: boolean;
@@ -17,7 +18,7 @@ interface SidebarContentProps {
   openSection: string;
   onToggleSection: (section: string) => void;
   onNavigate?: (item: NavItem) => void;
-  business: { business_name: string; business_type?: string | null };
+  business: { business_name: string; business_type?: string | null; logo_url?: string | null };
   role?: string | null;
   fyLabel: string;
   onSwitchCompany: () => void;
@@ -57,9 +58,7 @@ export default function SidebarContent({
             </button>
           )}
           <div className={`flex items-center gap-2.5 ${collapsed ? "justify-center" : ""}`}>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
-              <Building2 className="h-4 w-4" />
-            </div>
+            <CompanyAvatar company={business} size="md" clickable />
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-foreground" title={business.business_name}>

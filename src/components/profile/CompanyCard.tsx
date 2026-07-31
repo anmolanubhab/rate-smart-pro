@@ -1,5 +1,6 @@
-import { Building2, Briefcase, Calendar } from "lucide-react";
+import { Briefcase, Calendar } from "lucide-react";
 import { Business } from "@/hooks/useProfileData";
+import CompanyAvatar from "@/components/company/CompanyAvatar";
 
 interface Props {
   business?: Business | null;
@@ -15,6 +16,7 @@ const CompanyCard = ({ business, role }: Props) => {
     );
   }
 
+  const displayName = business.business_name || business.name || "Unnamed Company";
   const financialYear = business.financial_year_start && business.financial_year_end
     ? `${business.financial_year_start} – ${business.financial_year_end}`
     : "Not set";
@@ -22,12 +24,10 @@ const CompanyCard = ({ business, role }: Props) => {
   return (
     <div className="rounded-2xl bg-card border border-border shadow-soft p-6 md:p-8">
       <div className="flex items-start gap-4">
-        <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
-          <Building2 className="h-6 w-6" />
-        </div>
+        <CompanyAvatar company={{ business_name: displayName, logo_url: business.logo_url }} size="md" clickable />
         <div className="flex-1 min-w-0">
-          <h3 className="font-display text-lg font-semibold">{business.name || "Unnamed Company"}</h3>
-          <p className="text-sm text-muted-foreground">{business.legal_type || "Company"}</p>
+          <h3 className="font-display text-lg font-semibold">{displayName}</h3>
+          <p className="text-sm text-muted-foreground">{business.business_type || business.legal_type || "Company"}</p>
         </div>
       </div>
 
