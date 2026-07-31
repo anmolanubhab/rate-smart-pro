@@ -117,13 +117,14 @@ export default function GRNDetail() {
                 <th className="px-4 py-3 text-right">Short</th>
                 <th className="px-4 py-3 text-right">Excess</th>
                 <th className="px-4 py-3 text-left">Remarks</th>
+                <th className="px-4 py-3 text-left">Batch/Serial</th>
               </tr>
             </thead>
             <tbody>
               {loadingItems ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Loading…</td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">No items on this receipt.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">No items on this receipt.</td></tr>
               ) : (
                 items.map((it) => (
                   <tr key={it.id} className="border-t border-border">
@@ -136,6 +137,11 @@ export default function GRNDetail() {
                     <td className="px-4 py-2.5 text-right tabular-nums">{Number(it.short_qty) || "—"}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{Number(it.excess_qty) || "—"}</td>
                     <td className="px-4 py-2.5 text-muted-foreground text-xs">{it.quality_remarks || "—"}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs font-mono">
+                      {it.batch_numbers?.length ? it.batch_numbers.join(", ")
+                        : it.serial_numbers?.length ? `${it.serial_numbers.length} serials`
+                        : "—"}
+                    </td>
                   </tr>
                 ))
               )}

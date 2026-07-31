@@ -30,6 +30,8 @@ export interface OrderItem {
 export interface Order {
   id: string;
   user_id: string;
+  created_by: string | null;
+  updated_by: string | null;
   order_number: string;
   order_date: string;
   party_id: string | null;
@@ -189,6 +191,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
     const biz = getActiveBusinessIdSync();
     const { data, error } = await supabase.from("orders").insert({
       user_id: input.userId,
+      created_by: input.userId,
       business_id: biz,
       order_number: orderNumber,
       order_date: input.order_date,
@@ -214,6 +217,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
     orderId = data.id;
   } else {
     const { error } = await supabase.from("orders").update({
+      updated_by: input.userId,
       order_date: input.order_date,
       party_id: input.party_id,
       party_name: input.party_name,
@@ -334,8 +338,11 @@ export async function deleteOrder(id: string) {
   if (error) throw error;
 }
 
-export async function setOrderStatus(id: string, status: OrderStatus) {
-  const { error } = await supabase.from("orders").update({ status }).eq("id", id);
+export async function setOrderStatus(id: string, status: OrderStatus, userId?: string) {
+  const { error } = await supabase.from("orders").update({
+    status,
+    ...(userId ? { updated_by: userId } : {}),
+  } as any).eq("id", id);
   if (error) throw error;
 }
 

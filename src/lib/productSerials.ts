@@ -52,11 +52,27 @@ export async function createProductSerial(businessId: string, input: SaveProduct
   if (error) throw error;
 }
 
-/** Bulk-add multiple serials for the same product/warehouse in one shot. */
-export async function createProductSerialsBulk(businessId: string, base: Omit<SaveProductSerialInput, "serial_number">, serialNumbers: string[]) {
+/** Bulk-add multiple serials for the same product/warehouse in one shot. Returns the new rows' ids, in input order. */
+export async function createProductSerialsBulk(businessId: string, base: Omit<SaveProductSerialInput, "serial_number">, serialNumbers: string[]): Promise<string[]> {
   const rows = serialNumbers.map((serial_number) => ({ business_id: businessId, ...base, serial_number }));
-  const { error } = await supabase.from("product_serials" as never).insert(rows as never);
+  const { data, error } = await supabase.from("product_serials" as never).insert(rows as never).select("id");
   if (error) throw error;
+  return ((data ?? []) as { id: string }[]).map((r) => r.id);
+}
+
+/** In-stock serials for a product, for use in a dispatch picker. */
+export async function fetchAvailableSerials(businessId: string, productId: string, warehouseId?: string | null): Promise<ProductSerial[]> {
+  let q = supabase
+    .from("product_serials" as never)
+    .select("*")
+    .eq("business_id", businessId)
+    .eq("product_id", productId)
+    .eq("status", "in_stock")
+    .order("received_at", { ascending: true });
+  if (warehouseId) q = q.eq("warehouse_id", warehouseId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as unknown as ProductSerial[];
 }
 
 export async function updateProductSerialStatus(id: string, status: ProductSerialStatus, soldAt?: string | null) {

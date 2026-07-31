@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 export type ProductCategory = "spare" | "lubricant" | "accessory" | "other";
+export type ProductTrackingType = "none" | "batch" | "serial";
 
 export interface Product {
 id: string;
@@ -20,6 +21,7 @@ low_stock_threshold: number;
 gst_pct: number;
 barcode: string | null;
 weight_kg: number | null;
+tracking_type: ProductTrackingType;
 status: string;
 measurement_category_id: string | null;
 base_unit_id: string | null;

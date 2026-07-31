@@ -41,6 +41,8 @@ export interface GoodsReceiptItem {
   // joined, read-only
   product_name?: string;
   part_number?: string;
+  batch_numbers?: string[];
+  serial_numbers?: string[];
 }
 
 export async function fetchGoodsReceipts(businessId: string): Promise<GoodsReceipt[]> {
@@ -78,7 +80,9 @@ export async function fetchGoodsReceipt(id: string): Promise<GoodsReceipt> {
 export async function fetchGoodsReceiptItems(goodsReceiptId: string): Promise<GoodsReceiptItem[]> {
   const { data, error } = await supabase
     .from("goods_receipt_items")
-    .select("*, products(name, part_number)")
+    .select(`*, products(name, part_number),
+      goods_receipt_item_batches(product_batches(batch_number)),
+      goods_receipt_item_serials(product_serials(serial_number))`)
     .eq("goods_receipt_id", goodsReceiptId)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -86,5 +90,7 @@ export async function fetchGoodsReceiptItems(goodsReceiptId: string): Promise<Go
     ...r,
     product_name: r.products?.name ?? "Unknown Product",
     part_number: r.products?.part_number ?? "N/A",
+    batch_numbers: (r.goods_receipt_item_batches ?? []).map((b: any) => b.product_batches?.batch_number).filter(Boolean),
+    serial_numbers: (r.goods_receipt_item_serials ?? []).map((s: any) => s.product_serials?.serial_number).filter(Boolean),
   })) as GoodsReceiptItem[];
 }

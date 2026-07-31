@@ -64,6 +64,7 @@ export interface Voucher {
   reference_type: string | null;
   reference_id: string | null;
   created_by: string | null;
+  updated_by: string | null;
   approved_by: string | null;
   approved_at: string | null;
   created_at: string;
@@ -271,6 +272,7 @@ export async function createVoucher(
     .from("vouchers")
     .insert({
       user_id: userId,
+      created_by: userId,
       business_id: businessId,
       voucher_number: voucherNo,
       voucher_type: dbType,
@@ -324,6 +326,7 @@ export async function updateVoucher(
 
   const patch: Record<string, any> = {
     updated_at: new Date().toISOString(),
+    updated_by: userId,
   };
   if (input.voucher_type) patch.voucher_type = typeToDb(input.voucher_type);
   if (input.voucher_date) patch.voucher_date = input.voucher_date;
@@ -399,6 +402,7 @@ export async function postVoucher(
     .update({
       status: "posted",
       updated_at: new Date().toISOString(),
+      updated_by: userId,
     })
     .eq("id", voucherId)
     .eq("business_id", businessId)
@@ -442,6 +446,7 @@ export async function cancelVoucher(
       cancelled_by: userId,
       cancelled_reason: reason ?? null,
       updated_at: new Date().toISOString(),
+      updated_by: userId,
     })
     .eq("id", voucherId)
     .eq("business_id", businessId)
@@ -622,7 +627,8 @@ function _mapVoucher(row: any, items: VoucherItem[]): Voucher {
     status: row.status as VoucherStatus,
     reference_type: row.reference_type ?? null,
     reference_id: row.reference_id ?? null,
-    created_by: row.user_id ?? null,
+    created_by: row.created_by ?? row.user_id ?? null,
+    updated_by: row.updated_by ?? null,
     approved_by: row.approved_by ?? null,
     approved_at: row.approved_at ?? null,
     created_at: row.created_at,

@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal, CheckCircle,
+  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal, CheckCircle, Copy,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, duplicateInvoice, SalesInvoice } from "@/lib/salesInvoices";
 import { createApprovalRequest } from "@/lib/approvals";
 import { canDeleteDirectly } from "@/lib/permissions";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
@@ -216,11 +216,25 @@ export default function InvoicesPage() {
     }
   };
 
+  const onDuplicate = async (inv: SalesInvoice) => {
+    if (!user) return;
+    setBusy(inv.id);
+    try {
+      const clone = await duplicateInvoice(inv.id, user.id);
+      toast.success(`Invoice duplicated as ${clone.invoice_number}`);
+      refetch();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not duplicate invoice");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const onCancelConfirm = async () => {
     if (!cancelTarget) return;
     setBusy(cancelTarget.id);
     try {
-      await cancelInvoice(cancelTarget.id);
+      await cancelInvoice(cancelTarget.id, user?.id);
       toast.success(`Invoice ${cancelTarget.invoice_number} cancelled`);
       refetch();
     } catch (e: any) {
@@ -410,6 +424,9 @@ export default function InvoicesPage() {
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => onPrint(i)}>
                                 <Printer className="h-4 w-4 mr-2" /> Print Invoice
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => onDuplicate(i)}>
+                                <Copy className="h-4 w-4 mr-2" /> Duplicate
                               </DropdownMenuItem>
                               {i.status === "posted" && (
                                 <DropdownMenuItem onClick={() => setComplianceTarget(i)}>

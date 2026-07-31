@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Product, ProductCategory } from "@/lib/products";
+import { Product, ProductCategory, ProductTrackingType } from "@/lib/products";
 import {
   fetchCategories, fetchUnits, fetchProductUnits, saveProductUnits,
   type MeasurementCategory, type Unit,
@@ -48,6 +48,7 @@ const EMPTY_FORM = {
   gst_pct: "18",
   barcode: "",
   weight_kg: "",
+  tracking_type: "none" as ProductTrackingType,
   status: "active",
   // Measurement Engine (Layer B) — all optional; legacy products keep working without these
   measurement_category_id: "",
@@ -75,6 +76,7 @@ const PRODUCT_COLUMNS = `
   status,
   barcode,
   weight_kg,
+  tracking_type,
   measurement_category_id,
   base_unit_id
 `.trim();
@@ -376,6 +378,7 @@ const Products = () => {
       gst_pct: String(p.gst_pct),
       barcode: p.barcode || "",
       weight_kg: p.weight_kg != null ? String(p.weight_kg) : "",
+      tracking_type: p.tracking_type ?? "none",
       status: p.status,
       measurement_category_id: p.measurement_category_id || "",
       base_unit_id: p.base_unit_id || "",
@@ -421,6 +424,7 @@ const Products = () => {
         gst_pct: parseFloat(form.gst_pct) || 0,
         barcode: form.barcode.trim() || null,
         weight_kg: form.weight_kg.trim() ? parseFloat(form.weight_kg) : null,
+        tracking_type: form.tracking_type,
         status: form.status,
         measurement_category_id: form.measurement_category_id || null,
         base_unit_id: form.base_unit_id || null,
@@ -760,6 +764,20 @@ const Products = () => {
                 onChange={(e) => setForm({ ...form, weight_kg: e.target.value })}
                 placeholder="Optional"
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tracking</Label>
+              <Select
+                value={form.tracking_type}
+                onValueChange={(v) => setForm({ ...form, tracking_type: v as ProductTrackingType })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="batch">Batch tracked</SelectItem>
+                  <SelectItem value="serial">Serial tracked</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <Label>Status</Label>

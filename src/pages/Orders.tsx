@@ -142,6 +142,31 @@ const Orders = () => {
     setSelected(next);
   };
 
+  const exportOrders = (rows: Order[]) => {
+    if (!rows.length) { toast.error("No orders to export"); return; }
+    const headers = ["Order No", "Date", "Party", "Status", "Pending Qty", "Amount"];
+    const escape = (v: string | number | null | undefined) => {
+      const s = v == null ? "" : String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csvLines = [
+      headers.join(","),
+      ...rows.map((o) =>
+        [o.order_number, o.order_date, o.party_name ?? "", o.status, o.pending_total_qty, o.grand_total]
+          .map(escape)
+          .join(",")
+      ),
+    ];
+    const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${rows.length.toLocaleString()} order${rows.length > 1 ? "s" : ""}`);
+  };
+
   // Actions
   const onView = async (o: Order) => {
     setViewOrder(o);
@@ -246,7 +271,7 @@ const Orders = () => {
     if (!canApproveOrder) { toast.error("You don't have permission to approve orders"); return; }
     setBusy(o.id);
     try {
-      await setOrderStatus(o.id, "approved");
+      await setOrderStatus(o.id, "approved", user.id);
       await logAudit({
         business_id: business.id, action: "ORDER_APPROVED",
         entity_type: "order", entity_id: o.id,
@@ -302,7 +327,7 @@ const Orders = () => {
           <Button className="gradient-primary text-white border-0" onClick={() => nav("/create-order")}>
             <Plus className="h-4 w-4" /> Create Order
           </Button>
-          <Button variant="outline" onClick={() => {/* export */}}>
+          <Button variant="outline" onClick={() => exportOrders(filtered)}>
             <Download className="h-4 w-4" /> Export
           </Button>
         </div>
@@ -349,6 +374,23 @@ const Orders = () => {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Bulk selection actions */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5">
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => exportOrders(filtered.filter((o) => selected.has(o.id)))}
+          >
+            <Download className="h-3.5 w-3.5 mr-1" /> Export Selected
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
 
       {/* Orders table */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-soft">

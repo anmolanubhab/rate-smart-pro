@@ -14,13 +14,18 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchProductUnits, fetchUnits, toStockQty, stockUnitOf, type ProductUnit, type Unit as MeasureUnit } from "@/lib/units";
 import WarehouseFormDialog, { type WarehouseRow } from "@/components/inventory/WarehouseFormDialog";
-import { Warehouse as WarehouseIcon, PlusCircle } from "lucide-react";
+import { Warehouse as WarehouseIcon, PlusCircle, Boxes } from "lucide-react";
+import GRNBatchSerialDialog, { type GRNBatchSerialResult } from "@/components/inventory/GRNBatchSerialDialog";
+import { receiveProductBatch } from "@/lib/productBatches";
+import { createProductSerialsBulk } from "@/lib/productSerials";
+import type { ProductTrackingType } from "@/lib/products";
 
 interface GRNItem {
   purchase_order_item_id: string | null;
   product_id: string;
   product_name: string;
   part_number: string;
+  tracking_type: ProductTrackingType;
   ordered_qty: number;
   received_qty: number;
   damaged_qty: number;
@@ -32,6 +37,7 @@ interface GRNItem {
   qc_reason_category: string | null;
   unit_id: string | null;
   stock_accepted_qty: number | null;
+  tracking?: GRNBatchSerialResult;
 }
 
 const QC_REASON_OPTIONS: { value: string; label: string }[] = [
@@ -65,6 +71,7 @@ export default function PurchaseGRN() {
   const [selectedPO, setSelectedPO] = useState('');
 
   const [items, setItems] = useState<GRNItem[]>([]);
+  const [trackingDialogIdx, setTrackingDialogIdx] = useState<number | null>(null);
   const [unitsByProduct, setUnitsByProduct] = useState<Record<string, ProductUnit[]>>({});
   const [allUnits, setAllUnits] = useState<MeasureUnit[]>([]);
   useEffect(() => { fetchUnits().then(setAllUnits).catch(() => {}); }, []);
@@ -154,7 +161,7 @@ export default function PurchaseGRN() {
       .from('purchase_order_items')
       .select(`
         id, product_id, qty, unit_id,
-        product:products(name, part_number)
+        product:products(name, part_number, tracking_type)
       `)
       .eq('purchase_order_id', poId);
 
@@ -182,6 +189,7 @@ export default function PurchaseGRN() {
             product_id: item.product_id,
             product_name: item.product?.name || 'Unknown Product',
             part_number: item.product?.part_number || 'N/A',
+            tracking_type: (item.product?.tracking_type as ProductTrackingType) ?? 'none',
             ordered_qty: remaining,
             received_qty: remaining,
             damaged_qty: 0,
@@ -219,8 +227,17 @@ export default function PurchaseGRN() {
     const pu = unitsByProduct[item.product_id];
     item.stock_accepted_qty = pu?.length ? toStockQty(item.accepted_qty, item.unit_id, pu) : null;
 
+    // Accepted qty changed — any previously-entered batch/serial selection no longer matches it.
+    item.tracking = undefined;
+
     updatedItems[index] = item;
     setItems(updatedItems);
+  };
+
+  const handleTrackingConfirm = (index: number, result: GRNBatchSerialResult) => {
+    const updated = [...items];
+    updated[index] = { ...updated[index], tracking: result };
+    setItems(updated);
   };
 
   const handleRemarksChange = (index: number, value: string) => {
@@ -246,6 +263,17 @@ export default function PurchaseGRN() {
     }
     if (status === 'received' && items.length === 0) {
       toast({ title: "No items", description: "Select a Purchase Order with pending items first.", variant: "destructive" });
+      return;
+    }
+    const missingTracking = items.find(
+      (it) => it.accepted_qty > 0 && it.tracking_type !== 'none' && !it.tracking
+    );
+    if (missingTracking) {
+      toast({
+        title: "Batch/Serial required",
+        description: `Enter ${missingTracking.tracking_type} details for ${missingTracking.product_name} before saving.`,
+        variant: "destructive",
+      });
       return;
     }
 
@@ -288,9 +316,11 @@ export default function PurchaseGRN() {
           stock_accepted_qty: item.stock_accepted_qty,
         }));
 
-        const { error: itemsError } = await supabase
+        const { data: insertedItems, error: itemsError } = await supabase
           .from('goods_receipt_items')
-          .insert(grnItemsPayload);
+          .insert(grnItemsPayload)
+          .select('id, product_id')
+          .order('created_at', { ascending: true });
 
         if (itemsError) throw itemsError;
 
@@ -299,6 +329,54 @@ export default function PurchaseGRN() {
         // triggers the moment these goods_receipt_items rows land — no
         // client-side computation needed, and it stays correct no matter
         // which screen or process wrote the GRN.
+
+        // Record which batch/serial(s) this line received, matched back to
+        // its inserted row by position (insert order mirrors items order).
+        try {
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const inserted = (insertedItems ?? [])[i] as { id: string; product_id: string } | undefined;
+            if (!inserted || !item.tracking || item.accepted_qty <= 0) continue;
+
+            if (item.tracking_type === 'batch' && item.tracking.batch) {
+              const batchId = await receiveProductBatch(businessId, {
+                product_id: item.product_id,
+                warehouse_id: selectedWarehouse,
+                batch_number: item.tracking.batch.batch_number,
+                mfg_date: item.tracking.batch.mfg_date,
+                expiry_date: item.tracking.batch.expiry_date,
+                qty: item.accepted_qty,
+                notes: null,
+              });
+              await supabase.from('goods_receipt_item_batches' as never).insert({
+                business_id: businessId,
+                goods_receipt_item_id: inserted.id,
+                batch_id: batchId,
+                qty: item.accepted_qty,
+              } as never);
+            } else if (item.tracking_type === 'serial' && item.tracking.serial_numbers?.length) {
+              const serialIds = await createProductSerialsBulk(
+                businessId,
+                { product_id: item.product_id, warehouse_id: selectedWarehouse, status: 'in_stock', received_at: grnDate, notes: null },
+                item.tracking.serial_numbers
+              );
+              const rows = serialIds.map((serial_id) => ({
+                business_id: businessId,
+                goods_receipt_item_id: inserted.id,
+                serial_id,
+              }));
+              if (rows.length) await supabase.from('goods_receipt_item_serials' as never).insert(rows as never);
+            }
+          }
+        } catch (trackingErr: any) {
+          // The GRN itself is already saved — surface this as a warning rather
+          // than rolling back a receipt that already moved physical stock.
+          toast({
+            title: "GRN saved, but batch/serial recording failed",
+            description: trackingErr.message ?? "Check Inventory → Batches/Serials and fix manually.",
+            variant: "destructive",
+          });
+        }
       }
 
       toast({ title: "Success", description: `GRN created as ${status.toUpperCase()}` });
@@ -410,12 +488,13 @@ export default function PurchaseGRN() {
                 <th className="p-3 text-center">Excess</th>
                 <th className="p-3">Quality Remarks</th>
                 <th className="p-3">Reason (if damaged/short)</th>
+                <th className="p-3">Batch/Serial</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
+                  <td colSpan={13} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
                 </tr>
               ) : (
                 items.map((item, idx) => (
@@ -464,6 +543,26 @@ export default function PurchaseGRN() {
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
+                    <td className="p-3">
+                      {item.tracking_type === 'none' ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : item.accepted_qty <= 0 ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={item.tracking ? "secondary" : "outline"}
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setTrackingDialogIdx(idx)}
+                        >
+                          <Boxes className="h-3 w-3" />
+                          {item.tracking
+                            ? (item.tracking_type === 'batch' ? item.tracking.batch?.batch_number : `${item.tracking.serial_numbers?.length ?? 0} serials`)
+                            : `Add ${item.tracking_type}`}
+                        </Button>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
@@ -491,6 +590,18 @@ export default function PurchaseGRN() {
         userId={user?.id ?? null}
         onSaved={(w) => reloadWarehouses(w.id)}
       />
+
+      {trackingDialogIdx !== null && items[trackingDialogIdx] && (
+        <GRNBatchSerialDialog
+          open={trackingDialogIdx !== null}
+          onOpenChange={(o) => { if (!o) setTrackingDialogIdx(null); }}
+          productLabel={items[trackingDialogIdx].product_name}
+          trackingType={items[trackingDialogIdx].tracking_type as 'batch' | 'serial'}
+          neededQty={items[trackingDialogIdx].accepted_qty}
+          initial={items[trackingDialogIdx].tracking}
+          onConfirm={(result) => handleTrackingConfirm(trackingDialogIdx, result)}
+        />
+      )}
     </div>
   );
 }

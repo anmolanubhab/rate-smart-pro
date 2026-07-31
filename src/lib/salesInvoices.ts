@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchOrder, fetchOrderItems, computeTotals } from "@/lib/orders";
+import { cancelVoucher } from "@/lib/voucherService";
 
 export interface SalesInvoice {
   id: string;
@@ -378,6 +379,88 @@ export async function generateInvoiceFromOrder(opts: {
   return inv as SalesInvoice;
 }
 
+/**
+ * Duplicate an invoice as a brand-new standalone draft — header fields and
+ * line items are copied, but order_id/dispatch_id are cleared (the clone
+ * isn't linked to the source order/dispatch, mirroring duplicateOrder()'s
+ * "detached copy" behavior in src/lib/orders.ts) and paid_amount resets to 0.
+ */
+export async function duplicateInvoice(id: string, userId: string): Promise<SalesInvoice> {
+  const { data: originalRow, error: fe } = await supabase
+    .from("sales_invoices")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (fe) throw fe;
+  const original = originalRow as SalesInvoice;
+  const items = await fetchInvoiceItems(id);
+
+  const invoice_number = await nextInvoiceNumber(userId);
+  const { data: inv, error: ie } = await supabase
+    .from("sales_invoices")
+    .insert({
+      user_id: userId,
+      business_id: original.business_id,
+      invoice_number,
+      invoice_date: new Date().toISOString().slice(0, 10),
+      order_id: null,
+      dispatch_id: null,
+      party_id: original.party_id,
+      party_name: original.party_name,
+      party_snapshot: original.party_snapshot,
+      billing_address: original.billing_address,
+      shipping_address: original.shipping_address,
+      salesman: original.salesman,
+      notes: original.notes,
+      remarks: `Duplicated from ${original.invoice_number}`,
+      subtotal: original.subtotal,
+      discount_total: original.discount_total,
+      gst_total: original.gst_total,
+      shipping_charges: original.shipping_charges,
+      grand_total: original.grand_total,
+      status: "draft",
+      paid_amount: 0,
+    })
+    .select()
+    .single();
+  if (ie) throw ie;
+
+  if (items.length) {
+    const rows = (items as any[]).map((it, idx) => ({
+      user_id: userId,
+      invoice_id: inv.id,
+      product_id: it.product_id,
+      part_number: it.part_number,
+      description: it.description,
+      vehicle_model: it.vehicle_model,
+      hsn: it.hsn,
+      mrp: it.mrp,
+      rate: it.rate,
+      qty: it.qty,
+      discount_pct: it.discount_pct,
+      net_rate: it.net_rate,
+      gst_pct: it.gst_pct,
+      cgst_rate: it.cgst_rate,
+      sgst_rate: it.sgst_rate,
+      igst_rate: it.igst_rate,
+      cgst_amount: it.cgst_amount,
+      sgst_amount: it.sgst_amount,
+      igst_amount: it.igst_amount,
+      total: it.total,
+      position: idx,
+      unit_id: it.unit_id ?? null,
+      stock_qty: it.stock_qty ?? null,
+    }));
+    const { error: ie2 } = await supabase.from("sales_invoice_items").insert(rows);
+    if (ie2) {
+      await supabase.from("sales_invoices").delete().eq("id", inv.id);
+      throw ie2;
+    }
+  }
+
+  return inv as SalesInvoice;
+}
+
 export async function postInvoice(invoiceId: string) {
   const { error } = await supabase
     .from("sales_invoices")
@@ -393,11 +476,11 @@ export async function postInvoice(invoiceId: string) {
  *     → Clears invoice_id from dispatch
  * - Resets order status
  */
-export async function cancelInvoice(invoiceId: string) {
+export async function cancelInvoice(invoiceId: string, userId?: string) {
   // Load invoice to check if dispatch-linked
   const { data: inv, error: le } = await supabase
     .from("sales_invoices")
-    .select("order_id, dispatch_id")
+    .select("order_id, dispatch_id, voucher_id, status")
     .eq("id", invoiceId)
     .single();
   if (le) throw le;
@@ -408,6 +491,18 @@ export async function cancelInvoice(invoiceId: string) {
     .update({ status: "cancelled" })
     .eq("id", invoiceId);
   if (error) throw error;
+
+  // If this invoice was posted, it has an auto-posted ledger voucher
+  // (sales_invoice_autopost trigger) that cancelling the invoice alone
+  // never touched — cancel it too so it stops counting toward balances.
+  // Best-effort: never let a voucher-side hiccup block the invoice cancel.
+  if ((inv as any)?.voucher_id && userId) {
+    try {
+      await cancelVoucher(userId, (inv as any).voucher_id, "Sales invoice cancelled");
+    } catch (e: any) {
+      console.error("cancelInvoice: could not cancel linked voucher:", e.message);
+    }
+  }
 
   // If linked to a dispatch: revert dispatch to draft, clear its invoice_id
   if ((inv as any)?.dispatch_id) {
