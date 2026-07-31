@@ -32,26 +32,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import CompanyAvatar from "@/components/company/CompanyAvatar";
+import { UserAvatar } from "@/components/common/UserAvatar";
 import { useAuth } from "@/hooks/useAuth";
+import { useAvatarUrl } from "@/hooks/useAvatarUrl";
 import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
 import { useTheme } from "@/hooks/useTheme";
 import { useNavigation } from "@/lib/navigation/useNavigation";
 import rdProLogo from "/rdpro-logo.png";
 
-function initialsFor(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "U";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
-
 export default function TopNav() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { avatarUrl } = useAvatarUrl();
   const { business } = useBusiness();
   const { theme, toggle } = useTheme();
   const { quickActions } = useNavigation();
@@ -170,11 +165,14 @@ export default function TopNav() {
               type="button"
               className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-smooth hover:bg-muted"
             >
-              <Avatar className="h-9 w-9 border border-border">
-                <AvatarFallback className="bg-primary-light text-sm font-semibold text-primary">
-                  {initialsFor(displayName)}
-                </AvatarFallback>
-              </Avatar>
+              <UserAvatar
+                user={user}
+                avatarUrl={avatarUrl}
+                name={displayName}
+                size="sm"
+                variant="subtle"
+                className="border border-border"
+              />
               <div className="hidden text-left leading-tight md:block">
                 <p className="max-w-[140px] truncate text-sm font-semibold text-foreground">{displayName}</p>
                 <p className="max-w-[140px] truncate text-xs text-muted-foreground">
