@@ -22,9 +22,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { fetchOrders, fetchOrderItems, Order, OrderItem } from "@/lib/orders";
-import { createDispatch, confirmDispatch, cancelDispatch, fetchDispatches, DispatchStatus } from "@/lib/dispatches";
+import { createDispatch, confirmDispatch, cancelDispatch, fetchDispatches, DispatchStatus, DispatchBatchSelection } from "@/lib/dispatches";
 import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
+import DispatchBatchSerialDialog, { type DispatchBatchSerialResult } from "@/components/inventory/DispatchBatchSerialDialog";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
@@ -63,6 +64,10 @@ const Dispatch = () => {
   const [warehouses, setWarehouses] = useState<{ id: string; warehouse_name: string; is_default: boolean }[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
 
+  // Batch/serial selection per order_item, for batch- or serial-tracked products
+  const [batchSerialSel, setBatchSerialSel] = useState<Record<string, DispatchBatchSerialResult>>({});
+  const [pickerItem, setPickerItem] = useState<OrderItem | null>(null);
+
   // Draft dispatch just saved — waiting for Confirm
   const [draftDispatch, setDraftDispatch] = useState<{ id: string; dispatch_number: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -94,7 +99,7 @@ const Dispatch = () => {
       while (true) {
         const { data, error } = await supabase
           .from("products")
-          .select("id, part_number, name, stock")
+          .select("id, part_number, name, stock, tracking_type")
           .eq("business_id", business!.id)
           .eq("status", "active")
           .order("name", { ascending: true })
@@ -239,7 +244,7 @@ const Dispatch = () => {
     if (!user || !business) return;
     try {
       setConfirming(true);
-      await confirmDispatch(d.id);
+      await confirmDispatch(d.id, user.id);
       const invoice = await generateInvoiceFromDispatch({
         dispatchId: d.id,
         userId: user.id,
@@ -396,7 +401,7 @@ const Dispatch = () => {
   const handleCancelDispatch = async () => {
     if (!cancelTarget) return;
     try {
-      const { cancelledInvoiceId } = await cancelDispatch(cancelTarget.id);
+      const { cancelledInvoiceId } = await cancelDispatch(cancelTarget.id, user?.id);
       if (cancelledInvoiceId) {
         toast.success(`Dispatch ${cancelTarget.dispatch_number} cancelled · linked invoice also cancelled · pending qty restored`);
       } else {
@@ -699,11 +704,12 @@ const Dispatch = () => {
                             <Package className="h-3.5 w-3.5 mr-0.5" />Packing Slip
                           </Button>
                         )}
-                        {(d.status === "draft" || d.status === "confirmed") && !d.invoice_id && (
+                        {(d.status === "draft" || d.status === "confirmed") && (
                           <Button
                             size="sm"
                             variant="ghost"
                             className="h-6 text-xs text-destructive hover:text-destructive"
+                            title={d.invoice_id ? "Also cancels the linked invoice" : undefined}
                             onClick={() => setCancelTarget({ id: d.id, dispatch_number: d.dispatch_number })}
                           >
                             <XCircle className="h-3.5 w-3.5" />

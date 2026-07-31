@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusCircle, ArrowRightCircle, Printer } from "lucide-react";
+import { PlusCircle, ArrowRightCircle, Printer, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import CreateQuotationDialog from "@/components/sales/CreateQuotationDialog";
-import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, type Quotation } from "@/lib/quotations";
+import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, updateQuotationStatus, type Quotation, type QuotationStatus } from "@/lib/quotations";
 import { useFormatDate } from "@/lib/dateFormat";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
@@ -47,18 +49,25 @@ export default function Quotations() {
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["quotations", businessId],
     enabled: !!businessId,
     queryFn: () => fetchQuotations(businessId!),
   });
-  const rows = data ?? [];
+  const allRows = data ?? [];
+  const rows = search.trim()
+    ? allRows.filter((q) =>
+        q.quotation_number.toLowerCase().includes(search.toLowerCase()) ||
+        (q.party_name ?? "").toLowerCase().includes(search.toLowerCase())
+      )
+    : allRows;
 
-  const totalQuotations = rows.length;
-  const draftCount = rows.filter((r) => r.status === "draft").length;
-  const acceptedValue = rows.filter((r) => r.status === "accepted").reduce((s, r) => s + Number(r.grand_total), 0);
-  const convertedCount = rows.filter((r) => r.status === "converted").length;
+  const totalQuotations = allRows.length;
+  const draftCount = allRows.filter((r) => r.status === "draft").length;
+  const acceptedValue = allRows.filter((r) => r.status === "accepted").reduce((s, r) => s + Number(r.grand_total), 0);
+  const convertedCount = allRows.filter((r) => r.status === "converted").length;
 
   const handleConvert = async (q: Quotation) => {
     if (!user) return;
@@ -72,6 +81,16 @@ export default function Quotations() {
       toast.error(e.message ?? "Failed to convert quotation");
     } finally {
       setConverting(null);
+    }
+  };
+
+  const handleStatusChange = async (q: Quotation, status: QuotationStatus) => {
+    try {
+      await updateQuotationStatus(q.id, status);
+      toast.success(`Quotation ${q.quotation_number} marked ${status}`);
+      qc.invalidateQueries({ queryKey: ["quotations", businessId] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not update status");
     }
   };
 
@@ -142,6 +161,11 @@ export default function Quotations() {
         </div>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input placeholder="Search quotation # or customer…" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
       <div className="rounded-xl border bg-card">
         <Table>
           <TableHeader>
@@ -159,7 +183,7 @@ export default function Quotations() {
             {isLoading ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>
             ) : rows.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">No quotations yet</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">{allRows.length === 0 ? "No quotations yet" : "No quotations match your search"}</TableCell></TableRow>
             ) : rows.map((q) => (
               <TableRow key={q.id}>
                 <TableCell className="font-mono text-sm">{q.quotation_number}</TableCell>
@@ -167,7 +191,23 @@ export default function Quotations() {
                 <TableCell>{fd(q.quotation_date)}</TableCell>
                 <TableCell>{fd(q.valid_until)}</TableCell>
                 <TableCell className="text-right font-semibold">{inr(q.grand_total)}</TableCell>
-                <TableCell><Badge variant={STATUS_VARIANT[q.status] ?? "secondary"}>{q.status}</Badge></TableCell>
+                <TableCell>
+                  {q.status === "converted" || q.status === "expired" ? (
+                    <Badge variant={STATUS_VARIANT[q.status] ?? "secondary"}>{q.status}</Badge>
+                  ) : (
+                    <Select value={q.status} onValueChange={(v) => handleStatusChange(q, v as QuotationStatus)}>
+                      <SelectTrigger className="h-7 w-28 text-xs">
+                        <Badge variant={STATUS_VARIANT[q.status] ?? "secondary"} className="pointer-events-none">{q.status}</Badge>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">draft</SelectItem>
+                        <SelectItem value="sent">sent</SelectItem>
+                        <SelectItem value="accepted">accepted</SelectItem>
+                        <SelectItem value="rejected">rejected</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
                     <Button

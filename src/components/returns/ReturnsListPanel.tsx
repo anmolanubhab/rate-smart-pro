@@ -8,6 +8,7 @@
 // about their behavior changed, only where the code lives.
 
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Download, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -22,7 +23,7 @@ const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFra
 
 type ReturnRow = {
   id: string; return_number: string; return_date: string; reason: string | null;
-  total_amount: number; status: string;
+  total_amount: number; status: string; voucher_id: string | null;
   invoice: { invoice_number: string } | null;
   parties: { name: string } | null;
 };
@@ -59,6 +60,7 @@ interface Props {
 
 export default function ReturnsListPanel({ kind, hideHeader }: Props) {
   const { business } = useBusiness();
+  const navigate = useNavigate();
   const fd = useFormatDate();
   const copy = COPY[kind];
   const [rows, setRows] = useState<ReturnRow[]>([]);
@@ -70,7 +72,7 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
     setLoading(true);
     const { data, error } = await supabase
       .from(copy.table as never)
-      .select(`id, return_number, return_date, reason, total_amount, status, invoice:${copy.invoiceRelation}(invoice_number), parties(name)`)
+      .select(`id, return_number, return_date, reason, total_amount, status, voucher_id, invoice:${copy.invoiceRelation}(invoice_number), parties(name)`)
       .eq("business_id", business.id)
       .order("return_date", { ascending: false });
     if (!error) setRows((data as unknown as ReturnRow[]) ?? []);
@@ -124,7 +126,12 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
             ) : rows.length === 0 ? (
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">{copy.emptyLabel}</TableCell></TableRow>
             ) : rows.map((r) => (
-              <TableRow key={r.id}>
+              <TableRow
+                key={r.id}
+                className={r.voucher_id ? "cursor-pointer hover:bg-muted/40" : undefined}
+                onClick={() => r.voucher_id && navigate(`/accounting/vouchers/${r.voucher_id}`)}
+                title={r.voucher_id ? "View voucher (print, cancel, audit trail)" : undefined}
+              >
                 <TableCell className="font-mono text-sm">{r.return_number}</TableCell>
                 <TableCell>{fd(r.return_date)}</TableCell>
                 <TableCell>{r.parties?.name ?? "—"}</TableCell>

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, PlusCircle } from "lucide-react";
+import { FileText, PlusCircle, Search, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -25,6 +28,11 @@ export default function PurchaseInvoices() {
   const businessId = business?.id ?? getActiveBusinessIdSync();
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [viewOpen, setViewOpen] = useState(false);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [viewInvoice, setViewInvoice] = useState<any>(null);
+  const [viewItems, setViewItems] = useState<any[]>([]);
   const [printData, setPrintData] = useState<any>(null);
   const [printing, setPrinting] = useState<string | null>(null);
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
@@ -63,6 +71,31 @@ export default function PurchaseInvoices() {
       _id: inv.id,
     };
   }), [data]);
+
+  const onView = async (row: Record<string, any>) => {
+    const invoiceId = row._id as string;
+    setViewOpen(true);
+    setViewLoading(true);
+    try {
+      const [{ data: inv, error }, { data: items, error: itemsErr }] = await Promise.all([
+        supabase
+          .from("purchase_invoices")
+          .select("*, supplier:parties(name, phone, address, gst)")
+          .eq("id", invoiceId)
+          .single(),
+        supabase.from("purchase_invoice_items").select("*").eq("purchase_invoice_id", invoiceId).order("position", { ascending: true }),
+      ]);
+      if (error) throw error;
+      if (itemsErr) throw itemsErr;
+      setViewInvoice(inv);
+      setViewItems(items ?? []);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not load invoice");
+      setViewOpen(false);
+    } finally {
+      setViewLoading(false);
+    }
+  };
 
   const onPrint = async (row: Record<string, any>) => {
     const invoiceId = row._id as string;
@@ -141,12 +174,26 @@ export default function PurchaseInvoices() {
   const partial = rows.filter(r => r.status === "partially paid").reduce((s, r) => s + (r.amount - r.paid), 0);
   const paid = rows.filter(r => r.status === "paid").reduce((s, r) => s + r.amount, 0);
 
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) =>
+      r.invoice_no.toLowerCase().includes(q) ||
+      r.supplier.toLowerCase().includes(q) ||
+      r.status.toLowerCase().includes(q)
+    );
+  }, [rows, search]);
+
   return (
     <>
+      <div className="relative max-w-sm mb-4">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input placeholder="Search invoice # or supplier…" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
       <MockTablePage
         eyebrow="Purchase · Invoices"
         title="Purchase Invoices"
-        description={isLoading ? "Loading…" : "Manage supplier bills and purchase invoices. Match invoices against GRNs and track payment status. Click a row to print."}
+        description={isLoading ? "Loading…" : "Manage supplier bills and purchase invoices. Match invoices against GRNs and track payment status. Click a row to view."}
         actions={
           <Button onClick={() => setDialogOpen(true)}>
             <PlusCircle className="h-4 w-4 mr-2" />
@@ -168,8 +215,8 @@ export default function PurchaseInvoices() {
           { key: "paid", label: "Paid", align: "right", format: "currency" },
           { key: "status", label: "Status", format: "badge" },
         ]}
-        rows={rows}
-        onRowClick={onPrint}
+        rows={filteredRows}
+        onRowClick={onView}
       />
       <RecordPurchaseInvoiceDialog
         open={dialogOpen}
@@ -203,6 +250,86 @@ export default function PurchaseInvoices() {
           contentWidthMm={contentWidthMm(printProfile)}
         />
       )}
+
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {viewInvoice ? `Purchase Invoice ${viewInvoice.invoice_number}` : "Purchase Invoice"}
+            </DialogTitle>
+          </DialogHeader>
+          {viewLoading ? (
+            <div className="py-10 text-center text-muted-foreground text-sm">Loading…</div>
+          ) : viewInvoice ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Supplier</p>
+                  <p className="font-medium mt-0.5">{viewInvoice.supplier?.name ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Invoice Date</p>
+                  <p className="font-medium mt-0.5">{viewInvoice.invoice_date}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Due Date</p>
+                  <p className="font-medium mt-0.5">{viewInvoice.due_date ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Status</p>
+                  <Badge variant="outline" className="mt-0.5 capitalize">{String(viewInvoice.status).replace(/_/g, " ")}</Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Grand Total</p>
+                  <p className="font-semibold mt-0.5">₹ {Number(viewInvoice.grand_total ?? 0).toLocaleString("en-IN")}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Paid</p>
+                  <p className="font-medium mt-0.5">₹ {Number(viewInvoice.paid_amount ?? 0).toLocaleString("en-IN")}</p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                    <tr>
+                      <th className="text-left px-3 py-2">Part No.</th>
+                      <th className="text-left px-3 py-2">Description</th>
+                      <th className="text-right px-3 py-2">Qty</th>
+                      <th className="text-right px-3 py-2">Rate</th>
+                      <th className="text-right px-3 py-2">GST %</th>
+                      <th className="text-right px-3 py-2">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewItems.length === 0 ? (
+                      <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">No items</td></tr>
+                    ) : viewItems.map((it) => (
+                      <tr key={it.id} className="border-t">
+                        <td className="px-3 py-1.5 font-mono text-xs">{it.part_number}</td>
+                        <td className="px-3 py-1.5">{it.description}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{Number(it.quantity).toFixed(2)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">₹{Number(it.purchase_price).toFixed(2)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{Number(it.gst_percent).toFixed(1)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums font-medium">₹{Number(it.line_total).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewOpen(false)}>Close</Button>
+            <Button
+              onClick={() => { setViewOpen(false); if (viewInvoice) onPrint({ _id: viewInvoice.id }); }}
+              disabled={!viewInvoice || printing === viewInvoice?.id}
+            >
+              <Printer className="h-4 w-4 mr-2" /> Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
