@@ -21,13 +21,16 @@ import {
   ShieldCheck, Smartphone, Monitor, Lock,
 } from "lucide-react";
 import { logAudit } from "@/lib/audit";
-import { ownerMinimumViolation } from "@/lib/companySafety";
+import { ownerMinimumViolation, diffBusiness } from "@/lib/companySafety";
 import {
   listInvitations, sendInvitation, resendInvitation, cancelInvitation, deleteInvitation,
   invitationLink, createUserWithTempPassword,
   type Invitation, type LoginControlSettings, defaultLoginControl,
 } from "@/lib/userAccess";
 import { useFormatDate } from "@/lib/dateFormat";
+import {
+  PermissionMatrixEditor, emptyPermissionMatrix, type PermissionMatrix,
+} from "@/components/settings/PermissionMatrixEditor";
 
 // Mirrors the live public.business_role enum exactly — "operator" and
 // "purchase" were never valid DB values (assigning them errors on insert).
@@ -76,6 +79,19 @@ export default function CompanyUsers() {
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
   const canManage = can(role, "team.manage");
+
+  // ── Per-user permission overrides ──
+  const [permTarget, setPermTarget] = useState<{ id: string; role: BusinessRole; full_name: string | null } | null>(null);
+  const [permValue, setPermValue] = useState<PermissionMatrix>(emptyPermissionMatrix());
+  const [permHasOverride, setPermHasOverride] = useState(false);
+  const [permLoading, setPermLoading] = useState(false);
+  const [permSaving, setPermSaving] = useState(false);
+
+  // ── Per-business role templates ──
+  const [templateRole, setTemplateRole] = useState<BusinessRole>("manager");
+  const [templateValue, setTemplateValue] = useState<PermissionMatrix>(emptyPermissionMatrix());
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
 
   useEffect(() => { document.title = "Company Users — RD Pro"; }, []);
 
@@ -259,7 +275,17 @@ export default function CompanyUsers() {
       max_devices: memberForm.max_devices,
     } as never).eq("id", editingId);
     if (error) { toast.error(error.message); return; }
-    await logAudit({ business_id: business.id, action: "USER_UPDATED", entity_type: "business_user", entity_id: editingId, new_value: memberForm });
+    const diffKeys: (keyof MemberForm)[] = [
+      "full_name", "username", "email", "mobile", "role", "department", "status", "notes",
+      "login_enabled", "allow_mobile_login", "allow_desktop_login", "require_password_change",
+      "require_2fa", "single_session_only", "office_only_login", "registered_device_only", "max_devices",
+    ];
+    const changes = original ? diffBusiness(original, memberForm, diffKeys) : [];
+    await logAudit({
+      business_id: business.id, action: "USER_UPDATED", entity_type: "business_user", entity_id: editingId,
+      old_value: Object.fromEntries(changes.map((c) => [c.key, c.old])),
+      new_value: Object.fromEntries(changes.map((c) => [c.key, c.next])),
+    });
     toast.success("User updated");
     setEditOpen(false);
     qc.invalidateQueries({ queryKey: ["company-users", business.id] });
@@ -292,6 +318,123 @@ export default function CompanyUsers() {
     qc.invalidateQueries({ queryKey: ["company-users", business?.id] });
   };
 
+  // ── Per-user permission overrides ──
+  const roleOptions = ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }));
+
+  const openPermissions = async (r: { id: string; role: string; full_name: string | null }) => {
+    setPermTarget({ id: r.id, role: r.role as BusinessRole, full_name: r.full_name });
+    setPermLoading(true);
+    try {
+      const [{ data: effective, error: effErr }, { data: override, error: ovErr }] = await Promise.all([
+        supabase.rpc("get_effective_permissions", { _business_user_id: r.id }),
+        supabase.from("user_permissions").select("business_user_id").eq("business_user_id", r.id).maybeSingle(),
+      ]);
+      if (effErr) throw effErr;
+      if (ovErr) throw ovErr;
+      setPermValue((effective as PermissionMatrix) ?? emptyPermissionMatrix());
+      setPermHasOverride(!!override);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not load permissions");
+      setPermTarget(null);
+      return;
+    } finally {
+      setPermLoading(false);
+    }
+  };
+
+  const copyRoleTemplateInto = async (roleToCopy: string, setter: (v: PermissionMatrix) => void) => {
+    if (!business) return;
+    try {
+      const { data, error } = await supabase.rpc("get_role_template", { _business_id: business.id, _role: roleToCopy });
+      if (error) throw error;
+      setter((data as PermissionMatrix) ?? emptyPermissionMatrix());
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not load role template");
+    }
+  };
+
+  const savePermissions = async () => {
+    if (!business || !permTarget) return;
+    setPermSaving(true);
+    try {
+      const { error } = await supabase.rpc("save_user_permissions", {
+        _business_user_id: permTarget.id,
+        _permissions: permValue,
+      });
+      if (error) throw error;
+      await logAudit({
+        business_id: business.id, action: "USER_PERMISSIONS_UPDATED",
+        entity_type: "business_user", entity_id: permTarget.id, new_value: permValue,
+      });
+      toast.success("Permissions updated");
+      setPermHasOverride(true);
+      setPermTarget(null);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not save permissions");
+    } finally {
+      setPermSaving(false);
+    }
+  };
+
+  const resetPermissions = async () => {
+    if (!business || !permTarget) return;
+    setPermSaving(true);
+    try {
+      const { error } = await supabase.rpc("reset_user_permissions", { _business_user_id: permTarget.id });
+      if (error) throw error;
+      const { data: template, error: tErr } = await supabase.rpc("get_role_template", { _business_id: business.id, _role: permTarget.role });
+      if (tErr) throw tErr;
+      setPermValue((template as PermissionMatrix) ?? emptyPermissionMatrix());
+      setPermHasOverride(false);
+      await logAudit({ business_id: business.id, action: "USER_PERMISSIONS_RESET", entity_type: "business_user", entity_id: permTarget.id });
+      toast.success("Reset to role default");
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not reset permissions");
+    } finally {
+      setPermSaving(false);
+    }
+  };
+
+  // ── Per-business role templates ──
+  const loadTemplate = async (r: BusinessRole) => {
+    if (!business) return;
+    setTemplateRole(r);
+    setTemplateLoading(true);
+    try {
+      const { data, error } = await supabase.rpc("get_role_template", { _business_id: business.id, _role: r });
+      if (error) throw error;
+      setTemplateValue((data as PermissionMatrix) ?? emptyPermissionMatrix());
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not load role template");
+    } finally {
+      setTemplateLoading(false);
+    }
+  };
+
+  const saveTemplate = async () => {
+    if (!business) return;
+    setTemplateSaving(true);
+    try {
+      const { error } = await supabase.from("permission_templates").upsert(
+        {
+          business_id: business.id, role: templateRole,
+          name: `${ROLE_LABELS[templateRole]} (Custom)`, permissions: templateValue, is_system: false,
+        } as never,
+        { onConflict: "business_id,role" },
+      );
+      if (error) throw error;
+      await logAudit({
+        business_id: business.id, action: "ROLE_TEMPLATE_UPDATED",
+        entity_type: "permission_template", entity_id: templateRole, new_value: templateValue,
+      });
+      toast.success(`${ROLE_LABELS[templateRole]} template updated for this company`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not save role template");
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
@@ -311,22 +454,27 @@ export default function CompanyUsers() {
           </div>
         </div>
 
-        <Tabs defaultValue="active" className="w-full">
+        <Tabs
+          defaultValue="active"
+          className="w-full"
+          onValueChange={(v) => { if (v === "templates") loadTemplate(templateRole); }}
+        >
           <div className="px-4 pt-3">
             <TabsList>
               <TabsTrigger value="active">Active Users ({activeRows.length})</TabsTrigger>
               <TabsTrigger value="pending">Pending Invitations ({pendingInvites.length})</TabsTrigger>
               <TabsTrigger value="disabled">Disabled Users ({disabledRows.length})</TabsTrigger>
               <TabsTrigger value="history">Invitation History ({closedInvites.length})</TabsTrigger>
+              {canManage && <TabsTrigger value="templates">Role Templates</TabsTrigger>}
             </TabsList>
           </div>
 
           <TabsContent value="active" className="mt-0">
-            <MembersTable rows={activeRows} canManage={canManage} isSelf={isSelf} onEdit={startEdit} onToggle={toggleStatus} onRemove={removeMembership} disableAction="Disable" />
+            <MembersTable rows={activeRows} canManage={canManage} isSelf={isSelf} onEdit={startEdit} onToggle={toggleStatus} onRemove={removeMembership} onPermissions={openPermissions} disableAction="Disable" />
           </TabsContent>
 
           <TabsContent value="disabled" className="mt-0">
-            <MembersTable rows={disabledRows} canManage={canManage} isSelf={isSelf} onEdit={startEdit} onToggle={toggleStatus} onRemove={removeMembership} disableAction="Enable" />
+            <MembersTable rows={disabledRows} canManage={canManage} isSelf={isSelf} onEdit={startEdit} onToggle={toggleStatus} onRemove={removeMembership} onPermissions={openPermissions} disableAction="Enable" />
           </TabsContent>
 
           <TabsContent value="pending" className="mt-0">
@@ -423,6 +571,41 @@ export default function CompanyUsers() {
               </Table>
             </div>
           </TabsContent>
+
+          {canManage && (
+            <TabsContent value="templates" className="mt-0 p-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-muted-foreground flex-1 min-w-[200px]">
+                  Customize what each role can do in this company. Users with no individual permission override
+                  automatically follow their role's template.
+                </p>
+                <Select value={templateRole} onValueChange={(v) => loadTemplate(v as BusinessRole)}>
+                  <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>{ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              {templateLoading ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">Loading…</p>
+              ) : (
+                <>
+                  <PermissionMatrixEditor
+                    value={templateValue}
+                    onChange={setTemplateValue}
+                    roleOptions={roleOptions}
+                    onCopyFromRole={(r) => copyRoleTemplateInto(r, setTemplateValue)}
+                  />
+                  <div className="flex justify-end">
+                    <Button onClick={saveTemplate} disabled={templateSaving || templateRole === "owner"}>
+                      {templateSaving ? "Saving…" : `Save ${ROLE_LABELS[templateRole]} Template`}
+                    </Button>
+                  </div>
+                  {templateRole === "owner" && (
+                    <p className="text-xs text-muted-foreground text-right">Owner permissions cannot be restricted.</p>
+                  )}
+                </>
+              )}
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
@@ -572,16 +755,53 @@ export default function CompanyUsers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Per-user permission override */}
+      <Dialog open={!!permTarget} onOpenChange={(v) => !v && setPermTarget(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Permissions — {permTarget?.full_name || "User"} ({permTarget ? ROLE_LABELS[permTarget.role] : ""})</DialogTitle>
+          </DialogHeader>
+          {permLoading ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">Loading…</p>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                {permHasOverride
+                  ? "This user has custom permissions that override their role's template."
+                  : "This user currently follows their role's template. Editing and saving creates a personal override."}
+              </p>
+              <PermissionMatrixEditor
+                value={permValue}
+                onChange={setPermValue}
+                roleOptions={roleOptions}
+                onCopyFromRole={(r) => copyRoleTemplateInto(r, setPermValue)}
+              />
+            </>
+          )}
+          <DialogFooter className="flex items-center justify-between sm:justify-between">
+            <Button variant="outline" onClick={resetPermissions} disabled={!permHasOverride || permSaving || permLoading}>
+              Reset to role default
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setPermTarget(null)} disabled={permSaving}>Cancel</Button>
+              <Button onClick={savePermissions} disabled={permSaving || permLoading}>
+                {permSaving ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function MembersTable({
-  rows, canManage, isSelf, onEdit, onToggle, onRemove, disableAction,
+  rows, canManage, isSelf, onEdit, onToggle, onRemove, onPermissions, disableAction,
 }: {
   rows: any[]; canManage: boolean; isSelf: (r: { user_id: string }) => boolean;
   onEdit: (r: any) => void; onToggle: (r: any) => void;
-  onRemove: (r: any) => void; disableAction: "Disable" | "Enable";
+  onRemove: (r: any) => void; onPermissions: (r: any) => void; disableAction: "Disable" | "Enable";
 }) {
   const fd = useFormatDate();
   return (
@@ -629,6 +849,9 @@ function MembersTable({
                 {canManage && (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => onEdit(r)}>Edit</Button>
+                    {r.role !== "owner" && !isSelf(r) && (
+                      <Button size="sm" variant="ghost" onClick={() => onPermissions(r)}>Permissions</Button>
+                    )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span>

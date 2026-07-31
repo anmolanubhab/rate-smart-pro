@@ -59,7 +59,6 @@ const Gstr9 = lazy(() => import("./pages/gst/Gstr9"));
 const AuditLogs = lazy(() => import("./pages/admin/AuditLogs"));
 const BusinessWizard = lazy(() => import("./pages/setup/BusinessWizard"));
 const BusinessProfile = lazy(() => import("./pages/settings/BusinessProfile"));
-const Team = lazy(() => import("./pages/settings/Team"));
 const CompanyUsers = lazy(() => import("./pages/settings/CompanyUsers"));
 const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
 const PrintCopyConfiguration = lazy(() => import("./pages/settings/PrintCopyConfiguration"));
@@ -234,7 +233,6 @@ const App = () => (
               <Route path="/gst/gstr-9" element={L(<Gstr9 />)} />
               <Route path="/admin/audit-logs" element={L(<AuditLogs />)} />
               <Route path="/settings/business-profile" element={L(<BusinessProfile />)} />
-              <Route path="/settings/team" element={L(<Team />)} />
               <Route path="/settings/company-users" element={L(<CompanyUsers />)} />
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="/settings/print-copies" element={L(<PrintCopyConfiguration />)} />
