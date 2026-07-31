@@ -7886,6 +7886,70 @@ export type Database = {
           },
         ]
       }
+      supplier_payments: {
+        Row: {
+          amount: number
+          business_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          mode: string
+          payment_date: string
+          payment_ref: string
+          purchase_invoice_id: string | null
+          reference_note: string | null
+          supplier_id: string | null
+        }
+        Insert: {
+          amount?: number
+          business_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          mode?: string
+          payment_date?: string
+          payment_ref: string
+          purchase_invoice_id?: string | null
+          reference_note?: string | null
+          supplier_id?: string | null
+        }
+        Update: {
+          amount?: number
+          business_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          mode?: string
+          payment_date?: string
+          payment_ref?: string
+          purchase_invoice_id?: string | null
+          reference_note?: string | null
+          supplier_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_payments_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_payments_purchase_invoice_id_fkey"
+            columns: ["purchase_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_payments_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       unit_conversions: {
         Row: {
           business_id: string | null
@@ -9074,6 +9138,10 @@ export type Database = {
       }
       next_quotation_number: { Args: { _business_id: string }; Returns: string }
       next_sales_return_number: {
+        Args: { _business_id: string }
+        Returns: string
+      }
+      next_supplier_payment_ref: {
         Args: { _business_id: string }
         Returns: string
       }
