@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
+import { useCompanyLogoUpload } from "@/hooks/useCompanyLogoUpload";
+import { validateCompanyLogoFile } from "@/lib/companyLogo";
 import { canGranular } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +26,7 @@ import {
   Lock,
   AlertCircle,
   Menu,
+  Loader2,
   X as XIcon
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -241,6 +244,49 @@ function HeroHeader({
   set: (k: string, v: unknown) => void;
 }) {
   const [isHovering, setIsHovering] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { uploadLogo, removeLogo, uploading, removing } = useCompanyLogoUpload();
+
+  // Logo saves straight to the DB on upload/remove (via the storage hook),
+  // bypassing the page's Save Changes flow entirely — so it's tracked in its
+  // own local state rather than through `set()`, which would otherwise mark
+  // the page as having unsaved changes for an edit that's already persisted.
+  const [localLogoUrl, setLocalLogoUrl] = useState<string | null>((f.logo_url as string) || null);
+  useEffect(() => {
+    setLocalLogoUrl((f.logo_url as string) || null);
+  }, [f.logo_url]);
+
+  const busy = uploading || removing;
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    const validationError = validateCompanyLogoFile(file);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+
+    try {
+      const url = await uploadLogo(business.id, file);
+      setLocalLogoUrl(url);
+      toast.success("Logo updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to upload logo");
+    }
+  };
+
+  const handleRemove = async () => {
+    try {
+      await removeLogo(business.id);
+      setLocalLogoUrl(null);
+      toast.success("Logo removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove logo");
+    }
+  };
 
   return (
     <div className="relative overflow-hidden bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 border-b">
@@ -252,10 +298,19 @@ function HeroHeader({
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}
           >
+            {editable && (
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            )}
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-white shadow-lg border flex items-center justify-center overflow-hidden">
-              {f.logo_url ? (
+              {localLogoUrl ? (
                 <img
-                  src={f.logo_url as string}
+                  src={localLogoUrl}
                   alt="Business Logo"
                   className="w-full h-full object-contain p-2"
                 />
@@ -266,11 +321,36 @@ function HeroHeader({
             {editable && (
               <div
                 className={cn(
-                  "absolute inset-0 rounded-2xl bg-black/60 flex items-center justify-center transition-opacity cursor-pointer",
-                  isHovering ? "opacity-100" : "opacity-0"
+                  "absolute inset-0 rounded-2xl bg-black/60 flex flex-col items-center justify-center gap-1.5 transition-opacity",
+                  isHovering || busy ? "opacity-100" : "opacity-0",
+                  busy ? "cursor-wait" : "cursor-pointer"
                 )}
               >
-                <Upload className="w-6 h-6 text-white" />
+                {busy ? (
+                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      title={localLogoUrl ? "Replace Logo" : "Upload Logo"}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex flex-col items-center gap-1 text-white"
+                    >
+                      <Upload className="w-6 h-6" />
+                      <span className="text-[10px] font-medium">{localLogoUrl ? "Replace" : "Upload"}</span>
+                    </button>
+                    {localLogoUrl && (
+                      <button
+                        type="button"
+                        title="Remove Logo"
+                        onClick={handleRemove}
+                        className="flex items-center gap-1 text-white/80 hover:text-white text-[10px] font-medium"
+                      >
+                        <X className="w-3 h-3" /> Remove
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>

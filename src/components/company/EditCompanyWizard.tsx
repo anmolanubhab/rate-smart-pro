@@ -18,7 +18,7 @@ const EDITABLE_KEYS = [
   "address","state","district","city","pincode",
   "owner_name","mobile","email","website",
   "fy_start_month","gst_enabled","composition_scheme","default_gst_pct",
-  "logo_url","bank_name","bank_account_number","bank_ifsc","bank_branch",
+  "bank_name","bank_account_number","bank_ifsc","bank_branch",
   "invoice_prefix","invoice_terms",
 ] as const;
 
@@ -30,7 +30,6 @@ const LABELS: Record<string, string> = {
   owner_name: "Owner Name", mobile: "Mobile", email: "Email", website: "Website",
   fy_start_month: "FY Start Month", gst_enabled: "GST Enabled",
   composition_scheme: "Composition Scheme", default_gst_pct: "Default GST %",
-  logo_url: "Logo URL",
   bank_name: "Bank", bank_account_number: "Account Number",
   bank_ifsc: "IFSC", bank_branch: "Branch",
   invoice_prefix: "Invoice Prefix", invoice_terms: "Invoice Terms",
