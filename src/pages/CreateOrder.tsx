@@ -176,7 +176,7 @@ const CreateOrder = () => {
 
   useEffect(() => {
     if (!user) return;
-    fetchParties(user.id)
+    fetchParties(user.id, "customer")
       .then((data) => {
         setParties(data);
         if (partyQuery) checkExactPartyMatch(partyQuery, data);

@@ -37,7 +37,7 @@ export default function ReceivePayment() {
 
   useEffect(() => {
     if (!business) return;
-    supabase.from("parties").select("id, name").eq("business_id", business.id).order("name").limit(2000)
+    supabase.from("parties").select("id, name").eq("business_id", business.id).eq("preferred_customer", true).order("name").limit(2000)
       .then(({ data }) => setParties((data as Party[]) ?? []));
     supabase.from("bank_accounts").select("id, account_name, bank_name").eq("business_id", business.id).order("account_name")
       .then(({ data }) => setBankAccounts((data as BankAccount[]) ?? []));

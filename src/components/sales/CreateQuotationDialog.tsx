@@ -34,7 +34,7 @@ export default function CreateQuotationDialog({ open, onOpenChange, userId, onSa
 
   useEffect(() => {
     if (!open || !userId) return;
-    fetchParties(userId).then(setParties).catch(() => {});
+    fetchParties(userId, "customer").then(setParties).catch(() => {});
   }, [open, userId]);
 
   useEffect(() => {
