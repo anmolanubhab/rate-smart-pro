@@ -69,6 +69,56 @@ from += pageSize;
 return all;
 }
 
+/** Which of these product IDs are referenced anywhere in the transactional/document
+ *  trail (orders, invoices, purchase, stock, BOM, etc). Maps productId -> list of
+ *  the record types it appears in (for a friendly message), omitting unused ones. */
+export async function getProductsInUse(productIds: string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (!productIds.length) return map;
+  const { data, error } = await supabase.rpc("get_products_in_use" as never, {
+    _product_ids: productIds,
+  } as never);
+  if (error) throw error;
+  for (const row of (data ?? []) as { product_id: string; used_in: string[] }[]) {
+    map.set(row.product_id, row.used_in ?? []);
+  }
+  return map;
+}
+
+export interface BulkDeleteProductsResult {
+  deleted: { id: string; name: string }[];
+  archived: { id: string; name: string; usedIn: string[] }[];
+}
+
+/**
+ * Delete products that have no transactional history; archive (status =
+ * 'inactive') the rest instead of deleting them, since several
+ * product-referencing tables SET NULL on delete and would otherwise silently
+ * blank out the product on historical orders/invoices/POs/GRNs/quotations.
+ */
+export async function bulkDeleteProducts(
+  products: { id: string; name: string }[]
+): Promise<BulkDeleteProductsResult> {
+  const usage = await getProductsInUse(products.map((p) => p.id));
+
+  const deletable = products.filter((p) => !usage.has(p.id));
+  const inUse = products.filter((p) => usage.has(p.id));
+
+  if (deletable.length) {
+    const { error } = await supabase.from("products").delete().in("id", deletable.map((p) => p.id));
+    if (error) throw error;
+  }
+  if (inUse.length) {
+    const { error } = await supabase.from("products").update({ status: "inactive" }).in("id", inUse.map((p) => p.id));
+    if (error) throw error;
+  }
+
+  return {
+    deleted: deletable,
+    archived: inUse.map((p) => ({ ...p, usedIn: usage.get(p.id) ?? [] })),
+  };
+}
+
 export async function searchProducts(
 userId: string,
 q: string,

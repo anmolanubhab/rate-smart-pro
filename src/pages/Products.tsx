@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Plus, Pencil, Trash2, Package, Search,
   AlertTriangle, Upload, ArrowUpDown, ArrowUp, ArrowDown,
-  RefreshCw, Download,
+  RefreshCw, Download, Archive, Loader2,
 } from "lucide-react";
 import ProductImport from "@/components/ProductImport";
 import { ProductsPagination } from "@/components/ProductsPagination";
@@ -16,9 +16,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Product, ProductCategory, ProductTrackingType } from "@/lib/products";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Product, ProductCategory, ProductTrackingType, bulkDeleteProducts } from "@/lib/products";
 import {
   fetchCategories, fetchUnits, fetchProductUnits, saveProductUnits,
   type MeasurementCategory, type Unit,
@@ -89,7 +94,8 @@ async function fetchProductsPage(
   page: number,
   pageSize: number,
   search: string,
-  sort: SortState
+  sort: SortState,
+  statusFilter: string
 ): Promise<{ items: Product[]; total: number }> {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -102,6 +108,7 @@ async function fetchProductsPage(
     .range(from, to);
 
   if (businessId) query = query.eq("business_id", businessId);
+  if (statusFilter !== "all") query = query.eq("status", statusFilter);
 
   if (search.trim()) {
     const q = `%${search.trim()}%`;
@@ -160,7 +167,7 @@ const SortHeader = ({
 
 const SkeletonRow = ({ index }: { index: number }) => (
   <tr className="border-t border-border animate-pulse" style={{ opacity: 1 - index * 0.07 }}>
-    {[80, 160, 120, 70, 80, 80, 60, 50, 60].map((w, i) => (
+    {[20, 80, 160, 120, 70, 80, 80, 60, 50, 60, 60].map((w, i) => (
       <td key={i} className="px-4 py-3">
         <div className="h-3.5 rounded bg-muted" style={{ width: w }} />
       </td>
@@ -205,8 +212,63 @@ const Products = () => {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
 
+  // Status filter
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
   // Sorting
   const [sort, setSort] = useState<SortState>({ column: "part_number", direction: "asc" });
+
+  // Row selection (bulk delete)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const allOnPageSelected = items.length > 0 && items.every((p) => selected.has(p.id));
+  const toggleSelectAllOnPage = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        items.forEach((p) => next.delete(p.id));
+      } else {
+        items.forEach((p) => next.add(p.id));
+      }
+      return next;
+    });
+  };
+
+  // Delete (single + bulk) — in-use products are archived (status = inactive)
+  // instead of deleted; see bulkDeleteProducts() for why.
+  const [singleDeleteTarget, setSingleDeleteTarget] = useState<Product | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const runDelete = async (targets: { id: string; name: string }[]) => {
+    setDeleting(true);
+    try {
+      const { deleted, archived } = await bulkDeleteProducts(targets);
+      if (deleted.length && !archived.length) {
+        toast.success(`Deleted ${deleted.length} product${deleted.length > 1 ? "s" : ""}`);
+      } else if (archived.length && !deleted.length) {
+        toast.info(
+          `${archived.length} product${archived.length > 1 ? "s are" : " is"} in use (orders/invoices/stock/etc.) — marked Inactive instead of deleted.`
+        );
+      } else if (deleted.length && archived.length) {
+        toast.success(`Deleted ${deleted.length}, archived ${archived.length} (in use) as Inactive`);
+      }
+      setSelected(new Set());
+      setSingleDeleteTarget(null);
+      setBulkDeleteOpen(false);
+      load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Dialog
   const [open, setOpen] = useState(false);
@@ -238,7 +300,8 @@ const Products = () => {
         page,
         pageSize,
         debouncedSearch,
-        sort
+        sort,
+        statusFilter
       );
       setItems(data);
       setTotal(count);
@@ -247,7 +310,7 @@ const Products = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, businessId, page, pageSize, debouncedSearch, sort]);
+  }, [user, businessId, page, pageSize, debouncedSearch, sort, statusFilter]);
 
   useEffect(() => {
     document.title = "Products — Spare Parts OMS";
@@ -257,10 +320,10 @@ const Products = () => {
     load();
   }, [load]);
 
-  // Reset to page 1 on new search / sort
+  // Reset to page 1 on new search / sort / status filter
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, sort]);
+  }, [debouncedSearch, sort, statusFilter]);
 
   // ── Export all (CSV) ──────────────────────────────────────────────────────
 
@@ -486,14 +549,6 @@ const Products = () => {
     }
   };
 
-  const remove = async (p: Product) => {
-    if (!confirm(`Delete "${p.name}"?`)) return;
-    const { error } = await supabase.from("products").delete().eq("id", p.id);
-    if (error) return toast.error(error.message);
-    toast.success("Deleted");
-    load();
-  };
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -520,6 +575,14 @@ const Products = () => {
               <RefreshCw className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground animate-spin" />
             )}
           </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="h-4 w-4" /> Import Products
           </Button>
@@ -544,12 +607,31 @@ const Products = () => {
 
       <ProductImport open={importOpen} onOpenChange={setImportOpen} onImported={load} />
 
+      {selected.size > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5">
+          <span className="text-sm font-medium">{selected.size} product{selected.size > 1 ? "s" : ""} selected</span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" /> Delete Selected
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ERP Grid */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden flex flex-col">
         <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 320px)", minHeight: 200 }}>
           <table className="w-full text-sm border-separate border-spacing-0">
             <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
+                <th className="px-4 py-3 w-10">
+                  <Checkbox checked={allOnPageSelected} onCheckedChange={toggleSelectAllOnPage} aria-label="Select all on page" />
+                </th>
                 <SortHeader label="Part #" column="part_number" sort={sort} onSort={handleSort} className="text-left" />
                 <SortHeader label="Name" column="name" sort={sort} onSort={handleSort} className="text-left" />
                 <th className="text-left px-4 py-3">Vehicle</th>
@@ -558,6 +640,7 @@ const Products = () => {
                 <SortHeader label="Dealer" column="dealer_rate" sort={sort} onSort={handleSort} className="text-right" />
                 <SortHeader label="Stock" column="stock" sort={sort} onSort={handleSort} className="text-right" />
                 <th className="text-right px-4 py-3">GST</th>
+                <th className="text-left px-4 py-3">Status</th>
                 <th className="px-4 py-3 w-20" />
               </tr>
             </thead>
@@ -567,7 +650,7 @@ const Products = () => {
                 Array.from({ length: 10 }).map((_, i) => <SkeletonRow key={i} index={i} />)
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-16 text-center">
+                  <td colSpan={11} className="py-16 text-center">
                     <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                     <p className="font-display font-semibold">No products found</p>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -586,6 +669,9 @@ const Products = () => {
                       key={p.id}
                       className="border-t border-border hover:bg-muted/30 transition-colors"
                     >
+                      <td className="px-4 py-2.5">
+                        <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleSelected(p.id)} aria-label={`Select ${p.name}`} />
+                      </td>
                       <td className="px-4 py-2.5 font-mono text-xs">{p.part_number}</td>
                       <td className="px-4 py-2.5 font-medium">{p.name}</td>
                       <td className="px-4 py-2.5 text-muted-foreground">{p.vehicle_model || "—"}</td>
@@ -625,6 +711,15 @@ const Products = () => {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{p.gst_pct}%</td>
+                      <td className="px-4 py-2.5">
+                        {p.status === "inactive" ? (
+                          <Badge variant="outline" className="border-muted-foreground/40 text-muted-foreground gap-1">
+                            <Archive className="h-3 w-3" /> Inactive
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-emerald-500/40 text-emerald-600 bg-emerald-500/10">Active</Badge>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
                           <Pencil className="h-3.5 w-3.5" />
@@ -632,7 +727,7 @@ const Products = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => remove(p)}
+                          onClick={() => setSingleDeleteTarget(p)}
                           className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -932,6 +1027,54 @@ const Products = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Single delete confirmation ── */}
+      <AlertDialog open={!!singleDeleteTarget} onOpenChange={(o) => !o && setSingleDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{singleDeleteTarget?.name}</strong> will be permanently deleted if it has never been used in
+              any order, invoice, purchase, or stock record. If it's already linked anywhere, it will be marked
+              <strong> Inactive</strong> instead — kept for history but hidden from active use.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => singleDeleteTarget && runDelete([singleDeleteTarget])}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Working…</> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Bulk delete confirmation ── */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={(o) => !o && setBulkDeleteOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selected.size} Products?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Products with no order/invoice/purchase/stock history will be permanently deleted. Any product
+              already linked to a record will be skipped and marked <strong>Inactive</strong> instead, so
+              existing orders, invoices and reports don't lose their part reference.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => runDelete(Array.from(selected).map((id) => ({ id, name: items.find((p) => p.id === id)?.name ?? id })))}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Working…</> : `Delete ${selected.size}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
