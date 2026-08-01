@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
-import { createVoucher, postVoucher, type VoucherItem } from "@/lib/voucherService";
+import { createVoucher, postVoucher, cancelVoucher, type VoucherItem } from "@/lib/voucherService";
 
 export type PaymentMode = "cash" | "bank_transfer" | "cheque" | "upi" | "card" | "other";
 
@@ -145,6 +145,61 @@ async function postSupplierPaymentToLedger(userId: string, payment: SupplierPaym
   } catch (e: any) {
     console.error("postSupplierPaymentToLedger: voucher posting failed", e.message);
   }
+}
+
+/**
+ * Delete a supplier payment record. There's no soft-cancel status column on
+ * supplier_payments (unlike invoices/returns/GRN), so this fully reverses
+ * its effects and removes the row:
+ * - Reverses the linked invoice's paid_amount and recomputes its status.
+ * - Cancels the auto-posted "Payment" voucher (found via reference_type =
+ *   'supplier_payment', since supplier_payments never stored a voucher_id).
+ * - Deletes the payment row itself.
+ */
+export async function deleteSupplierPayment(paymentId: string, userId?: string): Promise<void> {
+  const { data: payment, error: le } = await supabase
+    .from("supplier_payments")
+    .select("purchase_invoice_id, amount, payment_ref")
+    .eq("id", paymentId)
+    .single();
+  if (le) throw le;
+  if (!payment) throw new Error("Payment not found.");
+
+  if (payment.purchase_invoice_id) {
+    const { data: inv } = await supabase
+      .from("purchase_invoices")
+      .select("paid_amount, grand_total")
+      .eq("id", payment.purchase_invoice_id)
+      .single();
+    if (inv) {
+      const newPaid = Math.max(0, Number(inv.paid_amount ?? 0) - Number(payment.amount));
+      const newStatus = newPaid <= 0 ? "unpaid" : newPaid >= Number(inv.grand_total) ? "paid" : "partially_paid";
+      await supabase
+        .from("purchase_invoices")
+        .update({ paid_amount: newPaid, status: newStatus })
+        .eq("id", payment.purchase_invoice_id);
+    }
+  }
+
+  if (userId) {
+    const { data: voucher } = await supabase
+      .from("vouchers")
+      .select("id")
+      .eq("reference_type", "supplier_payment")
+      .eq("reference_id", paymentId)
+      .neq("status", "cancelled")
+      .maybeSingle();
+    if (voucher) {
+      try {
+        await cancelVoucher(userId, voucher.id, `Supplier payment ${payment.payment_ref} deleted`);
+      } catch (e: any) {
+        console.error("deleteSupplierPayment: could not cancel linked voucher:", e.message);
+      }
+    }
+  }
+
+  const { error } = await supabase.from("supplier_payments").delete().eq("id", paymentId);
+  if (error) throw error;
 }
 
 /** Outstanding (unpaid/partial) purchase invoices for a supplier — used to populate the payment form. */
