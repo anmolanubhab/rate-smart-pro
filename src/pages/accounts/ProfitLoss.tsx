@@ -1,14 +1,16 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ShieldAlert } from "lucide-react";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { canViewProfit } from "@/lib/permissions";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 
 export default function ProfitLoss() {
   useEffect(() => { document.title = "Profit & Loss — RD Pro"; }, []);
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, role, financialRights } = useBusiness();
   const { data: ledgers = [], isLoading } = useQuery({
     queryKey: ["pnl", user?.id, business?.id],
     enabled: !!user?.id,
@@ -28,6 +30,23 @@ export default function ProfitLoss() {
     });
     return { rows, income, expense, profit: income - expense };
   }, [ledgers]);
+
+  if (!canViewProfit(role, financialRights)) {
+    return (
+      <div className="p-8 max-w-2xl">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 flex gap-3">
+          <ShieldAlert className="h-6 w-6 text-destructive shrink-0" />
+          <div>
+            <h1 className="font-semibold">Permission required</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              You don't have permission to view profit figures. Ask an owner or admin to grant
+              "Can View Profit" from Company Users if you need access.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <MockTablePage

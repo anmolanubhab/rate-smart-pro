@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Banknote, Landmark, Receipt, Scale, TrendingUp, Wallet } from "lucide-react";
+import { ArrowRight, Banknote, Landmark, Lock, Receipt, Scale, TrendingUp, Wallet } from "lucide-react";
 import { endOfMonth, format, startOfMonth } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canViewProfit } from "@/lib/permissions";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +42,8 @@ function Metric({ label, value, icon: Icon, tone }: { label: string; value: Reac
 
 export default function AccountingLayer() {
   const { user } = useAuth();
+  const { role, financialRights } = useBusiness();
+  const canProfit = canViewProfit(role, financialRights);
   const today = new Date().toISOString().slice(0, 10);
   const monthStart = format(startOfMonth(new Date()), "yyyy-MM-dd");
   const monthEnd = format(endOfMonth(new Date()), "yyyy-MM-dd");
@@ -176,7 +180,12 @@ export default function AccountingLayer() {
               <Metric label="Bank Balance" value={`₹ ${fmtInr(Math.abs(computed.bank))}`} icon={Landmark} tone={computed.bank >= 0 ? "success" : "danger"} />
               <Metric label="Receivables" value={`₹ ${fmtInr(computed.receivables)}`} icon={TrendingUp} tone="success" />
               <Metric label="Payables" value={`₹ ${fmtInr(computed.payables)}`} icon={TrendingUp} tone="warning" />
-              <Metric label="Current Profit" value={inr(computed.netProfit)} icon={Banknote} tone={computed.netProfit >= 0 ? "success" : "danger"} />
+              <Metric
+                label="Current Profit"
+                value={canProfit ? inr(computed.netProfit) : "Restricted"}
+                icon={canProfit ? Banknote : Lock}
+                tone={canProfit ? (computed.netProfit >= 0 ? "success" : "danger") : undefined}
+              />
               <Metric label="Today's Collection" value={inr(vouchersMetaQ.data?.todayCollection || 0)} icon={Receipt} tone="success" />
               <Metric label="Recent Voucher Count" value={(vouchersMetaQ.data?.recentCount || 0).toLocaleString("en-IN")} icon={Receipt} />
               <Metric label="Trial Balance Diff" value={inr(Math.abs(computed.trialDiff))} icon={Scale} tone={computed.trialBalanced ? "success" : "danger"} />
@@ -196,8 +205,18 @@ export default function AccountingLayer() {
             <div className="grid grid-cols-2 gap-3">
               <Metric label="Total Income" value={inr(computed.income)} icon={TrendingUp} tone="success" />
               <Metric label="Total Expense" value={inr(computed.expense)} icon={TrendingUp} tone="warning" />
-              <Metric label="Gross Profit" value={inr(computed.grossProfit)} icon={Banknote} tone={computed.grossProfit >= 0 ? "success" : "danger"} />
-              <Metric label="Net Profit" value={inr(computed.netProfit)} icon={Banknote} tone={computed.netProfit >= 0 ? "success" : "danger"} />
+              <Metric
+                label="Gross Profit"
+                value={canProfit ? inr(computed.grossProfit) : "Restricted"}
+                icon={canProfit ? Banknote : Lock}
+                tone={canProfit ? (computed.grossProfit >= 0 ? "success" : "danger") : undefined}
+              />
+              <Metric
+                label="Net Profit"
+                value={canProfit ? inr(computed.netProfit) : "Restricted"}
+                icon={canProfit ? Banknote : Lock}
+                tone={canProfit ? (computed.netProfit >= 0 ? "success" : "danger") : undefined}
+              />
             </div>
           )}
         </Shell>
@@ -209,7 +228,7 @@ export default function AccountingLayer() {
               { to: "/accounts/payables", label: "Payables" },
               { to: "/accounts/cash-book", label: "Cash Book" },
               { to: "/accounts/bank-book", label: "Bank Book" },
-              { to: "/accounts/profit-loss", label: "Profit & Loss" },
+              ...(canProfit ? [{ to: "/accounts/profit-loss", label: "Profit & Loss" }] : []),
               { to: "/accounts/vouchers", label: "Voucher Center" },
             ].map((l) => (
               <Button key={l.to} asChild variant="outline" className="w-full justify-between">

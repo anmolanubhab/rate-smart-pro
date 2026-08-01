@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useFormatDate } from "@/lib/dateFormat";
+import { getSectionOrder } from "@/lib/dashboardFocus";
 
 const InventoryWidgets = lazy(() => import("@/components/InventoryWidgets"));
 const ErpDashboardCards = lazy(() => import("@/components/ErpDashboardCards"));
@@ -48,8 +49,15 @@ const fmtPct = (n: number | null) => Number(n || 0).toFixed(2).replace(/\.00$/, 
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, dashboardFocus } = useBusiness();
   const businessId = business?.id ?? null;
+  const sectionOrder = useMemo(() => getSectionOrder(dashboardFocus), [dashboardFocus]);
+  const SECTION_COMPONENT: Record<string, React.ComponentType> = {
+    health: BusinessHealthLayer,
+    operations: OperationsLayer,
+    inventory: InventoryWidgets,
+    accounting: AccountingLayer,
+  };
   const fd = useFormatDate();
 
   // --- Display name state ---
@@ -195,21 +203,14 @@ const Dashboard = () => {
         </div>
       </header>
 
-      <Suspense fallback={<SectionFallback />}>
-        <BusinessHealthLayer />
-      </Suspense>
-
-      <Suspense fallback={<SectionFallback />}>
-        <OperationsLayer />
-      </Suspense>
-
-      <Suspense fallback={<SectionFallback />}>
-        <InventoryWidgets />
-      </Suspense>
-
-      <Suspense fallback={<SectionFallback />}>
-        <AccountingLayer />
-      </Suspense>
+      {sectionOrder.map((key) => {
+        const SectionComponent = SECTION_COMPONENT[key];
+        return (
+          <Suspense key={key} fallback={<SectionFallback />}>
+            <SectionComponent />
+          </Suspense>
+        );
+      })}
 
       <Suspense fallback={<SectionFallback />}>
         <ErpDashboardCards />

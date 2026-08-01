@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, ArrowRight, LayoutGrid, FileBarChart, CheckCircle2, Clock3 } from "lucide-react";
 import { useNavigation } from "@/lib/navigation/useNavigation";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canViewProfit } from "@/lib/permissions";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +44,8 @@ const COMING_SOON_IDS = new Set<string>([]);
 
 export default function ReportCenter() {
   const { byId } = useNavigation();
+  const { role, financialRights } = useBusiness();
+  const canProfit = canViewProfit(role, financialRights);
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -51,9 +55,12 @@ export default function ReportCenter() {
   const resolved = useMemo(() => {
     return CATALOG.map((group) => ({
       category: group.category,
-      items: group.ids.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => !!x),
+      items: group.ids
+        .filter((id) => canProfit || id !== "accounts-profit-loss")
+        .map((id) => byId.get(id))
+        .filter((x): x is NonNullable<typeof x> => !!x),
     })).filter((g) => g.items.length > 0);
-  }, [byId]);
+  }, [byId, canProfit]);
 
   const allItems = useMemo(
     () => resolved.flatMap((g) => g.items.map((item) => ({ ...item, category: g.category, comingSoon: COMING_SOON_IDS.has(item.id) }))),

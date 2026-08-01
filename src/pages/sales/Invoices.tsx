@@ -43,7 +43,7 @@ const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function InvoicesPage() {
   const { user } = useAuth();
-  const { business, role } = useBusiness();
+  const { business, role, financialRights } = useBusiness();
   const navigate = useNavigate();
   const fd = useFormatDate();
   const [search, setSearch] = useState("");
@@ -252,7 +252,7 @@ export default function InvoicesPage() {
     if (!deleteTarget || !business) return;
     setBusy(deleteTarget.id);
     try {
-      if (canDeleteDirectly(role)) {
+      if (canDeleteDirectly(role, financialRights)) {
         await deleteInvoice(deleteTarget.id);
         toast.success(`Invoice ${deleteTarget.invoice_number} deleted`);
       } else {
@@ -536,7 +536,7 @@ export default function InvoicesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Invoice?</AlertDialogTitle>
             <AlertDialogDescription>
-              {canDeleteDirectly(role) ? (
+              {canDeleteDirectly(role, financialRights) ? (
                 <>
                   Invoice <strong>{deleteTarget?.invoice_number}</strong> will be permanently deleted.
                   {deleteTarget?.order_id && " The linked order will be reset to its previous status."}

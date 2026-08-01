@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { PermissionMatrix } from "@/lib/permissionMatrix";
+import type { DashboardFocus } from "@/lib/dashboardFocus";
 
 // Must mirror the live public.business_role Postgres enum exactly — assigning
 // a role outside this set fails at the database with an enum error.
@@ -68,7 +69,7 @@ export function useBusiness() {
     queryFn: async () => {
       const { data: memberships, error: e1 } = await supabase
         .from("business_users")
-        .select("id, business_id, role, created_at")
+        .select("id, business_id, role, created_at, financial_rights, dashboard_focus")
         .eq("user_id", user!.id)
         .eq("status", "active")
         .order("created_at", { ascending: true });
@@ -77,6 +78,8 @@ export function useBusiness() {
         return {
           business: null as Business | null, role: null as BusinessRole | null,
           memberships: [], membershipId: null as string | null,
+          financialRights: {} as Record<string, boolean>,
+          dashboardFocus: null as DashboardFocus | null,
         };
       }
 
@@ -103,6 +106,8 @@ export function useBusiness() {
         role: chosen.role as BusinessRole,
         memberships,
         membershipId: chosen.id as string,
+        financialRights: (chosen.financial_rights ?? {}) as Record<string, boolean>,
+        dashboardFocus: (chosen.dashboard_focus ?? null) as DashboardFocus | null,
       };
     },
   });
@@ -137,6 +142,8 @@ export function useBusiness() {
     memberships: q.data?.memberships ?? [],
     membershipId,
     permissions,
+    financialRights: q.data?.financialRights ?? {},
+    dashboardFocus: q.data?.dashboardFocus ?? null,
     hasPerm: (module: string, action: string) => !!permissions?.[module]?.[action],
     loading: q.isLoading,
     refetch: q.refetch,

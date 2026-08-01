@@ -52,6 +52,25 @@ export function hasModulePermission(
 }
 
 /**
+ * Per-employee "Financial Rights" (business_users.financial_rights jsonb).
+ * Only can_delete_voucher / can_edit_locked_voucher / can_view_profit are
+ * actually enforced today (see canDeleteDirectly/canUnlockVouchers/
+ * canViewProfit below) — the rest are stored now, enforced in a later
+ * phase, matching the same pattern already used for require_2fa etc. on
+ * this table.
+ */
+export interface FinancialRights {
+  can_edit_locked_voucher?: boolean;
+  can_backdate_voucher?: boolean;
+  can_delete_voucher?: boolean;
+  can_change_gst?: boolean;
+  can_change_rate?: boolean;
+  can_change_discount?: boolean;
+  can_change_cost_price?: boolean;
+  can_view_profit?: boolean;
+}
+
+/**
  * Maps legacy `can(role, perm)` string permissions (useBusiness.tsx's PERMS
  * map) onto the granular 13-module matrix, for strings confirmed to produce
  * IDENTICAL results for every role as the old static map (verified against
@@ -104,8 +123,12 @@ export function canAccessAuditLogs(role: BusinessRole | null): boolean {
   return hasRole(role, AUDIT_LOG_ROLES);
 }
 
-export function canUnlockVouchers(role: BusinessRole | null): boolean {
-  return hasRole(role, VOUCHER_UNLOCK_ROLES);
+/** Can this role/user edit or post a voucher dated within a locked accounting period? */
+export function canUnlockVouchers(
+  role: BusinessRole | null,
+  financialRights?: FinancialRights | null,
+): boolean {
+  return hasRole(role, VOUCHER_UNLOCK_ROLES) || !!financialRights?.can_edit_locked_voucher;
 }
 
 export function canOverrideFreezeDate(role: BusinessRole | null): boolean {
@@ -174,8 +197,24 @@ export function canApproveRequestFrom(
 }
 
 /** Permission to delete a record directly (bypassing approval). */
-export function canDeleteDirectly(role: BusinessRole | null): boolean {
-  return hasRole(role, ["owner", "admin"]);
+export function canDeleteDirectly(
+  role: BusinessRole | null,
+  financialRights?: FinancialRights | null,
+): boolean {
+  return hasRole(role, ["owner", "admin"]) || !!financialRights?.can_delete_voucher;
+}
+
+/**
+ * Can this role/user see profit figures (Dashboard's Current/Gross/Net
+ * Profit tiles, the Profit & Loss report)? Previously ungated for every
+ * role — owner/admin/manager/accountant keep seeing it by default (matches
+ * who could already see it), lower roles need the per-user override.
+ */
+export function canViewProfit(
+  role: BusinessRole | null,
+  financialRights?: FinancialRights | null,
+): boolean {
+  return hasRole(role, ["owner", "admin", "manager", "accountant"]) || !!financialRights?.can_view_profit;
 }
 
 /** Permission to edit a record directly (bypassing approval). */

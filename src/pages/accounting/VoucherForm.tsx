@@ -24,7 +24,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts, fmtInr } from "@/lib/accounting";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
-import { canOverrideAdjustmentLedger } from "@/lib/permissions";
+import { canOverrideAdjustmentLedger, canUnlockVouchers } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import {
   VOUCHER_TYPES,
@@ -58,8 +58,9 @@ export default function VoucherForm() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { business, role } = useBusiness();
+  const { business, role, financialRights } = useBusiness();
   const qc = useQueryClient();
+  const voucherLockOpts = { canEditLockedVoucher: canUnlockVouchers(role, financialRights) };
 
   useEffect(() => {
     document.title = isEdit ? "Edit Voucher — RD Pro" : "New Voucher — RD Pro";
@@ -328,10 +329,10 @@ export default function VoucherForm() {
     setSaving(true);
     try {
       if (isEdit) {
-        await updateVoucher(user.id, { id: id!, ...input });
+        await updateVoucher(user.id, { id: id!, ...input }, voucherLockOpts);
         toast.success("Voucher updated.");
       } else {
-        const v = await createVoucher(user.id, input);
+        const v = await createVoucher(user.id, input, voucherLockOpts);
         if (isNoteType) await logLedgerOverrideIfAny(v.id);
         toast.success(`Voucher ${v.voucher_no} saved as draft.`);
         qc.invalidateQueries({ queryKey: ["vouchers-list"] });
@@ -363,14 +364,14 @@ export default function VoucherForm() {
 
       // If new, create draft first, then post
       if (!isEdit) {
-        const v = await createVoucher(user.id, input);
+        const v = await createVoucher(user.id, input, voucherLockOpts);
         targetId = v.id;
         if (isNoteType) await logLedgerOverrideIfAny(v.id);
       } else {
-        await updateVoucher(user.id, { id: id!, ...input });
+        await updateVoucher(user.id, { id: id!, ...input }, voucherLockOpts);
       }
 
-      const posted = await postVoucher(user.id, targetId!);
+      const posted = await postVoucher(user.id, targetId!, voucherLockOpts);
       toast.success(`Voucher ${posted.voucher_no} posted successfully.`);
       qc.invalidateQueries({ queryKey: ["vouchers-list"] });
       navigate(`/accounting/vouchers/${posted.id}`);

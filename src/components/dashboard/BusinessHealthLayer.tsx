@@ -4,6 +4,8 @@ import { ArrowDownRight, ArrowUpRight, Minus, TrendingUp, ShoppingCart, CreditCa
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canViewProfit } from "@/lib/permissions";
 import { fetchProducts } from "@/lib/products";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -105,6 +107,8 @@ function KpiSkeleton() {
 
 export default function BusinessHealthLayer() {
   const { user } = useAuth();
+  const { role, financialRights } = useBusiness();
+  const canProfit = canViewProfit(role, financialRights);
 
   const now = new Date();
   const curStart = format(startOfMonth(now), "yyyy-MM-dd");
@@ -291,7 +295,9 @@ export default function BusinessHealthLayer() {
             <KpiCard label="Receivables" value={computed.receivableCur} previous={computed.receivablePrev} status={receivableTone} icon={ArrowUpRight} />
             <KpiCard label="Payables" value={computed.payableCur} previous={computed.payablePrev} status={payableTone} icon={ArrowDownRight} />
             <KpiCard label="Inventory Value" value={computed.stockValue} previous={computed.stockPrev} status={inventoryTone} icon={Boxes} />
-            <KpiCard label="Net Profit" value={computed.profitCur} previous={computed.profitPrev} status={profitTone} icon={TrendingUp} />
+            {canProfit && (
+              <KpiCard label="Net Profit" value={computed.profitCur} previous={computed.profitPrev} status={profitTone} icon={TrendingUp} />
+            )}
           </>
         )}
       </div>
