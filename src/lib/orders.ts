@@ -70,6 +70,7 @@ export async function fetchOrders(userId: string) {
   const biz = getActiveBusinessIdSync();
   const { data, error } = await supabase
     .from("orders").select("*").eq("business_id", biz)
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data || []) as Order[];

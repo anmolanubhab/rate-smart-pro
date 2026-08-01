@@ -477,19 +477,22 @@ export async function cancelVoucher(
 export async function deleteVoucher(voucherId: string, opts: VoucherLockOptions = {}): Promise<void> {
   const businessId = requireBusiness();
 
-  const { data: existing } = await supabase
+  const { data: existing, error: fetchError } = await supabase
     .from("vouchers")
     .select("status, voucher_date")
     .eq("id", voucherId)
     .eq("business_id", businessId)
     .single();
 
-  if (existing?.status === "posted") {
+  if (fetchError) throw new Error(`deleteVoucher: ${fetchError.message}`);
+  if (!existing) throw new Error("Voucher not found.");
+
+  if (existing.status === "posted") {
     throw new Error(
       "Posted vouchers cannot be deleted. Cancel it first."
     );
   }
-  if (existing?.voucher_date) await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
+  await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
 
   // Delete items first (FK constraint)
   await supabase
@@ -571,6 +574,7 @@ export async function listVouchers(
     .from("vouchers")
     .select("*", { count: "exact" })
     .eq("business_id", businessId)
+    .eq("is_deleted", false)
     .order("voucher_date", { ascending: false })
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);

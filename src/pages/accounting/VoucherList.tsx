@@ -31,7 +31,8 @@ import {
 } from "@/lib/voucherService";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { canUnlockVouchers } from "@/lib/permissions";
+import { canUnlockVouchers, canDeleteDirectly } from "@/lib/permissions";
+import { createApprovalRequest } from "@/lib/approvals";
 import { fmtInr } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
 
@@ -139,12 +140,25 @@ export default function VoucherList() {
   // ── handlers ─────────────────────────────────────────────────────────────
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !business) return;
     setBusy(true);
     try {
-      await deleteVoucher(deleteTarget.id, voucherLockOpts);
-      toast.success(`Voucher ${deleteTarget.voucher_no} deleted.`);
-      qc.invalidateQueries({ queryKey: ["vouchers-list"] });
+      if (canDeleteDirectly(role, financialRights)) {
+        await deleteVoucher(deleteTarget.id, voucherLockOpts);
+        toast.success(`Voucher ${deleteTarget.voucher_no} deleted.`);
+        qc.invalidateQueries({ queryKey: ["vouchers-list"] });
+      } else {
+        await createApprovalRequest({
+          business_id: business.id,
+          module: "voucher",
+          record_id: deleteTarget.id,
+          document_no: deleteTarget.voucher_no,
+          action_type: "delete",
+          reason: "Requested from Vouchers list",
+          requester_role: role,
+        });
+        toast.success(`Delete request for ${deleteTarget.voucher_no} sent for approval`);
+      }
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -418,8 +432,11 @@ export default function VoucherList() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Voucher?</AlertDialogTitle>
             <AlertDialogDescription>
-              Voucher <strong>{deleteTarget?.voucher_no}</strong> will be permanently deleted.
-              This cannot be undone.
+              {canDeleteDirectly(role, financialRights) ? (
+                <>Voucher <strong>{deleteTarget?.voucher_no}</strong> will be permanently deleted. This cannot be undone.</>
+              ) : (
+                <>You don't have direct delete access — this will send a delete request for <strong>{deleteTarget?.voucher_no}</strong> to the Approval Center instead.</>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

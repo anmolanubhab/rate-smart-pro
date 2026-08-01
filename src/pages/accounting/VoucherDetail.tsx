@@ -19,6 +19,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canUnlockVouchers, canDeleteDirectly } from "@/lib/permissions";
+import { createApprovalRequest } from "@/lib/approvals";
 import { fmtInr } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
 import { supabase } from "@/integrations/supabase/client";
@@ -66,6 +69,8 @@ export default function VoucherDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { business, role, financialRights } = useBusiness();
+  const voucherLockOpts = { canEditLockedVoucher: canUnlockVouchers(role, financialRights) };
   const fd = useFormatDate();
   const qc = useQueryClient();
 
@@ -102,7 +107,7 @@ export default function VoucherDetail() {
     if (!user?.id || !id) return;
     setBusy(true);
     try {
-      const posted = await postVoucher(user.id, id);
+      const posted = await postVoucher(user.id, id, voucherLockOpts);
       toast.success(`Voucher ${posted.voucher_no} posted.`);
       qc.invalidateQueries({ queryKey: ["voucher-detail", id] });
       qc.invalidateQueries({ queryKey: ["vouchers-list"] });
@@ -118,7 +123,7 @@ export default function VoucherDetail() {
     if (!user?.id || !id) return;
     setBusy(true);
     try {
-      const cancelled = await cancelVoucher(user.id, id, cancelReason.trim() || undefined);
+      const cancelled = await cancelVoucher(user.id, id, cancelReason.trim() || undefined, voucherLockOpts);
       toast.success(`Voucher ${cancelled.voucher_no} cancelled.`);
       qc.invalidateQueries({ queryKey: ["voucher-detail", id] });
       qc.invalidateQueries({ queryKey: ["vouchers-list"] });
@@ -132,13 +137,26 @@ export default function VoucherDetail() {
   };
 
   const handleDelete = async () => {
-    if (!id) return;
+    if (!id || !voucher || !business) return;
     setBusy(true);
     try {
-      await deleteVoucher(id);
-      toast.success("Voucher deleted.");
-      qc.invalidateQueries({ queryKey: ["vouchers-list"] });
-      navigate("/accounting/vouchers");
+      if (canDeleteDirectly(role, financialRights)) {
+        await deleteVoucher(id, voucherLockOpts);
+        toast.success("Voucher deleted.");
+        qc.invalidateQueries({ queryKey: ["vouchers-list"] });
+        navigate("/accounting/vouchers");
+      } else {
+        await createApprovalRequest({
+          business_id: business.id,
+          module: "voucher",
+          record_id: id,
+          document_no: voucher.voucher_no,
+          action_type: "delete",
+          reason: "Requested from Voucher detail page",
+          requester_role: role,
+        });
+        toast.success(`Delete request for ${voucher.voucher_no} sent for approval`);
+      }
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -480,8 +498,11 @@ export default function VoucherDetail() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Voucher?</AlertDialogTitle>
             <AlertDialogDescription>
-              Voucher <strong>{voucher.voucher_no}</strong> will be permanently deleted.
-              This action cannot be undone.
+              {canDeleteDirectly(role, financialRights) ? (
+                <>Voucher <strong>{voucher.voucher_no}</strong> will be permanently deleted. This action cannot be undone.</>
+              ) : (
+                <>You don't have direct delete access — this will send a delete request for <strong>{voucher.voucher_no}</strong> to the Approval Center instead.</>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

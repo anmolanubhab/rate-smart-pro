@@ -30,7 +30,8 @@ import {
 } from "@/lib/orders";
 import { generateInvoiceFromOrder } from "@/lib/salesInvoices";
 import { useBusiness } from "@/hooks/useBusiness";
-import { canGranular } from "@/lib/permissions";
+import { canGranular, canDeleteDirectly } from "@/lib/permissions";
+import { createApprovalRequest } from "@/lib/approvals";
 import { fetchSalesConfig } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
@@ -58,7 +59,7 @@ type SortKey = "latest" | "amount" | "pending" | "party";
 
 const Orders = () => {
   const { user } = useAuth();
-  const { business, role, permissions, loading: businessLoading } = useBusiness();
+  const { business, role, permissions, financialRights, loading: businessLoading } = useBusiness();
   const canApproveOrder = canGranular(role, "order.approve", permissions);
   const fd = useFormatDate();
   const nav = useNavigate();
@@ -179,13 +180,26 @@ const Orders = () => {
   };
 
   const onDelete = async () => {
-    if (!deleteTarget || !user) return;
+    if (!deleteTarget || !user || !business) return;
     setBusy(deleteTarget.id);
     try {
-      await deleteOrder(deleteTarget.id);
-      await logActivity({ userId: user.id, orderId: deleteTarget.id, action: "deleted", description: `Order ${deleteTarget.order_number} deleted` });
-      toast.success(`Order ${deleteTarget.order_number} deleted`);
-      setOrders((prev) => prev.filter((o) => o.id !== deleteTarget.id));
+      if (canDeleteDirectly(role, financialRights)) {
+        await deleteOrder(deleteTarget.id);
+        await logActivity({ userId: user.id, orderId: deleteTarget.id, action: "deleted", description: `Order ${deleteTarget.order_number} deleted` });
+        toast.success(`Order ${deleteTarget.order_number} deleted`);
+        setOrders((prev) => prev.filter((o) => o.id !== deleteTarget.id));
+      } else {
+        await createApprovalRequest({
+          business_id: business.id,
+          module: "order",
+          record_id: deleteTarget.id,
+          document_no: deleteTarget.order_number,
+          action_type: "delete",
+          reason: "Requested from Orders list",
+          requester_role: role,
+        });
+        toast.success(`Delete request for ${deleteTarget.order_number} sent for approval`);
+      }
       setDeleteTarget(null);
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(null); }
@@ -609,12 +623,22 @@ const Orders = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Order {deleteTarget?.order_number}?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone. The order will be permanently removed.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {canDeleteDirectly(role, financialRights) ? (
+                "This action cannot be undone. The order will be permanently removed."
+              ) : (
+                <>You don't have direct delete access — this will send a delete request for <strong>{deleteTarget?.order_number}</strong> to the Approval Center instead.</>
+              )}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={onDelete}>
-              Delete
+            <AlertDialogCancel disabled={busy === deleteTarget?.id}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onDelete}
+              disabled={busy === deleteTarget?.id}
+            >
+              {busy === deleteTarget?.id ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Working…</> : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

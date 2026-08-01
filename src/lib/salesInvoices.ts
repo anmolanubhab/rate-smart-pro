@@ -43,6 +43,7 @@ export async function fetchInvoices(userId: string) {
     .from("sales_invoices")
     .select("*")
     .eq("business_id", biz)
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data || []) as SalesInvoice[];
