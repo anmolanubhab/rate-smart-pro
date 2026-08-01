@@ -9,14 +9,21 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, Plus } from "lucide-react";
+import { Download, Plus, Ban, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { exportSheet } from "@/lib/excelTemplates";
 import InvoiceReturnDialog, { type ReturnKind } from "@/components/returns/InvoiceReturnDialog";
+import { cancelSalesReturn, cancelPurchaseReturn } from "@/lib/returns";
 import { useFormatDate } from "@/lib/dateFormat";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -60,12 +67,15 @@ interface Props {
 
 export default function ReturnsListPanel({ kind, hideHeader }: Props) {
   const { business } = useBusiness();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const fd = useFormatDate();
   const copy = COPY[kind];
   const [rows, setRows] = useState<ReturnRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<ReturnRow | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const load = async () => {
     if (!business) return;
@@ -80,6 +90,22 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
   };
 
   useEffect(() => { load(); }, [business, kind]);
+
+  const handleCancel = async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      if (kind === "sales") await cancelSalesReturn(cancelTarget.id, user?.id);
+      else await cancelPurchaseReturn(cancelTarget.id, user?.id);
+      toast.success(`Return ${cancelTarget.return_number} cancelled — stock reversed`);
+      await load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not cancel return");
+    } finally {
+      setCancelling(false);
+      setCancelTarget(null);
+    }
+  };
 
   const doExport = () => exportSheet(rows.map((r) => ({
     "Return #": r.return_number, Date: r.return_date, [copy.partyLabel]: r.parties?.name,
@@ -118,13 +144,14 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
               <TableHead className="text-right">Amount</TableHead>
               <TableHead>Reason</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>
             ) : rows.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">{copy.emptyLabel}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-sm text-muted-foreground">{copy.emptyLabel}</TableCell></TableRow>
             ) : rows.map((r) => (
               <TableRow
                 key={r.id}
@@ -139,6 +166,18 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
                 <TableCell className="text-right font-semibold">{inr(r.total_amount)}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{r.reason ?? "—"}</TableCell>
                 <TableCell><Badge variant={r.status === "posted" ? "default" : "secondary"}>{r.status}</Badge></TableCell>
+                <TableCell className="text-right">
+                  {r.status !== "cancelled" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                      onClick={(e) => { e.stopPropagation(); setCancelTarget(r); }}
+                    >
+                      <Ban className="h-3.5 w-3.5 mr-1.5" /> Cancel
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -146,6 +185,28 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
       </div>
 
       <InvoiceReturnDialog kind={kind} open={open} onOpenChange={setOpen} onPosted={load} />
+
+      <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Return {cancelTarget?.return_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reverse the stock this return moved and cancel its linked{" "}
+              {kind === "sales" ? "Credit Note" : "Debit Note"} voucher. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>Keep Return</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {cancelling ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Cancelling…</> : "Cancel Return"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
