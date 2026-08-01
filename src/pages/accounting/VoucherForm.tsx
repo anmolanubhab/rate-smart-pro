@@ -23,6 +23,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts, fmtInr } from "@/lib/accounting";
+import { getLedgerAccountOptions, type LedgerOption } from "@/lib/ledgerFiltering";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
 import { canOverrideAdjustmentLedger, canUnlockVouchers } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
@@ -49,6 +50,36 @@ const emptyRow = (): VoucherItem => ({
   credit: 0,
   remarks: "",
 });
+
+// ── which ledger types are selectable in each row, per voucher type ────────
+// null = unrestricted (every active ledger — Journal's own spec, and the
+// fallback for voucher types with no defined convention here).
+type RowFilter = "supplier" | "customer" | "bank_cash" | null;
+
+function getRowFilter(vType: VoucherType, rowIndex: number): RowFilter {
+  switch (vType) {
+    case "Contra":
+      // From Account / To Account — cash or bank only, both sides.
+      return "bank_cash";
+    case "Payment":
+      // Party row is a creditor; every other row is the cash/bank leg.
+      return rowIndex === 0 ? "supplier" : "bank_cash";
+    case "Receipt":
+      // Party row is a debtor; every other row is the cash/bank leg.
+      return rowIndex === 0 ? "customer" : "bank_cash";
+    // Debit Note / Credit Note deliberately NOT restricted here: this
+    // form's "Financial Adjustment" mode covers non-party categories too
+    // (Freight, Discount, Rate Difference, GST Difference, Commission,
+    // Penalty, Interest, ...) whose default ledgers are Expense/Income
+    // accounts, not Sundry Creditors/Debtors -- confirmed live against
+    // note_adjustment_categories. Party-scoped Debit/Credit Notes go
+    // through the separate Material Return flow (create_purchase_return/
+    // create_sales_return), which already only ever touches the invoice's
+    // own supplier/party -- no dropdown to restrict there.
+    default:
+      return null;
+  }
+}
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -231,6 +262,10 @@ export default function VoucherForm() {
   }, [existingVoucher]);
 
   // ── ledger accounts list ─────────────────────────────────────────────────
+  // Full unrestricted list — used for Journal, for rows with no defined
+  // convention (getRowFilter returns null), and as the source list ensuring
+  // ensurePartyLedgers()/seedAccounts() run before anything else queries
+  // ledger_accounts.
   const { data: ledgers = [], isLoading: ledgersLoading } = useQuery({
     queryKey: ["ledgers", user?.id, business?.id],
     enabled: !!user?.id,
@@ -240,6 +275,41 @@ export default function VoucherForm() {
       return fetchLedgersWithBalance(user!.id);
     },
   });
+
+  // Context-aware lists (Purchase/Sales creditor-debtor, Bank/Cash) for the
+  // voucher types that need them — only fetched when actually relevant to
+  // the currently-selected voucher type, filtered at the query level (see
+  // src/lib/ledgerFiltering.ts), never fetch-all-then-filter-in-JS.
+  const rowFilters = [0, 1, 2, 3].map((i) => getRowFilter(vType, i));
+  const needsSupplier = rowFilters.includes("supplier");
+  const needsCustomer = rowFilters.includes("customer");
+  const needsBankCash = rowFilters.includes("bank_cash");
+
+  const { data: supplierLedgers = [] } = useQuery({
+    queryKey: ["ledgers-supplier", user?.id, business?.id],
+    enabled: !!user?.id && needsSupplier,
+    queryFn: () => getLedgerAccountOptions(user!.id, "supplier"),
+  });
+  const { data: customerLedgers = [] } = useQuery({
+    queryKey: ["ledgers-customer", user?.id, business?.id],
+    enabled: !!user?.id && needsCustomer,
+    queryFn: () => getLedgerAccountOptions(user!.id, "customer"),
+  });
+  const { data: bankCashLedgers = [] } = useQuery({
+    queryKey: ["ledgers-bank-cash", user?.id, business?.id],
+    enabled: !!user?.id && needsBankCash,
+    queryFn: () => getLedgerAccountOptions(user!.id, ["bank", "cash"]),
+  });
+
+  /** Which list a given row should offer, based on the current voucher type. */
+  const rowLedgerOptions = (rowIndex: number): (LedgerOption | typeof ledgers[number])[] => {
+    switch (getRowFilter(vType, rowIndex)) {
+      case "supplier": return supplierLedgers;
+      case "customer": return customerLedgers;
+      case "bank_cash": return bankCashLedgers;
+      default: return ledgers;
+    }
+  };
 
   // ── computed totals ──────────────────────────────────────────────────────
   const totals = useMemo(() => calculateTotals(items), [items]);
@@ -600,7 +670,7 @@ export default function VoucherForm() {
                         <SelectValue placeholder={ledgersLoading ? "Loading ledgers…" : "Select ledger…"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {ledgers.map((l) => (
+                        {rowLedgerOptions(idx).map((l) => (
                           <SelectItem key={l.id} value={l.id}>
                             {l.name}
                             {l.group?.name ? ` (${l.group.name})` : ""}

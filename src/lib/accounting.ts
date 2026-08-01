@@ -61,13 +61,19 @@ export async function seedAccounts(userId: string) {
   await callAccountingRpc("seed_accounting_defaults", { _user_id: userId, _business_id: biz });
 }
 
-// Ensures every party (customer/supplier) currently in the `parties` table has a
-// matching row in `ledger_accounts`. Cheap to call repeatedly — `ensure_party_ledger`
-// is idempotent on the backend. Used wherever a ledger picker needs an up-to-date list
-// (e.g. the voucher form), not just on the Ledger Accounts page.
+// Ensures every CLASSIFIED party (preferred_customer or preferred_supplier —
+// see supabase/migrations/20260801040000_ledger_account_type_and_party_classification.sql)
+// currently in the `parties` table has a matching row in `ledger_accounts`.
+// Cheap to call repeatedly — `ensure_party_ledger` is idempotent on the
+// backend (and now a no-op for unclassified parties, so they're excluded
+// here rather than round-tripped for nothing). Used wherever a ledger
+// picker needs an up-to-date list (e.g. the voucher form), not just on the
+// Ledger Accounts page.
 export async function ensurePartyLedgers(userId: string) {
   const biz = getActiveBusinessIdSync();
-  let pq = supabase.from("parties").select("id").eq("user_id", userId);
+  let pq = supabase.from("parties").select("id")
+    .eq("user_id", userId)
+    .or("preferred_customer.eq.true,preferred_supplier.eq.true");
   if (biz) pq = pq.eq("business_id", biz);
   const { data: parties, error } = await pq;
   if (error) throw error;

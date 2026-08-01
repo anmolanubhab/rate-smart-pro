@@ -36,6 +36,10 @@ export interface LedgerOption {
   group_name: string | null;
   account_type: string | null;
   party_id: string | null;
+  /** Mirrors LedgerRow's `group` shape (src/lib/accounting.ts) so callers
+   *  can render `l.group?.name` the same way regardless of which fetcher
+   *  produced the list. */
+  group: { name: string } | null;
 }
 
 /**
@@ -70,6 +74,7 @@ export async function getLedgerAccountOptions(
     party_id: r.party_id,
     group_name: r.account_groups?.name ?? null,
     account_type: r.account_groups?.account_type ?? null,
+    group: r.account_groups?.name ? { name: r.account_groups.name } : null,
   }));
 }
 
@@ -94,5 +99,6 @@ export async function getAllActiveLedgerOptions(userId: string): Promise<LedgerO
     party_id: r.party_id,
     group_name: r.account_groups?.name ?? null,
     account_type: r.account_groups?.account_type ?? null,
+    group: r.account_groups?.name ? { name: r.account_groups.name } : null,
   }));
 }
