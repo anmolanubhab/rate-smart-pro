@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, PlusCircle, Search, Printer } from "lucide-react";
+import { FileText, PlusCircle, Search, Printer, Ban, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { cancelPurchaseInvoice } from "@/lib/purchaseInvoices";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import RecordPurchaseInvoiceDialog from "@/components/purchase/RecordPurchaseInvoiceDialog";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
@@ -39,6 +44,8 @@ export default function PurchaseInvoices() {
   const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
   const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["purchase-invoices", businessId],
@@ -166,6 +173,22 @@ export default function PurchaseInvoices() {
       toast.error(e.message ?? "Could not prepare invoice for printing");
     } finally {
       setPrinting(null);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!viewInvoice) return;
+    setCancelling(true);
+    try {
+      await cancelPurchaseInvoice(viewInvoice.id, user?.id);
+      toast.success(`Invoice ${viewInvoice.invoice_number} cancelled`);
+      setViewInvoice({ ...viewInvoice, status: "cancelled" });
+      qc.invalidateQueries({ queryKey: ["purchase-invoices", businessId] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not cancel invoice");
+    } finally {
+      setCancelling(false);
+      setCancelConfirmOpen(false);
     }
   };
 
@@ -320,6 +343,15 @@ export default function PurchaseInvoices() {
             </div>
           ) : null}
           <DialogFooter>
+            {viewInvoice && viewInvoice.status !== "cancelled" && (
+              <Button
+                variant="outline"
+                className="text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                onClick={() => setCancelConfirmOpen(true)}
+              >
+                <Ban className="h-4 w-4 mr-2" /> Cancel Invoice
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setViewOpen(false)}>Close</Button>
             <Button
               onClick={() => { setViewOpen(false); if (viewInvoice) onPrint({ _id: viewInvoice.id }); }}
@@ -330,6 +362,28 @@ export default function PurchaseInvoices() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={cancelConfirmOpen} onOpenChange={(o) => !o && setCancelConfirmOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Invoice {viewInvoice?.invoice_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark the invoice as cancelled and cancel its linked accounting voucher, if any. If this is a
+              direct invoice (not linked to a GRN), the stock it added will be reversed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>Keep Invoice</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {cancelling ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Cancelling…</> : "Cancel Invoice"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Upload,
   Printer,
+  Ban,
 } from "lucide-react";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
@@ -54,6 +55,7 @@ import {
   savePurchaseOrder,
   approvePurchaseOrder,
   rejectPurchaseOrder,
+  cancelPurchaseOrder,
 } from "@/lib/purchaseOrders";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -463,6 +465,30 @@ export default function CreatePurchaseOrder() {
     }
   };
 
+  const handleCancelPO = async () => {
+    if (!user || !poIdRef.current) return;
+    const reason = window.prompt("Reason for cancelling this Purchase Order? (optional)") ?? "";
+    try {
+      setSaving(true);
+      await cancelPurchaseOrder(poIdRef.current, reason, user.id);
+      await logAudit({
+        business_id: businessId,
+        action: "purchase_order.cancel",
+        entity_type: "purchase_order",
+        entity_id: poIdRef.current,
+        old_value: { status: currentStatus },
+        new_value: { status: "cancelled", reason },
+        reason: reason || null,
+      });
+      setCurrentStatus("cancelled");
+      toast.success("Purchase Order cancelled");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleExport = () => {
     if (!savedPO) { toast.error("Save the PO first to export"); return; }
     exportPOToExcel(savedPO, validItems(), supplier?.name);
@@ -600,8 +626,13 @@ export default function CreatePurchaseOrder() {
               </Button>
             </>
           )}
+          {editMode && currentStatus !== "cancelled" && currentStatus !== "closed" && (
+            <Button size="sm" variant="outline" onClick={handleCancelPO} disabled={saving} className="h-8 text-xs border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700">
+              <Ban className="h-3.5 w-3.5 mr-1" />Cancel PO
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => navigate("/purchase/orders")} className="h-8 text-xs text-muted-foreground">
-            <X className="h-3.5 w-3.5 mr-1" />Cancel
+            <X className="h-3.5 w-3.5 mr-1" />Close
           </Button>
         </div>
       </div>
@@ -1158,13 +1189,24 @@ export default function CreatePurchaseOrder() {
                   </Button>
                 </>
               )}
+              {editMode && currentStatus !== "cancelled" && currentStatus !== "closed" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancelPO}
+                  disabled={saving}
+                  className="flex-1 min-w-[100px] border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                >
+                  <Ban className="h-3.5 w-3.5 mr-1.5" />Cancel PO
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate("/purchase/orders")}
                 className="flex-1 min-w-[100px] text-muted-foreground"
               >
-                <X className="h-3.5 w-3.5 mr-1.5" />Cancel
+                <X className="h-3.5 w-3.5 mr-1.5" />Close
               </Button>
             </div>
           </div>

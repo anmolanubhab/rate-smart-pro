@@ -1,6 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
+import { adjustProductBatchQty } from "@/lib/productBatches";
+import { deleteProductSerial } from "@/lib/productSerials";
 
-export type GRNStatus = "draft" | "received" | "closed";
+export type GRNStatus = "draft" | "received" | "closed" | "cancelled";
 
 export interface GoodsReceipt {
   id: string;
@@ -75,6 +77,104 @@ export async function fetchGoodsReceipt(id: string): Promise<GoodsReceipt> {
     supplier_name: r.parties?.name ?? null,
     warehouse_name: r.warehouses?.warehouse_name ?? null,
   } as GoodsReceipt;
+}
+
+/**
+ * Cancel a GRN, reversing everything grn_apply_stock() applied on receipt:
+ * - Decrements products.stock by each item's accepted_qty.
+ * - Reverses batch qty top-ups (goods_receipt_item_batches) and deletes
+ *   serials this GRN created (goods_receipt_item_serials) -- serials are
+ *   newly minted by receiving, unlike dispatch which flips existing ones,
+ *   so cancelling deletes them rather than reverting a status.
+ * - Recomputes the linked PO's status from its remaining non-cancelled GRNs.
+ * Blocks if a non-cancelled Purchase Invoice was generated from this GRN --
+ * cancel that first (same "block, don't cascade" stance as the delete-time
+ * DB trigger, kept consistent between delete and cancel).
+ */
+export async function cancelGRN(grnId: string): Promise<void> {
+  const { data: linkedInvoice } = await supabase
+    .from("purchase_invoices")
+    .select("invoice_number")
+    .eq("goods_receipt_id", grnId)
+    .neq("status", "cancelled")
+    .limit(1)
+    .maybeSingle();
+  if (linkedInvoice) {
+    throw new Error(`This GRN is linked to Purchase Invoice ${(linkedInvoice as any).invoice_number}. Cancel the invoice first.`);
+  }
+
+  const { data: grn, error: grnErr } = await supabase
+    .from("goods_receipts")
+    .select("status, purchase_order_id")
+    .eq("id", grnId)
+    .single();
+  if (grnErr) throw grnErr;
+  if (!grn) throw new Error("GRN not found.");
+  if (grn.status === "cancelled") throw new Error("GRN already cancelled.");
+
+  const { data: rawItems, error: itemsErr } = await supabase
+    .from("goods_receipt_items")
+    .select(`
+      product_id, accepted_qty,
+      goods_receipt_item_batches(batch_id, qty),
+      goods_receipt_item_serials(serial_id)
+    `)
+    .eq("goods_receipt_id", grnId);
+  if (itemsErr) throw itemsErr;
+
+  for (const item of (rawItems ?? []) as any[]) {
+    if (item.product_id && Number(item.accepted_qty) > 0) {
+      const { data: product } = await supabase.from("products").select("stock").eq("id", item.product_id).single();
+      const before = Number(product?.stock) || 0;
+      const after = Math.max(0, before - Number(item.accepted_qty));
+      await supabase.from("products").update({ stock: after }).eq("id", item.product_id);
+    }
+    for (const b of item.goods_receipt_item_batches ?? []) {
+      await adjustProductBatchQty(b.batch_id, -Number(b.qty));
+    }
+    for (const s of item.goods_receipt_item_serials ?? []) {
+      await deleteProductSerial(s.serial_id);
+    }
+  }
+
+  if (grn.purchase_order_id) {
+    const { data: poItems } = await supabase
+      .from("purchase_order_items")
+      .select("qty")
+      .eq("purchase_order_id", grn.purchase_order_id);
+    const totalOrdered = (poItems ?? []).reduce((s: number, r: any) => s + Number(r.qty), 0);
+
+    const { data: otherGrns } = await supabase
+      .from("goods_receipts")
+      .select("id")
+      .eq("purchase_order_id", grn.purchase_order_id)
+      .eq("status", "received")
+      .neq("id", grnId);
+    const otherGrnIds = (otherGrns ?? []).map((g: any) => g.id);
+
+    let totalAccepted = 0;
+    if (otherGrnIds.length) {
+      const { data: otherItems } = await supabase
+        .from("goods_receipt_items")
+        .select("accepted_qty")
+        .in("goods_receipt_id", otherGrnIds);
+      totalAccepted = (otherItems ?? []).reduce((s: number, r: any) => s + Number(r.accepted_qty), 0);
+    }
+
+    // "ordered" is the resting state for a confirmed PO with zero goods
+    // received -- we don't know the exact pre-receipt status (draft/
+    // pending_approval/approved/ordered), so this is the closest reasonable
+    // rollback rather than leaving it incorrectly at "received".
+    const newStatus =
+      totalAccepted >= totalOrdered && totalOrdered > 0 ? "received"
+      : totalAccepted > 0 ? "partially_received"
+      : "ordered";
+
+    await supabase.from("purchase_orders").update({ status: newStatus } as any).eq("id", grn.purchase_order_id);
+  }
+
+  const { error: updErr } = await supabase.from("goods_receipts").update({ status: "cancelled" }).eq("id", grnId);
+  if (updErr) throw updErr;
 }
 
 export async function fetchGoodsReceiptItems(goodsReceiptId: string): Promise<GoodsReceiptItem[]> {

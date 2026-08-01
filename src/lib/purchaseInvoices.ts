@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
-import { createVoucher, postVoucher, type VoucherItem } from "@/lib/voucherService";
+import { createVoucher, postVoucher, cancelVoucher, type VoucherItem } from "@/lib/voucherService";
 
 export type PurchaseInvoiceStatus = "unpaid" | "partially_paid" | "paid" | "cancelled";
 
@@ -506,6 +506,73 @@ async function postDirectInvoiceStock(
       reference_type: "purchase_invoice",
       notes: `Direct Purchase Invoice ${invoiceNumber} (no GRN)`,
     });
+  }
+}
+
+/**
+ * Cancel a purchase invoice.
+ * - GRN-linked invoices never touched stock themselves (the GRN's own
+ *   grn_apply_stock() trigger did) -- cancelling the GRN separately reverses
+ *   that. Only a DIRECT invoice (no goods_receipt_id) posted stock itself
+ *   via postDirectInvoiceStock(), so only that case needs a stock reversal
+ *   here, mirroring the same product.stock adjustment + inventory_movements
+ *   log in reverse.
+ * - Cancels the linked ledger voucher too (best-effort, same pattern as
+ *   cancelInvoice() on the sales side).
+ */
+export async function cancelPurchaseInvoice(invoiceId: string, userId?: string): Promise<void> {
+  const businessId = getActiveBusinessIdSync();
+
+  const { data: inv, error: le } = await supabase
+    .from("purchase_invoices")
+    .select("status, voucher_id, goods_receipt_id, invoice_number")
+    .eq("id", invoiceId)
+    .single();
+  if (le) throw le;
+  if (!inv) throw new Error("Purchase invoice not found.");
+  if (inv.status === "cancelled") throw new Error("Invoice already cancelled.");
+
+  if (!inv.goods_receipt_id) {
+    const items = await fetchInvoiceItems(invoiceId);
+    for (const item of items) {
+      if (!item.product_id) continue;
+      const qtyToReverse = item.stock_qty ?? item.qty;
+      if (!(qtyToReverse > 0)) continue;
+
+      const { data: product, error: prodErr } = await supabase
+        .from("products").select("stock").eq("id", item.product_id).single();
+      if (prodErr) continue;
+
+      const before = Number(product?.stock) || 0;
+      const after = Math.max(0, before - qtyToReverse);
+      await supabase.from("products").update({ stock: after }).eq("id", item.product_id);
+
+      if (businessId) {
+        await supabase.from("inventory_movements" as any).insert({
+          user_id: userId ?? null,
+          business_id: businessId,
+          product_id: item.product_id,
+          movement_type: "purchase_invoice_cancel",
+          qty: -qtyToReverse,
+          stock_before: before,
+          stock_after: after,
+          reference_id: invoiceId,
+          reference_type: "purchase_invoice",
+          notes: `Purchase Invoice ${inv.invoice_number} cancelled`,
+        });
+      }
+    }
+  }
+
+  const { error } = await supabase.from("purchase_invoices").update({ status: "cancelled" }).eq("id", invoiceId);
+  if (error) throw error;
+
+  if (inv.voucher_id && userId) {
+    try {
+      await cancelVoucher(userId, inv.voucher_id, "Purchase invoice cancelled");
+    } catch (e: any) {
+      console.error("cancelPurchaseInvoice: could not cancel linked voucher:", e.message);
+    }
   }
 }
 

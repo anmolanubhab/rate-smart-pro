@@ -322,6 +322,32 @@ export async function approvePurchaseOrder(id: string, userId: string): Promise<
   if (error) throw error;
 }
 
+/**
+ * Cancel a Purchase Order. Blocks if any GRN was ever recorded against it
+ * (GRN has no "safely ignorable" state to filter on — same stance as the
+ * delete-time DB trigger) since goods already received against a PO means
+ * cancelling it no longer makes sense; cancel/reverse the GRN(s) first.
+ */
+export async function cancelPurchaseOrder(id: string, reason: string, userId: string): Promise<void> {
+  const { count: grnCount, error: grnErr } = await supabase
+    .from("goods_receipts")
+    .select("id", { count: "exact", head: true })
+    .eq("purchase_order_id", id);
+  if (grnErr) throw grnErr;
+  if ((grnCount ?? 0) > 0) {
+    throw new Error("Goods have already been received against this Purchase Order. Cancel the Goods Receipt(s) first.");
+  }
+
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({
+      status: "cancelled",
+      remarks: reason ? `Cancelled: ${reason}` : undefined,
+    } as any)
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export async function rejectPurchaseOrder(id: string, userId: string, reason?: string | null): Promise<void> {
   const { error } = await supabase
     .from("purchase_orders")

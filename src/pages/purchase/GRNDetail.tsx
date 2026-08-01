@@ -1,22 +1,31 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Printer } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Printer, Ban, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { fetchGoodsReceipt, fetchGoodsReceiptItems, type GRNStatus } from "@/lib/goodsReceipts";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { fetchGoodsReceipt, fetchGoodsReceiptItems, cancelGRN, type GRNStatus } from "@/lib/goodsReceipts";
 import { useFormatDate } from "@/lib/dateFormat";
 
 const STATUS_TONE: Record<GRNStatus, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
   received: "border-blue-500/40 text-blue-600 bg-blue-500/10",
   closed: "border-emerald-500/40 text-emerald-600 bg-emerald-500/10",
+  cancelled: "border-destructive/40 text-destructive bg-destructive/10",
 };
 
 export default function GRNDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const fd = useFormatDate();
+  const qc = useQueryClient();
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const { data: grn, isLoading: loadingGrn, error } = useQuery({
     queryKey: ["grn-detail", id],
@@ -28,6 +37,22 @@ export default function GRNDetail() {
     enabled: !!id,
     queryFn: () => fetchGoodsReceiptItems(id!),
   });
+
+  const handleCancel = async () => {
+    if (!id) return;
+    setCancelling(true);
+    try {
+      await cancelGRN(id);
+      toast.success(`GRN ${grn?.grn_number} cancelled — stock reversed`);
+      qc.invalidateQueries({ queryKey: ["grn-detail", id] });
+      qc.invalidateQueries({ queryKey: ["grn-items", id] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not cancel GRN");
+    } finally {
+      setCancelling(false);
+      setCancelConfirmOpen(false);
+    }
+  };
 
   useEffect(() => {
     document.title = grn ? `GRN ${grn.grn_number} — RD Pro` : "GRN — RD Pro";
@@ -65,9 +90,21 @@ export default function GRNDetail() {
         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => navigate("/purchase/grn")}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back to GRN list
         </Button>
-        <Button variant="outline" size="sm" onClick={() => window.print()}>
-          <Printer className="h-3.5 w-3.5 mr-1" /> Print
-        </Button>
+        <div className="flex items-center gap-2">
+          {grn.status !== "cancelled" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+              onClick={() => setCancelConfirmOpen(true)}
+            >
+              <Ban className="h-3.5 w-3.5 mr-1" /> Cancel GRN
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
+            <Printer className="h-3.5 w-3.5 mr-1" /> Print
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-border bg-card shadow-soft overflow-hidden">
@@ -165,6 +202,28 @@ export default function GRNDetail() {
           <span className="font-semibold">Created: </span>{new Date(grn.created_at).toLocaleString("en-IN")}
         </div>
       </div>
+
+      <AlertDialog open={cancelConfirmOpen} onOpenChange={(o) => !o && setCancelConfirmOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel GRN {grn.grn_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reverse the stock, batch, and serial numbers this receipt added, and recalculate the linked
+              Purchase Order's status. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>Keep GRN</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {cancelling ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Cancelling…</> : "Cancel GRN"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
