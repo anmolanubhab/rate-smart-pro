@@ -22,7 +22,11 @@ outstanding_balance?: number;
 notes?: string | null;
 party_group_id?: string | null;
 use_group_defaults?: boolean;
+preferred_customer?: boolean;
+preferred_supplier?: boolean;
 }
+
+export type PartyType = "customer" | "supplier";
 
 export interface Segment {
 id: string;
@@ -38,16 +42,28 @@ segment_id: string;
 discount: number;
 }
 
-export async function fetchParties(userId: string) {
+/**
+ * `partyType` scopes the result to only Customers or only Suppliers, per
+ * `parties.preferred_customer`/`preferred_supplier` (see
+ * supabase/migrations/20260801040000_ledger_account_type_and_party_classification.sql
+ * for how these get set). Omit it to keep the old unfiltered behavior for
+ * screens that aren't a Purchase/Sales party picker (e.g. Party master
+ * list, reports).
+ */
+export async function fetchParties(userId: string, partyType?: PartyType) {
 const biz = getActiveBusinessIdSync();
 
 if (!biz) return [];
 
-const { data, error } = await supabase
+let query = supabase
 .from("parties")
 .select("*")
-.eq("business_id", biz)
-.order("name", { ascending: true });
+.eq("business_id", biz);
+
+if (partyType === "customer") query = query.eq("preferred_customer", true);
+else if (partyType === "supplier") query = query.eq("preferred_supplier", true);
+
+const { data, error } = await query.order("name", { ascending: true });
 
 if (error) throw error;
 return (data || []) as Party[];
