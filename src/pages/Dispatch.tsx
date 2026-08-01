@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Truck, Save, Package, CheckCircle2, XCircle, FileText, AlertCircle } from "lucide-react";
+import { Truck, Save, Package, CheckCircle2, XCircle, FileText, AlertCircle, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,6 +75,11 @@ const Dispatch = () => {
 
   // Cancel dialog
   const [cancelTarget, setCancelTarget] = useState<{ id: string; dispatch_number: string } | null>(null);
+
+  // View dialog
+  const [viewDispatch, setViewDispatch] = useState<any>(null);
+  const [viewItems, setViewItems] = useState<any[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
 
   // packing
   const [autoPackingSlip, setAutoPackingSlip] = useState(true);
@@ -278,7 +284,7 @@ const Dispatch = () => {
     try {
       const { data: items } = await supabase
         .from("dispatch_items")
-        .select("part_number, description, dispatched_qty, order_items(part_number, description)")
+        .select("part_number, product_name, dispatched_qty, order_items(part_number, description)")
         .eq("dispatch_id", d.id);
       const { data: biz } = await supabase
         .from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number")
@@ -316,7 +322,7 @@ const Dispatch = () => {
         },
         items: (items as any[] ?? []).map((it) => ({
           partNumber: it.part_number ?? it.order_items?.part_number ?? "",
-          description: it.description ?? it.order_items?.description ?? "",
+          description: it.product_name ?? it.order_items?.description ?? "",
           qty: Number(it.dispatched_qty) || 0,
           warehouse: warehouseName(d.warehouse_id),
         })),
@@ -335,7 +341,7 @@ const Dispatch = () => {
     try {
       const { data: items } = await supabase
         .from("dispatch_items")
-        .select("part_number, description, dispatched_qty, order_items(part_number, description)")
+        .select("part_number, product_name, dispatched_qty, order_items(part_number, description)")
         .eq("dispatch_id", d.id);
       const { data: biz } = await supabase
         .from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number")
@@ -375,7 +381,7 @@ const Dispatch = () => {
         },
         items: (items as any[] ?? []).map((it) => ({
           partNumber: it.part_number ?? it.order_items?.part_number ?? "",
-          description: it.description ?? it.order_items?.description ?? "",
+          description: it.product_name ?? it.order_items?.description ?? "",
           qty: Number(it.dispatched_qty) || 0,
           warehouse: warehouseName(d.warehouse_id),
         })),
@@ -395,6 +401,25 @@ const Dispatch = () => {
     if (error) { toast.error(error.message); return; }
     toast.success("Shipment status updated");
     reload();
+  };
+
+  // ── View Dispatch ────────────────────────────────────────────────────────
+  const onView = async (d: any) => {
+    setViewDispatch(d);
+    setViewItems([]);
+    setViewLoading(true);
+    try {
+      const { data: items, error } = await supabase
+        .from("dispatch_items")
+        .select("part_number, product_name, dispatched_qty, rate, total, order_items(part_number, description)")
+        .eq("dispatch_id", d.id);
+      if (error) throw error;
+      setViewItems(items ?? []);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not load dispatch items");
+    } finally {
+      setViewLoading(false);
+    }
   };
 
   // ── Cancel Dispatch ─────────────────────────────────────────────────────────
@@ -684,6 +709,14 @@ const Dispatch = () => {
                       </td>
                       <td className="px-3 py-1.5 text-muted-foreground">{d.notes}</td>
                       <td className="px-3 py-1.5 text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-xs"
+                          onClick={() => onView(d)}
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-0.5" />View
+                        </Button>
                         {d.status === "confirmed" && (
                           <Button
                             size="sm"
@@ -724,6 +757,57 @@ const Dispatch = () => {
           )}
         </div>
       </div>
+
+      {/* ── View Dispatch Dialog ────────────────────────────────────────────── */}
+      <Dialog open={!!viewDispatch} onOpenChange={(o) => !o && setViewDispatch(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Dispatch {viewDispatch?.dispatch_number}</DialogTitle>
+          </DialogHeader>
+          {viewDispatch && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-2">
+                <div><span className="text-muted-foreground">Date</span><p className="font-medium">{fd(viewDispatch.dispatch_date)}</p></div>
+                <div><span className="text-muted-foreground">Status</span><div className="mt-0.5"><DispatchStatusBadge status={(viewDispatch.status as DispatchStatus) || "draft"} /></div></div>
+                <div><span className="text-muted-foreground">Order</span><p className="font-mono text-xs">{viewDispatch.orders?.order_number ?? "—"}</p></div>
+                <div><span className="text-muted-foreground">Party</span><p className="font-medium">{viewDispatch.orders?.party_name ?? "—"}</p></div>
+              </div>
+              {viewDispatch.notes && <p className="text-xs text-muted-foreground">{viewDispatch.notes}</p>}
+              <div className="rounded-lg border overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50 uppercase text-muted-foreground">
+                    <tr>
+                      <th className="text-left px-2 py-1.5">Part</th>
+                      <th className="text-left px-2 py-1.5">Description</th>
+                      <th className="text-right px-2 py-1.5">Qty</th>
+                      <th className="text-right px-2 py-1.5">Rate</th>
+                      <th className="text-right px-2 py-1.5">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewLoading ? (
+                      <tr><td colSpan={5} className="text-center py-4 text-muted-foreground">Loading…</td></tr>
+                    ) : viewItems.length === 0 ? (
+                      <tr><td colSpan={5} className="text-center py-4 text-muted-foreground">No items</td></tr>
+                    ) : viewItems.map((it, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-2 py-1 font-mono">{it.part_number ?? it.order_items?.part_number}</td>
+                        <td className="px-2 py-1">{it.product_name ?? it.order_items?.description}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{Number(it.dispatched_qty).toFixed(2)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">₹{Number(it.rate ?? 0).toFixed(2)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">₹{Number(it.total ?? 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewDispatch(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Cancel Confirmation Dialog ─────────────────────────────────────── */}
       <AlertDialog open={!!cancelTarget} onOpenChange={(open) => !open && setCancelTarget(null)}>
