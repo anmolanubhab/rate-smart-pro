@@ -237,6 +237,24 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
       grand_total: totals.grand_total,
     }).eq("id", orderId);
     if (error) throw error;
+
+    // Item rewrite (delete+reinsert) would CASCADE-DELETE any dispatch_items
+    // already recorded against these order_items (dispatch_items.order_item_id
+    // is ON DELETE CASCADE) -- silently destroying dispatch history. Block it
+    // once any dispatch exists, mirroring the same guard savePurchaseOrder()
+    // already has for GRN-linked purchase orders. Header fields above have
+    // already saved at this point; only the item rewrite is blocked here.
+    const { count: dispatchCount, error: dispErr } = await supabase
+      .from("dispatches")
+      .select("id", { count: "exact", head: true })
+      .eq("order_id", orderId);
+    if (dispErr) throw dispErr;
+    if ((dispatchCount ?? 0) > 0) {
+      throw new Error(
+        "Header details were saved, but line items can't be changed once dispatch has started against this order. Create a new order for additional items."
+      );
+    }
+
     // wipe items and re-insert (simple, draft orders only)
     await supabase.from("order_items").delete().eq("order_id", orderId);
   }
