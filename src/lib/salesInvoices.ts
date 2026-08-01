@@ -519,7 +519,7 @@ export async function cancelInvoice(invoiceId: string, userId?: string) {
 }
 
 /**
- * Delete an invoice permanently (for draft invoices only).
+ * Delete an invoice permanently (draft or already-cancelled invoices only).
  * - Removes line items
  * - Reverses dispatch_items' invoiced_qty
  * - Reverts dispatch to 'draft' if dispatch-linked
@@ -533,12 +533,13 @@ export async function deleteInvoice(invoiceId: string) {
     .eq("id", invoiceId)
     .single();
 
-  // Docstring says draft-only, but nothing enforced that — a posted
-  // invoice already has an auto-posted ledger voucher (see
-  // sales_invoice_autopost trigger) that this function never reverses,
-  // so deleting it would silently orphan those ledger entries.
-  if ((inv as any)?.status && (inv as any).status !== "draft") {
-    throw new Error("Only draft invoices can be deleted. Cancel a posted invoice instead.");
+  // A posted invoice has an auto-posted ledger voucher (see
+  // sales_invoice_autopost trigger) that this function never reverses, so
+  // deleting it directly would silently orphan those ledger entries — it
+  // must be cancelled first (cancelInvoice cancels the voucher too). Once
+  // cancelled, there's no active accounting entry left, so deletion is safe.
+  if ((inv as any)?.status === "posted") {
+    throw new Error("Only draft or cancelled invoices can be deleted. Cancel a posted invoice first.");
   }
 
   // Delete line items first (FK constraint)

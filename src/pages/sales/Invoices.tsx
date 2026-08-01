@@ -444,7 +444,7 @@ export default function InvoicesPage() {
                               )}
                               <DropdownMenuItem
                                 onClick={() => setDeleteTarget(i)}
-                                disabled={i.status !== "draft"}
+                                disabled={i.status === "posted"}
                                 className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 className="h-4 w-4 mr-2" /> Delete Invoice

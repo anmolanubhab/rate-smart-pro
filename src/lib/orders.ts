@@ -334,6 +334,28 @@ export async function generatePendingOrder(userId: string, partyId: string) {
 }
 
 export async function deleteOrder(id: string) {
+  const { data: invoice } = await supabase
+    .from("sales_invoices")
+    .select("invoice_number")
+    .eq("order_id", id)
+    .neq("status", "cancelled")
+    .limit(1)
+    .maybeSingle();
+  if (invoice) {
+    throw new Error(`This Sales Order is linked to Invoice ${invoice.invoice_number}. Cancel/Delete the invoice first.`);
+  }
+
+  const { data: dispatch } = await supabase
+    .from("dispatches")
+    .select("dispatch_number")
+    .eq("order_id", id)
+    .neq("status", "cancelled")
+    .limit(1)
+    .maybeSingle();
+  if (dispatch) {
+    throw new Error(`This Sales Order is linked to Dispatch ${(dispatch as any).dispatch_number}. Cancel it first.`);
+  }
+
   const { error } = await supabase.from("orders").delete().eq("id", id);
   if (error) throw error;
 }
