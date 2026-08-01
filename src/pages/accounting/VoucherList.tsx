@@ -31,6 +31,7 @@ import {
 } from "@/lib/voucherService";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { canUnlockVouchers } from "@/lib/permissions";
 import { fmtInr } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
 
@@ -83,7 +84,8 @@ function exportCSV(rows: Voucher[]) {
 export default function VoucherList() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, role, financialRights } = useBusiness();
+  const voucherLockOpts = { canEditLockedVoucher: canUnlockVouchers(role, financialRights) };
   const fd = useFormatDate();
   const qc = useQueryClient();
 
@@ -140,7 +142,7 @@ export default function VoucherList() {
     if (!deleteTarget) return;
     setBusy(true);
     try {
-      await deleteVoucher(deleteTarget.id);
+      await deleteVoucher(deleteTarget.id, voucherLockOpts);
       toast.success(`Voucher ${deleteTarget.voucher_no} deleted.`);
       qc.invalidateQueries({ queryKey: ["vouchers-list"] });
     } catch (e: any) {
@@ -155,7 +157,7 @@ export default function VoucherList() {
     if (!postTarget || !user?.id) return;
     setBusy(true);
     try {
-      await postVoucher(user.id, postTarget.id);
+      await postVoucher(user.id, postTarget.id, voucherLockOpts);
       toast.success(`Voucher ${postTarget.voucher_no} posted successfully.`);
       qc.invalidateQueries({ queryKey: ["vouchers-list"] });
     } catch (e: any) {

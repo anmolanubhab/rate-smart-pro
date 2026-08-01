@@ -129,8 +129,15 @@ function requireBusiness(): string {
   return biz;
 }
 
-/** Throws if the given voucher date falls on/before the business's accounting lock date. */
-async function assertNotLocked(businessId: string, voucherDate: string): Promise<void> {
+/** Passed by callers that already resolved the current user's "Can Edit Locked Voucher" right. */
+export interface VoucherLockOptions {
+  canEditLockedVoucher?: boolean;
+}
+
+/** Throws if the given voucher date falls on/before the business's accounting lock date,
+ *  unless the caller has the "Can Edit Locked Voucher" financial right. */
+async function assertNotLocked(businessId: string, voucherDate: string, canOverride = false): Promise<void> {
+  if (canOverride) return;
   const lock = await fetchLockDate(businessId);
   if (isDateLocked(voucherDate, lock)) {
     throw new Error(
@@ -244,7 +251,8 @@ export function validateVoucher(
  */
 export async function createVoucher(
   userId: string,
-  input: CreateVoucherInput
+  input: CreateVoucherInput,
+  opts: VoucherLockOptions = {}
 ): Promise<Voucher> {
   const businessId = requireBusiness();
 
@@ -252,7 +260,7 @@ export async function createVoucher(
   const check = validateVoucher(input);
   if (!check.valid) throw new Error(check.errors.join(" | "));
 
-  await assertNotLocked(businessId, input.voucher_date);
+  await assertNotLocked(businessId, input.voucher_date, opts.canEditLockedVoucher);
 
   // Generate voucher number via existing RPC
   const dbType = typeToDb(input.voucher_type);
@@ -304,7 +312,8 @@ export async function createVoucher(
  */
 export async function updateVoucher(
   userId: string,
-  input: UpdateVoucherInput
+  input: UpdateVoucherInput,
+  opts: VoucherLockOptions = {}
 ): Promise<Voucher> {
   const businessId = requireBusiness();
 
@@ -321,8 +330,8 @@ export async function updateVoucher(
     throw new Error("Only draft vouchers can be edited.");
   }
 
-  await assertNotLocked(businessId, existing.voucher_date);
-  if (input.voucher_date) await assertNotLocked(businessId, input.voucher_date);
+  await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
+  if (input.voucher_date) await assertNotLocked(businessId, input.voucher_date, opts.canEditLockedVoucher);
 
   const patch: Record<string, any> = {
     updated_at: new Date().toISOString(),
@@ -373,7 +382,8 @@ export async function updateVoucher(
  */
 export async function postVoucher(
   userId: string,
-  voucherId: string
+  voucherId: string,
+  opts: VoucherLockOptions = {}
 ): Promise<Voucher> {
   const businessId = requireBusiness();
 
@@ -395,7 +405,7 @@ export async function postVoucher(
   );
   if (!check.valid) throw new Error(check.errors.join(" | "));
 
-  await assertNotLocked(businessId, voucher.voucher_date);
+  await assertNotLocked(businessId, voucher.voucher_date, opts.canEditLockedVoucher);
 
   const { data: vRow, error } = await supabase
     .from("vouchers")
@@ -426,7 +436,8 @@ export async function postVoucher(
 export async function cancelVoucher(
   userId: string,
   voucherId: string,
-  reason?: string
+  reason?: string,
+  opts: VoucherLockOptions = {}
 ): Promise<Voucher> {
   const businessId = requireBusiness();
 
@@ -436,7 +447,7 @@ export async function cancelVoucher(
     throw new Error("Only posted vouchers can be cancelled.");
   }
 
-  await assertNotLocked(businessId, voucher.voucher_date);
+  await assertNotLocked(businessId, voucher.voucher_date, opts.canEditLockedVoucher);
 
   const { data: vRow, error } = await supabase
     .from("vouchers")
@@ -463,7 +474,7 @@ export async function cancelVoucher(
  * Hard-deletes a draft voucher and its items.
  * Posted vouchers should be cancelled, not deleted.
  */
-export async function deleteVoucher(voucherId: string): Promise<void> {
+export async function deleteVoucher(voucherId: string, opts: VoucherLockOptions = {}): Promise<void> {
   const businessId = requireBusiness();
 
   const { data: existing } = await supabase
@@ -478,7 +489,7 @@ export async function deleteVoucher(voucherId: string): Promise<void> {
       "Posted vouchers cannot be deleted. Cancel it first."
     );
   }
-  if (existing?.voucher_date) await assertNotLocked(businessId, existing.voucher_date);
+  if (existing?.voucher_date) await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
 
   // Delete items first (FK constraint)
   await supabase

@@ -46,14 +46,14 @@ export function RequestDeleteDialog({
   beforeSnapshot?: Record<string, unknown>;
   onCompleted?: () => void;
 }) {
-  const { business, role } = useBusiness();
+  const { business, role, financialRights } = useBusiness();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [preset, setPreset] = useState<string>(PRESET_REASONS[0]);
   const [detail, setDetail] = useState("");
 
   const needsApproval = requiresApprovalForMutation(role);
-  const canDirect = canDeleteDirectly(role);
+  const canDirect = canDeleteDirectly(role, financialRights);
 
   const mut = useMutation({
     mutationFn: async () => {

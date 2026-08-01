@@ -18,11 +18,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Plus, Search, Clock, X, Copy, RefreshCw, Trash2, Info, KeyRound, Mail,
-  ShieldCheck, Smartphone, Monitor, Lock,
+  ShieldCheck, Smartphone, Monitor, Lock, Banknote,
 } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 import { ownerMinimumViolation, diffBusiness } from "@/lib/companySafety";
-import { isOwner, canGranular } from "@/lib/permissions";
+import { isOwner, canGranular, type FinancialRights } from "@/lib/permissions";
+import { DASHBOARD_FOCUS_OPTIONS, type DashboardFocus } from "@/lib/dashboardFocus";
 import { usePermissionMode } from "@/lib/permissionMode";
 import {
   listInvitations, sendInvitation, resendInvitation, cancelInvitation, deleteInvitation,
@@ -42,13 +43,23 @@ const ROLE_LABELS: Record<BusinessRole, string> = {
   salesman: "Sales", staff: "Staff", store_manager: "Store", viewer: "Viewer",
 };
 
+const defaultFinancialRights: Required<FinancialRights> = {
+  can_edit_locked_voucher: false, can_backdate_voucher: false, can_delete_voucher: false,
+  can_change_gst: false, can_change_rate: false, can_change_discount: false,
+  can_change_cost_price: false, can_view_profit: false,
+};
+
 type MemberForm = {
   full_name: string; username: string; email: string; mobile: string;
   role: BusinessRole; department: string; status: "active" | "inactive"; notes: string;
+  financial_rights: FinancialRights;
+  dashboard_focus: DashboardFocus | null;
 } & LoginControlSettings;
 const emptyMember: MemberForm = {
   full_name: "", username: "", email: "", mobile: "",
   role: "viewer", department: "", status: "active", notes: "",
+  financial_rights: { ...defaultFinancialRights },
+  dashboard_focus: null,
   ...defaultLoginControl,
 };
 
@@ -106,7 +117,7 @@ export default function CompanyUsers() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("business_users")
-        .select("id, user_id, role, status, full_name, username, email, mobile, department, notes, created_at, login_enabled, allow_mobile_login, allow_desktop_login, require_password_change, require_2fa, single_session_only, office_only_login, registered_device_only, max_devices")
+        .select("id, user_id, role, status, full_name, username, email, mobile, department, notes, created_at, login_enabled, allow_mobile_login, allow_desktop_login, require_password_change, require_2fa, single_session_only, office_only_login, registered_device_only, max_devices, financial_rights, dashboard_focus")
         .eq("business_id", business!.id)
         .order("created_at", { ascending: true });
       if (error) throw error;
@@ -242,6 +253,8 @@ export default function CompanyUsers() {
       office_only_login: r.office_only_login ?? false,
       registered_device_only: r.registered_device_only ?? false,
       max_devices: r.max_devices ?? null,
+      financial_rights: { ...defaultFinancialRights, ...(r.financial_rights ?? {}) },
+      dashboard_focus: (r.dashboard_focus ?? null) as DashboardFocus | null,
       office_hours_start: null,
       office_hours_end: null,
       allowed_days: null,
@@ -278,12 +291,15 @@ export default function CompanyUsers() {
       office_only_login: memberForm.office_only_login,
       registered_device_only: memberForm.registered_device_only,
       max_devices: memberForm.max_devices,
+      financial_rights: memberForm.financial_rights,
+      dashboard_focus: memberForm.dashboard_focus,
     } as never).eq("id", editingId);
     if (error) { toast.error(error.message); return; }
     const diffKeys: (keyof MemberForm)[] = [
       "full_name", "username", "email", "mobile", "role", "department", "status", "notes",
       "login_enabled", "allow_mobile_login", "allow_desktop_login", "require_password_change",
       "require_2fa", "single_session_only", "office_only_login", "registered_device_only", "max_devices",
+      "dashboard_focus",
     ];
     const changes = original ? diffBusiness(original, memberForm, diffKeys) : [];
     await logAudit({
@@ -777,6 +793,18 @@ export default function CompanyUsers() {
               </Select>
             </Field>
             <Field label="Department"><Input value={memberForm.department} onChange={(e) => setMemberForm({ ...memberForm, department: e.target.value })} /></Field>
+            <Field label="Dashboard Focus">
+              <Select
+                value={memberForm.dashboard_focus ?? "none"}
+                onValueChange={(v) => setMemberForm({ ...memberForm, dashboard_focus: v === "none" ? null : (v as DashboardFocus) })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No preference</SelectItem>
+                  {DASHBOARD_FOCUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="Status" className="md:col-span-2">
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
                 <span className="text-sm">{memberForm.status === "active" ? "Active" : "Inactive"}</span>
@@ -803,6 +831,40 @@ export default function CompanyUsers() {
               <Input type="number" min={0} value={memberForm.max_devices ?? ""} placeholder="No limit"
                 onChange={(e) => setMemberForm({ ...memberForm, max_devices: e.target.value ? Number(e.target.value) : null })} />
             </Field>
+          </div>
+
+          <Separator className="my-2" />
+          <h3 className="text-sm font-semibold flex items-center gap-1.5"><Banknote className="h-4 w-4" /> Financial Rights</h3>
+          <div className="grid md:grid-cols-2 gap-3">
+            <ToggleRow icon={Lock} label="Can Edit Locked Voucher"
+              checked={!!memberForm.financial_rights.can_edit_locked_voucher}
+              onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_edit_locked_voucher: v } })} />
+            <ToggleRow icon={Trash2} label="Can Delete Voucher"
+              checked={!!memberForm.financial_rights.can_delete_voucher}
+              onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_delete_voucher: v } })} />
+            <ToggleRow icon={Banknote} label="Can View Profit"
+              checked={!!memberForm.financial_rights.can_view_profit}
+              onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_view_profit: v } })} />
+            <ToggleRow icon={Clock} label="Can Backdate Voucher"
+              checked={!!memberForm.financial_rights.can_backdate_voucher}
+              onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_backdate_voucher: v } })}
+              note="Enforcement lands in a later phase — flag is stored now." />
+            <ToggleRow icon={Banknote} label="Can Change GST"
+              checked={!!memberForm.financial_rights.can_change_gst}
+              onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_change_gst: v } })}
+              note="Enforcement lands in a later phase — flag is stored now." />
+            <ToggleRow icon={Banknote} label="Can Change Rate"
+              checked={!!memberForm.financial_rights.can_change_rate}
+              onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_change_rate: v } })}
+              note="Enforcement lands in a later phase — flag is stored now." />
+            <ToggleRow icon={Banknote} label="Can Change Discount"
+              checked={!!memberForm.financial_rights.can_change_discount}
+              onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_change_discount: v } })}
+              note="Enforcement lands in a later phase — flag is stored now." />
+            <ToggleRow icon={Banknote} label="Can Change Cost Price"
+              checked={!!memberForm.financial_rights.can_change_cost_price}
+              onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_change_cost_price: v } })}
+              note="Enforcement lands in a later phase — flag is stored now." />
           </div>
 
           <DialogFooter>
