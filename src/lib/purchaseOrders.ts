@@ -227,6 +227,25 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
     if (error) throw error;
     poId = data!.id;
   } else {
+    // Fetched once up front: line items are deleted and reinserted wholesale
+    // below (not diffed), which would silently sever
+    // goods_receipt_items.purchase_order_item_id (ON DELETE SET NULL) once a
+    // GRN has been recorded against this PO — disconnecting the receiving
+    // history from its PO line. Changing who the PO was ordered from after
+    // goods were already received against it would similarly corrupt the
+    // supplier ledger / receiving history, so that field is blocked too.
+    const [{ count: grnCount, error: grnErr }, { data: existingPO, error: existingErr }] = await Promise.all([
+      supabase.from("goods_receipts").select("id", { count: "exact", head: true }).eq("purchase_order_id", poId),
+      supabase.from("purchase_orders").select("supplier_id").eq("id", poId).single(),
+    ]);
+    if (grnErr) throw grnErr;
+    if (existingErr) throw existingErr;
+    const hasGRN = (grnCount ?? 0) > 0;
+
+    if (hasGRN && existingPO && input.supplier_id !== existingPO.supplier_id) {
+      throw new Error("Supplier can't be changed once goods have been received against this PO.");
+    }
+
     const { error } = await supabase
       .from("purchase_orders")
       .update({
@@ -251,18 +270,7 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
       .eq("id", poId);
     if (error) throw error;
 
-    // Line items are deleted and reinserted wholesale below (not diffed),
-    // which would silently sever goods_receipt_items.purchase_order_item_id
-    // (ON DELETE SET NULL) once a GRN has been recorded against this PO —
-    // disconnecting the receiving history from its PO line. Header fields
-    // above have already saved at this point; only the item rewrite is
-    // blocked here.
-    const { count: grnCount, error: grnErr } = await supabase
-      .from("goods_receipts")
-      .select("id", { count: "exact", head: true })
-      .eq("purchase_order_id", poId);
-    if (grnErr) throw grnErr;
-    if ((grnCount ?? 0) > 0) {
+    if (hasGRN) {
       throw new Error(
         "Header details were saved, but line items can't be changed once goods have been received against this PO. Create a new PO for additional items."
       );

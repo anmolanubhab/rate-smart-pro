@@ -144,6 +144,12 @@ export default function CreatePurchaseOrder() {
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<POStatus>("draft");
+  // Once goods have been received against this PO, changing who it was
+  // ordered from would corrupt the supplier ledger / receiving history --
+  // same "can't rewrite the past" reasoning as the item-edit block in
+  // savePurchaseOrder(), applied to the one header field where it actually
+  // matters (dates/remarks/transport can still be corrected).
+  const [hasGRN, setHasGRN] = useState(false);
   const [savedPO, setSavedPO] = useState<PurchaseOrder | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -237,6 +243,12 @@ export default function CreatePurchaseOrder() {
           setEditMode(true);
           poIdRef.current = po.id;
           setItems(its.length ? its : Array.from({ length: 5 }, blankPOItem));
+
+          const { count: grnCount } = await supabase
+            .from("goods_receipts")
+            .select("id", { count: "exact", head: true })
+            .eq("purchase_order_id", editId);
+          setHasGRN((grnCount ?? 0) > 0);
         } catch (e: any) {
           toast.error(e.message);
         }
@@ -679,11 +691,15 @@ export default function CreatePurchaseOrder() {
             </div>
 
             {/* Supplier */}
-            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">Supplier</div>
+            <div className="col-span-1 md:col-span-2 text-muted-foreground self-center">
+              Supplier
+              {hasGRN && <span className="block text-[10px] normal-case text-amber-600">Locked — goods already received</span>}
+            </div>
             <div className="col-span-1 md:col-span-10 relative">
               <Input
                 ref={supplierInputRef}
                 value={supplierQuery}
+                disabled={hasGRN}
                 onChange={(e) => {
                   setSupplierQuery(e.target.value);
                   setSupplierOpen(true);
@@ -697,7 +713,7 @@ export default function CreatePurchaseOrder() {
                 onBlur={() => setTimeout(() => setSupplierOpen(false), 150)}
                 onKeyDown={handleSupplierKeyDown}
                 placeholder="Type to search supplier…"
-                className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+                className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
               />
               {supplierOpen && supplierResults.length > 0 && (
                 <div className="absolute z-50 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto">
