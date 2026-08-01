@@ -12,6 +12,7 @@ import {
   PurchaseInvoiceItem, blankInvoiceItem, computeInvoiceItem, computeInvoiceTotals,
   savePurchaseInvoice, fetchGrnItemsForInvoice,
 } from "@/lib/purchaseInvoices";
+import { fetchParties } from "@/lib/parties";
 
 interface Props {
   open: boolean;
@@ -36,9 +37,9 @@ export default function RecordPurchaseInvoiceDialog({ open, onOpenChange, busine
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!open || !businessId) return;
+    if (!open || !businessId || !userId) return;
     (async () => {
-      const { data: partyData } = await supabase.from("parties").select("id, name").eq("business_id", businessId).order("name");
+      const partyData = await fetchParties(userId, "supplier");
       setSuppliers(partyData ?? []);
       const { data: grnData } = await supabase
         .from("goods_receipts")
@@ -49,7 +50,7 @@ export default function RecordPurchaseInvoiceDialog({ open, onOpenChange, busine
         .limit(100);
       setGrns(grnData ?? []);
     })();
-  }, [open, businessId]);
+  }, [open, businessId, userId]);
 
   // Reset form whenever dialog opens fresh
   useEffect(() => {

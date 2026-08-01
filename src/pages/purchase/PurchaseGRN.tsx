@@ -84,7 +84,7 @@ export default function PurchaseGRN() {
     const fetchMasterData = async () => {
       try {
         const [{ data: partyData }, { data: warehouseData }, { data: poData }] = await Promise.all([
-          supabase.from('parties').select('id, name').eq('business_id', businessId).order('name'),
+          supabase.from('parties').select('id, name').eq('business_id', businessId).eq('preferred_supplier', true).order('name'),
           supabase.from('warehouses').select('id, warehouse_name, address, is_default, status')
             .eq('business_id', businessId)
             .order('is_default', { ascending: false })

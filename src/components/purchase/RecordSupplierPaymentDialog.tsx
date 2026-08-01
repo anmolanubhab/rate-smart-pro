@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { recordSupplierPayment, fetchOutstandingInvoices, PaymentMode } from "@/lib/supplierPayments";
+import { fetchParties } from "@/lib/parties";
 
 interface Props {
   open: boolean;
@@ -38,12 +39,12 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!open || !businessId) return;
+    if (!open || !businessId || !userId) return;
     (async () => {
-      const { data } = await supabase.from("parties").select("id, name").eq("business_id", businessId).order("name");
+      const data = await fetchParties(userId, "supplier");
       setSuppliers(data ?? []);
     })();
-  }, [open, businessId]);
+  }, [open, businessId, userId]);
 
   useEffect(() => {
     if (open) {

@@ -203,7 +203,7 @@ export default function CreatePurchaseOrder() {
     if (authLoading) return;
     if (!user || !businessId) return;
 
-    fetchParties(user.id).then(setSuppliers).catch(() => {});
+    fetchParties(user.id, "supplier").then(setSuppliers).catch(() => {});
     supabase
       .from("warehouses")
       .select("id, warehouse_name")
