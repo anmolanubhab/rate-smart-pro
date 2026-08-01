@@ -325,7 +325,7 @@ const Orders = () => {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Button className="gradient-primary text-white border-0" onClick={() => nav("/create-order")}>
+          <Button className="gradient-primary text-white border-0" onClick={() => nav("/orders/new")}>
             <Plus className="h-4 w-4" /> Create Order
           </Button>
           <Button variant="outline" onClick={() => exportOrders(filtered)}>
@@ -411,7 +411,7 @@ const Orders = () => {
             <ShoppingCart className="h-10 w-10 mx-auto mb-3 opacity-40" />
             <p className="font-medium">No orders found</p>
             <p className="text-sm mt-1">Try clearing filters or create a new order.</p>
-            <Button className="mt-4 gradient-primary text-white border-0" onClick={() => nav("/create-order")}>
+            <Button className="mt-4 gradient-primary text-white border-0" onClick={() => nav("/orders/new")}>
               <Plus className="h-4 w-4" /> Create Order
             </Button>
           </div>
