@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { hasRole } from "@/lib/permissions";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import CreateQuotationDialog from "@/components/sales/CreateQuotationDialog";
@@ -34,7 +35,12 @@ export default function Quotations() {
   useEffect(() => { document.title = "Quotations — RD Pro"; }, []);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, role } = useBusiness();
+  // Matches the quotations table's own UPDATE RLS policy role set exactly
+  // (quotations_writer_role_gate_upd) -- the DB already restricts writes to
+  // these roles; this just gives non-writer roles a clean read-only view
+  // instead of an update that silently fails at the RLS layer.
+  const canEditStatus = hasRole(role, ["owner", "admin", "manager", "accountant", "salesman"]);
   const businessId = business?.id ?? getActiveBusinessIdSync();
   const fd = useFormatDate();
   const qc = useQueryClient();
@@ -85,6 +91,10 @@ export default function Quotations() {
   };
 
   const handleStatusChange = async (q: Quotation, status: QuotationStatus) => {
+    if (!canEditStatus) {
+      toast.error("You don't have permission to change quotation status");
+      return;
+    }
     try {
       await updateQuotationStatus(q.id, status);
       toast.success(`Quotation ${q.quotation_number} marked ${status}`);
@@ -192,7 +202,7 @@ export default function Quotations() {
                 <TableCell>{fd(q.valid_until)}</TableCell>
                 <TableCell className="text-right font-semibold">{inr(q.grand_total)}</TableCell>
                 <TableCell>
-                  {q.status === "converted" || q.status === "expired" ? (
+                  {q.status === "converted" || q.status === "expired" || !canEditStatus ? (
                     <Badge variant={STATUS_VARIANT[q.status] ?? "secondary"}>{q.status}</Badge>
                   ) : (
                     <Select value={q.status} onValueChange={(v) => handleStatusChange(q, v as QuotationStatus)}>
