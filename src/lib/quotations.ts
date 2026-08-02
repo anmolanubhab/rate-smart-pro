@@ -125,6 +125,11 @@ export async function updateQuotationStatus(id: string, status: QuotationStatus)
   if (error) throw error;
 }
 
+export async function deleteQuotation(id: string): Promise<void> {
+  const { error } = await supabase.from("quotations" as never).delete().eq("id", id);
+  if (error) throw error;
+}
+
 /**
  * Converts an accepted quotation into a real Sales Order by reusing
  * saveOrder() — the same order-creation path CreateOrder.tsx uses — rather

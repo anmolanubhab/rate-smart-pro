@@ -1,20 +1,24 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusCircle, ArrowRightCircle, Printer, Search } from "lucide-react";
+import { PlusCircle, ArrowRightCircle, Printer, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { hasRole } from "@/lib/permissions";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import CreateQuotationDialog from "@/components/sales/CreateQuotationDialog";
-import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, updateQuotationStatus, type Quotation, type QuotationStatus } from "@/lib/quotations";
+import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, updateQuotationStatus, deleteQuotation, type Quotation, type QuotationStatus } from "@/lib/quotations";
 import { useFormatDate } from "@/lib/dateFormat";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
@@ -56,6 +60,8 @@ export default function Quotations() {
   const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Quotation | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["quotations", businessId],
@@ -101,6 +107,21 @@ export default function Quotations() {
       qc.invalidateQueries({ queryKey: ["quotations", businessId] });
     } catch (e: any) {
       toast.error(e.message ?? "Could not update status");
+    }
+  };
+
+  const onDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteQuotation(deleteTarget.id);
+      toast.success(`Quotation ${deleteTarget.quotation_number} deleted`);
+      qc.invalidateQueries({ queryKey: ["quotations", businessId] });
+      setDeleteTarget(null);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to delete quotation");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -240,6 +261,15 @@ export default function Quotations() {
                         {converting === q.id ? "Converting…" : "Convert to Order"}
                       </Button>
                     )}
+                    {canEditStatus && q.status !== "converted" && (
+                      <Button
+                        size="sm" variant="outline"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteTarget(q)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -247,6 +277,27 @@ export default function Quotations() {
           </TableBody>
         </Table>
       </div>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Quotation {deleteTarget?.quotation_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the quotation and its line items. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              disabled={deleting}
+              onClick={(e) => { e.preventDefault(); onDelete(); }}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <CreateQuotationDialog
         open={dialogOpen}
