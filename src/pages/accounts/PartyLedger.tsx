@@ -14,6 +14,7 @@ import {
   Search, Calendar, Share2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import {
   fetchPartyLedger,
   fmtInr,
@@ -104,6 +105,7 @@ export default function PartyLedger() {
   const { partyId } = useParams<{ partyId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { business } = useBusiness();
   const fd = useFormatDate();
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -178,21 +180,41 @@ export default function PartyLedger() {
     <>
       {/* ── Print styles ──
           src/styles/print.css is a GLOBAL stylesheet (imported once in
-          main.tsx) that already does `body * { visibility: hidden !important; }`
-          app-wide, only re-revealing content inside an `.invoice-print`/
-          `.invoice-entry`/`.print-copy-run` wrapper (the convention every
-          other print flow in this app already uses — CreateOrder.tsx,
-          Invoices.tsx, VoucherDetail.tsx). This page's own local
-          `#party-ledger-print-root` override was losing that specificity
-          fight (no `!important`, and even with one, redeclaring the same
-          mechanism locally per-page is exactly the duplication the shared
-          stylesheet exists to avoid) — so it printed a blank page
-          regardless of which selector targeted the root. Using the shared
-          `.invoice-print` class instead makes this page follow the same
-          proven mechanism rather than reinventing it. */}
-      <style>{`.print-only { display: none; } @media print { .print-only { display: block !important; } }`}</style>
+          main.tsx) that does `body * { visibility: hidden !important; }`
+          app-wide, only re-revealing content inside an `.invoice-entry`/
+          `.invoice-print`/`.print-copy-run` wrapper (the convention every
+          other print flow in this app already uses). `.invoice-entry` is
+          the variant that also forces wide tables to print in full instead
+          of clipping at the screen's horizontal-scroll width
+          (`.invoice-entry .overflow-x-auto { overflow: visible !important; }`,
+          `.invoice-entry table { width: 100% !important; font-size: 10px !important; }`)
+          — exactly what this page's transaction table needs, so it's
+          reused here rather than `.invoice-print` (which has no such
+          table-widening rules and left columns cut off). The rest below
+          reshapes the on-screen dashboard cards into a plain bordered
+          report layout for print (no shadows/rounded corners/2-col
+          reflow), plus a letterhead only shown when printing. */}
+      <style>{`
+        .print-only { display: none; }
+        @media print {
+          .print-only { display: block !important; }
+          #party-ledger-print-root { font-size: 12px; }
+          #party-ledger-print-root .rounded-2xl { border-radius: 0 !important; box-shadow: none !important; }
+          #party-ledger-print-root .shadow-soft { box-shadow: none !important; }
+          #party-ledger-print-root .kpi-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 8px !important; }
+          #party-ledger-print-root table { font-size: 10px !important; }
+        }
+      `}</style>
 
-      <div id="party-ledger-print-root" className="invoice-print max-w-7xl mx-auto space-y-5 animate-fade-in-up">
+      <div id="party-ledger-print-root" className="invoice-entry max-w-7xl mx-auto space-y-5 animate-fade-in-up">
+        {/* ── Print-only letterhead ── */}
+        <div className="print-only mb-4 pb-2 border-b-2 border-black">
+          <div className="flex items-baseline justify-between">
+            <span className="font-bold text-lg">{business?.business_name ?? business?.firm_name ?? "Business"}</span>
+            {business?.gst_number && <span className="text-xs">GSTIN: {business.gst_number}</span>}
+          </div>
+          <p className="text-sm font-semibold mt-1">Party Ledger Statement</p>
+        </div>
 
         {/* ── Top Action Bar ── */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 no-print">
@@ -308,7 +330,7 @@ export default function PartyLedger() {
         {ledger && (
           <>
             {/* ── KPI Cards ── */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="kpi-grid grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
                 <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Opening Balance</p>
                 <p className={`font-display text-2xl font-bold mt-2 tabular-nums ${toneClass(openingBalance)}`}>
