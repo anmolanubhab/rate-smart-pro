@@ -17,11 +17,16 @@ export interface Quotation {
   valid_until: string | null;
   party_id: string | null;
   party_name: string | null;
+  party_snapshot?: any;
+  billing_address?: string | null;
+  shipping_address?: string | null;
+  ref_no?: string | null;
   salesman: string | null;
   remarks: string | null;
   subtotal: number;
   discount_total: number;
   gst_total: number;
+  shipping_charges?: number;
   grand_total: number;
   status: QuotationStatus;
   converted_order_id: string | null;
@@ -36,6 +41,12 @@ export interface Quotation {
 /** A converted quotation stays deletable once its order is gone or cancelled. */
 export function isQuotationDeletable(q: Quotation): boolean {
   return q.status !== "converted" || !q.converted_order_id || q.order_status === "cancelled";
+}
+
+/** True once valid_until has passed and the quotation hasn't already moved on. */
+export function isQuotationExpired(q: Quotation): boolean {
+  if (!q.valid_until || q.status === "converted" || q.status === "rejected") return false;
+  return new Date(q.valid_until) < new Date(new Date().toDateString());
 }
 
 export async function nextQuotationNumber(businessId: string): Promise<string> {
@@ -57,6 +68,12 @@ export async function fetchQuotations(businessId: string): Promise<Quotation[]> 
   })) as unknown as Quotation[];
 }
 
+export async function fetchQuotationById(id: string): Promise<Quotation> {
+  const { data, error } = await supabase.from("quotations" as never).select("*").eq("id", id).single();
+  if (error) throw error;
+  return data as unknown as Quotation;
+}
+
 export async function fetchQuotationItems(quotationId: string): Promise<QuotationItem[]> {
   const { data, error } = await supabase
     .from("quotation_items" as never)
@@ -69,49 +86,90 @@ export async function fetchQuotationItems(quotationId: string): Promise<Quotatio
 
 export interface SaveQuotationInput {
   userId: string;
+  id?: string;
   party_id: string;
   party_name: string;
+  party_snapshot?: any;
+  billing_address?: string | null;
+  shipping_address?: string | null;
+  ref_no?: string | null;
   quotation_date: string;
   valid_until?: string | null;
   salesman?: string | null;
   remarks?: string | null;
+  status?: QuotationStatus;
+  shipping_charges?: number;
   items: QuotationItem[];
 }
 
+/** Create-or-update, mirroring saveOrder()'s shape in src/lib/orders.ts — an id means edit-in-place (delete+reinsert items) instead of insert. */
 export async function saveQuotation(input: SaveQuotationInput): Promise<Quotation> {
   const businessId = getActiveBusinessIdSync();
   if (!businessId) throw new Error("No active business selected");
 
-  const totals = computeTotals(input.items);
-  const quotationNumber = await nextQuotationNumber(businessId);
+  const totals = computeTotals(input.items, input.shipping_charges || 0);
+  let quotationId = input.id;
 
-  const { data: row, error } = await supabase
-    .from("quotations" as never)
-    .insert({
-      business_id: businessId,
-      user_id: input.userId,
-      quotation_number: quotationNumber,
-      quotation_date: input.quotation_date,
-      valid_until: input.valid_until || null,
-      party_id: input.party_id,
-      party_name: input.party_name,
-      salesman: input.salesman || null,
-      remarks: input.remarks || null,
-      subtotal: totals.subtotal,
-      discount_total: totals.discount_total,
-      gst_total: totals.gst_total,
-      grand_total: totals.grand_total,
-      status: "draft",
-    } as never)
-    .select()
-    .single();
-  if (error) throw error;
-  const quotation = row as unknown as Quotation;
+  if (!quotationId) {
+    const quotationNumber = await nextQuotationNumber(businessId);
+    const { data: row, error } = await supabase
+      .from("quotations" as never)
+      .insert({
+        business_id: businessId,
+        user_id: input.userId,
+        quotation_number: quotationNumber,
+        quotation_date: input.quotation_date,
+        valid_until: input.valid_until || null,
+        party_id: input.party_id,
+        party_name: input.party_name,
+        party_snapshot: input.party_snapshot ?? null,
+        billing_address: input.billing_address ?? null,
+        shipping_address: input.shipping_address ?? null,
+        ref_no: input.ref_no ?? null,
+        salesman: input.salesman || null,
+        remarks: input.remarks || null,
+        subtotal: totals.subtotal,
+        discount_total: totals.discount_total,
+        gst_total: totals.gst_total,
+        shipping_charges: input.shipping_charges ?? 0,
+        grand_total: totals.grand_total,
+        status: input.status ?? "draft",
+      } as never)
+      .select()
+      .single();
+    if (error) throw error;
+    quotationId = (row as any).id;
+  } else {
+    const { error } = await supabase
+      .from("quotations" as never)
+      .update({
+        quotation_date: input.quotation_date,
+        valid_until: input.valid_until || null,
+        party_id: input.party_id,
+        party_name: input.party_name,
+        party_snapshot: input.party_snapshot ?? null,
+        billing_address: input.billing_address ?? null,
+        shipping_address: input.shipping_address ?? null,
+        ref_no: input.ref_no ?? null,
+        salesman: input.salesman || null,
+        remarks: input.remarks || null,
+        subtotal: totals.subtotal,
+        discount_total: totals.discount_total,
+        gst_total: totals.gst_total,
+        shipping_charges: input.shipping_charges ?? 0,
+        grand_total: totals.grand_total,
+        ...(input.status ? { status: input.status } : {}),
+      } as never)
+      .eq("id", quotationId);
+    if (error) throw error;
+
+    await supabase.from("quotation_items" as never).delete().eq("quotation_id", quotationId);
+  }
 
   const validItems = input.items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
   if (validItems.length) {
     const rows = validItems.map((it, idx) => ({
-      quotation_id: quotation.id,
+      quotation_id: quotationId,
       product_id: it.product_id,
       part_number: it.part_number,
       description: it.description,
@@ -129,12 +187,32 @@ export async function saveQuotation(input: SaveQuotationInput): Promise<Quotatio
     if (itemsErr) throw itemsErr;
   }
 
-  return quotation;
+  return fetchQuotationById(quotationId!);
 }
 
 export async function updateQuotationStatus(id: string, status: QuotationStatus): Promise<void> {
   const { error } = await supabase.from("quotations" as never).update({ status } as never).eq("id", id);
   if (error) throw error;
+}
+
+/** Mirrors duplicateOrder() in src/lib/orders.ts — deep-copies header + items, resets status to draft and the date to today. */
+export async function duplicateQuotation(id: string, userId: string): Promise<Quotation> {
+  const original = await fetchQuotationById(id);
+  const items = await fetchQuotationItems(id);
+  return saveQuotation({
+    userId,
+    quotation_date: new Date().toISOString().slice(0, 10),
+    party_id: original.party_id!,
+    party_name: original.party_name!,
+    party_snapshot: original.party_snapshot,
+    billing_address: original.billing_address,
+    shipping_address: original.shipping_address,
+    salesman: original.salesman,
+    remarks: `Duplicated from ${original.quotation_number}`,
+    status: "draft",
+    shipping_charges: original.shipping_charges,
+    items: items.map((it) => ({ ...it, id: undefined, quotation_id: undefined })),
+  });
 }
 
 export async function deleteQuotation(id: string): Promise<void> {

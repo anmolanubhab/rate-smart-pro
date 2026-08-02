@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusCircle, ArrowRightCircle, Printer, Search, Trash2 } from "lucide-react";
+import { PlusCircle, ArrowRightCircle, Printer, Search, Trash2, MoreHorizontal, Pencil, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -17,8 +20,10 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { hasRole } from "@/lib/permissions";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { supabase } from "@/integrations/supabase/client";
-import CreateQuotationDialog from "@/components/sales/CreateQuotationDialog";
-import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, updateQuotationStatus, deleteQuotation, isQuotationDeletable, type Quotation, type QuotationStatus } from "@/lib/quotations";
+import {
+  fetchQuotations, fetchQuotationItems, convertQuotationToOrder, updateQuotationStatus, deleteQuotation,
+  duplicateQuotation, isQuotationDeletable, isQuotationExpired, type Quotation, type QuotationStatus,
+} from "@/lib/quotations";
 import { useFormatDate } from "@/lib/dateFormat";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
@@ -48,8 +53,8 @@ export default function Quotations() {
   const businessId = business?.id ?? getActiveBusinessIdSync();
   const fd = useFormatDate();
   const qc = useQueryClient();
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [converting, setConverting] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
   const [printing, setPrinting] = useState<string | null>(null);
   const [printData, setPrintData] = useState<{
     company: any; party: any; meta: any; items: PrintItem[];
@@ -107,6 +112,21 @@ export default function Quotations() {
       qc.invalidateQueries({ queryKey: ["quotations", businessId] });
     } catch (e: any) {
       toast.error(e.message ?? "Could not update status");
+    }
+  };
+
+  const onDuplicate = async (q: Quotation) => {
+    if (!user) return;
+    setDuplicating(q.id);
+    try {
+      const clone = await duplicateQuotation(q.id, user.id);
+      toast.success(`Quotation duplicated as ${clone.quotation_number}`);
+      qc.invalidateQueries({ queryKey: ["quotations", businessId] });
+      navigate(`/sales/quotations/edit/${clone.id}`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not duplicate quotation");
+    } finally {
+      setDuplicating(null);
     }
   };
 
@@ -168,7 +188,7 @@ export default function Quotations() {
           <h1 className="text-2xl font-bold mt-1">Quotations</h1>
           <p className="text-sm text-muted-foreground mt-1">Send price quotes to customers before they commit to a Sales Order.</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button onClick={() => navigate("/sales/quotations/new")}>
           <PlusCircle className="h-4 w-4 mr-2" />New Quotation
         </Button>
       </div>
@@ -223,32 +243,27 @@ export default function Quotations() {
                 <TableCell>{fd(q.valid_until)}</TableCell>
                 <TableCell className="text-right font-semibold">{inr(q.grand_total)}</TableCell>
                 <TableCell>
-                  {q.status === "converted" || q.status === "expired" || !canEditStatus ? (
-                    <Badge variant={STATUS_VARIANT[q.status] ?? "secondary"}>{q.status}</Badge>
-                  ) : (
-                    <Select value={q.status} onValueChange={(v) => handleStatusChange(q, v as QuotationStatus)}>
-                      <SelectTrigger className="h-7 w-28 text-xs">
-                        <Badge variant={STATUS_VARIANT[q.status] ?? "secondary"} className="pointer-events-none">{q.status}</Badge>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="draft">draft</SelectItem>
-                        <SelectItem value="sent">sent</SelectItem>
-                        <SelectItem value="accepted">accepted</SelectItem>
-                        <SelectItem value="rejected">rejected</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {q.status === "converted" || q.status === "expired" || !canEditStatus ? (
+                      <Badge variant={STATUS_VARIANT[q.status] ?? "secondary"}>{q.status}</Badge>
+                    ) : (
+                      <Select value={q.status} onValueChange={(v) => handleStatusChange(q, v as QuotationStatus)}>
+                        <SelectTrigger className="h-7 w-28 text-xs">
+                          <Badge variant={STATUS_VARIANT[q.status] ?? "secondary"} className="pointer-events-none">{q.status}</Badge>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="draft">draft</SelectItem>
+                          <SelectItem value="sent">sent</SelectItem>
+                          <SelectItem value="accepted">accepted</SelectItem>
+                          <SelectItem value="rejected">rejected</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {isQuotationExpired(q) && <Badge variant="destructive" className="text-[10px]">Expired</Badge>}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <Button
-                      size="sm" variant="outline"
-                      disabled={printing === q.id}
-                      onClick={() => onPrint(q)}
-                    >
-                      <Printer className="h-3.5 w-3.5 mr-1.5" />
-                      {printing === q.id ? "Preparing…" : "Print"}
-                    </Button>
                     {q.status === "converted" ? (
                       <span className="text-xs text-muted-foreground">Converted</span>
                     ) : (
@@ -261,15 +276,32 @@ export default function Quotations() {
                         {converting === q.id ? "Converting…" : "Convert to Order"}
                       </Button>
                     )}
-                    {canEditStatus && isQuotationDeletable(q) && (
-                      <Button
-                        size="sm" variant="outline"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setDeleteTarget(q)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="icon" variant="ghost" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem onClick={() => navigate(`/sales/quotations/edit/${q.id}`)}>
+                          <Pencil className="h-4 w-4 mr-2" /> Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={duplicating === q.id} onClick={() => onDuplicate(q)}>
+                          <Copy className="h-4 w-4 mr-2" /> Duplicate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={printing === q.id} onClick={() => onPrint(q)}>
+                          <Printer className="h-4 w-4 mr-2" /> {printing === q.id ? "Preparing…" : "Print"}
+                        </DropdownMenuItem>
+                        {canEditStatus && isQuotationDeletable(q) && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => setDeleteTarget(q)} className="text-destructive focus:text-destructive">
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </TableCell>
               </TableRow>
@@ -298,13 +330,6 @@ export default function Quotations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <CreateQuotationDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        userId={user?.id ?? null}
-        onSaved={() => qc.invalidateQueries({ queryKey: ["quotations", businessId] })}
-      />
 
       {printData && printProfile && (
         <PrintCopyDialog

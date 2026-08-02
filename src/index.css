@@ -128,6 +128,30 @@
     --sidebar-border: 220 4% 20%;
     --sidebar-ring: 243 75% 65%;
   }
+
+  /* Quotation pages — same indigo system, amber/orange accent instead of
+     indigo, so the page reads as "you're on a Quotation" at a glance. Only
+     overrides the primary-accent variables the invoice-entry page actually
+     uses (--primary*, --gradient-primary, --ring); everything else (card,
+     background, borders) is untouched. */
+  .theme-quotation {
+    --primary: 24 95% 53%;
+    --primary-hover: 20 90% 48%;
+    --primary-light: 33 100% 96%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 27 96% 61%;
+    --ring: 24 95% 53%;
+    --gradient-primary: linear-gradient(135deg, hsl(24 95% 53%), hsl(38 92% 50%));
+  }
+
+  .dark .theme-quotation {
+    --primary: 27 96% 61%;
+    --primary-hover: 24 95% 53%;
+    --primary-light: 20 60% 20%;
+    --primary-foreground: 20 39% 11%;
+    --primary-glow: 31 97% 68%;
+    --ring: 27 96% 61%;
+  }
 }
 
 @layer base {

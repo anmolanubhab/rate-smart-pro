@@ -151,6 +151,16 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["quote", "estimate", "proforma"],
   },
   {
+    id: "sales-quotations-new",
+    title: "New Quotation",
+    description: "Start a new quotation",
+    route: "/sales/quotations/new",
+    icon: PlusSquare,
+    module: "Sales",
+    quickAction: { label: "New Quotation", shortcut: "⌘⌥N" },
+    keywords: ["quote", "estimate", "proforma"],
+  },
+  {
     id: "orders-new",
     title: "Create Order",
     description: "Start a new sales order",

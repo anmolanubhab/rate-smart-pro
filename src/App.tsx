@@ -74,6 +74,7 @@ const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 const ReceivePayment = lazy(() => import("./pages/sales/ReceivePayment"));
 const PickingList = lazy(() => import("./pages/sales/PickingList"));
 const Quotations = lazy(() => import("./pages/sales/Quotations"));
+const CreateQuotation = lazy(() => import("./pages/sales/CreateQuotation"));
 const SalesReturns = lazy(() => import("./pages/sales/SalesReturns"));
 const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
@@ -248,6 +249,8 @@ const App = () => (
               <Route path="/sales/receive-payment" element={L(<ReceivePayment />)} />
               <Route path="/sales/picking-list" element={L(<PickingList />)} />
               <Route path="/sales/quotations" element={L(<Quotations />)} />
+              <Route path="/sales/quotations/new" element={L(<CreateQuotation />)} />
+              <Route path="/sales/quotations/edit/:id" element={L(<CreateQuotation />)} />
               <Route path="/sales/returns" element={L(<SalesReturns />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
