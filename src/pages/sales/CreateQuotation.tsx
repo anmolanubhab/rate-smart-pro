@@ -4,9 +4,8 @@ import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, ArrowRightCircle } f
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { fetchParties, Party } from "@/lib/parties";
 import { searchProducts, Product } from "@/lib/products";
 import { computeItem, computeTotals, OrderItem } from "@/lib/orders";
@@ -19,6 +18,15 @@ import {
   convertQuotationToOrder, type QuotationStatus,
 } from "@/lib/quotations";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/documentEngine/DocumentRoot";
+import { DocumentToolbar, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
+import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
+import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
+import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
+import { DocumentGridTable, DocumentGridPrintTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
+import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
+import { useDocumentGridNavigation } from "@/hooks/useDocumentGridNavigation";
+import { useDocumentShortcuts } from "@/hooks/useDocumentShortcuts";
 
 /** Extended row that also carries HSN/Rack for the Tally-style UI (not persisted — mirrors CreateOrder.tsx's Row). */
 type Row = OrderItem & { hsn?: string; rack?: string };
@@ -35,6 +43,33 @@ const fmt = (n: number) =>
 const COLS = ["part", "desc", "hsn", "gst", "rack", "qty", "mrp", "disc"] as const;
 type Col = (typeof COLS)[number];
 
+const GRID_COLUMNS: DocumentGridColumn[] = [
+  { key: "part", header: "Part No.", widthClass: "min-w-[120px]" },
+  { key: "desc", header: "Description", widthClass: "min-w-[180px]" },
+  { key: "hsn", header: "HSN/SAC", widthClass: "w-20" },
+  { key: "gst", header: "GST %", align: "right", widthClass: "w-14" },
+  { key: "rack", header: "Rack", widthClass: "w-14" },
+  { key: "qty", header: "Quantity", align: "right", widthClass: "w-16" },
+  { key: "unit", header: "Unit", widthClass: "w-14" },
+  { key: "mrp", header: "MRP", align: "right", widthClass: "w-20" },
+  { key: "rate", header: "Rate", align: "right", widthClass: "w-20" },
+  { key: "disc", header: "Disc %", align: "right", widthClass: "w-14" },
+  { key: "net_rate", header: "Net Rate", align: "right", widthClass: "w-20" },
+  { key: "amount", header: "Amount", align: "right", widthClass: "w-24" },
+];
+
+const PRINT_COLUMNS: DocumentGridColumn[] = [
+  { key: "part", header: "Part No.", widthClass: "w-48" },
+  { key: "desc", header: "Description", widthClass: "w-[40%]" },
+  { key: "qty", header: "Quantity", align: "right", widthClass: "w-16" },
+  { key: "rack", header: "Rack", widthClass: "w-14" },
+  { key: "gst", header: "GST %", align: "right", widthClass: "w-14" },
+  { key: "mrp", header: "MRP", align: "right", widthClass: "w-20" },
+  { key: "disc", header: "Disc %", align: "right", widthClass: "w-14" },
+  { key: "net_rate", header: "Net Rate", align: "right", widthClass: "w-20" },
+  { key: "amount", header: "Amount", align: "right", widthClass: "w-24" },
+];
+
 const CreateQuotation = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
@@ -50,8 +85,6 @@ const CreateQuotation = () => {
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
-  const [partyOpen, setPartyOpen] = useState(false);
-  const [partyHighlightedIndex, setPartyHighlightedIndex] = useState(0);
 
   const [quotationNumber, setQuotationNumber] = useState("");
   const [quotationDate, setQuotationDate] = useState(new Date().toISOString().slice(0, 10));
@@ -74,6 +107,7 @@ const CreateQuotation = () => {
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
   const partyInputRef = useRef<HTMLInputElement>(null);
+  const { focusCell, handleKey: handleGridKey } = useDocumentGridNavigation(COLS);
 
   const party = useMemo(() => parties.find((p) => p.id === partyId) || null, [parties, partyId]);
   const day = useMemo(
@@ -84,15 +118,20 @@ const CreateQuotation = () => {
   const partResults = useMemo(() => {
     const q = partyQuery.trim().toLowerCase();
     if (!q) return parties.slice(0, 12);
+    // Once the typed text exactly matches the already-resolved party, show
+    // no candidates — mirrors the original page's explicit
+    // `setPartyOpen(false)` on an exact match (DocumentEntitySearchField
+    // owns its own open state, so an empty result list is how this page
+    // asks it to close instead).
+    if (party && party.name.trim().toLowerCase() === q) return [];
     return parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12);
-  }, [parties, partyQuery]);
+  }, [parties, partyQuery, party]);
 
   const checkExactPartyMatch = (query: string, currentParties: Party[]) => {
     const cleanQuery = query.trim().toLowerCase();
     const exactMatch = currentParties.find((p) => p.name.trim().toLowerCase() === cleanQuery);
     if (exactMatch) {
       setPartyId(exactMatch.id);
-      setPartyOpen(false);
     } else if (party && party.name.trim().toLowerCase() !== cleanQuery) {
       setPartyId("");
     }
@@ -110,35 +149,6 @@ const CreateQuotation = () => {
       activeEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [highlightedIndex, searchIdx, searchResults]);
-
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        navigate("/sales/quotations/new");
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        handleSave("draft");
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleSave("sent");
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
-        e.preventDefault();
-        window.print();
-      }
-      if (e.altKey && e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        addRow();
-      }
-    };
-    window.addEventListener("keydown", handleGlobalShortcuts);
-    return () => window.removeEventListener("keydown", handleGlobalShortcuts);
-  }, [items, partyId, user, quotationNumber, quotationDate, salesman, narration, refNo, party, saving]);
 
   useEffect(() => { document.title = baseTitle; }, [baseTitle]);
 
@@ -274,34 +284,6 @@ const CreateQuotation = () => {
     }
   };
 
-  const focusCell = (row: number, col: Col) => {
-    const el = document.querySelector<HTMLInputElement>(`input[data-row="${row}"][data-col="${col}"]`);
-    el?.focus();
-    el?.select();
-  };
-
-  const handlePartyKeyDown = (e: React.KeyboardEvent) => {
-    if (partyOpen && partResults.length > 0) {
-      if (e.key === "ArrowDown") { e.preventDefault(); setPartyHighlightedIndex((prev) => Math.min(prev + 1, partResults.length - 1)); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); setPartyHighlightedIndex((prev) => Math.max(prev - 1, 0)); return; }
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const selectedParty = partResults[partyHighlightedIndex];
-        if (selectedParty) {
-          setPartyId(selectedParty.id);
-          setPartyQuery(selectedParty.name);
-          setPartyOpen(false);
-          setTimeout(() => focusCell(0, "part"), 10);
-        }
-        return;
-      }
-      if (e.key === "Escape") { setPartyOpen(false); return; }
-    } else if (e.key === "Enter" || e.key === "Tab") {
-      e.preventDefault();
-      focusCell(0, "part");
-    }
-  };
-
   const handleKey = (e: React.KeyboardEvent, idx: number, col: Col) => {
     if (searchIdx === idx && searchResults.length > 0) {
       if (e.key === "ArrowDown") { e.preventDefault(); setHighlightedIndex((prev) => Math.min(prev + 1, searchResults.length - 1)); return; }
@@ -314,26 +296,7 @@ const CreateQuotation = () => {
       }
       if (e.key === "Escape") { setSearchIdx(null); setSearchResults([]); return; }
     }
-
-    const ci = COLS.indexOf(col);
-    if (e.key === "Enter" || e.key === "Tab") {
-      e.preventDefault();
-      if (col === "part") {
-        const hasValidPart = items[idx].part_number.trim().length > 0;
-        if (hasValidPart) { focusCell(idx, "desc"); }
-        else {
-          if (idx === items.length - 1) addRow();
-          setTimeout(() => focusCell(idx + 1, "part"), 10);
-        }
-        return;
-      }
-      if (ci < COLS.length - 1) { focusCell(idx, COLS[ci + 1]); }
-      else {
-        if (idx === items.length - 1) addRow();
-        setTimeout(() => focusCell(idx + 1, "part"), 10);
-      }
-    } else if (e.key === "ArrowDown") { e.preventDefault(); focusCell(Math.min(items.length - 1, idx + 1), col); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); focusCell(Math.max(0, idx - 1), col); }
+    handleGridKey(e, idx, col, { rowCount: items.length, onAddRow: addRow });
   };
 
   const validRows = () => items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
@@ -402,6 +365,16 @@ const CreateQuotation = () => {
     }
   };
 
+  useDocumentShortcuts(
+    {
+      onNewDocument: () => navigate("/sales/quotations/new"),
+      onSaveDraft: () => handleSave("draft"),
+      onSubmit: () => handleSave("sent"),
+      onAddRow: addRow,
+    },
+    [items, partyId, user, quotationNumber, quotationDate, salesman, narration, refNo, party, saving],
+  );
+
   const lastSavedAt = useRef(0);
   useEffect(() => {
     const id = setInterval(() => {
@@ -431,146 +404,86 @@ const CreateQuotation = () => {
     return { sys, agreed, rdExtra, effective: agreed };
   }, [party]);
 
+  const toolbarActions: DocumentToolbarAction[] = [
+    { key: "save", label: editMode && editStatus === "draft" ? "Update Draft" : "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: () => handleSave("draft"), disabled: saving || isConverted },
+    { key: "submit", label: "Confirm Quotation", icon: FileCheck2, shortcut: "Ctrl+Enter", onClick: () => handleSave("sent"), disabled: saving || isConverted, variant: "primary" },
+    { key: "convert", label: converting ? "Converting…" : "Convert to Order", icon: ArrowRightCircle, onClick: handleConvert, disabled: converting, hidden: !(editMode && !isConverted) },
+    { key: "print", label: "Print", icon: Printer, shortcut: "Ctrl+P", onClick: () => window.print() },
+    { key: "pdf", label: "PDF", icon: FileDown, onClick: () => window.print() },
+  ];
+
   return (
-    <div className="theme-quotation invoice-entry max-w-[1400px] mx-auto text-[13px] font-mono">
-      <div className="hidden print:block text-center font-sans font-bold text-[16px] mb-2">QUOTATION</div>
-      {/* Top action bar */}
-      <div className="print:hidden flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
-            {editMode ? (editStatus === "draft" ? "Editing Draft Quotation" : `Editing Quotation (${editStatus})`) : "New Quotation"}
-          </span>
-          {draftId && <Badge variant="outline" className="text-[10px]">#{quotationNumber || draftId.slice(0, 8)}</Badge>}
-          {editMode && editStatus === "draft" && (
-            <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/5 text-[10px]">Draft</Badge>
-          )}
-          {isConverted && (
-            <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 text-[10px]">Converted to Order</Badge>
-          )}
-          {dupSet.size > 0 && (
-            <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-500/5 text-[10px]">Duplicate items</Badge>
-          )}
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          <Button size="sm" variant="outline" onClick={() => handleSave("draft")} disabled={saving || isConverted} className="h-8" title="Shortcut: Ctrl + S">
-            <Save className="h-3.5 w-3.5" /> {editMode && editStatus === "draft" ? "Update Draft (Ctrl+S)" : "Save Draft (Ctrl+S)"}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => handleSave("sent")}
-            disabled={saving || isConverted}
-            className="h-8 gradient-primary text-white border-0"
-            title="Shortcut: Ctrl + Enter"
-          >
-            <FileCheck2 className="h-3.5 w-3.5" /> Confirm Quotation (Ctrl+⏎)
-          </Button>
-          {editMode && !isConverted && (
-            <Button size="sm" variant="outline" onClick={handleConvert} disabled={converting} className="h-8">
-              <ArrowRightCircle className="h-3.5 w-3.5" /> {converting ? "Converting…" : "Convert to Order"}
-            </Button>
-          )}
-          <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8" title="Shortcut: Ctrl + P">
-            <Printer className="h-3.5 w-3.5" /> Print (Ctrl+P)
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8">
-            <FileDown className="h-3.5 w-3.5" /> PDF
-          </Button>
-        </div>
-      </div>
+    <DocumentRoot type="quotation" printTitle="QUOTATION">
+      <DocumentToolbar
+        statusSlot={
+          <>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
+              {editMode ? (editStatus === "draft" ? "Editing Draft Quotation" : `Editing Quotation (${editStatus})`) : "New Quotation"}
+            </span>
+            {draftId && <Badge variant="outline" className="text-[10px]">#{quotationNumber || draftId.slice(0, 8)}</Badge>}
+            {editMode && editStatus === "draft" && <DocumentStatusBadge status="draft" />}
+            {isConverted && <DocumentStatusBadge status="converted" label="Converted to Order" />}
+            {dupSet.size > 0 && <DocumentStatusBadge status="duplicate_items" tone="warning" label="Duplicate items" />}
+          </>
+        }
+        actions={toolbarActions}
+      />
 
-      {/* Quotation sheet */}
-      <div className="border border-border bg-[hsl(var(--invoice-bg,60_30%_96%))] shadow-soft print:shadow-none print:border-0">
-        <div className="bg-primary text-primary-foreground px-3 py-1.5 flex items-center justify-between text-xs">
-          <div className="font-sans font-semibold tracking-wide">Quotation</div>
-          <div className="font-sans">{business?.business_name ?? business?.firm_name ?? ""}</div>
-          <div className="opacity-80">{day}</div>
-        </div>
+      <DocumentSheet>
+        <DocumentSheetBanner left="Quotation" center={business?.business_name ?? business?.firm_name ?? ""} right={day} />
 
-        {/* Header grid */}
-        <div className="grid grid-cols-12 gap-x-3 gap-y-1 px-3 py-2 border-b border-border text-[12px]">
-          <div className="col-span-2 text-muted-foreground">Quotation No</div>
-          <div className="col-span-4">
-            <Input value={quotationNumber} onChange={(e) => setQuotationNumber(e.target.value)}
-              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary" />
-          </div>
-          <div className="col-span-2 text-muted-foreground text-right">Date</div>
-          <div className="col-span-4">
-            <Input type="date" value={quotationDate} onChange={(e) => setQuotationDate(e.target.value)}
-              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary" />
-          </div>
+        <DocumentHeaderGrid>
+          <DocumentHeaderInputField label="Quotation No" value={quotationNumber} onChange={(e) => setQuotationNumber(e.target.value)} />
+          <DocumentHeaderInputField label="Date" labelAlign="right" type="date" value={quotationDate} onChange={(e) => setQuotationDate(e.target.value)} />
 
-          <div className="col-span-2 text-muted-foreground">Ref No</div>
-          <div className="col-span-4">
-            <Input value={refNo} onChange={(e) => setRefNo(e.target.value)}
-              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary" />
-          </div>
-          <div className="col-span-2 text-muted-foreground text-right">Valid Until</div>
-          <div className="col-span-4">
-            <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)}
-              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary" />
-          </div>
+          <DocumentHeaderInputField label="Ref No" value={refNo} onChange={(e) => setRefNo(e.target.value)} />
+          <DocumentHeaderInputField label="Valid Until" labelAlign="right" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
 
-          <div className="col-span-2 text-muted-foreground">Salesman</div>
-          <div className="col-span-4">
-            <Input value={salesman} onChange={(e) => setSalesman(e.target.value)}
-              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary" />
-          </div>
-          <div className="col-span-6" />
+          <DocumentHeaderInputField label="Salesman" value={salesman} onChange={(e) => setSalesman(e.target.value)} />
+          <DocumentHeaderValue span={6}>{null}</DocumentHeaderValue>
 
-          <div className="col-span-2 text-muted-foreground">Party A/c Name</div>
-          <div className="col-span-10 relative">
-            <Input
-              ref={partyInputRef}
-              value={partyQuery}
-              onChange={(e) => {
-                setPartyQuery(e.target.value);
-                setPartyOpen(true);
-                setPartyHighlightedIndex(0);
-                checkExactPartyMatch(e.target.value, parties);
+          <DocumentHeaderLabel span={2}>Party A/c Name</DocumentHeaderLabel>
+          <DocumentHeaderValue span={10}>
+            <DocumentEntitySearchField
+              results={partResults}
+              getKey={(p) => p.id}
+              query={partyQuery}
+              onQueryChange={(v) => {
+                setPartyQuery(v);
+                checkExactPartyMatch(v, parties);
               }}
-              onFocus={() => { setPartyOpen(true); setPartyHighlightedIndex(0); }}
-              onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
-              onKeyDown={handlePartyKeyDown}
+              onSelect={(p, source) => {
+                setPartyId(p.id);
+                setPartyQuery(p.name);
+                if (source === "keyboard") setTimeout(() => focusCell(0, "part"), 10);
+              }}
+              renderRow={(p, highlighted) => (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">{p.name}</span>
+                  <span className={`text-[10px] ${highlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                    {p.discount_type} · {Number(p.discount_type === "RD" ? p.agreed_discount : p.default_discount).toFixed(1)}%
+                  </span>
+                </div>
+              )}
               placeholder="Type to search party…"
-              className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              inputRef={partyInputRef}
+              inputClassName="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
             />
-            {partyOpen && partResults.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-64 overflow-auto">
-                {partResults.map((p, i) => {
-                  const isPartyHighlighted = partyHighlightedIndex === i;
-                  return (
-                    <button
-                      type="button"
-                      key={p.id}
-                      onMouseDown={(e) => { e.preventDefault(); setPartyId(p.id); setPartyQuery(p.name); setPartyOpen(false); }}
-                      className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 flex items-center justify-between gap-2 ${
-                        isPartyHighlighted ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                      }`}
-                    >
-                      <span className="font-semibold">{p.name}</span>
-                      <span className={`text-[10px] ${isPartyHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                        {p.discount_type} · {Number(p.discount_type === "RD" ? p.agreed_discount : p.default_discount).toFixed(1)}%
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          </DocumentHeaderValue>
 
           {party && (
             <>
-              <div className="col-span-2 text-muted-foreground">Current Balance</div>
-              <div className="col-span-4 italic">
+              <DocumentHeaderLabel>Current Balance</DocumentHeaderLabel>
+              <DocumentHeaderValue className="italic">
                 ₹{fmt(Number(party.outstanding_balance) || 0)} <span className="text-muted-foreground not-italic">Dr</span>
-              </div>
-              <div className="col-span-2 text-muted-foreground text-right">GSTIN</div>
-              <div className="col-span-4">{party.gst || "—"}</div>
+              </DocumentHeaderValue>
+              <DocumentHeaderLabel align="right">GSTIN</DocumentHeaderLabel>
+              <DocumentHeaderValue>{party.gst || "—"}</DocumentHeaderValue>
 
-              <div className="col-span-2 text-muted-foreground">Address</div>
-              <div className="col-span-10 truncate">{party.billing_address || party.address || "—"}</div>
+              <DocumentHeaderLabel>Address</DocumentHeaderLabel>
+              <DocumentHeaderValue span={10} className="truncate">{party.billing_address || party.address || "—"}</DocumentHeaderValue>
 
-              <div className="col-span-12 flex flex-wrap gap-1.5 pt-1 font-sans">
+              <DocumentHeaderValue span={12} className="flex flex-wrap gap-1.5 pt-1 font-sans">
                 <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 text-[10px] h-5">{party.discount_type} Mode</Badge>
                 <Badge variant="outline" className="text-[10px] h-5">Default {Number(party.default_discount).toFixed(1)}%</Badge>
                 {party.discount_type === "RD" && (
@@ -578,198 +491,144 @@ const CreateQuotation = () => {
                 )}
                 {party.phone && <Badge variant="outline" className="text-[10px] h-5">📱 {party.phone}</Badge>}
                 {party.beat && <Badge variant="outline" className="text-[10px] h-5">Beat: {party.beat}</Badge>}
-              </div>
+              </DocumentHeaderValue>
             </>
           )}
-        </div>
+        </DocumentHeaderGrid>
 
-        {/* Line-item grid */}
-        <div className="overflow-x-auto print:hidden">
-          <table className="w-full text-[12px] border-collapse">
-            <thead>
-              <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
-                <th className="text-left px-1.5 py-1 w-6">#</th>
-                <th className="text-left px-1.5 py-1 min-w-[120px]">Part No.</th>
-                <th className="text-left px-1.5 py-1 min-w-[180px]">Description</th>
-                <th className="text-left px-1.5 py-1 w-20">HSN/SAC</th>
-                <th className="text-right px-1.5 py-1 w-14">GST %</th>
-                <th className="text-left px-1.5 py-1 w-14">Rack</th>
-                <th className="text-right px-1.5 py-1 w-16">Quantity</th>
-                <th className="text-left px-1.5 py-1 w-14">Unit</th>
-                <th className="text-right px-1.5 py-1 w-20">MRP</th>
-                <th className="text-right px-1.5 py-1 w-20">Rate</th>
-                <th className="text-right px-1.5 py-1 w-14">Disc %</th>
-                <th className="text-right px-1.5 py-1 w-20">Net Rate</th>
-                <th className="text-right px-1.5 py-1 w-24">Amount</th>
-                <th className="w-6 print:hidden"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, idx) => {
-                const isDup = it.part_number.trim() && dupSet.has(it.part_number.trim().toLowerCase());
-                return (
-                  <tr key={idx} className={`border-b border-border/60 hover:bg-muted/30 ${isDup ? "bg-amber-500/5" : ""}`}>
-                    <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{idx + 1}</td>
-                    <td className="px-0.5 py-0.5 relative">
-                      <Input
-                        data-row={idx} data-col="part" value={it.part_number}
-                        onChange={(e) => {
-                          updateRow(idx, { part_number: e.target.value.toUpperCase() });
-                          setSearchIdx(idx); setSearchCol("part"); setSearchTerm(e.target.value); setHighlightedIndex(0);
-                        }}
-                        onFocus={() => { setSearchIdx(idx); setSearchCol("part"); setSearchTerm(it.part_number); setHighlightedIndex(0); }}
-                        onBlur={() => setTimeout(() => setSearchIdx((s) => (s === idx && searchCol === "part" ? null : s)), 150)}
-                        onKeyDown={(e) => handleKey(e, idx, "part")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
-                      />
-                      {searchIdx === idx && searchCol === "part" && searchResults.length > 0 && (
-                        <div className="absolute z-50 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto scroll-smooth">
-                          {searchResults.map((p, i) => {
-                            const isHighlighted = highlightedIndex === i;
-                            return (
-                              <button
-                                key={p.id} id={`prod-item-${i}`} type="button"
-                                onMouseDown={(e) => { e.preventDefault(); pickProduct(idx, p); }}
-                                className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 ${
-                                  isHighlighted ? "bg-primary text-primary-foreground" : "hover:bg-muted bg-popover"
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-mono font-semibold">{p.part_number}</span>
-                                  <span className={`text-[10px] ${isHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>Stk {p.stock}</span>
-                                </div>
-                                <div className="text-[11px] truncate">{p.name}</div>
-                                <div className={`text-[10px] ${isHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                                  MRP ₹{fmt(Number(p.mrp))} · GST {p.gst_pct}%
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input data-row={idx} data-col="desc" value={it.description} onChange={(e) => updateRow(idx, { description: e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "desc")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary" />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input data-row={idx} data-col="hsn" value={it.hsn || ""} onChange={(e) => updateRow(idx, { hsn: e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "hsn")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary" />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input data-row={idx} data-col="gst" type="number" step="any" value={it.gst_pct || ""} onChange={(e) => updateRow(idx, { gst_pct: +e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "gst")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary" />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input data-row={idx} data-col="rack" value={it.rack || ""} onChange={(e) => updateRow(idx, { rack: e.target.value.toUpperCase() })}
-                        onKeyDown={(e) => handleKey(e, idx, "rack")}
-                        className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary uppercase" />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input data-row={idx} data-col="qty" type="number" step="any" value={it.qty || ""} onChange={(e) => updateRow(idx, { qty: +e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "qty")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary" />
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      {it.product_id && unitsByProduct[it.product_id]?.length ? (
-                        <select
-                          value={it.unit_id ?? ""}
-                          onChange={(e) => updateRow(idx, { unit_id: e.target.value || null })}
-                          className="h-6 text-[11px] font-mono px-0.5 rounded-none border-0 bg-transparent focus-visible:ring-0 w-full"
+        <DocumentGridTable
+          columns={GRID_COLUMNS}
+          rows={items}
+          isDuplicate={(r) => !!r.part_number.trim() && dupSet.has(r.part_number.trim().toLowerCase())}
+          renderRow={(it, idx) => (
+            <>
+              <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{idx + 1}</td>
+              <td className="px-0.5 py-0.5 relative">
+                <DocumentGridCellInput
+                  data-row={idx}
+                  data-col="part"
+                  value={it.part_number}
+                  onChange={(e) => {
+                    updateRow(idx, { part_number: e.target.value.toUpperCase() });
+                    setSearchIdx(idx); setSearchCol("part"); setSearchTerm(e.target.value); setHighlightedIndex(0);
+                  }}
+                  onFocus={() => { setSearchIdx(idx); setSearchCol("part"); setSearchTerm(it.part_number); setHighlightedIndex(0); }}
+                  onBlur={() => setTimeout(() => setSearchIdx((s) => (s === idx && searchCol === "part" ? null : s)), 150)}
+                  onKeyDown={(e) => handleKey(e, idx, "part")}
+                  className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
+                />
+                {searchIdx === idx && searchCol === "part" && searchResults.length > 0 && (
+                  <div className="absolute z-50 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto scroll-smooth">
+                    {searchResults.map((p, i) => {
+                      const isHighlighted = highlightedIndex === i;
+                      return (
+                        <button
+                          key={p.id} id={`prod-item-${i}`} type="button"
+                          onMouseDown={(e) => { e.preventDefault(); pickProduct(idx, p); }}
+                          className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 ${
+                            isHighlighted ? "bg-primary text-primary-foreground" : "hover:bg-muted bg-popover"
+                          }`}
                         >
-                          {unitsByProduct[it.product_id].map((u) => (
-                            <option key={u.unit_id} value={u.unit_id}>{unitLabel(u.unit_id)}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground px-1">—</span>
-                      )}
-                    </td>
-                    <td className="px-0.5 py-0.5">
-                      <Input data-row={idx} data-col="mrp" type="number" step="any" value={it.mrp || ""} onChange={(e) => updateRow(idx, { mrp: +e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "mrp")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary" />
-                    </td>
-                    <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground">{fmt(it.mrp)}</td>
-                    <td className="px-0.5 py-0.5">
-                      <Input data-row={idx} data-col="disc" type="number" step="any" value={it.discount_pct || ""} onChange={(e) => updateRow(idx, { discount_pct: +e.target.value })}
-                        onKeyDown={(e) => handleKey(e, idx, "disc")}
-                        className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary" />
-                    </td>
-                    <td className="px-1 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
-                    <td className="px-1 py-0.5 text-right tabular-nums font-semibold">{fmt(it.total)}</td>
-                    <td className="px-0.5 py-0.5 print:hidden">
-                      <button onClick={() => delRow(idx)} className="text-destructive/70 hover:text-destructive" title="Delete row">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {Array.from({ length: Math.max(0, 4 - (items.length % 4)) }).map((_, i) => (
-                <tr key={`sp-${i}`} className="border-b border-border/30 h-6"><td colSpan={14}>&nbsp;</td></tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-border bg-muted/40 font-semibold">
-                <td colSpan={6} className="px-1.5 py-1 print:hidden">
-                  <button onClick={addRow} className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans" title="Shortcut: Alt + N">
-                    <Plus className="h-3 w-3" /> Add Row (Alt+N)
-                  </button>
-                </td>
-                <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
-                <td colSpan={5}></td>
-                <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.taxable + totals.gst_total)}</td>
-                <td className="print:hidden"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono font-semibold">{p.part_number}</span>
+                            <span className={`text-[10px] ${isHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>Stk {p.stock}</span>
+                          </div>
+                          <div className="text-[11px] truncate">{p.name}</div>
+                          <div className={`text-[10px] ${isHighlighted ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                            MRP ₹{fmt(Number(p.mrp))} · GST {p.gst_pct}%
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput data-row={idx} data-col="desc" value={it.description} onChange={(e) => updateRow(idx, { description: e.target.value })}
+                  onKeyDown={(e) => handleKey(e, idx, "desc")} />
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput data-row={idx} data-col="hsn" value={it.hsn || ""} onChange={(e) => updateRow(idx, { hsn: e.target.value })}
+                  onKeyDown={(e) => handleKey(e, idx, "hsn")} />
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput align="right" data-row={idx} data-col="gst" type="number" step="any" value={it.gst_pct || ""} onChange={(e) => updateRow(idx, { gst_pct: +e.target.value })}
+                  onKeyDown={(e) => handleKey(e, idx, "gst")} />
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput data-row={idx} data-col="rack" value={it.rack || ""} onChange={(e) => updateRow(idx, { rack: e.target.value.toUpperCase() })}
+                  onKeyDown={(e) => handleKey(e, idx, "rack")} className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary uppercase" />
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput align="right" data-row={idx} data-col="qty" type="number" step="any" value={it.qty || ""} onChange={(e) => updateRow(idx, { qty: +e.target.value })}
+                  onKeyDown={(e) => handleKey(e, idx, "qty")} />
+              </td>
+              <td className="px-0.5 py-0.5">
+                {it.product_id && unitsByProduct[it.product_id]?.length ? (
+                  <select
+                    value={it.unit_id ?? ""}
+                    onChange={(e) => updateRow(idx, { unit_id: e.target.value || null })}
+                    className="h-6 text-[11px] font-mono px-0.5 rounded-none border-0 bg-transparent focus-visible:ring-0 w-full"
+                  >
+                    {unitsByProduct[it.product_id].map((u) => (
+                      <option key={u.unit_id} value={u.unit_id}>{unitLabel(u.unit_id)}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground px-1">—</span>
+                )}
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput align="right" data-row={idx} data-col="mrp" type="number" step="any" value={it.mrp || ""} onChange={(e) => updateRow(idx, { mrp: +e.target.value })}
+                  onKeyDown={(e) => handleKey(e, idx, "mrp")} />
+              </td>
+              <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground">{fmt(it.mrp)}</td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput align="right" data-row={idx} data-col="disc" type="number" step="any" value={it.discount_pct || ""} onChange={(e) => updateRow(idx, { discount_pct: +e.target.value })}
+                  onKeyDown={(e) => handleKey(e, idx, "disc")} />
+              </td>
+              <td className="px-1 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
+              <td className="px-1 py-0.5 text-right tabular-nums font-semibold">{fmt(it.total)}</td>
+              <td className="px-0.5 py-0.5 print:hidden">
+                <button onClick={() => delRow(idx)} className="text-destructive/70 hover:text-destructive" title="Delete row">
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </td>
+            </>
+          )}
+          renderFooter={
+            <>
+              <td colSpan={6} className="px-1.5 py-1 print:hidden">
+                <button onClick={addRow} className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-sans" title="Shortcut: Alt + N">
+                  <Plus className="h-3 w-3" /> Add Row (Alt+N)
+                </button>
+              </td>
+              <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totalQty)} Qty</td>
+              <td colSpan={5}></td>
+              <td className="px-1.5 py-1 text-right tabular-nums">{fmt(totals.taxable + totals.gst_total)}</td>
+              <td className="print:hidden"></td>
+            </>
+          }
+        />
 
-        <div className="hidden print:block">
-          <table className="w-full text-[12px] border-collapse">
-            <thead>
-              <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
-                <th className="text-left px-1.5 py-1 w-6">#</th>
-                <th className="text-left px-1.5 py-1 w-48">Part No.</th>
-                <th className="text-left px-1.5 py-1 w-[40%]">Description</th>
-                <th className="text-right px-1.5 py-1 w-16">Quantity</th>
-                <th className="text-left px-1.5 py-1 w-14">Rack</th>
-                <th className="text-right px-1.5 py-1 w-14">GST %</th>
-                <th className="text-right px-1.5 py-1 w-20">MRP</th>
-                <th className="text-right px-1.5 py-1 w-14">Disc %</th>
-                <th className="text-right px-1.5 py-1 w-20">Net Rate</th>
-                <th className="text-right px-1.5 py-1 w-24">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                let sr = 0;
-                return items.map((it, idx) => {
-                  const empty = !it.part_number.trim() && !it.description.trim() && !Number(it.qty);
-                  const n = empty ? "" : String(++sr);
-                  return (
-                    <tr key={`p-${idx}`} className="border-b border-border/60">
-                      <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{n}</td>
-                      <td className="px-1.5 py-0.5 font-mono whitespace-nowrap">{empty ? "" : it.part_number}</td>
-                      <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.description}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.qty}</td>
-                      <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.rack || ""}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.gst_pct}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.mrp)}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.discount_pct}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.net_rate)}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.total)}</td>
-                    </tr>
-                  );
-                });
-              })()}
-            </tbody>
-          </table>
-        </div>
+        <DocumentGridPrintTable
+          columns={PRINT_COLUMNS}
+          rows={items}
+          isEmptyRow={(it) => !it.part_number.trim() && !it.description.trim() && !Number(it.qty)}
+          renderCells={(it, _idx, empty) => (
+            <>
+              <td className="px-1.5 py-0.5 font-mono whitespace-nowrap">{empty ? "" : it.part_number}</td>
+              <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.description}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.qty}</td>
+              <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.rack || ""}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.gst_pct}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.mrp)}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.discount_pct}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.net_rate)}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.total)}</td>
+            </>
+          )}
+        />
 
         {/* Bottom section: narration + totals */}
         <div className="grid grid-cols-12 gap-3 px-3 py-2 border-t border-border">
@@ -794,21 +653,18 @@ const CreateQuotation = () => {
           </div>
 
           <div className="col-span-12 md:col-span-5 print:col-span-12">
-            <div className="border border-border bg-card/60">
-              <div className="px-2 py-1 text-[11px] uppercase tracking-wider text-muted-foreground bg-muted/40 border-b border-border font-sans">Quotation Totals</div>
-              <div className="px-2 py-1.5 text-[12px] space-y-0.5">
-                <Row label="Subtotal (MRP)" value={fmt(totals.subtotal)} />
-                <Row label="Discount" value={`− ${fmt(totals.discount_total)}`} />
-                <Row label="Taxable Amount" value={fmt(totals.taxable)} bold />
-                <Row label="CGST" value={fmt(cgst)} />
-                <Row label="SGST" value={fmt(sgst)} />
-                <Row label="Round Off" value={(roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff))} />
-                <div className="border-t border-border mt-1 pt-2 flex items-baseline justify-between bg-primary/10 px-2 py-1 rounded">
-                  <span className="text-[12px] font-bold uppercase tracking-wider text-foreground font-sans">Grand Total</span>
-                  <span className="font-extrabold text-lg text-primary tabular-nums">₹{fmt(finalTotal)}</span>
-                </div>
-              </div>
-            </div>
+            <DocumentTotals
+              title="Quotation Totals"
+              lines={[
+                { label: "Subtotal (MRP)", value: fmt(totals.subtotal) },
+                { label: "Discount", value: `− ${fmt(totals.discount_total)}` },
+                { label: "Taxable Amount", value: fmt(totals.taxable), bold: true },
+                { label: "CGST", value: fmt(cgst) },
+                { label: "SGST", value: fmt(sgst) },
+                { label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) },
+              ]}
+              grandTotal={`₹${fmt(finalTotal)}`}
+            />
           </div>
         </div>
 
@@ -826,28 +682,9 @@ const CreateQuotation = () => {
             <div className="text-right"><div className="mt-12 border-t border-border pt-1">For {business?.business_name ?? business?.firm_name ?? "the Company"}</div></div>
           </div>
         </div>
-      </div>
-
-      <style>{`
-        @media print {
-          @page { size: A4; margin: 10mm; }
-          body { background: white; }
-          .invoice-entry { font-size: 11px; }
-        }
-        table { position: relative; }
-        tbody tr { position: relative; }
-        :root { --invoice-bg: 60 30% 96%; }
-        .dark { --invoice-bg: 240 8% 12%; }
-      `}</style>
-    </div>
+      </DocumentSheet>
+    </DocumentRoot>
   );
 };
-
-const Row = ({ label, value, bold }: { label: string; value: string; bold?: boolean }) => (
-  <div className="flex items-baseline justify-between">
-    <span className="text-muted-foreground">{label}</span>
-    <span className={`tabular-nums ${bold ? "font-semibold" : ""}`}>{value}</span>
-  </div>
-);
 
 export default CreateQuotation;

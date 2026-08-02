@@ -9,7 +9,8 @@ interface DocumentEntitySearchFieldProps<T> {
   renderRow: (item: T, highlighted: boolean) => ReactNode;
   query: string;
   onQueryChange: (value: string) => void;
-  onSelect: (item: T) => void;
+  /** `source` distinguishes keyboard-Enter selection from a mouse click — some callers (e.g. "jump to the next field after Enter") deliberately only act on keyboard selection. */
+  onSelect: (item: T, source: "keyboard" | "mouse") => void;
   /** Called on Enter/Tab when the dropdown is closed (e.g. move focus to the next field). */
   onCommit?: () => void;
   placeholder?: string;
@@ -59,7 +60,7 @@ export function DocumentEntitySearchField<T>({
         e.preventDefault();
         const selected = results[highlightedIndex];
         if (selected) {
-          onSelect(selected);
+          onSelect(selected, "keyboard");
           setOpen(false);
         }
         return;
@@ -108,7 +109,7 @@ export function DocumentEntitySearchField<T>({
                 key={getKey(item)}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onSelect(item);
+                  onSelect(item, "mouse");
                   setOpen(false);
                 }}
                 className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 ${
