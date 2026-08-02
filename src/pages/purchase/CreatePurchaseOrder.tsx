@@ -195,6 +195,15 @@ export default function CreatePurchaseOrder() {
     return suppliers.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 12);
   }, [suppliers, supplierQuery, supplier]);
 
+  // Mirrors the server-side edit-lock in savePurchaseOrder(): once a PO has
+  // moved past draft/pending_approval, supplier/warehouse/rate become
+  // read-only, and qty is only locked per line once something has actually
+  // been received. This is the UI-level version of that same rule — the
+  // server check is the real guard, this just avoids a surprise save-time
+  // error by disabling the fields up front.
+  const isApprovalLocked = editMode && ["approved", "ordered", "partially_received", "received"].includes(currentStatus);
+  const isQtyLocked = isApprovalLocked && Number(savedPO?.received_qty ?? 0) > 0;
+
   const totals = useMemo(() => computePOTotals(items), [items]);
   const cgst = +(totals.tax_total / 2).toFixed(2);
   const sgst = +(totals.tax_total / 2).toFixed(2);
@@ -656,13 +665,18 @@ export default function CreatePurchaseOrder() {
 
             <DocumentHeaderLabel span={2}>
               Supplier
-              {hasGRN && <span className="block text-[10px] normal-case text-amber-600">Locked — goods already received</span>}
+              {(hasGRN || isApprovalLocked) && (
+                <span className="block text-[10px] normal-case text-amber-600">
+                  {hasGRN ? "Locked — goods already received" : "Locked — approved"}
+                </span>
+              )}
             </DocumentHeaderLabel>
             <DocumentHeaderValue span={10}>
               <DocumentEntitySearchField
                 results={supplierResults}
                 getKey={(s) => s.id}
                 query={supplierQuery}
+                disabled={hasGRN || isApprovalLocked}
                 onQueryChange={(v) => {
                   setSupplierQuery(v);
                   const match = suppliers.find((s) => s.name.toLowerCase() === v.trim().toLowerCase());
@@ -703,7 +717,8 @@ export default function CreatePurchaseOrder() {
               <select
                 value={warehouseId ?? ""}
                 onChange={(e) => setWarehouseId(e.target.value || null)}
-                className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+                disabled={isApprovalLocked}
+                className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="">Select warehouse…</option>
                 {warehouses.map((w) => (
@@ -831,6 +846,7 @@ export default function CreatePurchaseOrder() {
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput
                   align="right" data-row={idx} data-col="qty" type="number" step="any" value={it.qty || ""}
+                  disabled={isQtyLocked && !!it.id}
                   onChange={(e) => {
                     const qty = +e.target.value;
                     const pu = it.product_id ? unitsByProduct[it.product_id] : undefined;
@@ -867,6 +883,7 @@ export default function CreatePurchaseOrder() {
               </td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput align="right" data-row={idx} data-col="rate" type="number" step="any" value={it.rate || ""} onChange={(e) => updateRow(idx, { rate: +e.target.value })}
+                  disabled={isApprovalLocked && !!it.id}
                   onKeyDown={(e) => handleKey(e, idx, "rate")} />
               </td>
               <td className="px-0.5 py-0.5">

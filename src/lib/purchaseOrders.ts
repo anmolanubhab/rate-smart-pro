@@ -236,7 +236,7 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
     // supplier ledger / receiving history, so that field is blocked too.
     const [{ count: grnCount, error: grnErr }, { data: existingPO, error: existingErr }] = await Promise.all([
       supabase.from("goods_receipts").select("id", { count: "exact", head: true }).eq("purchase_order_id", poId),
-      supabase.from("purchase_orders").select("supplier_id").eq("id", poId).single(),
+      supabase.from("purchase_orders").select("supplier_id, warehouse_id, status, received_qty").eq("id", poId).single(),
     ]);
     if (grnErr) throw grnErr;
     if (existingErr) throw existingErr;
@@ -244,6 +244,36 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
 
     if (hasGRN && existingPO && input.supplier_id !== existingPO.supplier_id) {
       throw new Error("Supplier can't be changed once goods have been received against this PO.");
+    }
+
+    // Edit-lock matrix once a PO has moved past draft/pending_approval:
+    // supplier/warehouse/rate become read-only (approving a PO is a
+    // commitment to the supplier and terms quoted); qty stays editable
+    // per line only until something has actually been received against
+    // it. This is a stricter, earlier gate than the GRN-only checks
+    // above/below, which only ever fire once a GRN row physically exists.
+    const APPROVAL_LOCKED_STATUSES: POStatus[] = ["approved", "ordered", "partially_received", "received"];
+    if (existingPO && APPROVAL_LOCKED_STATUSES.includes(existingPO.status as POStatus)) {
+      if (input.supplier_id !== existingPO.supplier_id) {
+        throw new Error("Supplier can't be changed once this Purchase Order has been approved.");
+      }
+      if ((input.warehouse_id ?? null) !== (existingPO.warehouse_id ?? null)) {
+        throw new Error("Warehouse can't be changed once this Purchase Order has been approved.");
+      }
+      const existingItemsForLock = await fetchPOItems(poId);
+      const existingById = new Map(existingItemsForLock.filter((it) => it.id).map((it) => [it.id, it]));
+      const somethingReceived = Number(existingPO.received_qty) > 0;
+      for (const it of input.items) {
+        if (!it.id) continue; // a newly added line — not a change to an approved rate/qty
+        const prev = existingById.get(it.id);
+        if (!prev) continue;
+        if (Number(prev.rate) !== Number(it.rate)) {
+          throw new Error(`Rate for ${it.part_number} can't be changed once this Purchase Order has been approved.`);
+        }
+        if (somethingReceived && Number(prev.qty) !== Number(it.qty)) {
+          throw new Error(`Quantity for ${it.part_number} can't be changed once goods have been received against this Purchase Order.`);
+        }
+      }
     }
 
     const { error } = await supabase

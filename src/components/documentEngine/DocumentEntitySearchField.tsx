@@ -16,6 +16,7 @@ interface DocumentEntitySearchFieldProps<T> {
   placeholder?: string;
   inputRef?: React.RefObject<HTMLInputElement>;
   inputClassName?: string;
+  disabled?: boolean;
 }
 
 /**
@@ -38,6 +39,7 @@ export function DocumentEntitySearchField<T>({
   placeholder,
   inputRef,
   inputClassName,
+  disabled,
 }: DocumentEntitySearchFieldProps<T>) {
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -82,6 +84,7 @@ export function DocumentEntitySearchField<T>({
       <Input
         ref={ref}
         value={query}
+        disabled={disabled}
         onChange={(e) => {
           onQueryChange(e.target.value);
           setOpen(true);
