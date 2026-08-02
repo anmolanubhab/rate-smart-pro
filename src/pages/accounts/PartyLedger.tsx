@@ -176,11 +176,19 @@ export default function PartyLedger() {
 
   return (
     <>
-      {/* ── Print styles ── */}
+      {/* ── Print styles ──
+          #party-ledger-print-root isn't a direct child of <body> (it's
+          nested inside the app's sidebar/layout wrappers), so
+          `body > *:not(#id)` was hiding the app's own root div — which
+          hides everything, including this section — instead of hiding
+          just its siblings. The visibility-based technique below hides
+          every element by default and re-reveals only this section's own
+          subtree, so it works regardless of how deep it's nested. */}
       <style>{`
         @media print {
-          body > *:not(#party-ledger-print-root) { display: none !important; }
-          #party-ledger-print-root { display: block !important; }
+          body * { visibility: hidden; }
+          #party-ledger-print-root, #party-ledger-print-root * { visibility: visible; }
+          #party-ledger-print-root { position: absolute; left: 0; top: 0; width: 100%; }
           .no-print { display: none !important; }
           .print-only { display: block !important; }
         }
