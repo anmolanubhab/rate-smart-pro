@@ -77,6 +77,25 @@ async function cancelReturn(
   if (!ret) throw new Error("Return not found.");
   if ((ret as any).status === "cancelled") throw new Error("Return already cancelled.");
 
+  // Flip status to cancelled first, before touching stock — and verify a
+  // row actually changed. .update() with no matching RLS policy returns
+  // { data: [], error: null } (no error, but zero rows changed), which is
+  // exactly what silently happened here before sr_update_member/
+  // pr_update_member existed: the button never disappeared, so a return
+  // could get cancelled repeatedly, each time re-reversing stock. Doing
+  // this check first (rather than after the stock loop) also means a
+  // permission failure never leaves stock reversed with the status
+  // unchanged.
+  const { data: updated, error: updErr } = await supabase
+    .from(table as any)
+    .update({ status: "cancelled" })
+    .eq("id", returnId)
+    .select("id");
+  if (updErr) throw updErr;
+  if (!updated || updated.length === 0) {
+    throw new Error("Could not update return status — no permission or the return no longer exists.");
+  }
+
   const { data: items, error: itemsErr } = await supabase
     .from(itemsTable as any)
     .select("product_id, qty")
@@ -108,9 +127,6 @@ async function cancelReturn(
       });
     }
   }
-
-  const { error: updErr } = await supabase.from(table as any).update({ status: "cancelled" }).eq("id", returnId);
-  if (updErr) throw updErr;
 
   if ((ret as any).voucher_id && userId) {
     try {
