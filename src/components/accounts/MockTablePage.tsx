@@ -16,6 +16,8 @@ interface Props {
   footer?: ReactNode;
   samplePending?: boolean;
   onRowClick?: (row: Record<string, any>) => void; // NEW
+  /** Renders an extra unlabeled trailing column (e.g. a DocumentActionMenu) per row. The cell stops click propagation so opening the menu doesn't also trigger onRowClick. */
+  rowActions?: (row: Record<string, any>) => ReactNode;
 }
 
 const fmtInr = (n: number) =>
@@ -28,7 +30,7 @@ const toneClass = (t?: MockKpi["tone"]) =>
     : "text-foreground";
 
 export default function MockTablePage({
-  eyebrow, title, description, actions, kpis, columns, rows, footer, samplePending = false, onRowClick,
+  eyebrow, title, description, actions, kpis, columns, rows, footer, samplePending = false, onRowClick, rowActions,
 }: Props) {
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in-up">
@@ -66,6 +68,7 @@ export default function MockTablePage({
                 {columns.map((c) => (
                   <th key={c.key} className={`px-4 py-3 text-${c.align || "left"}`}>{c.label}</th>
                 ))}
+                {rowActions && <th className="w-10 px-2 py-3 text-right"></th>}
               </tr>
             </thead>
             <tbody>
@@ -97,10 +100,15 @@ export default function MockTablePage({
                       </td>
                     );
                   })}
+                  {rowActions && (
+                    <td className="px-2 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                      {rowActions(r)}
+                    </td>
+                  )}
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground">No data</td></tr>
+                <tr><td colSpan={columns.length + (rowActions ? 1 : 0)} className="px-4 py-12 text-center text-muted-foreground">No data</td></tr>
               )}
             </tbody>
             {footer && <tfoot className="border-t border-border bg-muted/30">{footer}</tfoot>}
