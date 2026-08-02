@@ -178,6 +178,15 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["awaiting", "open orders"],
   },
   {
+    id: "sales-picking-list",
+    title: "Picking List",
+    description: "Pick items against an approved order before dispatch",
+    route: "/sales/picking-list",
+    icon: ClipboardList,
+    module: "Sales",
+    keywords: ["pick", "warehouse", "pending dispatch"],
+  },
+  {
     id: "dispatch",
     title: "Dispatch",
     description: "Dispatch management",
@@ -203,15 +212,6 @@ export const NAV_ITEMS: NavItem[] = [
     icon: CreditCard,
     module: "Sales",
     keywords: ["receipt", "collection", "bill-wise"],
-  },
-  {
-    id: "sales-picking-list",
-    title: "Picking List",
-    description: "Items pending dispatch from approved orders, grouped by rack",
-    route: "/sales/picking-list",
-    icon: ClipboardList,
-    module: "Sales",
-    keywords: ["pick", "warehouse", "pending dispatch"],
   },
   {
     id: "sales-returns",

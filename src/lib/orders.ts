@@ -352,7 +352,14 @@ export async function generatePendingOrder(userId: string, partyId: string) {
   });
 }
 
-export async function deleteOrder(id: string) {
+/**
+ * Guards both delete and cancel: an order can't move backward while
+ * anything built on top of it (Picking List, Dispatch, Invoice) is still
+ * active — the user must reverse those in sequence first. Mirrors (and is
+ * backed by) the DB-level trigger prevent_order_delete_with_active_documents
+ * for delete; cancel has no DB-level backstop, only this JS check.
+ */
+async function assertOrderReversible(id: string): Promise<void> {
   const { data: invoice } = await supabase
     .from("sales_invoices")
     .select("invoice_number")
@@ -375,6 +382,20 @@ export async function deleteOrder(id: string) {
     throw new Error(`This Sales Order is linked to Dispatch ${(dispatch as any).dispatch_number}. Cancel it first.`);
   }
 
+  const { data: picking } = await supabase
+    .from("picking_lists" as never)
+    .select("picking_number")
+    .eq("order_id", id)
+    .neq("status", "cancelled")
+    .limit(1)
+    .maybeSingle();
+  if (picking) {
+    throw new Error(`This Sales Order is linked to Picking List ${(picking as any).picking_number}. Cancel it first.`);
+  }
+}
+
+export async function deleteOrder(id: string) {
+  await assertOrderReversible(id);
   const { error } = await supabase.from("orders").delete().eq("id", id);
   if (error) throw error;
 }
@@ -388,6 +409,7 @@ export async function setOrderStatus(id: string, status: OrderStatus, userId?: s
 }
 
 export async function cancelOrder(id: string, reason: string, userId: string) {
+  await assertOrderReversible(id);
   const { error } = await supabase.from("orders").update({
     status: "cancelled",
     cancelled_at: new Date().toISOString(),

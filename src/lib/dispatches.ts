@@ -202,16 +202,18 @@ export async function confirmDispatch(dispatchId: string, userId?: string) {
   if (error) throw error;
 }
 
-/**
- * Cancel a dispatch.
- * - Sets dispatch status = 'cancelled'
- * - Reverses dispatched_qty on order_items (pending_qty goes back up)
- * - If an invoice exists on this dispatch, cancels it too
- * Returns the invoice_id that was cancelled (if any), so the caller
- * can show an appropriate toast.
- */
-export async function cancelDispatch(dispatchId: string, userId?: string): Promise<{ cancelledInvoiceId: string | null }> {
-  // 1. Fetch dispatch + its items
+type DispatchWithItems = {
+  order_id: string;
+  invoice_id?: string | null;
+  dispatch_items?: Array<{
+    order_item_id: string;
+    dispatched_qty: number;
+    dispatch_item_batches?: { batch_id: string; qty: number }[];
+    dispatch_item_serials?: { serial_id: string }[];
+  }>;
+};
+
+async function fetchDispatchWithItems(dispatchId: string): Promise<DispatchWithItems> {
   const { data: dispatch, error: de } = await supabase
     .from("dispatches")
     .select(`*, dispatch_items(
@@ -223,18 +225,12 @@ export async function cancelDispatch(dispatchId: string, userId?: string): Promi
     .single();
   if (de) throw de;
   if (!dispatch) throw new Error("Dispatch not found");
-  if (dispatch.status === "cancelled") throw new Error("Dispatch already cancelled");
+  return dispatch as unknown as DispatchWithItems;
+}
 
-  // 2. Reverse dispatched_qty on each order_item, and any batch/serial it consumed
-  const dispatchItems: Array<{
-    order_item_id: string;
-    dispatched_qty: number;
-    dispatch_item_batches?: { batch_id: string; qty: number }[];
-    dispatch_item_serials?: { serial_id: string }[];
-  }> = (dispatch as any).dispatch_items || [];
-
-  for (const di of dispatchItems) {
-    // Decrement dispatched_qty and increment pending_qty
+/** Reverses dispatched_qty on order_items (pending_qty goes back up) and gives back any batch/serial stock this dispatch consumed. Shared by cancelDispatch and deleteDispatch. */
+async function reverseDispatchStockEffects(dispatch: DispatchWithItems): Promise<void> {
+  for (const di of dispatch.dispatch_items ?? []) {
     const { data: oi, error: oie } = await supabase
       .from("order_items")
       .select("qty, dispatched_qty, pending_qty")
@@ -248,7 +244,6 @@ export async function cancelDispatch(dispatchId: string, userId?: string): Promi
       pending_qty: Math.max(0, newPending),
     }).eq("id", di.order_item_id);
 
-    // Give back batch qty / free up serials this line had consumed
     for (const b of di.dispatch_item_batches ?? []) {
       await adjustProductBatchQty(b.batch_id, Number(b.qty));
     }
@@ -256,42 +251,63 @@ export async function cancelDispatch(dispatchId: string, userId?: string): Promi
       await updateProductSerialStatus(s.serial_id, "in_stock", null);
     }
   }
+}
 
-  // 3. Cancel linked invoice if any
-  let cancelledInvoiceId: string | null = null;
-  if ((dispatch as any).invoice_id) {
-    cancelledInvoiceId = (dispatch as any).invoice_id;
-    const { data: invRow, error: ie } = await supabase
+/**
+ * Cancel a dispatch.
+ * - Blocks if a non-cancelled Invoice still exists on this dispatch — the
+ *   invoice must be reversed first (no more auto-cascading the cancel onto
+ *   it: the reversal chain must be walked in sequence, one document at a
+ *   time, same as Order/Invoice/Payment).
+ * - Otherwise reverses dispatched_qty on order_items and any batch/serial
+ *   stock it consumed, then sets status = 'cancelled'.
+ */
+export async function cancelDispatch(dispatchId: string, userId?: string): Promise<void> {
+  const dispatch = await fetchDispatchWithItems(dispatchId);
+  const { data: dRow } = await supabase.from("dispatches").select("status").eq("id", dispatchId).single();
+  if ((dRow as any)?.status === "cancelled") throw new Error("Dispatch already cancelled");
+
+  if (dispatch.invoice_id) {
+    const { data: inv } = await supabase
       .from("sales_invoices")
-      .update({ status: "cancelled" })
-      .eq("id", cancelledInvoiceId)
-      .select("voucher_id")
-      .single();
-    if (ie) throw ie;
-
-    // If that invoice was posted, it has an auto-posted ledger voucher —
-    // cancel it too so it stops counting toward balances. Best-effort:
-    // never let a voucher-side hiccup block cancelling the dispatch.
-    if (invRow?.voucher_id && userId) {
-      try {
-        await cancelVoucher(userId, invRow.voucher_id, "Linked dispatch cancelled");
-      } catch (e: any) {
-        console.error("cancelDispatch: could not cancel linked voucher:", e.message);
-      }
+      .select("invoice_number")
+      .eq("id", dispatch.invoice_id)
+      .neq("status", "cancelled")
+      .maybeSingle();
+    if (inv) {
+      throw new Error(`This Dispatch is linked to Invoice ${(inv as any).invoice_number}. Cancel/reverse the invoice first.`);
     }
   }
 
-  // 4. Update order status back (recalculate from remaining dispatched qty)
+  await reverseDispatchStockEffects(dispatch);
   await recalcOrderStatus(dispatch.order_id);
 
-  // 5. Set dispatch status = cancelled
   const { error: ue } = await supabase
     .from("dispatches")
     .update({ status: "cancelled", ...(userId ? { updated_by: userId } : {}) } as any)
     .eq("id", dispatchId);
   if (ue) throw ue;
+}
 
-  return { cancelledInvoiceId };
+/**
+ * Hard-delete a draft dispatch (never confirmed, so it never has an
+ * invoice yet per confirmDispatch's own contract). Reverses the same
+ * stock effects a cancel would, then removes the row (dispatch_items
+ * cascade via FK).
+ */
+export async function deleteDispatch(dispatchId: string): Promise<void> {
+  const { data: dRow } = await supabase.from("dispatches").select("status").eq("id", dispatchId).single();
+  if (!dRow) throw new Error("Dispatch not found");
+  if ((dRow as any).status !== "draft") {
+    throw new Error("Only draft dispatches can be deleted. Cancel a confirmed dispatch instead.");
+  }
+
+  const dispatch = await fetchDispatchWithItems(dispatchId);
+  await reverseDispatchStockEffects(dispatch);
+  await recalcOrderStatus(dispatch.order_id);
+
+  const { error } = await supabase.from("dispatches").delete().eq("id", dispatchId);
+  if (error) throw error;
 }
 
 /**

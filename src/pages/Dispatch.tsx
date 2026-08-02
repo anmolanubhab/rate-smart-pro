@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Truck, Save, Package, CheckCircle2, XCircle, FileText, AlertCircle, Eye } from "lucide-react";
+import { Truck, Save, Package, CheckCircle2, XCircle, FileText, AlertCircle, Eye, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -23,7 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { fetchOrders, fetchOrderItems, Order, OrderItem } from "@/lib/orders";
-import { createDispatch, confirmDispatch, cancelDispatch, fetchDispatches, DispatchStatus, DispatchBatchSelection } from "@/lib/dispatches";
+import { createDispatch, confirmDispatch, cancelDispatch, deleteDispatch, fetchDispatches, DispatchStatus, DispatchBatchSelection } from "@/lib/dispatches";
 import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
 import DispatchBatchSerialDialog, { type DispatchBatchSerialResult } from "@/components/inventory/DispatchBatchSerialDialog";
@@ -75,6 +75,10 @@ const Dispatch = () => {
 
   // Cancel dialog
   const [cancelTarget, setCancelTarget] = useState<{ id: string; dispatch_number: string } | null>(null);
+
+  // Delete dialog (draft dispatches only)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; dispatch_number: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // View dialog
   const [viewDispatch, setViewDispatch] = useState<any>(null);
@@ -426,17 +430,30 @@ const Dispatch = () => {
   const handleCancelDispatch = async () => {
     if (!cancelTarget) return;
     try {
-      const { cancelledInvoiceId } = await cancelDispatch(cancelTarget.id, user?.id);
-      if (cancelledInvoiceId) {
-        toast.success(`Dispatch ${cancelTarget.dispatch_number} cancelled · linked invoice also cancelled · pending qty restored`);
-      } else {
-        toast.success(`Dispatch ${cancelTarget.dispatch_number} cancelled · pending qty restored`);
-      }
+      await cancelDispatch(cancelTarget.id, user?.id);
+      toast.success(`Dispatch ${cancelTarget.dispatch_number} cancelled · pending qty restored`);
       if (draftDispatch?.id === cancelTarget.id) setDraftDispatch(null);
       setCancelTarget(null);
       reload();
     } catch (e: any) {
       toast.error(e.message);
+    }
+  };
+
+  // ── Delete Dispatch (draft only) ─────────────────────────────────────────
+  const handleDeleteDispatch = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteDispatch(deleteTarget.id);
+      toast.success(`Dispatch ${deleteTarget.dispatch_number} deleted`);
+      if (draftDispatch?.id === deleteTarget.id) setDraftDispatch(null);
+      setDeleteTarget(null);
+      reload();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -737,12 +754,23 @@ const Dispatch = () => {
                             <Package className="h-3.5 w-3.5 mr-0.5" />Packing Slip
                           </Button>
                         )}
-                        {(d.status === "draft" || d.status === "confirmed") && (
+                        {d.status === "draft" && (
                           <Button
                             size="sm"
                             variant="ghost"
                             className="h-6 text-xs text-destructive hover:text-destructive"
-                            title={d.invoice_id ? "Also cancels the linked invoice" : undefined}
+                            title="Delete this draft dispatch"
+                            onClick={() => setDeleteTarget({ id: d.id, dispatch_number: d.dispatch_number })}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {d.status === "confirmed" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs text-destructive hover:text-destructive"
+                            title="Cancel this dispatch"
                             onClick={() => setCancelTarget({ id: d.id, dispatch_number: d.dispatch_number })}
                           >
                             <XCircle className="h-3.5 w-3.5" />
@@ -816,7 +844,8 @@ const Dispatch = () => {
             <AlertDialogTitle>Cancel Dispatch {cancelTarget?.dispatch_number}?</AlertDialogTitle>
             <AlertDialogDescription>
               This will reverse the dispatched quantities back to pending on the order.
-              If a linked invoice exists, it will also be cancelled.
+              If a linked Invoice still exists, cancel/reverse that first — this dialog
+              will show an error instead of proceeding until it's clear.
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -827,6 +856,29 @@ const Dispatch = () => {
               onClick={handleCancelDispatch}
             >
               Yes, Cancel Dispatch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Delete Confirmation Dialog (draft only) ──────────────────────────── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Dispatch {deleteTarget?.dispatch_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the draft dispatch and reverses any stock it had
+              already reserved. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Keep Dispatch</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={handleDeleteDispatch}
+            >
+              {deleting ? "Deleting…" : "Yes, Delete Dispatch"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

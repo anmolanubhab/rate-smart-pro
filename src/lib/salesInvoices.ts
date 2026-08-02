@@ -477,7 +477,23 @@ export async function postInvoice(invoiceId: string) {
  *     → Clears invoice_id from dispatch
  * - Resets order status
  */
+/** An invoice can't be reversed while a payment is still allocated against it — reverse the payment first (frees payment_allocations via reverseSalesPayment). */
+async function assertInvoicePaymentReversed(invoiceId: string): Promise<void> {
+  const { data: alloc } = await supabase
+    .from("payment_allocations" as never)
+    .select("id")
+    .eq("sales_invoice_id", invoiceId)
+    .gt("amount", 0)
+    .limit(1)
+    .maybeSingle();
+  if (alloc) {
+    throw new Error("This Invoice has Payment already received. Reverse the payment first.");
+  }
+}
+
 export async function cancelInvoice(invoiceId: string, userId?: string) {
+  await assertInvoicePaymentReversed(invoiceId);
+
   // Load invoice to check if dispatch-linked
   const { data: inv, error: le } = await supabase
     .from("sales_invoices")
@@ -527,6 +543,8 @@ export async function cancelInvoice(invoiceId: string, userId?: string) {
  * - Resets order status
  */
 export async function deleteInvoice(invoiceId: string) {
+  await assertInvoicePaymentReversed(invoiceId);
+
   // Load invoice
   const { data: inv } = await supabase
     .from("sales_invoices")
