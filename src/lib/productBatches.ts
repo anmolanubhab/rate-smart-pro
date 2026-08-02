@@ -58,6 +58,24 @@ export async function deleteProductBatch(id: string) {
   if (error) throw error;
 }
 
+/**
+ * Every known batch for a product, regardless of current qty (unlike
+ * fetchAvailableBatches' qty > 0 filter, built for "consuming from stock on
+ * hand"). Used for Sales Return's batch picker, where the target batch is
+ * being credited *back* — including a batch that's currently at 0 because
+ * it was fully sold out.
+ */
+export async function fetchBatchesForProduct(businessId: string, productId: string): Promise<ProductBatch[]> {
+  const { data, error } = await supabase
+    .from("product_batches" as never)
+    .select("*")
+    .eq("business_id", businessId)
+    .eq("product_id", productId)
+    .order("expiry_date", { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as ProductBatch[];
+}
+
 /** Batches with stock on hand for a product, oldest-expiry first (FEFO), for use in a picker. */
 export async function fetchAvailableBatches(businessId: string, productId: string, warehouseId?: string | null): Promise<ProductBatch[]> {
   let q = supabase

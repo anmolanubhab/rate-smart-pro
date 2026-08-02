@@ -9,6 +9,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { cancelVoucher } from "@/lib/voucherService";
+import { adjustProductBatchQty } from "@/lib/productBatches";
 
 export type ReturnQtyByItem = Record<string, number>;
 
@@ -96,9 +97,12 @@ async function cancelReturn(
     throw new Error("Could not update return status — no permission or the return no longer exists.");
   }
 
+  // batch_id only exists on sales_return_items (added for Sales Return's
+  // batch-tracking support) -- purchase_return_items has no such column, so
+  // it can't be selected unconditionally without erroring on that table.
   const { data: items, error: itemsErr } = await supabase
     .from(itemsTable as any)
-    .select("product_id, qty")
+    .select(kind === "sales" ? "product_id, qty, batch_id" : "product_id, qty")
     .eq("return_id", returnId);
   if (itemsErr) throw itemsErr;
 
@@ -111,6 +115,19 @@ async function cancelReturn(
     const before = Number(product?.stock) || 0;
     const after = Math.max(0, before + sign * Number(item.qty));
     await supabase.from("products").update({ stock: after }).eq("id", item.product_id);
+
+    // Sales-return cancel reverses the stock this line's post added back
+    // in -- if it was posted against a specific batch, that batch's own
+    // qty (tracked separately from products.stock, see
+    // src/lib/dispatches.ts's applyDispatchLineTracking for the same
+    // dual-update precedent) must come back down too.
+    if (kind === "sales" && item.batch_id) {
+      try {
+        await adjustProductBatchQty(item.batch_id, sign * Number(item.qty));
+      } catch (e: any) {
+        console.error("cancelReturn: could not adjust batch qty:", e.message);
+      }
+    }
 
     if (businessId) {
       await supabase.from("inventory_movements" as any).insert({

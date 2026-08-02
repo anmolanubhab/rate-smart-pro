@@ -76,6 +76,7 @@ const PickingList = lazy(() => import("./pages/sales/PickingList"));
 const Quotations = lazy(() => import("./pages/sales/Quotations"));
 const CreateQuotation = lazy(() => import("./pages/sales/CreateQuotation"));
 const SalesReturns = lazy(() => import("./pages/sales/SalesReturns"));
+const CreateSalesReturn = lazy(() => import("./pages/sales/CreateSalesReturn"));
 const ApprovalCenter = lazy(() => import("./pages/ApprovalCenter"));
 
 // Voucher Engine — foundation pages
@@ -252,6 +253,8 @@ const App = () => (
               <Route path="/sales/quotations/new" element={L(<CreateQuotation />)} />
               <Route path="/sales/quotations/edit/:id" element={L(<CreateQuotation />)} />
               <Route path="/sales/returns" element={L(<SalesReturns />)} />
+              <Route path="/sales/returns/new" element={L(<CreateSalesReturn />)} />
+              <Route path="/sales/returns/edit/:id" element={L(<CreateSalesReturn />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
               <Route path="/purchase/orders" element={L(<PurchaseOrders />)} />

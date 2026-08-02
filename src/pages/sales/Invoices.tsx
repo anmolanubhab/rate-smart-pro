@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal, CheckCircle, Copy,
+  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal, CheckCircle, Copy, Undo2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, duplicateInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import { fetchReturnedQtyByInvoice, type InvoiceReturnStatus } from "@/lib/salesReturns";
 import { createApprovalRequest } from "@/lib/approvals";
 import { canDeleteDirectly } from "@/lib/permissions";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
@@ -79,6 +80,14 @@ export default function InvoicesPage() {
     enabled: !!user,
     queryFn: () => fetchInvoices(user!.id),
   });
+
+  // Computed, not stored — see src/lib/salesReturns.ts's fetchReturnedQtyByInvoice comment.
+  const [returnedByInvoice, setReturnedByInvoice] = useState<Record<string, InvoiceReturnStatus>>({});
+  useEffect(() => {
+    const postedIds = data.filter((i) => i.status === "posted").map((i) => i.id);
+    if (!postedIds.length) return;
+    fetchReturnedQtyByInvoice(postedIds).then(setReturnedByInvoice).catch(() => {});
+  }, [data]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -328,6 +337,7 @@ export default function InvoicesPage() {
                   <th className="text-left px-4 py-3">Date</th>
                   <th className="text-left px-4 py-3">Party</th>
                   <th className="text-left px-4 py-3">Status</th>
+                  <th className="text-left px-4 py-3">Returned</th>
                   <th className="text-right px-4 py-3">GST</th>
                   <th className="text-right px-4 py-3">Total</th>
                   <th className="text-right px-4 py-3 sticky right-0 bg-muted/50">Actions</th>
@@ -353,6 +363,19 @@ export default function InvoicesPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5"><Badge variant="outline" className={statusTone[i.status]}>{i.status}</Badge></td>
+                      <td className="px-4 py-2.5">
+                        {(() => {
+                          const r = returnedByInvoice[i.id];
+                          if (!r || r.status === "none") return <span className="text-xs text-muted-foreground">—</span>;
+                          const tone = r.status === "full" ? "border-destructive/40 text-destructive bg-destructive/10" : "border-amber-500/40 text-amber-600 bg-amber-500/10";
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="outline" className={tone}>{r.status === "full" ? "Fully Returned" : "Partially Returned"}</Badge>
+                              <span className="text-xs text-muted-foreground tabular-nums">{r.returnedQty}/{r.invoicedQty}</span>
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">₹{Number(i.gst_total).toFixed(2)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold">₹{Number(i.grand_total).toFixed(2)}</td>
 
@@ -429,6 +452,11 @@ export default function InvoicesPage() {
                                 <Copy className="h-4 w-4 mr-2" /> Duplicate
                               </DropdownMenuItem>
                               {i.status === "posted" && (
+                                <DropdownMenuItem onClick={() => navigate(`/sales/returns/new?invoiceId=${i.id}`)} className="text-teal-600 focus:text-teal-600">
+                                  <Undo2 className="h-4 w-4 mr-2" /> Create Return
+                                </DropdownMenuItem>
+                              )}
+                              {i.status === "posted" && (
                                 <DropdownMenuItem onClick={() => setComplianceTarget(i)}>
                                   <FileText className="h-4 w-4 mr-2" /> e-Invoice / e-Way Bill
                                 </DropdownMenuItem>
@@ -459,7 +487,7 @@ export default function InvoicesPage() {
               </tbody>
               <tfoot className="bg-muted/40 text-xs">
                 <tr>
-                  <td colSpan={5} className="px-4 py-2 font-medium text-right">Page total:</td>
+                  <td colSpan={6} className="px-4 py-2 font-medium text-right">Page total:</td>
                   <td className="px-4 py-2 text-right font-semibold tabular-nums">
                     ₹{paged.reduce((s, i) => s + Number(i.grand_total), 0).toFixed(2)}
                   </td>
