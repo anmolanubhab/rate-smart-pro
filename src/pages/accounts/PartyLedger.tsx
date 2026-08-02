@@ -177,25 +177,22 @@ export default function PartyLedger() {
   return (
     <>
       {/* ── Print styles ──
-          #party-ledger-print-root isn't a direct child of <body> (it's
-          nested inside the app's sidebar/layout wrappers), so
-          `body > *:not(#id)` was hiding the app's own root div — which
-          hides everything, including this section — instead of hiding
-          just its siblings. The visibility-based technique below hides
-          every element by default and re-reveals only this section's own
-          subtree, so it works regardless of how deep it's nested. */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #party-ledger-print-root, #party-ledger-print-root * { visibility: visible; }
-          #party-ledger-print-root { position: absolute; left: 0; top: 0; width: 100%; }
-          .no-print { display: none !important; }
-          .print-only { display: block !important; }
-        }
-        .print-only { display: none; }
-      `}</style>
+          src/styles/print.css is a GLOBAL stylesheet (imported once in
+          main.tsx) that already does `body * { visibility: hidden !important; }`
+          app-wide, only re-revealing content inside an `.invoice-print`/
+          `.invoice-entry`/`.print-copy-run` wrapper (the convention every
+          other print flow in this app already uses — CreateOrder.tsx,
+          Invoices.tsx, VoucherDetail.tsx). This page's own local
+          `#party-ledger-print-root` override was losing that specificity
+          fight (no `!important`, and even with one, redeclaring the same
+          mechanism locally per-page is exactly the duplication the shared
+          stylesheet exists to avoid) — so it printed a blank page
+          regardless of which selector targeted the root. Using the shared
+          `.invoice-print` class instead makes this page follow the same
+          proven mechanism rather than reinventing it. */}
+      <style>{`.print-only { display: none; } @media print { .print-only { display: block !important; } }`}</style>
 
-      <div id="party-ledger-print-root" className="max-w-7xl mx-auto space-y-5 animate-fade-in-up">
+      <div id="party-ledger-print-root" className="invoice-print max-w-7xl mx-auto space-y-5 animate-fade-in-up">
 
         {/* ── Top Action Bar ── */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 no-print">
