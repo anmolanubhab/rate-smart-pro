@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, MoreHorizontal, CheckCircle, Copy, Undo2,
+  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, CheckCircle, Copy, Undo2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -24,14 +24,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useFormatDate } from "@/lib/dateFormat";
+import { DocumentActionMenu, type DocumentRowAction } from "@/components/documentEngine/DocumentActionMenu";
 
 const statusTone: Record<string, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
@@ -39,6 +37,39 @@ const statusTone: Record<string, string> = {
   cancelled: "border-destructive/40 text-destructive bg-destructive/10",
 };
 
+/** Row-actions config for the "More actions" DocumentActionMenu — kept as a plain function (not a component) since it just builds data, matching every other action list already built this way in the Document Engine (e.g. the gallery page's sample actions). */
+function invoiceRowActions(
+  i: SalesInvoice,
+  handlers: {
+    isCancelled: boolean;
+    onView: (inv: SalesInvoice) => void;
+    onPost: (inv: SalesInvoice) => void;
+    onEdit: (inv: SalesInvoice) => void;
+    onPrint: (inv: SalesInvoice) => void;
+    onDuplicate: (inv: SalesInvoice) => void;
+    navigate: ReturnType<typeof useNavigate>;
+    setComplianceTarget: (inv: SalesInvoice) => void;
+    setCancelTarget: (inv: SalesInvoice) => void;
+    setDeleteTarget: (inv: SalesInvoice) => void;
+  },
+): DocumentRowAction[] {
+  const { isCancelled, onView, onPost, onEdit, onPrint, onDuplicate, navigate, setComplianceTarget, setCancelTarget, setDeleteTarget } = handlers;
+  return [
+    { key: "view", label: "View Invoice", icon: Eye, onClick: () => onView(i) },
+    { key: "post", label: "Post Invoice", icon: CheckCircle, onClick: () => onPost(i), className: "text-emerald-600 focus:text-emerald-600", hidden: i.status !== "draft" },
+    { key: "edit", label: "Edit Invoice", icon: Pencil, onClick: () => onEdit(i), disabled: isCancelled || i.status === "posted" },
+    { key: "print", label: "Print Invoice", icon: Printer, onClick: () => onPrint(i) },
+    { key: "duplicate", label: "Duplicate", icon: Copy, onClick: () => onDuplicate(i) },
+    { key: "return", label: "Create Return", icon: Undo2, onClick: () => navigate(`/sales/returns/new?invoiceId=${i.id}`), className: "text-teal-600 focus:text-teal-600", hidden: i.status !== "posted" },
+    { key: "compliance", label: "e-Invoice / e-Way Bill", icon: FileText, onClick: () => setComplianceTarget(i), hidden: i.status !== "posted" },
+    { key: "cancel", label: "Cancel Invoice", icon: Ban, onClick: () => setCancelTarget(i), className: "text-orange-600 focus:text-orange-600", separatorBefore: true, hidden: isCancelled },
+    // The separator always renders before this Cancel/Delete block in the
+    // original, even when Cancel itself is hidden (invoice already
+    // cancelled) — so Delete carries its own separatorBefore too,
+    // conditioned on Cancel being hidden, to avoid a missing divider line.
+    { key: "delete", label: "Delete Invoice", icon: Trash2, onClick: () => setDeleteTarget(i), disabled: i.status === "posted", destructive: true, separatorBefore: isCancelled },
+  ];
+}
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
@@ -425,60 +456,12 @@ export default function InvoicesPage() {
                           </Tooltip>
 
                           {/* More actions */}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={busy === i.id}>
-                                {busy === i.id
-                                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                                  : <MoreHorizontal className="h-4 w-4" />}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-52">
-                              <DropdownMenuItem onClick={() => onView(i)}>
-                                <Eye className="h-4 w-4 mr-2" /> View Invoice
-                              </DropdownMenuItem>
-                              {i.status === "draft" && (
-                                <DropdownMenuItem onClick={() => onPost(i)} className="text-emerald-600 focus:text-emerald-600">
-                                  <CheckCircle className="h-4 w-4 mr-2" /> Post Invoice
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem onClick={() => onEdit(i)} disabled={isCancelled || i.status === "posted"}>
-                                <Pencil className="h-4 w-4 mr-2" /> Edit Invoice
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => onPrint(i)}>
-                                <Printer className="h-4 w-4 mr-2" /> Print Invoice
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => onDuplicate(i)}>
-                                <Copy className="h-4 w-4 mr-2" /> Duplicate
-                              </DropdownMenuItem>
-                              {i.status === "posted" && (
-                                <DropdownMenuItem onClick={() => navigate(`/sales/returns/new?invoiceId=${i.id}`)} className="text-teal-600 focus:text-teal-600">
-                                  <Undo2 className="h-4 w-4 mr-2" /> Create Return
-                                </DropdownMenuItem>
-                              )}
-                              {i.status === "posted" && (
-                                <DropdownMenuItem onClick={() => setComplianceTarget(i)}>
-                                  <FileText className="h-4 w-4 mr-2" /> e-Invoice / e-Way Bill
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuSeparator />
-                              {!isCancelled && (
-                                <DropdownMenuItem
-                                  onClick={() => setCancelTarget(i)}
-                                  className="text-orange-600 focus:text-orange-600"
-                                >
-                                  <Ban className="h-4 w-4 mr-2" /> Cancel Invoice
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                onClick={() => setDeleteTarget(i)}
-                                disabled={i.status === "posted"}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" /> Delete Invoice
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <DocumentActionMenu
+                            loading={busy === i.id}
+                            triggerDisabled={busy === i.id}
+                            contentClassName="w-52"
+                            actions={invoiceRowActions(i, { isCancelled, onView, onPost, onEdit, onPrint, onDuplicate, navigate, setComplianceTarget, setCancelTarget, setDeleteTarget })}
+                          />
                         </div>
                       </td>
                     </tr>
