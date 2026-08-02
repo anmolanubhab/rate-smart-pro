@@ -11,6 +11,8 @@ export interface DocumentToolbarAction {
   variant?: "default" | "outline" | "ghost" | "primary";
   disabled?: boolean;
   hidden?: boolean;
+  /** Escape hatch for one-off color-coding a document's existing page already relies on (e.g. CreatePurchaseOrder.tsx's orange Cancel / destructive-outline Reject). Merged onto the button's className, not a replacement. */
+  className?: string;
 }
 
 /**
@@ -41,7 +43,7 @@ export function DocumentToolbar({
   );
 }
 
-export function DocumentToolbarButton({ action }: { action: DocumentToolbarAction }) {
+export function DocumentToolbarButton({ action, extraClassName }: { action: DocumentToolbarAction; extraClassName?: string }) {
   const Icon = action.icon;
   const isPrimary = action.variant === "primary";
   return (
@@ -50,7 +52,7 @@ export function DocumentToolbarButton({ action }: { action: DocumentToolbarActio
       variant={isPrimary ? undefined : (action.variant ?? "outline")}
       onClick={action.onClick}
       disabled={action.disabled}
-      className={`h-8${isPrimary ? " gradient-primary text-white border-0" : ""}`}
+      className={`h-8${isPrimary ? " gradient-primary text-white border-0" : ""}${action.className ? ` ${action.className}` : ""}${extraClassName ? ` ${extraClassName}` : ""}`}
       title={action.shortcut ? `Shortcut: ${action.shortcut}` : undefined}
     >
       {Icon && <Icon className="h-3.5 w-3.5" />} {action.label}

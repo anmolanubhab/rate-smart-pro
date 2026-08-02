@@ -26,6 +26,7 @@ export function DocumentGridTable<Row>({
   renderFooter,
   isDuplicate,
   showSpacerRows = true,
+  spacerModulo = 4,
   emptyMessage,
   hasRowActions = true,
 }: {
@@ -36,6 +37,8 @@ export function DocumentGridTable<Row>({
   isDuplicate?: (row: Row, idx: number) => boolean;
   /** Pad the table with blank filler rows up to a multiple of 4 (the Tally-ledger look). Documents whose grid is a fixed set of loaded lines rather than a free-typed ledger (e.g. Sales Return) should pass `false`. */
   showSpacerRows?: boolean;
+  /** Pad up to a multiple of this many rows instead of 4 (e.g. CreatePurchaseOrder.tsx pads to 3). */
+  spacerModulo?: number;
   /** Shown as a single full-width row instead of any data rows/spacers when `rows` is empty. */
   emptyMessage?: ReactNode;
   /** Whether renderRow appends a trailing per-row action cell (e.g. a delete button) — controls the trailing header slot and the spacer/empty-message colSpan. Documents with fixed, non-deletable rows (e.g. Sales Return) should pass `false`. */
@@ -76,7 +79,7 @@ export function DocumentGridTable<Row>({
           )}
           {showSpacerRows &&
             !(rows.length === 0 && emptyMessage) &&
-            Array.from({ length: Math.max(0, 4 - (rows.length % 4)) }).map((_, i) => (
+            Array.from({ length: Math.max(0, spacerModulo - (rows.length % spacerModulo)) }).map((_, i) => (
               <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
                 <td colSpan={colCount}>&nbsp;</td>
               </tr>

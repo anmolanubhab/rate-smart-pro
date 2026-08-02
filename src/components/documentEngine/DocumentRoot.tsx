@@ -22,28 +22,46 @@ export type DocumentType = keyof typeof DOCUMENT_THEME_CLASS;
 
 interface DocumentRootProps {
   type: DocumentType;
-  /** Plain-text heading shown only in print output (e.g. "ORDER", "PURCHASE ORDER"). */
-  printTitle: string;
+  /**
+   * Plain-text heading shown only in print output (e.g. "ORDER", "PURCHASE
+   * ORDER"). Ignored when `printMode: "multiCopy"` — that pipeline renders
+   * its own title via MultiCopyPrintRun's `meta`.
+   */
+  printTitle?: string;
   children: ReactNode;
   className?: string;
+  /**
+   * `"toggle"` (default) — this page IS the print output: gets tagged
+   * `.invoice-entry` so the global print.css reveals it and hides
+   * everything else, with its own `hidden print:block` sections doing the
+   * on-screen-vs-print swap (CreateOrder/CreateQuotation/CreateSalesReturn's
+   * pattern). `"multiCopy"` — this page has its own separate off-screen
+   * print pipeline (MultiCopyPrintRun, e.g. CreatePurchaseOrder.tsx /
+   * Invoices.tsx) that already owns visibility via `.print-copy-run`; the
+   * on-screen edit view must NOT also carry `.invoice-entry` or it would
+   * render alongside the print run and double up the output.
+   */
+  printMode?: "toggle" | "multiCopy";
 }
 
 /**
  * Root wrapper shared by every document create/edit page: theme class +
- * the `.invoice-entry` ledger-sheet convention + the print-only heading +
- * the print `<style>` block. Extracted verbatim from the boilerplate that
- * was byte-for-byte duplicated between CreateOrder.tsx and
- * CreateQuotation.tsx.
+ * the ledger-sheet convention + the print `<style>` block. Extracted
+ * verbatim from the boilerplate that was byte-for-byte duplicated between
+ * CreateOrder.tsx and CreateQuotation.tsx.
  */
-export function DocumentRoot({ type, printTitle, children, className }: DocumentRootProps) {
+export function DocumentRoot({ type, printTitle, children, className, printMode = "toggle" }: DocumentRootProps) {
   const themeClass = DOCUMENT_THEME_CLASS[type];
+  const baseClass = printMode === "multiCopy" ? "" : "invoice-entry ";
   return (
     <div
-      className={`${themeClass ? `${themeClass} ` : ""}invoice-entry max-w-[1400px] mx-auto text-[13px] font-mono${className ? ` ${className}` : ""}`}
+      className={`${themeClass ? `${themeClass} ` : ""}${baseClass}max-w-[1400px] mx-auto text-[13px] font-mono${className ? ` ${className}` : ""}`}
     >
-      <div className="hidden print:block text-center font-sans font-bold text-[16px] mb-2">
-        {printTitle}
-      </div>
+      {printMode === "toggle" && (
+        <div className="hidden print:block text-center font-sans font-bold text-[16px] mb-2">
+          {printTitle}
+        </div>
+      )}
       {children}
       <style>{`
         @media print {
