@@ -369,6 +369,153 @@ export async function rejectPurchaseOrder(id: string, userId: string, reason?: s
   if (error) throw error;
 }
 
+// ─── Activity log ───────────────────────────────────────────────────────────
+// Mirrors order_activity_logs / logActivity / fetchActivityLogs in
+// src/lib/orders.ts — same shape, same per-user RLS pattern, just scoped to
+// purchase_order_id instead of order_id.
+
+export interface POActivityLog {
+  id: string;
+  user_id: string;
+  purchase_order_id: string;
+  action: string;
+  description: string | null;
+  old_data: any;
+  new_data: any;
+  created_at: string;
+}
+
+export async function logPOActivity(input: {
+  userId: string;
+  purchaseOrderId: string;
+  action: string;
+  description?: string;
+  oldData?: any;
+  newData?: any;
+}): Promise<void> {
+  await supabase.from("po_activity_logs" as any).insert({
+    user_id: input.userId,
+    purchase_order_id: input.purchaseOrderId,
+    action: input.action,
+    description: input.description ?? null,
+    old_data: input.oldData ?? null,
+    new_data: input.newData ?? null,
+  });
+}
+
+export async function fetchPOActivityLogs(purchaseOrderId: string): Promise<POActivityLog[]> {
+  const { data, error } = await supabase
+    .from("po_activity_logs" as any)
+    .select("*")
+    .eq("purchase_order_id", purchaseOrderId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []) as unknown as POActivityLog[];
+}
+
+/**
+ * Clone a Purchase Order as a new draft — mirrors duplicateOrder()/
+ * duplicateQuotation() in orders.ts/quotations.ts. Date/status/approval
+ * fields reset; supplier, warehouse, items, and terms carry over.
+ */
+export async function duplicatePurchaseOrder(id: string, userId: string): Promise<PurchaseOrder> {
+  const original = await fetchPurchaseOrder(id);
+  const items = await fetchPOItems(id);
+  const businessId = getActiveBusinessIdSync();
+  if (!businessId) throw new Error("No active business selected");
+
+  const poNumber = await nextPONumber(businessId);
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .insert({
+      business_id: businessId,
+      po_number: poNumber,
+      supplier_id: original.supplier_id,
+      warehouse_id: original.warehouse_id,
+      po_date: new Date().toISOString().slice(0, 10),
+      expected_delivery_date: null,
+      status: "draft",
+      remarks: original.remarks,
+      transport_name: original.transport_name,
+      transport_mode: original.transport_mode,
+      lr_number: original.lr_number,
+      vehicle_number: original.vehicle_number,
+      payment_terms: original.payment_terms,
+      terms_conditions: original.terms_conditions,
+      tax_mode: original.tax_mode,
+      subtotal: original.subtotal,
+      discount_total: original.discount_total,
+      tax_total: original.tax_total,
+      grand_total: original.grand_total,
+      created_by: userId,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  const cloned = data as PurchaseOrder;
+
+  if (items.length) {
+    const rows = items.map((it, idx) => ({
+      purchase_order_id: cloned.id,
+      product_id: it.product_id,
+      part_number: it.part_number,
+      description: it.description,
+      qty: it.qty,
+      rate: it.rate,
+      discount_percent: it.discount_percent,
+      gst_percent: it.gst_percent,
+      taxable_amount: it.taxable_amount,
+      tax_amount: it.tax_amount,
+      total_amount: it.total_amount,
+      position: idx,
+      unit_id: it.unit_id ?? null,
+      stock_qty: it.stock_qty ?? null,
+    }));
+    const { error: itemsError } = await supabase.from("purchase_order_items").insert(rows);
+    if (itemsError) throw itemsError;
+  }
+
+  await logPOActivity({
+    userId,
+    purchaseOrderId: cloned.id,
+    action: "duplicated",
+    description: `From ${original.po_number}`,
+  });
+
+  return cloned;
+}
+
+/**
+ * Hard delete — only ever allowed for a draft PO with no GRN against it.
+ * PO previously had no delete path at all (only cancel); this fills the
+ * same "Draft -> Delete allowed, Confirmed -> Cancel only" gap already
+ * closed for Sales Order/Quotation/Sales Return this session.
+ */
+export async function deletePurchaseOrder(id: string): Promise<void> {
+  const { data: po, error: fetchErr } = await supabase
+    .from("purchase_orders")
+    .select("status")
+    .eq("id", id)
+    .single();
+  if (fetchErr) throw fetchErr;
+  if (po.status !== "draft") {
+    throw new Error("Only a draft Purchase Order can be deleted directly. Cancel it instead.");
+  }
+
+  const { count: grnCount, error: grnErr } = await supabase
+    .from("goods_receipts")
+    .select("id", { count: "exact", head: true })
+    .eq("purchase_order_id", id);
+  if (grnErr) throw grnErr;
+  if ((grnCount ?? 0) > 0) {
+    throw new Error("Goods have already been received against this Purchase Order. Cancel the Goods Receipt(s) first.");
+  }
+
+  await supabase.from("purchase_order_items").delete().eq("purchase_order_id", id);
+  const { error } = await supabase.from("purchase_orders").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // ─── Excel Export ────────────────────────────────────────────────────────────
 
 function autoWidth(rows: any[][]): { wch: number }[] {

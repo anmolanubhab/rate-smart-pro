@@ -14,6 +14,7 @@ import {
   Upload,
   Printer,
   Ban,
+  Copy,
 } from "lucide-react";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
@@ -53,6 +54,11 @@ import {
   approvePurchaseOrder,
   rejectPurchaseOrder,
   cancelPurchaseOrder,
+  duplicatePurchaseOrder,
+  deletePurchaseOrder,
+  logPOActivity,
+  fetchPOActivityLogs,
+  type POActivityLog,
 } from "@/lib/purchaseOrders";
 import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/documentEngine/DocumentRoot";
 import { DocumentToolbar, DocumentToolbarButton, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
@@ -62,6 +68,8 @@ import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentE
 import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
 import { DocumentImportExportButtons } from "@/components/documentEngine/DocumentImportExportButtons";
+import { DocumentTimeline } from "@/components/documentEngine/DocumentTimeline";
+import { DocumentAuditLog } from "@/components/documentEngine/DocumentAuditLog";
 import { useDocumentGridNavigation } from "@/hooks/useDocumentGridNavigation";
 import { useDocumentShortcuts } from "@/hooks/useDocumentShortcuts";
 
@@ -159,6 +167,8 @@ export default function CreatePurchaseOrder() {
   const [savedPO, setSavedPO] = useState<PurchaseOrder | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [activityLogs, setActivityLogs] = useState<POActivityLog[]>([]);
+  const [duplicating, setDuplicating] = useState(false);
 
   // Print
   const [printData, setPrintData] = useState<{ company: any; party: any; meta: any; items: any[]; totals: any } | null>(null);
@@ -251,6 +261,7 @@ export default function CreatePurchaseOrder() {
           setEditMode(true);
           poIdRef.current = po.id;
           setItems(its.length ? its : Array.from({ length: 5 }, blankPOItem));
+          fetchPOActivityLogs(po.id).then(setActivityLogs).catch(() => {});
 
           const { count: grnCount } = await supabase
             .from("goods_receipts")
@@ -357,6 +368,7 @@ export default function CreatePurchaseOrder() {
     if (!user || saving) return;
     if (status !== "draft" && !supplierId) { toast.error("Please select a supplier"); return; }
     if (status !== "draft" && !validItems().length) { toast.error("Add at least one line item"); return; }
+    const isNewPO = !poIdRef.current;
     try {
       setSaving(true);
       const saved = await savePurchaseOrder({
@@ -384,6 +396,14 @@ export default function CreatePurchaseOrder() {
       setEditMode(true);
       if (!poNumber) setPONumber(saved.po_number);
 
+      await logPOActivity({
+        userId: user.id,
+        purchaseOrderId: saved.id,
+        action: isNewPO ? "created" : status === "pending_approval" ? "submitted" : "draft_saved",
+        description: isNewPO ? `Created as ${saved.po_number}` : undefined,
+      });
+      fetchPOActivityLogs(saved.id).then(setActivityLogs).catch(() => {});
+
       if (status === "pending_approval") {
         toast.success("Purchase Order submitted for approval");
         navigate(`/purchase/orders`);
@@ -410,6 +430,8 @@ export default function CreatePurchaseOrder() {
         old_value: { status: currentStatus },
         new_value: { status: "approved" },
       });
+      await logPOActivity({ userId: user.id, purchaseOrderId: poIdRef.current, action: "approved", oldData: { status: currentStatus }, newData: { status: "approved" } });
+      fetchPOActivityLogs(poIdRef.current).then(setActivityLogs).catch(() => {});
       setCurrentStatus("approved");
       toast.success("Purchase Order approved");
     } catch (e: any) {
@@ -434,6 +456,8 @@ export default function CreatePurchaseOrder() {
         new_value: { status: "rejected", reason },
         reason: reason || null,
       });
+      await logPOActivity({ userId: user.id, purchaseOrderId: poIdRef.current, action: "rejected", description: reason || undefined, oldData: { status: currentStatus }, newData: { status: "rejected" } });
+      fetchPOActivityLogs(poIdRef.current).then(setActivityLogs).catch(() => {});
       setCurrentStatus("rejected");
       toast.success("Purchase Order rejected");
     } catch (e: any) {
@@ -458,6 +482,8 @@ export default function CreatePurchaseOrder() {
         new_value: { status: "cancelled", reason },
         reason: reason || null,
       });
+      await logPOActivity({ userId: user.id, purchaseOrderId: poIdRef.current, action: "cancelled", description: reason || undefined, oldData: { status: currentStatus }, newData: { status: "cancelled" } });
+      fetchPOActivityLogs(poIdRef.current).then(setActivityLogs).catch(() => {});
       setCurrentStatus("cancelled");
       toast.success("Purchase Order cancelled");
     } catch (e: any) {
@@ -470,6 +496,20 @@ export default function CreatePurchaseOrder() {
   const handleExport = () => {
     if (!savedPO) { toast.error("Save the PO first to export"); return; }
     exportPOToExcel(savedPO, validItems(), supplier?.name);
+  };
+
+  const handleDuplicate = async () => {
+    if (!user || !poIdRef.current || duplicating) return;
+    setDuplicating(true);
+    try {
+      const clone = await duplicatePurchaseOrder(poIdRef.current, user.id);
+      toast.success(`Duplicated as ${clone.po_number}`);
+      navigate(`/purchase/orders/edit/${clone.id}`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to duplicate purchase order");
+    } finally {
+      setDuplicating(false);
+    }
   };
 
   const handlePrint = async () => {
@@ -566,6 +606,7 @@ export default function CreatePurchaseOrder() {
     { key: "reject", label: "Reject", icon: X, onClick: handleReject, disabled: saving, hidden: !(editMode && currentStatus === "pending_approval" && canApprove), className: "border-destructive/40 text-destructive" },
     { key: "approve", label: "Approve", icon: ShieldCheck, onClick: handleApprove, disabled: saving, hidden: !(editMode && currentStatus === "pending_approval" && canApprove), variant: "primary" },
     { key: "cancel", label: "Cancel PO", icon: Ban, onClick: handleCancelPO, disabled: saving, hidden: !(editMode && currentStatus !== "cancelled" && currentStatus !== "closed"), className: "border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700" },
+    { key: "duplicate", label: duplicating ? "Duplicating…" : "Duplicate", icon: Copy, onClick: handleDuplicate, disabled: duplicating, hidden: !editMode },
     { key: "close", label: "Close", icon: X, onClick: () => navigate("/purchase/orders"), variant: "ghost", className: "text-muted-foreground" },
   ];
 
@@ -919,6 +960,20 @@ export default function CreatePurchaseOrder() {
             </div>
           </div>
         </div>
+
+        {/* ── Activity Timeline + Audit Log (once the PO has been saved at least once) ── */}
+        {editMode && activityLogs.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-3 py-3 border-t border-border">
+            <div>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2 font-sans">Activity Timeline</p>
+              <DocumentTimeline entries={activityLogs} />
+            </div>
+            <div>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2 font-sans">Audit Log</p>
+              <DocumentAuditLog entries={activityLogs} />
+            </div>
+          </div>
+        )}
       </DocumentSheet>
 
       {/* ── Excel Import Dialog ────────────────────────────────────── */}
