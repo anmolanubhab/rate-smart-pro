@@ -174,6 +174,122 @@
     --primary-glow: 142 69% 55%;
     --ring: 142 69% 48%;
   }
+
+  /* Purchase module — Document Engine theme set (Phase 1A). One class per
+     document type, same scoped CSS-var-only override shape as
+     .theme-quotation/.theme-return above. Colors per the frozen roadmap:
+     PO purple, GRN green, Purchase Invoice blue, Purchase Return
+     orange/red, Vendor Claim amber, Supplier Payment teal. Purchase Return
+     is intentionally a separate class from Sales' .theme-return even
+     though both are "return" documents — Purchase's chosen color
+     (orange/red) differs from Sales Return's green by design. */
+  .theme-po {
+    --primary: 262 83% 58%;
+    --primary-hover: 262 83% 50%;
+    --primary-light: 262 100% 97%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 262 83% 66%;
+    --ring: 262 83% 58%;
+    --gradient-primary: linear-gradient(135deg, hsl(262 83% 58%), hsl(280 70% 55%));
+  }
+  .dark .theme-po {
+    --primary: 262 83% 68%;
+    --primary-hover: 262 83% 58%;
+    --primary-light: 262 45% 22%;
+    --primary-foreground: 262 39% 11%;
+    --primary-glow: 262 83% 75%;
+    --ring: 262 83% 68%;
+  }
+
+  .theme-grn {
+    --primary: 152 69% 31%;
+    --primary-hover: 152 74% 25%;
+    --primary-light: 152 70% 95%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 152 65% 41%;
+    --ring: 152 69% 31%;
+    --gradient-primary: linear-gradient(135deg, hsl(152 69% 31%), hsl(168 60% 36%));
+  }
+  .dark .theme-grn {
+    --primary: 152 65% 45%;
+    --primary-hover: 152 69% 37%;
+    --primary-light: 152 40% 17%;
+    --primary-foreground: 152 61% 8%;
+    --primary-glow: 152 65% 52%;
+    --ring: 152 65% 45%;
+  }
+
+  .theme-purchase-invoice {
+    --primary: 217 91% 53%;
+    --primary-hover: 217 91% 46%;
+    --primary-light: 217 100% 97%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 217 91% 61%;
+    --ring: 217 91% 53%;
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 53%), hsl(199 89% 48%));
+  }
+  .dark .theme-purchase-invoice {
+    --primary: 217 91% 65%;
+    --primary-hover: 217 91% 55%;
+    --primary-light: 217 45% 22%;
+    --primary-foreground: 217 39% 11%;
+    --primary-glow: 217 91% 72%;
+    --ring: 217 91% 65%;
+  }
+
+  .theme-purchase-return {
+    --primary: 21 90% 48%;
+    --primary-hover: 17 88% 42%;
+    --primary-light: 24 100% 96%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 24 95% 56%;
+    --ring: 21 90% 48%;
+    --gradient-primary: linear-gradient(135deg, hsl(21 90% 48%), hsl(0 72% 51%));
+  }
+  .dark .theme-purchase-return {
+    --primary: 24 95% 60%;
+    --primary-hover: 21 90% 50%;
+    --primary-light: 21 55% 20%;
+    --primary-foreground: 20 39% 11%;
+    --primary-glow: 24 95% 67%;
+    --ring: 24 95% 60%;
+  }
+
+  .theme-vendor-claim {
+    --primary: 38 92% 50%;
+    --primary-hover: 33 90% 44%;
+    --primary-light: 45 100% 96%;
+    --primary-foreground: 30 50% 15%;
+    --primary-glow: 42 96% 58%;
+    --ring: 38 92% 50%;
+    --gradient-primary: linear-gradient(135deg, hsl(38 92% 50%), hsl(45 93% 47%));
+  }
+  .dark .theme-vendor-claim {
+    --primary: 42 96% 58%;
+    --primary-hover: 38 92% 50%;
+    --primary-light: 38 55% 18%;
+    --primary-foreground: 30 50% 10%;
+    --primary-glow: 42 96% 65%;
+    --ring: 42 96% 58%;
+  }
+
+  .theme-supplier-payment {
+    --primary: 173 80% 32%;
+    --primary-hover: 175 84% 26%;
+    --primary-light: 166 76% 95%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 172 66% 42%;
+    --ring: 173 80% 32%;
+    --gradient-primary: linear-gradient(135deg, hsl(173 80% 32%), hsl(189 94% 38%));
+  }
+  .dark .theme-supplier-payment {
+    --primary: 172 66% 46%;
+    --primary-hover: 173 80% 38%;
+    --primary-light: 173 45% 17%;
+    --primary-foreground: 172 61% 8%;
+    --primary-glow: 172 66% 53%;
+    --ring: 172 66% 46%;
+  }
 }
 
 @layer base {
