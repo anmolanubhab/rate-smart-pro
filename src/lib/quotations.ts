@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
-import { computeItem, computeTotals, saveOrder, type OrderItem, type Order } from "@/lib/orders";
+import { computeItem, computeTotals, saveOrder, type OrderItem, type Order, type OrderStatus } from "@/lib/orders";
 
 export type QuotationStatus = "draft" | "sent" | "accepted" | "rejected" | "expired" | "converted";
 
@@ -27,6 +27,15 @@ export interface Quotation {
   converted_order_id: string | null;
   created_at: string;
   updated_at: string;
+  // Status of the linked order, fetched via join — used to re-enable delete
+  // when the converted order was later cancelled (or removed, in which case
+  // converted_order_id itself is null thanks to ON DELETE SET NULL).
+  order_status?: OrderStatus | null;
+}
+
+/** A converted quotation stays deletable once its order is gone or cancelled. */
+export function isQuotationDeletable(q: Quotation): boolean {
+  return q.status !== "converted" || !q.converted_order_id || q.order_status === "cancelled";
 }
 
 export async function nextQuotationNumber(businessId: string): Promise<string> {
@@ -38,11 +47,14 @@ export async function nextQuotationNumber(businessId: string): Promise<string> {
 export async function fetchQuotations(businessId: string): Promise<Quotation[]> {
   const { data, error } = await supabase
     .from("quotations" as never)
-    .select("*")
+    .select("*, orders!converted_order_id(status)")
     .eq("business_id", businessId)
     .order("quotation_date", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as Quotation[];
+  return ((data ?? []) as any[]).map((row) => ({
+    ...row,
+    order_status: row.orders?.status ?? null,
+  })) as unknown as Quotation[];
 }
 
 export async function fetchQuotationItems(quotationId: string): Promise<QuotationItem[]> {

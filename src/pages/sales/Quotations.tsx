@@ -18,7 +18,7 @@ import { hasRole } from "@/lib/permissions";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import CreateQuotationDialog from "@/components/sales/CreateQuotationDialog";
-import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, updateQuotationStatus, deleteQuotation, type Quotation, type QuotationStatus } from "@/lib/quotations";
+import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, updateQuotationStatus, deleteQuotation, isQuotationDeletable, type Quotation, type QuotationStatus } from "@/lib/quotations";
 import { useFormatDate } from "@/lib/dateFormat";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
@@ -261,7 +261,7 @@ export default function Quotations() {
                         {converting === q.id ? "Converting…" : "Convert to Order"}
                       </Button>
                     )}
-                    {canEditStatus && q.status !== "converted" && (
+                    {canEditStatus && isQuotationDeletable(q) && (
                       <Button
                         size="sm" variant="outline"
                         className="text-destructive hover:text-destructive"
