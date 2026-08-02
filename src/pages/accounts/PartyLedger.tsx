@@ -202,7 +202,7 @@ export default function PartyLedger() {
              which -- because CSS animations take priority over a plain
              declared property -- overrides .invoice-entry's own
              transform: translateX(-50%) centering rule from print.css.
-             Without that translateX, `left: 50%` alone shifts the box to
+             Without that translateX, left: 50% alone shifts the box to
              start at the page's horizontal center and run 190mm further
              right, off the edge of the page. Killing the animation for
              print lets the centering transform apply normally. */

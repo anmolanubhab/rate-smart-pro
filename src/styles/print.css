@@ -12,6 +12,19 @@
     print-color-adjust: exact;
   }
 
+  /* AppLayout's <main> (the shared content wrapper behind every
+     authenticated page) is `overflow-x-hidden` for the on-screen
+     scrollable dashboard. .invoice-print/.invoice-entry/.print-copy-run
+     below are positioned `absolute` relative to the page, not to <main>
+     -- but overflow clipping on an ancestor still applies to a
+     descendant's rendered box regardless of its own containing block, so
+     without this, any of those wrappers wider than <main>'s on-screen
+     width (e.g. narrowed by the sidebar) gets its outer edge clipped
+     instead of the full page-width content showing. */
+  main {
+    overflow: visible !important;
+  }
+
   .no-print {
     display: none !important;
   }
