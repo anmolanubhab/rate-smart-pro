@@ -4,8 +4,6 @@ import { Save, FileCheck2, Printer, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,9 +18,43 @@ import {
 } from "@/lib/salesReturns";
 import { computeTotals } from "@/lib/orders";
 import { useFormatDate } from "@/lib/dateFormat";
+import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/documentEngine/DocumentRoot";
+import { DocumentToolbar, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
+import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
+import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
+import { DocumentGridTable, DocumentGridPrintTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
+import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
+import { useDocumentShortcuts } from "@/hooks/useDocumentShortcuts";
 
 const fmt = (n: number) =>
   Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const GRID_COLUMNS: DocumentGridColumn[] = [
+  { key: "part", header: "Part No.", widthClass: "min-w-[100px]" },
+  { key: "product", header: "Product", widthClass: "min-w-[160px]" },
+  { key: "batch", header: "Batch", widthClass: "w-28" },
+  { key: "hsn", header: "HSN", widthClass: "w-16" },
+  { key: "inv_qty", header: "Inv. Qty", align: "right", widthClass: "w-16" },
+  { key: "returned", header: "Returned", align: "right", widthClass: "w-16" },
+  { key: "available", header: "Available", align: "right", widthClass: "w-16" },
+  { key: "return_qty", header: "Return Qty", align: "right", widthClass: "w-20" },
+  { key: "rate", header: "Rate", align: "right", widthClass: "w-20" },
+  { key: "disc", header: "Disc %", align: "right", widthClass: "w-14" },
+  { key: "gst", header: "GST %", align: "right", widthClass: "w-14" },
+  { key: "value", header: "Return Value", align: "right", widthClass: "w-24" },
+  { key: "reason", header: "Reason", widthClass: "min-w-[100px]" },
+  { key: "remarks", header: "Remarks", widthClass: "min-w-[100px]" },
+];
+
+const PRINT_COLUMNS: DocumentGridColumn[] = [
+  { key: "part", header: "Part No.", widthClass: "w-32" },
+  { key: "product", header: "Product", widthClass: "w-[30%]" },
+  { key: "batch", header: "Batch", widthClass: "w-20" },
+  { key: "return_qty", header: "Return Qty", align: "right", widthClass: "w-16" },
+  { key: "rate", header: "Rate", align: "right", widthClass: "w-20" },
+  { key: "gst", header: "GST %", align: "right", widthClass: "w-14" },
+  { key: "value", header: "Return Value", align: "right", widthClass: "w-24" },
+];
 
 const CreateSalesReturn = () => {
   const { user } = useAuth();
@@ -52,15 +84,14 @@ const CreateSalesReturn = () => {
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
-  const [partyOpen, setPartyOpen] = useState(false);
-  const [partyHighlightedIndex, setPartyHighlightedIndex] = useState(0);
   const partyInputRef = useRef<HTMLInputElement>(null);
   const party = useMemo(() => parties.find((p) => p.id === partyId) || null, [parties, partyId]);
   const partResults = useMemo(() => {
     const q = partyQuery.trim().toLowerCase();
     if (!q) return parties.slice(0, 12);
+    if (party && party.name.trim().toLowerCase() === q) return [];
     return parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12);
-  }, [parties, partyQuery]);
+  }, [parties, partyQuery, party]);
 
   // Invoice
   const [invoices, setInvoices] = useState<ReturnableInvoice[]>([]);
@@ -202,20 +233,6 @@ const CreateSalesReturn = () => {
     }));
   }, [batchesByProduct]);
 
-  const partyKeyDown = (e: React.KeyboardEvent) => {
-    if (partyOpen && partResults.length > 0) {
-      if (e.key === "ArrowDown") { e.preventDefault(); setPartyHighlightedIndex((p) => Math.min(p + 1, partResults.length - 1)); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); setPartyHighlightedIndex((p) => Math.max(p - 1, 0)); return; }
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const sel = partResults[partyHighlightedIndex];
-        if (sel) { setPartyId(sel.id); setPartyQuery(sel.name); setPartyOpen(false); setTimeout(() => invoiceSelectRef.current?.focus(), 10); }
-        return;
-      }
-      if (e.key === "Escape") { setPartyOpen(false); return; }
-    }
-  };
-
   const updateItem = (idx: number, patch: Partial<SalesReturnItem>) => {
     setItems((rows) => rows.map((r, i) => {
       if (i !== idx) return r;
@@ -288,117 +305,91 @@ const CreateSalesReturn = () => {
     }
   };
 
-  // Keyboard shortcuts — same mechanism as CreateOrder.tsx / CreateQuotation.tsx
+  useDocumentShortcuts(
+    {
+      onSaveDraft: handleSaveDraft,
+      onSubmit: handlePost,
+      onEscape: goToList,
+      onFocusSecondary: () => invoiceSelectRef.current?.focus(),
+      onFocusPrimary: () => partyInputRef.current?.focus(),
+    },
+    [partyId, invoiceId, items, returnDate, reason, notes, saving, posting, readOnly],
+  );
+
+  // Two shortcuts here don't match the shared hook's key combinations
+  // (plain Ctrl+N with no Alt, and Alt+P instead of Ctrl+P for print) —
+  // kept as a small supplementary handler rather than widening the shared
+  // hook's API for a one-off variant.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         navigate("/sales/returns/new");
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        handleSaveDraft();
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        handlePost();
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        goToList();
       }
       if (e.altKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
         window.print();
       }
-      if (e.key === "F4") {
-        e.preventDefault();
-        invoiceSelectRef.current?.focus();
-      }
-      if (e.key === "F6") {
-        e.preventDefault();
-        partyInputRef.current?.focus();
-      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [partyId, invoiceId, items, returnDate, reason, notes, saving, posting, readOnly]);
+  }, [navigate]);
+
+  const toolbarActions: DocumentToolbarAction[] = [
+    { key: "save", label: saving ? "Saving…" : "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: handleSaveDraft, disabled: saving || readOnly },
+    { key: "post", label: posting ? "Posting…" : "Post Return", icon: FileCheck2, shortcut: "Ctrl+⏎", onClick: handlePost, disabled: posting || isPosted || isCancelled, variant: "primary" },
+    { key: "print", label: "Print", icon: Printer, shortcut: "Alt+P", onClick: () => window.print() },
+    { key: "pdf", label: "PDF", icon: FileDown, onClick: () => window.print() },
+  ];
 
   return (
-    <div className="theme-return invoice-entry max-w-[1400px] mx-auto text-[13px] font-mono">
-      <div className="hidden print:block text-center font-sans font-bold text-[16px] mb-2">CREDIT NOTE / SALES RETURN</div>
+    <DocumentRoot type="sales_return" printTitle="CREDIT NOTE / SALES RETURN">
+      <DocumentToolbar
+        statusSlot={
+          <>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
+              {editMode ? `Sales Return (${status})` : "New Sales Return"}
+            </span>
+            {draftId && <Badge variant="outline" className="text-[10px]">#{returnNumber || draftId.slice(0, 8)}</Badge>}
+            {isPosted && <Badge className="text-[10px]">Posted</Badge>}
+            {isCancelled && <Badge variant="destructive" className="text-[10px]">Cancelled</Badge>}
+          </>
+        }
+        actions={toolbarActions}
+      />
 
-      <div className="print:hidden flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
-            {editMode ? `Sales Return (${status})` : "New Sales Return"}
-          </span>
-          {draftId && <Badge variant="outline" className="text-[10px]">#{returnNumber || draftId.slice(0, 8)}</Badge>}
-          {isPosted && <Badge className="text-[10px]">Posted</Badge>}
-          {isCancelled && <Badge variant="destructive" className="text-[10px]">Cancelled</Badge>}
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          <Button size="sm" variant="outline" onClick={handleSaveDraft} disabled={saving || readOnly} className="h-8" title="Shortcut: Ctrl + S">
-            <Save className="h-3.5 w-3.5" /> {saving ? "Saving…" : "Save Draft (Ctrl+S)"}
-          </Button>
-          <Button size="sm" onClick={handlePost} disabled={posting || isPosted || isCancelled} className="h-8 gradient-primary text-white border-0" title="Shortcut: Ctrl + Enter">
-            <FileCheck2 className="h-3.5 w-3.5" /> {posting ? "Posting…" : "Post Return (Ctrl+⏎)"}
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8" title="Shortcut: Alt + P">
-            <Printer className="h-3.5 w-3.5" /> Print (Alt+P)
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => window.print()} className="h-8">
-            <FileDown className="h-3.5 w-3.5" /> PDF
-          </Button>
-        </div>
-      </div>
+      <DocumentSheet>
+        <DocumentSheetBanner left="Sales Return" center={business?.business_name ?? business?.firm_name ?? ""} right={`Created by ${user?.email ?? "—"}`} />
 
-      <div className="border border-border bg-[hsl(var(--invoice-bg,60_30%_96%))] shadow-soft print:shadow-none print:border-0">
-        <div className="bg-primary text-primary-foreground px-3 py-1.5 flex items-center justify-between text-xs">
-          <div className="font-sans font-semibold tracking-wide">Sales Return</div>
-          <div className="font-sans">{business?.business_name ?? business?.firm_name ?? ""}</div>
-          <div className="opacity-80">Created by {user?.email ?? "—"}</div>
-        </div>
+        <DocumentHeaderGrid>
+          <DocumentHeaderInputField label="Return No" value={returnNumber} readOnly />
+          <DocumentHeaderInputField label="Return Date" labelAlign="right" type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} disabled={readOnly} />
 
-        {/* Header grid */}
-        <div className="grid grid-cols-12 gap-x-3 gap-y-1 px-3 py-2 border-b border-border text-[12px]">
-          <div className="col-span-2 text-muted-foreground">Return No</div>
-          <div className="col-span-4">
-            <Input value={returnNumber} readOnly className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0" />
-          </div>
-          <div className="col-span-2 text-muted-foreground text-right">Return Date</div>
-          <div className="col-span-4">
-            <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} disabled={readOnly}
-              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary" />
-          </div>
-
-          <div className="col-span-2 text-muted-foreground">Party A/c Name</div>
-          <div className="col-span-4 relative">
-            <Input
-              ref={partyInputRef}
-              value={partyQuery}
-              disabled={readOnly}
-              onChange={(e) => { setPartyQuery(e.target.value); setPartyOpen(true); setPartyHighlightedIndex(0); }}
-              onFocus={() => setPartyOpen(true)}
-              onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
-              onKeyDown={partyKeyDown}
+          <DocumentHeaderLabel span={2}>Party A/c Name</DocumentHeaderLabel>
+          <DocumentHeaderValue span={4}>
+            <DocumentEntitySearchField
+              results={partResults}
+              getKey={(p) => p.id}
+              query={partyQuery}
+              onQueryChange={setPartyQuery}
+              onSelect={(p, source) => {
+                setPartyId(p.id);
+                setPartyQuery(p.name);
+                // Mirrors the original's own inconsistency: a mouse click
+                // resets the invoice selection, a keyboard Enter-select
+                // does not (it jumps focus to the invoice picker instead,
+                // trusting the user to pick a fresh one there).
+                if (source === "mouse") setInvoiceId("");
+                else setTimeout(() => invoiceSelectRef.current?.focus(), 10);
+              }}
+              renderRow={(p) => <span>{p.name}</span>}
               placeholder="Type to search party…"
-              className="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              inputRef={partyInputRef}
+              inputClassName="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
             />
-            {partyOpen && partResults.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-64 overflow-auto">
-                {partResults.map((p, i) => (
-                  <button type="button" key={p.id}
-                    onMouseDown={(e) => { e.preventDefault(); setPartyId(p.id); setPartyQuery(p.name); setPartyOpen(false); setInvoiceId(""); }}
-                    className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 ${partyHighlightedIndex === i ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="col-span-2 text-muted-foreground text-right">Sales Invoice No</div>
-          <div className="col-span-4">
+          </DocumentHeaderValue>
+          <DocumentHeaderLabel align="right">Sales Invoice No</DocumentHeaderLabel>
+          <DocumentHeaderValue>
             <Select value={invoiceId} onValueChange={(v) => setInvoiceId(v)} disabled={!partyId || readOnly}>
               <SelectTrigger ref={invoiceSelectRef as any} className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus:ring-0">
                 <SelectValue placeholder={partyId ? "Select invoice…" : "Select party first"} />
@@ -409,160 +400,115 @@ const CreateSalesReturn = () => {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </DocumentHeaderValue>
 
           {invoice && (
             <>
-              <div className="col-span-2 text-muted-foreground">Invoice Amount</div>
-              <div className="col-span-4 tabular-nums">₹{fmt(invoice.grand_total)}</div>
-              <div className="col-span-2 text-muted-foreground text-right">Payment Status</div>
-              <div className="col-span-4">
+              <DocumentHeaderLabel>Invoice Amount</DocumentHeaderLabel>
+              <DocumentHeaderValue className="tabular-nums">₹{fmt(invoice.grand_total)}</DocumentHeaderValue>
+              <DocumentHeaderLabel align="right">Payment Status</DocumentHeaderLabel>
+              <DocumentHeaderValue>
                 <Badge variant={paymentStatus === "Paid" ? "default" : paymentStatus === "Partial" ? "outline" : "secondary"} className="text-[10px]">{paymentStatus}</Badge>
                 <span className="ml-2 text-muted-foreground">Outstanding ₹{fmt(outstanding)}</span>
-              </div>
+              </DocumentHeaderValue>
 
-              <div className="col-span-2 text-muted-foreground">Salesman</div>
-              <div className="col-span-4">{invoice.salesman || "—"}</div>
-              <div className="col-span-2 text-muted-foreground text-right">Warehouse</div>
-              <div className="col-span-4">{warehouseName || "—"}</div>
+              <DocumentHeaderLabel>Salesman</DocumentHeaderLabel>
+              <DocumentHeaderValue>{invoice.salesman || "—"}</DocumentHeaderValue>
+              <DocumentHeaderLabel align="right">Warehouse</DocumentHeaderLabel>
+              <DocumentHeaderValue>{warehouseName || "—"}</DocumentHeaderValue>
 
-              <div className="col-span-2 text-muted-foreground">Transport</div>
-              <div className="col-span-4">{transportName || "—"}</div>
-              <div className="col-span-2 text-muted-foreground text-right">LR No.</div>
-              <div className="col-span-4">{lrNumber || "—"}</div>
+              <DocumentHeaderLabel>Transport</DocumentHeaderLabel>
+              <DocumentHeaderValue>{transportName || "—"}</DocumentHeaderValue>
+              <DocumentHeaderLabel align="right">LR No.</DocumentHeaderLabel>
+              <DocumentHeaderValue>{lrNumber || "—"}</DocumentHeaderValue>
 
               {invoice.remarks && (
                 <>
-                  <div className="col-span-2 text-muted-foreground">Invoice Remarks</div>
-                  <div className="col-span-10 truncate">{invoice.remarks}</div>
+                  <DocumentHeaderLabel>Invoice Remarks</DocumentHeaderLabel>
+                  <DocumentHeaderValue span={10} className="truncate">{invoice.remarks}</DocumentHeaderValue>
                 </>
               )}
             </>
           )}
 
-          <div className="col-span-2 text-muted-foreground">Return Reason</div>
-          <div className="col-span-4">
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} disabled={readOnly}
-              className="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary" />
-          </div>
-          <div className="col-span-2 text-muted-foreground text-right">Created By</div>
-          <div className="col-span-4">{user?.email ?? "—"}</div>
-        </div>
+          <DocumentHeaderInputField label="Return Reason" value={reason} onChange={(e) => setReason(e.target.value)} disabled={readOnly} />
+          <DocumentHeaderLabel align="right">Created By</DocumentHeaderLabel>
+          <DocumentHeaderValue>{user?.email ?? "—"}</DocumentHeaderValue>
+        </DocumentHeaderGrid>
 
-        {/* Line-item grid */}
-        <div className="overflow-x-auto print:hidden">
-          <table className="w-full text-[12px] border-collapse">
-            <thead>
-              <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
-                <th className="text-left px-1.5 py-1 w-6">#</th>
-                <th className="text-left px-1.5 py-1 min-w-[100px]">Part No.</th>
-                <th className="text-left px-1.5 py-1 min-w-[160px]">Product</th>
-                <th className="text-left px-1.5 py-1 w-28">Batch</th>
-                <th className="text-left px-1.5 py-1 w-16">HSN</th>
-                <th className="text-right px-1.5 py-1 w-16">Inv. Qty</th>
-                <th className="text-right px-1.5 py-1 w-16">Returned</th>
-                <th className="text-right px-1.5 py-1 w-16">Available</th>
-                <th className="text-right px-1.5 py-1 w-20">Return Qty</th>
-                <th className="text-right px-1.5 py-1 w-20">Rate</th>
-                <th className="text-right px-1.5 py-1 w-14">Disc %</th>
-                <th className="text-right px-1.5 py-1 w-14">GST %</th>
-                <th className="text-right px-1.5 py-1 w-24">Return Value</th>
-                <th className="text-left px-1.5 py-1 min-w-[100px]">Reason</th>
-                <th className="text-left px-1.5 py-1 min-w-[100px]">Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr><td colSpan={15} className="text-center py-8 text-muted-foreground">Select a party and invoice to load returnable items.</td></tr>
-              ) : items.map((it, idx) => (
-                <tr key={it.sales_invoice_item_id} className="border-b border-border/60 hover:bg-muted/30">
-                  <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{idx + 1}</td>
-                  <td className="px-1.5 py-0.5 font-mono">{it.part_number}</td>
-                  <td className="px-1.5 py-0.5">{it.description}</td>
-                  <td className="px-0.5 py-0.5">
-                    {it.tracking_type === "batch" ? (
-                      <select
-                        value={it.batch_id ?? ""}
-                        disabled={readOnly}
-                        onChange={(e) => updateItem(idx, { batch_id: e.target.value || null })}
-                        className="h-6 text-[11px] font-mono px-0.5 rounded-none border-0 bg-transparent focus-visible:ring-0 w-full"
-                      >
-                        <option value="">Select…</option>
-                        {(it.product_id ? batchesByProduct[it.product_id] : [])?.map((b) => (
-                          <option key={b.id} value={b.id}>{b.batch_number}{b.expiry_date ? ` (exp ${b.expiry_date})` : ""}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground px-1">—</span>
-                    )}
-                  </td>
-                  <td className="px-1.5 py-0.5 font-mono">{it.hsn || "—"}</td>
-                  <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.invoiced_qty ?? 0)}</td>
-                  <td className="px-1.5 py-0.5 text-right tabular-nums text-muted-foreground">{fmt(it.already_returned_qty ?? 0)}</td>
-                  <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.available_qty ?? 0)}</td>
-                  <td className="px-0.5 py-0.5">
-                    <Input
-                      data-row={idx} type="number" step="any" min={0} max={it.available_qty ?? 0}
-                      value={it.qty || ""} disabled={readOnly}
-                      onChange={(e) => updateItem(idx, { qty: Math.max(0, +e.target.value) })}
-                      className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
-                    />
-                  </td>
-                  <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
-                  <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.discount_pct)}</td>
-                  <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.gst_pct)}</td>
-                  <td className="px-1.5 py-0.5 text-right tabular-nums font-semibold">{fmt(it.total)}</td>
-                  <td className="px-0.5 py-0.5">
-                    <Input value={it.reason ?? ""} disabled={readOnly} onChange={(e) => updateItem(idx, { reason: e.target.value })}
-                      className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary" />
-                  </td>
-                  <td className="px-0.5 py-0.5">
-                    <Input value={it.remarks ?? ""} disabled={readOnly} onChange={(e) => updateItem(idx, { remarks: e.target.value })}
-                      className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border-primary" />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DocumentGridTable
+          columns={GRID_COLUMNS}
+          rows={items}
+          showSpacerRows={false}
+          hasRowActions={false}
+          emptyMessage="Select a party and invoice to load returnable items."
+          renderRow={(it, idx) => (
+            <>
+              <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{idx + 1}</td>
+              <td className="px-1.5 py-0.5 font-mono">{it.part_number}</td>
+              <td className="px-1.5 py-0.5">{it.description}</td>
+              <td className="px-0.5 py-0.5">
+                {it.tracking_type === "batch" ? (
+                  <select
+                    value={it.batch_id ?? ""}
+                    disabled={readOnly}
+                    onChange={(e) => updateItem(idx, { batch_id: e.target.value || null })}
+                    className="h-6 text-[11px] font-mono px-0.5 rounded-none border-0 bg-transparent focus-visible:ring-0 w-full"
+                  >
+                    <option value="">Select…</option>
+                    {(it.product_id ? batchesByProduct[it.product_id] : [])?.map((b) => (
+                      <option key={b.id} value={b.id}>{b.batch_number}{b.expiry_date ? ` (exp ${b.expiry_date})` : ""}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground px-1">—</span>
+                )}
+              </td>
+              <td className="px-1.5 py-0.5 font-mono">{it.hsn || "—"}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.invoiced_qty ?? 0)}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums text-muted-foreground">{fmt(it.already_returned_qty ?? 0)}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.available_qty ?? 0)}</td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput
+                  align="right" type="number" step="any" min={0} max={it.available_qty ?? 0}
+                  value={it.qty || ""} disabled={readOnly}
+                  onChange={(e) => updateItem(idx, { qty: Math.max(0, +e.target.value) })}
+                  className="h-6 text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary"
+                />
+              </td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.discount_pct)}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.gst_pct)}</td>
+              <td className="px-1.5 py-0.5 text-right tabular-nums font-semibold">{fmt(it.total)}</td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput value={it.reason ?? ""} disabled={readOnly} onChange={(e) => updateItem(idx, { reason: e.target.value })} />
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput value={it.remarks ?? ""} disabled={readOnly} onChange={(e) => updateItem(idx, { remarks: e.target.value })} />
+              </td>
+            </>
+          )}
+        />
 
-        <div className="hidden print:block">
-          <table className="w-full text-[12px] border-collapse">
-            <thead>
-              <tr className="bg-muted/60 text-[11px] uppercase tracking-wider text-muted-foreground border-y border-border">
-                <th className="text-left px-1.5 py-1 w-6">#</th>
-                <th className="text-left px-1.5 py-1 w-32">Part No.</th>
-                <th className="text-left px-1.5 py-1 w-[30%]">Product</th>
-                <th className="text-left px-1.5 py-1 w-20">Batch</th>
-                <th className="text-right px-1.5 py-1 w-16">Return Qty</th>
-                <th className="text-right px-1.5 py-1 w-20">Rate</th>
-                <th className="text-right px-1.5 py-1 w-14">GST %</th>
-                <th className="text-right px-1.5 py-1 w-24">Return Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                let sr = 0;
-                return items.filter((it) => Number(it.qty) > 0).map((it) => {
-                  const n = String(++sr);
-                  const batchLabel = it.batch_id ? (it.product_id ? batchesByProduct[it.product_id]?.find((b) => b.id === it.batch_id)?.batch_number : "") : "";
-                  return (
-                    <tr key={it.sales_invoice_item_id} className="border-b border-border/60">
-                      <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{n}</td>
-                      <td className="px-1.5 py-0.5 font-mono">{it.part_number}</td>
-                      <td className="px-1.5 py-0.5 font-mono">{it.description}</td>
-                      <td className="px-1.5 py-0.5 font-mono">{batchLabel || "—"}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.qty)}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.gst_pct)}</td>
-                      <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.total)}</td>
-                    </tr>
-                  );
-                });
-              })()}
-            </tbody>
-          </table>
-        </div>
+        <DocumentGridPrintTable
+          columns={PRINT_COLUMNS}
+          rows={items.filter((it) => Number(it.qty) > 0)}
+          isEmptyRow={() => false}
+          renderCells={(it) => {
+            const batchLabel = it.batch_id ? (it.product_id ? batchesByProduct[it.product_id]?.find((b) => b.id === it.batch_id)?.batch_number : "") : "";
+            return (
+              <>
+                <td className="px-1.5 py-0.5 font-mono">{it.part_number}</td>
+                <td className="px-1.5 py-0.5 font-mono">{it.description}</td>
+                <td className="px-1.5 py-0.5 font-mono">{batchLabel || "—"}</td>
+                <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.qty)}</td>
+                <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
+                <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.gst_pct)}</td>
+                <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.total)}</td>
+              </>
+            );
+          }}
+        />
 
         {/* Bottom section: notes + totals */}
         <div className="grid grid-cols-12 gap-3 px-3 py-2 border-t border-border">
@@ -575,42 +521,23 @@ const CreateSalesReturn = () => {
           </div>
 
           <div className="col-span-12 md:col-span-5 print:col-span-12">
-            <div className="border border-border bg-card/60">
-              <div className="px-2 py-1 text-[11px] uppercase tracking-wider text-muted-foreground bg-muted/40 border-b border-border font-sans">Return Summary</div>
-              <div className="px-2 py-1.5 text-[12px] space-y-0.5">
-                <Row label="Taxable Value" value={fmt(totals.taxable)} />
-                <Row label="Discount" value={`− ${fmt(totals.discount_total)}`} />
-                <Row label="CGST" value={fmt(gstHalf)} />
-                <Row label="SGST" value={fmt(gstHalf)} />
-                <Row label="Round Off" value={(roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff))} />
-                <div className="border-t border-border mt-1 pt-2 flex items-baseline justify-between bg-primary/10 px-2 py-1 rounded">
-                  <span className="text-[12px] font-bold uppercase tracking-wider text-foreground font-sans">Net Credit Note Amount</span>
-                  <span className="font-extrabold text-lg text-primary tabular-nums">₹{fmt(finalTotal)}</span>
-                </div>
-              </div>
-            </div>
+            <DocumentTotals
+              title="Return Summary"
+              lines={[
+                { label: "Taxable Value", value: fmt(totals.taxable) },
+                { label: "Discount", value: `− ${fmt(totals.discount_total)}` },
+                { label: "CGST", value: fmt(gstHalf) },
+                { label: "SGST", value: fmt(gstHalf) },
+                { label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) },
+              ]}
+              grandTotalLabel="Net Credit Note Amount"
+              grandTotal={`₹${fmt(finalTotal)}`}
+            />
           </div>
         </div>
-      </div>
-
-      <style>{`
-        @media print {
-          @page { size: A4; margin: 10mm; }
-          body { background: white; }
-          .invoice-entry { font-size: 11px; }
-        }
-        :root { --invoice-bg: 60 30% 96%; }
-        .dark { --invoice-bg: 240 8% 12%; }
-      `}</style>
-    </div>
+      </DocumentSheet>
+    </DocumentRoot>
   );
 };
-
-const Row = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-baseline justify-between">
-    <span className="text-muted-foreground">{label}</span>
-    <span className="tabular-nums">{value}</span>
-  </div>
-);
 
 export default CreateSalesReturn;

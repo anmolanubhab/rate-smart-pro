@@ -25,14 +25,24 @@ export function DocumentGridTable<Row>({
   renderRow,
   renderFooter,
   isDuplicate,
+  showSpacerRows = true,
+  emptyMessage,
+  hasRowActions = true,
 }: {
   columns: DocumentGridColumn[];
   rows: Row[];
   renderRow: (row: Row, idx: number) => ReactNode;
   renderFooter?: ReactNode;
   isDuplicate?: (row: Row, idx: number) => boolean;
+  /** Pad the table with blank filler rows up to a multiple of 4 (the Tally-ledger look). Documents whose grid is a fixed set of loaded lines rather than a free-typed ledger (e.g. Sales Return) should pass `false`. */
+  showSpacerRows?: boolean;
+  /** Shown as a single full-width row instead of any data rows/spacers when `rows` is empty. */
+  emptyMessage?: ReactNode;
+  /** Whether renderRow appends a trailing per-row action cell (e.g. a delete button) — controls the trailing header slot and the spacer/empty-message colSpan. Documents with fixed, non-deletable rows (e.g. Sales Return) should pass `false`. */
+  hasRowActions?: boolean;
 }) {
   const visibleCols = columns.filter((c) => !c.hideOnScreen);
+  const colCount = visibleCols.length + 1 + (hasRowActions ? 1 : 0);
   return (
     <div className="overflow-x-auto print:hidden">
       <table className="w-full text-[12px] border-collapse">
@@ -47,20 +57,30 @@ export function DocumentGridTable<Row>({
                 {c.header}
               </th>
             ))}
-            <th className="w-6 print:hidden" />
+            {hasRowActions && <th className="w-6 print:hidden" />}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, idx) => (
-            <RowHighlight key={idx} isDuplicate={isDuplicate?.(row, idx) ?? false}>
-              {renderRow(row, idx)}
-            </RowHighlight>
-          ))}
-          {Array.from({ length: Math.max(0, 4 - (rows.length % 4)) }).map((_, i) => (
-            <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
-              <td colSpan={visibleCols.length + 2}>&nbsp;</td>
+          {rows.length === 0 && emptyMessage ? (
+            <tr>
+              <td colSpan={colCount} className="text-center py-8 text-muted-foreground">
+                {emptyMessage}
+              </td>
             </tr>
-          ))}
+          ) : (
+            rows.map((row, idx) => (
+              <RowHighlight key={idx} isDuplicate={isDuplicate?.(row, idx) ?? false}>
+                {renderRow(row, idx)}
+              </RowHighlight>
+            ))
+          )}
+          {showSpacerRows &&
+            !(rows.length === 0 && emptyMessage) &&
+            Array.from({ length: Math.max(0, 4 - (rows.length % 4)) }).map((_, i) => (
+              <tr key={`sp-${i}`} className="border-b border-border/30 h-6">
+                <td colSpan={colCount}>&nbsp;</td>
+              </tr>
+            ))}
         </tbody>
         {renderFooter && (
           <tfoot>
