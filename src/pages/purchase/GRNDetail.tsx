@@ -1,15 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Ban, Loader2 } from "lucide-react";
+import { ArrowLeft, Printer, Ban, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { fetchGoodsReceipt, fetchGoodsReceiptItems, cancelGRN, type GRNStatus } from "@/lib/goodsReceipts";
+import {
+  fetchGoodsReceipt, fetchGoodsReceiptItems, cancelGRN, duplicateGRN, logGRNActivity, fetchGRNActivityLogs,
+  type GRNStatus,
+} from "@/lib/goodsReceipts";
+import { DocumentTimeline } from "@/components/documentEngine/DocumentTimeline";
+import { DocumentAuditLog } from "@/components/documentEngine/DocumentAuditLog";
 import { useFormatDate } from "@/lib/dateFormat";
 
 const STATUS_TONE: Record<GRNStatus, string> = {
@@ -24,8 +30,10 @@ export default function GRNDetail() {
   const navigate = useNavigate();
   const fd = useFormatDate();
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
 
   const { data: grn, isLoading: loadingGrn, error } = useQuery({
     queryKey: ["grn-detail", id],
@@ -37,20 +45,41 @@ export default function GRNDetail() {
     enabled: !!id,
     queryFn: () => fetchGoodsReceiptItems(id!),
   });
+  const { data: activityLogs = [] } = useQuery({
+    queryKey: ["grn-activity", id],
+    enabled: !!id,
+    queryFn: () => fetchGRNActivityLogs(id!),
+  });
 
   const handleCancel = async () => {
-    if (!id) return;
+    if (!id || !user) return;
     setCancelling(true);
     try {
       await cancelGRN(id);
+      await logGRNActivity({ userId: user.id, goodsReceiptId: id, action: "cancelled", oldData: { status: grn?.status }, newData: { status: "cancelled" } });
       toast.success(`GRN ${grn?.grn_number} cancelled — stock reversed`);
       qc.invalidateQueries({ queryKey: ["grn-detail", id] });
       qc.invalidateQueries({ queryKey: ["grn-items", id] });
+      qc.invalidateQueries({ queryKey: ["grn-activity", id] });
     } catch (e: any) {
       toast.error(e.message ?? "Could not cancel GRN");
     } finally {
       setCancelling(false);
       setCancelConfirmOpen(false);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    if (!id || !user || duplicating) return;
+    setDuplicating(true);
+    try {
+      const clone = await duplicateGRN(id, user.id);
+      toast.success(`Duplicated as ${clone.grn_number}`);
+      navigate(`/purchase/grn/edit/${clone.id}`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to duplicate GRN");
+    } finally {
+      setDuplicating(false);
     }
   };
 
@@ -101,6 +130,9 @@ export default function GRNDetail() {
               <Ban className="h-3.5 w-3.5 mr-1" /> Cancel GRN
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={handleDuplicate} disabled={duplicating}>
+            <Copy className="h-3.5 w-3.5 mr-1" /> {duplicating ? "Duplicating…" : "Duplicate"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="h-3.5 w-3.5 mr-1" /> Print
           </Button>
@@ -201,6 +233,19 @@ export default function GRNDetail() {
         <div className="px-6 py-4 border-t border-border bg-muted/10 text-xs text-muted-foreground">
           <span className="font-semibold">Created: </span>{new Date(grn.created_at).toLocaleString("en-IN")}
         </div>
+
+        {activityLogs.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-6 py-5 border-t border-border">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Activity Timeline</p>
+              <DocumentTimeline entries={activityLogs} />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Audit Log</p>
+              <DocumentAuditLog entries={activityLogs} />
+            </div>
+          </div>
+        )}
       </div>
 
       <AlertDialog open={cancelConfirmOpen} onOpenChange={(o) => !o && setCancelConfirmOpen(false)}>

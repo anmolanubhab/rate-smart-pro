@@ -264,6 +264,7 @@ const App = () => (
               <Route path="/purchase/orders/edit/:id" element={L(<CreatePurchaseOrder />)} />
               <Route path="/purchase/grn" element={L(<GRNList />)} />
               <Route path="/purchase/grn/new" element={L(<PurchaseGRN />)} />
+              <Route path="/purchase/grn/edit/:id" element={L(<PurchaseGRN />)} />
               <Route path="/purchase/grn/:id" element={L(<GRNDetail />)} />
               <Route path="/purchase/invoices" element={L(<PurchaseInvoices />)} />
               <Route path="/purchase/payments" element={L(<PurchasePayments />)} />
