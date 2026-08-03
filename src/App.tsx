@@ -55,6 +55,7 @@ const Gstr3B = lazy(() => import("./pages/gst/Gstr3B"));
 const Gstr1 = lazy(() => import("./pages/gst/Gstr1"));
 const TaxRegister = lazy(() => import("./pages/gst/TaxRegister"));
 const HsnSummary = lazy(() => import("./pages/gst/HsnSummary"));
+const HsnMaster = lazy(() => import("./pages/gst/HsnMaster"));
 const GstFiling = lazy(() => import("./pages/gst/GstFiling"));
 const Gstr2Reconciliation = lazy(() => import("./pages/gst/Gstr2Reconciliation"));
 const Gstr9 = lazy(() => import("./pages/gst/Gstr9"));
@@ -235,6 +236,7 @@ const App = () => (
               <Route path="/gst/gstr-1" element={L(<Gstr1 />)} />
               <Route path="/gst/tax-register" element={L(<TaxRegister />)} />
               <Route path="/gst/hsn-summary" element={L(<HsnSummary />)} />
+              <Route path="/gst/hsn-master" element={L(<HsnMaster />)} />
               <Route path="/gst/filing" element={L(<GstFiling />)} />
               <Route path="/gst/gstr-2-reconciliation" element={L(<Gstr2Reconciliation />)} />
               <Route path="/gst/gstr-9" element={L(<Gstr9 />)} />
