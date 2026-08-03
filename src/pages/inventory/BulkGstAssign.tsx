@@ -113,8 +113,6 @@ export default function BulkGstAssign() {
         .from("products")
         .update({
           hsn_code: hsn.trim(),
-          hsn: hsn.trim(),
-          hsn_sac: hsn.trim(),
           gst_pct: Number(gstPct),
           tax_type: taxType,
           is_exempt: taxType === "exempt" || taxType === "nil_rated",

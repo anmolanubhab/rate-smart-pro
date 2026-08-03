@@ -86,7 +86,7 @@ export async function generateInvoiceFromDispatch(opts: {
   // 1. Load dispatch + its items
   const { data: dispatch, error: de } = await supabase
     .from("dispatches")
-    .select("*, dispatch_items(*, order_items(part_number, description, vehicle_model, mrp, net_rate, discount_pct, gst_pct, product_id, products(hsn)))")
+    .select("*, dispatch_items(*, order_items(part_number, description, vehicle_model, mrp, net_rate, discount_pct, gst_pct, product_id, products(hsn_code)))")
     .eq("id", opts.dispatchId)
     .single();
   if (de) throw de;
@@ -133,7 +133,7 @@ export async function generateInvoiceFromDispatch(opts: {
       part_number: oi?.part_number ?? "",
       description: oi?.description ?? "",
       vehicle_model: oi?.vehicle_model ?? null,
-      hsn: oi?.products?.hsn ?? null,
+      hsn: oi?.products?.hsn_code ?? null,
       mrp: Number(oi?.mrp ?? 0),
       net_rate,
       rate: net_rate,
@@ -329,9 +329,9 @@ export async function generateInvoiceFromOrder(opts: {
 
   const productIds = Array.from(new Set(items.map((it: any) => it.product_id).filter(Boolean)));
   const { data: productsData } = productIds.length
-    ? await supabase.from("products").select("id, hsn").in("id", productIds as string[])
-    : { data: [] as { id: string; hsn: string | null }[] };
-  const hsnByProduct = new Map((productsData || []).map((p: any) => [p.id, p.hsn]));
+    ? await supabase.from("products").select("id, hsn_code").in("id", productIds as string[])
+    : { data: [] as { id: string; hsn_code: string | null }[] };
+  const hsnByProduct = new Map((productsData || []).map((p: any) => [p.id, p.hsn_code]));
 
   const rows = items.map((it: any, idx) => {
     const lineTaxable = (it.net_rate || 0) * (it.qty || 0);
