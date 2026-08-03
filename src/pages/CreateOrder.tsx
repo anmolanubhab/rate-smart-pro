@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, Upload, FileSpreadsheet } from "lucide-react";
+import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, Upload, FileSpreadsheet, X } from "lucide-react";
 import OrderExcelUpload from "@/components/OrderExcelUpload";
 import { downloadOrderTemplate } from "@/lib/excelTemplates";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { fetchParties, Party } from "@/lib/parties";
@@ -80,6 +81,7 @@ const PRINT_COLUMNS: DocumentGridColumn[] = [
 
 const CreateOrder = () => {
   const { user } = useAuth();
+  const { business } = useBusiness();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const routeParams = useParams<{ id?: string }>();
@@ -187,6 +189,15 @@ const CreateOrder = () => {
       window.removeEventListener("afterprint", onAfter);
     };
   }, [baseTitle]);
+
+  useEffect(() => {
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || searchIdx !== null) return;
+      navigate("/orders");
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [searchIdx, navigate]);
 
   useEffect(() => {
     if (!user) return;
@@ -479,6 +490,7 @@ const CreateOrder = () => {
     { key: "submit", label: "Confirm Invoice", icon: FileCheck2, shortcut: "Ctrl+✍", onClick: () => handleSave("pending"), disabled: saving, variant: "primary" },
     { key: "print", label: "Print", icon: Printer, shortcut: "Ctrl+P", onClick: () => window.print() },
     { key: "pdf", label: "PDF", icon: FileDown, onClick: () => window.print() },
+    { key: "close", label: "Close", icon: X, shortcut: "Esc", onClick: () => navigate("/orders"), variant: "ghost", className: "text-muted-foreground" },
   ];
 
   return (
@@ -515,7 +527,7 @@ const CreateOrder = () => {
       />
 
       <DocumentSheet>
-        <DocumentSheetBanner left={voucherType} center="Viswanath Automobiles Pvt. Ltd. [TVS]" right={day} />
+        <DocumentSheetBanner left={voucherType} center={business?.business_name ?? "—"} right={day} />
 
         <DocumentHeaderGrid>
           <DocumentHeaderInputField label="Voucher No" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} />
@@ -863,7 +875,7 @@ const CreateOrder = () => {
               <div className="mt-12 border-t border-border pt-1">Receiver's Signature</div>
             </div>
             <div className="text-right">
-              <div className="mt-12 border-t border-border pt-1">For Viswanath Automobiles Pvt. Ltd.</div>
+              <div className="mt-12 border-t border-border pt-1">For {business?.business_name ?? "—"}</div>
             </div>
           </div>
         </div>
