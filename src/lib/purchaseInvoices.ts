@@ -305,6 +305,32 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
   const businessId = getActiveBusinessIdSync();
   if (!businessId) throw new Error("No active business selected");
 
+  const validItemsForCheck = input.items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
+
+  // Basic tax/rate sanity -- the original dialog had no validation beyond
+  // "supplier selected" and "at least one item"; this catches the most
+  // common data-entry mistakes before they reach the ledger.
+  for (const it of validItemsForCheck) {
+    if (Number(it.rate) <= 0) throw new Error(`${it.part_number}: rate must be greater than zero.`);
+    if (Number(it.gst_percent) < 0) throw new Error(`${it.part_number}: GST % cannot be negative.`);
+  }
+
+  // Three-way matching -- only for a DIRECT PO link (no GRN): a GRN-linked
+  // invoice is already transitively bounded by the GRN's own pending-qty
+  // ceiling (fetchPendingPOItemsForGRN in goodsReceipts.ts), so it isn't
+  // duplicated here for that path.
+  if (input.purchase_order_id && !input.goods_receipt_id) {
+    const pending = await fetchPendingPOItemsForInvoice(input.purchase_order_id, input.id);
+    const pendingByProduct = new Map(pending.map((p) => [p.product_id, p.pending_qty]));
+    for (const it of validItemsForCheck) {
+      if (!it.product_id) continue;
+      const ceiling = pendingByProduct.get(it.product_id);
+      if (ceiling !== undefined && Number(it.qty) > ceiling + 1e-6) {
+        throw new Error(`${it.part_number}: invoiced qty (${it.qty}) can't exceed the PO's unbilled qty (${ceiling}).`);
+      }
+    }
+  }
+
   const totals = computeInvoiceTotals(input.items);
   let invId = input.id;
   const isNew = !invId;
@@ -633,4 +659,158 @@ export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseIn
         stock_qty: null,
       })
     );
+}
+
+export async function fetchPurchaseInvoice(id: string): Promise<PurchaseInvoice & {
+  po_number?: string | null;
+  grn_number?: string | null;
+  supplier_name?: string | null;
+}> {
+  const { data, error } = await supabase
+    .from("purchase_invoices")
+    .select("*, purchase_orders(po_number), goods_receipts(grn_number), parties(name)")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  const r = data as any;
+  return {
+    id: r.id,
+    business_id: r.business_id,
+    invoice_number: r.invoice_number,
+    supplier_invoice_number: r.supplier_invoice_number,
+    supplier_id: r.supplier_id,
+    purchase_order_id: r.purchase_order_id,
+    goods_receipt_id: r.goods_receipt_id,
+    invoice_date: r.invoice_date,
+    due_date: r.due_date,
+    status: r.status,
+    remarks: r.notes,
+    subtotal: Number(r.subtotal) || 0,
+    discount_total: Number(r.discount_total) || 0,
+    tax_total: Number(r.gst_total) || 0,
+    grand_total: Number(r.grand_total) || 0,
+    paid_amount: Number(r.paid_amount) || 0,
+    created_at: r.created_at,
+    po_number: r.purchase_orders?.po_number ?? null,
+    grn_number: r.goods_receipts?.grn_number ?? null,
+    supplier_name: r.parties?.name ?? null,
+  };
+}
+
+/**
+ * Still-unbilled lines on a PO — "ordered minus already-invoiced via every
+ * other non-cancelled invoice against this PO", returned as ready-to-use
+ * invoice items (using the PO's own rate/GST/description, same as ordered)
+ * -- mirrors fetchPendingPOItemsForGRN() in src/lib/goodsReceipts.ts, just
+ * counting purchase_invoice_items instead of goods_receipt_items. Used both
+ * to prefill a DIRECT (no-GRN) PO-linked invoice and, via the `pending_qty`
+ * ceiling, to block over-billing that same PO -- a GRN-linked invoice is
+ * already transitively bounded by the GRN's own pending-qty ceiling and
+ * doesn't need this duplicated.
+ */
+export async function fetchPendingPOItemsForInvoice(poId: string, excludeInvoiceId?: string): Promise<(PurchaseInvoiceItem & { pending_qty: number })[]> {
+  const { data: priorInvoices } = await supabase
+    .from("purchase_invoice_items")
+    .select("product_id, quantity, purchase_invoice_id, purchase_invoices!inner(purchase_order_id, status)")
+    .eq("purchase_invoices.purchase_order_id", poId)
+    .neq("purchase_invoices.status", "cancelled");
+
+  const billedMap = new Map<string, number>();
+  (priorInvoices ?? []).forEach((r: any) => {
+    if (!r.product_id) return;
+    if (excludeInvoiceId && r.purchase_invoice_id === excludeInvoiceId) return;
+    billedMap.set(r.product_id, (billedMap.get(r.product_id) ?? 0) + Number(r.quantity ?? 0));
+  });
+
+  const { data: poItems, error } = await supabase
+    .from("purchase_order_items")
+    .select("product_id, qty, part_number, description, rate, gst_percent, unit_id")
+    .eq("purchase_order_id", poId);
+  if (error) throw error;
+
+  return (poItems ?? [])
+    .filter((it: any) => it.product_id)
+    .map((it: any) => {
+      const pending = Math.max(0, Number(it.qty) - (billedMap.get(it.product_id) ?? 0));
+      return {
+        ...computeInvoiceItem({
+          product_id: it.product_id,
+          part_number: it.part_number ?? "",
+          description: it.description ?? "",
+          qty: pending,
+          rate: Number(it.rate) || 0,
+          gst_percent: Number(it.gst_percent) || 0,
+          unit_id: it.unit_id ?? null,
+        }),
+        pending_qty: pending,
+      };
+    });
+}
+
+export async function fetchOpenPOsForInvoice(businessId: string): Promise<{ id: string; po_number: string; supplier_id: string | null }[]> {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("id, po_number, supplier_id")
+    .eq("business_id", businessId)
+    .in("status", ["approved", "ordered", "partially_received", "received"])
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as any[];
+}
+
+/** Hard delete — only reachable once `prevent_purchase_invoice_delete` lets
+ *  it through: the invoice must already be 'cancelled' (booking a purchase
+ *  invoice posts real ledger/stock effects immediately, so unlike PO/GRN
+ *  there's no separate 'draft' state to hard-delete from -- cancel first,
+ *  same as the trigger requires), and no supplier_payments row may
+ *  reference it. Not duplicated client-side; the trigger's own exception
+ *  surfaces as the error message. */
+export async function deletePurchaseInvoice(invoiceId: string): Promise<void> {
+  const { error: itemsErr } = await supabase.from("purchase_invoice_items").delete().eq("purchase_invoice_id", invoiceId);
+  if (itemsErr) throw itemsErr;
+  const { error } = await supabase.from("purchase_invoices").delete().eq("id", invoiceId);
+  if (error) throw error;
+}
+
+// ─── Activity log ───────────────────────────────────────────────────────────
+// Mirrors po_activity_logs/grn_activity_logs — same shape, scoped to
+// purchase_invoice_id.
+
+export interface PurchaseInvoiceActivityLog {
+  id: string;
+  user_id: string;
+  purchase_invoice_id: string;
+  action: string;
+  description: string | null;
+  old_data: any;
+  new_data: any;
+  created_at: string;
+}
+
+export async function logInvoiceActivity(input: {
+  userId: string;
+  purchaseInvoiceId: string;
+  action: string;
+  description?: string;
+  oldData?: any;
+  newData?: any;
+}): Promise<void> {
+  await supabase.from("purchase_invoice_activity_logs" as any).insert({
+    user_id: input.userId,
+    purchase_invoice_id: input.purchaseInvoiceId,
+    action: input.action,
+    description: input.description ?? null,
+    old_data: input.oldData ?? null,
+    new_data: input.newData ?? null,
+  });
+}
+
+export async function fetchInvoiceActivityLogs(purchaseInvoiceId: string): Promise<PurchaseInvoiceActivityLog[]> {
+  const { data, error } = await supabase
+    .from("purchase_invoice_activity_logs" as any)
+    .select("*")
+    .eq("purchase_invoice_id", purchaseInvoiceId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []) as unknown as PurchaseInvoiceActivityLog[];
 }
