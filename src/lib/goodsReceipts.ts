@@ -1,6 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
-import { adjustProductBatchQty } from "@/lib/productBatches";
-import { deleteProductSerial } from "@/lib/productSerials";
+import { adjustProductBatchQty, receiveProductBatch } from "@/lib/productBatches";
+import { deleteProductSerial, createProductSerialsBulk } from "@/lib/productSerials";
+import { fetchProductUnits, toStockQty, type ProductUnit } from "@/lib/units";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import type { ProductTrackingType } from "@/lib/products";
+import type { GRNBatchSerialResult } from "@/components/inventory/GRNBatchSerialDialog";
 
 export type GRNStatus = "draft" | "received" | "closed" | "cancelled";
 
@@ -43,6 +47,7 @@ export interface GoodsReceiptItem {
   // joined, read-only
   product_name?: string;
   part_number?: string;
+  tracking_type?: ProductTrackingType;
   batch_numbers?: string[];
   serial_numbers?: string[];
 }
@@ -180,7 +185,7 @@ export async function cancelGRN(grnId: string): Promise<void> {
 export async function fetchGoodsReceiptItems(goodsReceiptId: string): Promise<GoodsReceiptItem[]> {
   const { data, error } = await supabase
     .from("goods_receipt_items")
-    .select(`*, products(name, part_number),
+    .select(`*, products(name, part_number, tracking_type),
       goods_receipt_item_batches(product_batches(batch_number)),
       goods_receipt_item_serials(product_serials(serial_number))`)
     .eq("goods_receipt_id", goodsReceiptId)
@@ -190,7 +195,412 @@ export async function fetchGoodsReceiptItems(goodsReceiptId: string): Promise<Go
     ...r,
     product_name: r.products?.name ?? "Unknown Product",
     part_number: r.products?.part_number ?? "N/A",
+    tracking_type: (r.products?.tracking_type as ProductTrackingType) ?? "none",
     batch_numbers: (r.goods_receipt_item_batches ?? []).map((b: any) => b.product_batches?.batch_number).filter(Boolean),
     serial_numbers: (r.goods_receipt_item_serials ?? []).map((s: any) => s.product_serials?.serial_number).filter(Boolean),
   })) as GoodsReceiptItem[];
+}
+
+// ─── Line shape shared by the create/edit page and saveGRN() ──────────────────
+
+export interface GRNLine {
+  id?: string;
+  purchase_order_item_id: string | null;
+  product_id: string;
+  product_name: string;
+  part_number: string;
+  tracking_type: ProductTrackingType;
+  ordered_qty: number;
+  received_qty: number;
+  damaged_qty: number;
+  accepted_qty: number;
+  pending_qty: number;
+  short_qty: number;
+  excess_qty: number;
+  quality_remarks: string;
+  qc_reason_category: string | null;
+  unit_id: string | null;
+  stock_accepted_qty: number | null;
+  tracking?: GRNBatchSerialResult;
+}
+
+/**
+ * Pending items for a PO, capped to what's actually still owed — same
+ * "ordered minus already-received-across-all-received-GRNs" computation
+ * PurchaseGRN.tsx already did inline, extracted here so saveGRN() can
+ * reuse it for the "received qty can't exceed pending" guard instead of
+ * trusting whatever the client sends.
+ */
+export async function fetchPendingPOItemsForGRN(poId: string): Promise<GRNLine[]> {
+  const { data: priorReceipts } = await supabase
+    .from("goods_receipt_items")
+    .select("product_id, accepted_qty, goods_receipts!inner(purchase_order_id, status)")
+    .eq("goods_receipts.purchase_order_id", poId)
+    .eq("goods_receipts.status", "received");
+
+  const receivedMap = new Map<string, number>();
+  (priorReceipts ?? []).forEach((r: any) => {
+    receivedMap.set(r.product_id, (receivedMap.get(r.product_id) ?? 0) + Number(r.accepted_qty ?? 0));
+  });
+
+  const { data: poItems, error } = await supabase
+    .from("purchase_order_items")
+    .select(`id, product_id, qty, unit_id, product:products(name, part_number, tracking_type)`)
+    .eq("purchase_order_id", poId);
+  if (error) throw error;
+
+  const productIds = [...new Set((poItems ?? []).map((i: any) => i.product_id).filter(Boolean))];
+  const puByProduct: Record<string, ProductUnit[]> = {};
+  await Promise.all(
+    productIds.map(async (pid: string) => {
+      try { puByProduct[pid] = await fetchProductUnits(pid); } catch { puByProduct[pid] = []; }
+    }),
+  );
+
+  return (poItems ?? [])
+    .map((item: any): GRNLine => {
+      const ordered = Number(item.qty);
+      const alreadyReceived = receivedMap.get(item.product_id) ?? 0;
+      const remaining = Math.max(0, ordered - alreadyReceived);
+      const pu = puByProduct[item.product_id] ?? [];
+      return {
+        purchase_order_item_id: item.id,
+        product_id: item.product_id,
+        product_name: item.product?.name || "Unknown Product",
+        part_number: item.product?.part_number || "N/A",
+        tracking_type: (item.product?.tracking_type as ProductTrackingType) ?? "none",
+        ordered_qty: remaining,
+        received_qty: remaining,
+        damaged_qty: 0,
+        accepted_qty: remaining,
+        pending_qty: 0,
+        short_qty: 0,
+        excess_qty: 0,
+        quality_remarks: "",
+        qc_reason_category: null,
+        unit_id: item.unit_id ?? null,
+        stock_accepted_qty: pu.length ? toStockQty(remaining, item.unit_id, pu) : null,
+      };
+    })
+    .filter((it) => it.ordered_qty > 0);
+}
+
+// ─── Activity log ───────────────────────────────────────────────────────────
+// Mirrors po_activity_logs / logPOActivity / fetchPOActivityLogs in
+// src/lib/purchaseOrders.ts — same shape, scoped to goods_receipt_id.
+
+export interface GRNActivityLog {
+  id: string;
+  user_id: string;
+  goods_receipt_id: string;
+  action: string;
+  description: string | null;
+  old_data: any;
+  new_data: any;
+  created_at: string;
+}
+
+export async function logGRNActivity(input: {
+  userId: string;
+  goodsReceiptId: string;
+  action: string;
+  description?: string;
+  oldData?: any;
+  newData?: any;
+}): Promise<void> {
+  await supabase.from("grn_activity_logs" as any).insert({
+    user_id: input.userId,
+    goods_receipt_id: input.goodsReceiptId,
+    action: input.action,
+    description: input.description ?? null,
+    old_data: input.oldData ?? null,
+    new_data: input.newData ?? null,
+  });
+}
+
+export async function fetchGRNActivityLogs(goodsReceiptId: string): Promise<GRNActivityLog[]> {
+  const { data, error } = await supabase
+    .from("grn_activity_logs" as any)
+    .select("*")
+    .eq("goods_receipt_id", goodsReceiptId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []) as unknown as GRNActivityLog[];
+}
+
+// ─── Save / Delete ──────────────────────────────────────────────────────────
+
+export interface SaveGRNInput {
+  userId: string;
+  id?: string;
+  grn_number: string;
+  purchase_order_id: string | null;
+  supplier_id: string;
+  warehouse_id: string;
+  grn_date: string;
+  remarks: string | null;
+  status: "draft" | "received";
+  items: GRNLine[];
+}
+
+/** Reverses the batch/serial records a set of GRN items created — used by
+ *  both deleteGRN() and saveGRN()'s re-edit path. Deliberately does NOT
+ *  touch products.stock/stock_on_hold: those are only ever written by
+ *  grn_item_apply_hold_stock() once status='received', so a draft (the
+ *  only thing either caller ever operates on) never touched them either. */
+async function reverseGRNItemTracking(goodsReceiptId: string): Promise<void> {
+  const { data: rawItems, error } = await supabase
+    .from("goods_receipt_items")
+    .select(`goods_receipt_item_batches(batch_id, qty), goods_receipt_item_serials(serial_id)`)
+    .eq("goods_receipt_id", goodsReceiptId);
+  if (error) throw error;
+  for (const item of (rawItems ?? []) as any[]) {
+    for (const b of item.goods_receipt_item_batches ?? []) {
+      await adjustProductBatchQty(b.batch_id, -Number(b.qty));
+    }
+    for (const s of item.goods_receipt_item_serials ?? []) {
+      await deleteProductSerial(s.serial_id);
+    }
+  }
+}
+
+/**
+ * Create-or-update a GRN. Only ever allowed to *edit* while the existing
+ * row is still 'draft' -- once posted ('received'), the record is locked
+ * (matches the Draft-editable/Posted-locked convention already used for
+ * Sales Return/Orders/PO this session; use cancelGRN() to reverse a posted
+ * GRN instead of re-saving it).
+ *
+ * Items are always deleted and freshly reinserted, exactly like
+ * savePurchaseOrder()/saveOrder() already do -- this isn't a new pattern,
+ * and it's *why* posting a draft works at all without touching the
+ * existing grn_item_apply_hold_stock trigger: that trigger only fires
+ * AFTER INSERT, so flipping status to 'received' on the header and then
+ * freshly inserting the (possibly-edited) item rows is what makes it fire
+ * and apply stock, with zero changes to the trigger itself.
+ */
+export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
+  const businessId = getActiveBusinessIdSync();
+  if (!businessId) throw new Error("No active business selected");
+
+  // Received qty must never exceed what the PO still actually owes --
+  // re-derive the true pending ceiling server-side rather than trusting
+  // whatever the client computed, in case another GRN was posted against
+  // the same PO in the meantime.
+  if (input.purchase_order_id) {
+    // fetchPendingPOItemsForGRN only counts *other* GRNs already in
+    // 'received' status against this PO -- a draft (create or re-edit,
+    // doesn't matter which) was never 'received', so its own qty was
+    // never subtracted out of this ceiling in the first place. No special
+    // casing needed between create and edit.
+    const pending = await fetchPendingPOItemsForGRN(input.purchase_order_id);
+    const pendingByProduct = new Map(pending.map((p) => [p.product_id, p.ordered_qty]));
+    for (const it of input.items) {
+      const ceiling = pendingByProduct.get(it.product_id);
+      if (ceiling !== undefined && Number(it.received_qty) > ceiling + 1e-6) {
+        throw new Error(`${it.part_number}: received qty (${it.received_qty}) can't exceed the PO's pending qty (${ceiling}).`);
+      }
+    }
+  }
+
+  let grnId = input.id;
+  if (grnId) {
+    const { data: existing, error: existingErr } = await supabase
+      .from("goods_receipts")
+      .select("status")
+      .eq("id", grnId)
+      .single();
+    if (existingErr) throw existingErr;
+    if (existing.status !== "draft") {
+      throw new Error("Only a draft GRN can be edited. Cancel it and create a new one instead.");
+    }
+
+    await reverseGRNItemTracking(grnId);
+    await supabase.from("goods_receipt_items").delete().eq("goods_receipt_id", grnId);
+
+    const { error } = await supabase
+      .from("goods_receipts")
+      .update({
+        grn_number: input.grn_number,
+        purchase_order_id: input.purchase_order_id,
+        supplier_id: input.supplier_id,
+        warehouse_id: input.warehouse_id,
+        grn_date: input.grn_date,
+        remarks: input.remarks,
+        status: input.status,
+      })
+      .eq("id", grnId);
+    if (error) throw error;
+  } else {
+    const { data, error } = await supabase
+      .from("goods_receipts")
+      .insert({
+        business_id: businessId,
+        grn_number: input.grn_number,
+        purchase_order_id: input.purchase_order_id,
+        supplier_id: input.supplier_id,
+        warehouse_id: input.warehouse_id,
+        grn_date: input.grn_date,
+        status: input.status,
+        remarks: input.remarks,
+        created_by: input.userId,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    grnId = data.id;
+  }
+
+  // Stock (available + on-hold), inventory_movements logging, QC status,
+  // and PO status/qty rollup are all handled server-side by DB triggers the
+  // moment each row lands (grn_item_apply_hold_stock,
+  // trg_recalc_po_from_grn_items) -- unchanged, not duplicated here.
+  // Inserted one row at a time (not a single bulk insert) so each item's
+  // returned id can be matched back to it exactly -- a bulk insert's
+  // RETURNING order isn't guaranteed to match input order, and ordering by
+  // created_at doesn't disambiguate rows inserted in the same statement.
+  for (const item of input.items) {
+    const { data: inserted, error: itemError } = await supabase
+      .from("goods_receipt_items")
+      .insert({
+        goods_receipt_id: grnId!,
+        purchase_order_item_id: item.purchase_order_item_id,
+        product_id: item.product_id,
+        ordered_qty: item.ordered_qty,
+        received_qty: item.received_qty,
+        damaged_qty: item.damaged_qty,
+        accepted_qty: item.accepted_qty,
+        pending_qty: item.pending_qty,
+        short_qty: item.short_qty,
+        excess_qty: item.excess_qty,
+        quality_remarks: item.quality_remarks || null,
+        qc_reason_category: item.qc_reason_category || null,
+        unit_id: item.unit_id,
+        stock_accepted_qty: item.stock_accepted_qty,
+      })
+      .select("id, product_id")
+      .single();
+    if (itemError) throw itemError;
+    if (!inserted || !item.tracking || item.accepted_qty <= 0) continue;
+
+    if (item.tracking_type === "batch" && item.tracking.batch) {
+      const batchId = await receiveProductBatch(businessId, {
+        product_id: item.product_id,
+        warehouse_id: input.warehouse_id,
+        batch_number: item.tracking.batch.batch_number,
+        mfg_date: item.tracking.batch.mfg_date,
+        expiry_date: item.tracking.batch.expiry_date,
+        qty: item.accepted_qty,
+        notes: null,
+      });
+      await supabase.from("goods_receipt_item_batches" as never).insert({
+        business_id: businessId,
+        goods_receipt_item_id: inserted.id,
+        batch_id: batchId,
+        qty: item.accepted_qty,
+      } as never);
+    } else if (item.tracking_type === "serial" && item.tracking.serial_numbers?.length) {
+      const serialIds = await createProductSerialsBulk(
+        businessId,
+        { product_id: item.product_id, warehouse_id: input.warehouse_id, status: "in_stock", received_at: input.grn_date, notes: null },
+        item.tracking.serial_numbers,
+      );
+      const rows = serialIds.map((serial_id) => ({
+        business_id: businessId,
+        goods_receipt_item_id: inserted.id,
+        serial_id,
+      }));
+      if (rows.length) await supabase.from("goods_receipt_item_serials" as never).insert(rows as never);
+    }
+  }
+
+  return fetchGoodsReceipt(grnId!);
+}
+
+/**
+ * Hard delete — only ever allowed for a draft GRN (a posted one has
+ * already applied real stock via the trigger; use cancelGRN() to reverse
+ * that instead of deleting it, matching the Draft-delete/Posted-cancel
+ * convention already used everywhere else this session). Reverses any
+ * batch/serial records the draft created (receiveProductBatch() bumps
+ * real product_batches.qty unconditionally regardless of GRN status, so a
+ * draft can already hold live batch inventory that must be given back).
+ * The existing prevent_grn_delete_with_active_documents trigger already
+ * blocks this at the DB level if a live Purchase Invoice references the
+ * GRN -- not duplicated here.
+ */
+export async function deleteGRN(grnId: string): Promise<void> {
+  const { data: grn, error: fetchErr } = await supabase
+    .from("goods_receipts")
+    .select("status")
+    .eq("id", grnId)
+    .single();
+  if (fetchErr) throw fetchErr;
+  if (grn.status !== "draft") {
+    throw new Error("Only a draft GRN can be deleted directly. Cancel it instead.");
+  }
+
+  await reverseGRNItemTracking(grnId);
+  await supabase.from("goods_receipt_items").delete().eq("goods_receipt_id", grnId);
+  const { error } = await supabase.from("goods_receipts").delete().eq("id", grnId);
+  if (error) throw error;
+}
+
+/**
+ * Clone a GRN as a new draft — mirrors duplicatePurchaseOrder(). Does NOT
+ * carry over batch/serial selections (those are tied to specific physical
+ * receipts); the user re-confirms tracking details when they post the
+ * clone, same as a genuinely new receipt would require.
+ */
+export async function duplicateGRN(id: string, userId: string): Promise<GoodsReceipt> {
+  const original = await fetchGoodsReceipt(id);
+  const items = await fetchGoodsReceiptItems(id);
+  const businessId = getActiveBusinessIdSync();
+  if (!businessId) throw new Error("No active business selected");
+
+  const { data: grnNo } = await supabase.rpc("next_grn_number", { _business_id: businessId } as any);
+  const grnNumber = (grnNo as string) || `GRN-${Date.now().toString().slice(-6)}`;
+
+  const { data, error } = await supabase
+    .from("goods_receipts")
+    .insert({
+      business_id: businessId,
+      grn_number: grnNumber,
+      purchase_order_id: original.purchase_order_id,
+      supplier_id: original.supplier_id,
+      warehouse_id: original.warehouse_id,
+      grn_date: new Date().toISOString().slice(0, 10),
+      status: "draft",
+      remarks: original.remarks,
+      created_by: userId,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  const cloned = data as GoodsReceipt;
+
+  if (items.length) {
+    const rows = items.map((it) => ({
+      goods_receipt_id: cloned.id,
+      purchase_order_item_id: it.purchase_order_item_id,
+      product_id: it.product_id,
+      ordered_qty: it.ordered_qty,
+      received_qty: it.received_qty,
+      damaged_qty: it.damaged_qty,
+      accepted_qty: it.accepted_qty,
+      pending_qty: it.pending_qty,
+      short_qty: it.short_qty,
+      excess_qty: it.excess_qty,
+      quality_remarks: it.quality_remarks,
+      qc_reason_category: it.qc_reason_category,
+      unit_id: it.unit_id,
+      stock_accepted_qty: it.stock_accepted_qty,
+    }));
+    const { error: itemsErr } = await supabase.from("goods_receipt_items").insert(rows);
+    if (itemsErr) throw itemsErr;
+  }
+
+  await logGRNActivity({ userId, goodsReceiptId: cloned.id, action: "duplicated", description: `From ${original.grn_number}` });
+
+  return cloned;
 }
