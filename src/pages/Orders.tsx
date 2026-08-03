@@ -8,6 +8,7 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -411,7 +412,7 @@ const Orders = () => {
       <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-soft">
         {isInitialLoading ? (
           <div className="p-16 text-center text-muted-foreground">
-            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+            <LoadingSpinner size="md" className="mx-auto mb-2" />
             <p className="text-sm">Loading orders…</p>
           </div>
         ) : !business ? (
@@ -638,7 +639,7 @@ const Orders = () => {
               onClick={onDelete}
               disabled={busy === deleteTarget?.id}
             >
-              {busy === deleteTarget?.id ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Working…</> : "Delete"}
+              {busy === deleteTarget?.id ? <><LoadingSpinner size="sm" className="mr-1" />Working…</> : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

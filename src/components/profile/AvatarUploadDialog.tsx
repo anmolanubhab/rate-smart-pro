@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
-import { Loader2, RotateCcw, RotateCw, ZoomIn } from "lucide-react";
+import { RotateCcw, RotateCw, ZoomIn } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -92,7 +93,7 @@ const AvatarUploadDialog = ({ imageSrc, open, uploading, onCancel, onSave }: Ava
             Cancel
           </Button>
           <Button type="button" onClick={handleSave} disabled={uploading || !croppedAreaPixels} className="gap-2">
-            {uploading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {uploading && <LoadingSpinner size="sm" />}
             Save photo
           </Button>
         </DialogFooter>

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { Upload, FileDown, AlertCircle, CheckCircle2, X, Loader2 } from "lucide-react";
+import { Upload, FileDown, AlertCircle, CheckCircle2, X } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -206,7 +207,7 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
               <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="font-medium">Click or drag file here</p>
               <p className="text-sm text-muted-foreground mt-1">.xlsx, .xls, .csv · only Part Number + Qty</p>
-              {busy && <Loader2 className="h-5 w-5 animate-spin mx-auto mt-3" />}
+              {busy && <LoadingSpinner size="sm" className="mx-auto mt-3" />}
             </div>
             <input
               ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
@@ -271,7 +272,7 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
               )}
               <Button variant="outline" onClick={reset} disabled={applying}><X className="h-4 w-4" /> Discard</Button>
               <Button onClick={applyUpdate} disabled={!valid.length || applying} className="gradient-primary text-white border-0">
-                {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {applying ? <LoadingSpinner size="sm" /> : null}
                 Apply Update ({valid.length})
               </Button>
             </DialogFooter>

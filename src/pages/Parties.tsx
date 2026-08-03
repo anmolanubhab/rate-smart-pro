@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -454,7 +455,7 @@ const Parties = () => {
             <Upload className="h-4 w-4" /> Import Excel
           </Button>
           <Button variant="outline" onClick={exportCSV} disabled={exporting}>
-            <Download className="h-4 w-4" /> {exporting ? "Exporting…" : "Export CSV"}
+            {exporting ? <LoadingSpinner size="sm" /> : <Download className="h-4 w-4" />} {exporting ? "Exporting…" : "Export CSV"}
           </Button>
           <Button onClick={openNew} className="gradient-primary text-white border-0 hover:opacity-90 shadow-elegant">
             <Plus className="h-4 w-4" /> Add Party
