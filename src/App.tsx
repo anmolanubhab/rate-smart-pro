@@ -92,6 +92,8 @@ const PurchaseGRN = lazy(() => import("./pages/purchase/PurchaseGRN"));
 const GRNList = lazy(() => import("./pages/purchase/GRNList"));
 const GRNDetail = lazy(() => import("./pages/purchase/GRNDetail"));
 const PurchaseInvoices = lazy(() => import("./pages/purchase/PurchaseInvoices"));
+const CreatePurchaseInvoice = lazy(() => import("./pages/purchase/CreatePurchaseInvoice"));
+const PurchaseInvoiceDetail = lazy(() => import("./pages/purchase/PurchaseInvoiceDetail"));
 const PurchasePayments = lazy(() => import("./pages/purchase/PurchasePayments"));
 const PurchaseReports = lazy(() => import("./pages/purchase/PurchaseReports"));
 const CreatePurchaseOrder = lazy(() => import("./pages/purchase/CreatePurchaseOrder"));
@@ -267,6 +269,8 @@ const App = () => (
               <Route path="/purchase/grn/edit/:id" element={L(<PurchaseGRN />)} />
               <Route path="/purchase/grn/:id" element={L(<GRNDetail />)} />
               <Route path="/purchase/invoices" element={L(<PurchaseInvoices />)} />
+              <Route path="/purchase/invoices/new" element={L(<CreatePurchaseInvoice />)} />
+              <Route path="/purchase/invoices/:id" element={L(<PurchaseInvoiceDetail />)} />
               <Route path="/purchase/payments" element={L(<PurchasePayments />)} />
               <Route path="/purchase/reports" element={L(<PurchaseReports />)} />
               {/* Phase 3 — Purchase mocks */}
