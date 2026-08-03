@@ -82,6 +82,7 @@ export interface QueueItem {
   stock_qty: number;
   unit: string | null;
   rack: string | null;
+  tracking_type: "none" | "batch" | "serial";
 }
 
 export interface QueueRow {
@@ -103,12 +104,17 @@ export interface QueueRow {
   hold_by: string | null;
   hold_at: string | null;
   last_activity: string | null;
+  notes: string | null;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
   pending_amount: number;
   pending_qty: number;
   pending_days: number;
   stock_available_pct: number;
   is_backorder: boolean;
   ready_for_dispatch: boolean;
+  /** ready_for_dispatch AND every item is untracked (no batch/serial) — safe for one-click Bulk Dispatch without a manual lot/serial picker. */
+  is_dispatchable: boolean;
   buckets: PendingBucket[];
   items: QueueItem[];
 }
@@ -118,11 +124,13 @@ export async function fetchPendingOrderQueue(businessId: string | null): Promise
     .from("orders")
     .select(`
       id, order_number, order_date, party_id, party_name, salesman, grand_total,
-      status, priority, due_date, pending_reason, on_hold, hold_reason, hold_by, hold_at, last_activity,
+      status, priority, due_date, pending_reason, on_hold, hold_reason, hold_by, hold_at, last_activity, notes,
+      warehouse_id,
       parties ( phone, city ),
+      warehouses ( warehouse_name ),
       order_items!inner (
         id, part_number, description, qty, dispatched_qty, pending_qty, net_rate, product_id, unit_id, rack,
-        products ( stock ),
+        products ( stock, tracking_type ),
         units ( symbol )
       )
     ` as any)
@@ -149,6 +157,7 @@ export async function fetchPendingOrderQueue(businessId: string | null): Promise
       stock_qty: Number(it.products?.stock) || 0,
       unit: it.units?.symbol ?? null,
       rack: it.rack ?? null,
+      tracking_type: (it.products?.tracking_type ?? "none") as "none" | "batch" | "serial",
     }));
 
     const pending_qty = items.reduce((s, it) => s + it.pending_qty, 0);
@@ -157,6 +166,7 @@ export async function fetchPendingOrderQueue(businessId: string | null): Promise
     const stock_available_pct = pending_qty > 0 ? Math.round((coveredQty / pending_qty) * 100) : 100;
     const is_backorder = items.some((it) => it.stock_qty < it.pending_qty);
     const ready_for_dispatch = items.length > 0 && items.every((it) => it.pending_qty === 0 || it.stock_qty >= it.pending_qty);
+    const is_dispatchable = ready_for_dispatch && items.every((it) => it.tracking_type === "none");
     const partiallyDispatched = items.some((it) => it.dispatched_qty > 0 && it.dispatched_qty < it.qty);
     const pending_days = Math.max(0, Math.floor((Date.parse(today) - Date.parse(row.order_date)) / 86400000));
 
@@ -193,12 +203,16 @@ export async function fetchPendingOrderQueue(businessId: string | null): Promise
       hold_by: row.hold_by,
       hold_at: row.hold_at,
       last_activity: row.last_activity,
+      notes: row.notes ?? null,
+      warehouse_id: row.warehouse_id ?? null,
+      warehouse_name: row.warehouses?.warehouse_name ?? null,
       pending_amount: +pending_amount.toFixed(2),
       pending_qty,
       pending_days,
       stock_available_pct,
       is_backorder,
       ready_for_dispatch,
+      is_dispatchable,
       buckets,
       items,
     };
@@ -288,6 +302,17 @@ export async function clearOrderHold(orderId: string, userId: string, businessId
   if (error) throw error;
   await logActivity({ userId, orderId, action: "hold_released", description: "Hold released" });
   await logAudit({ business_id: businessId ?? null, action: "ORDER_HOLD_RELEASED", entity_type: "order", entity_id: orderId });
+}
+
+/** Saves the operator-facing note shown in the order's Details panel — reuses orders.notes rather than a new table/column. */
+export async function updateOrderNotes(orderId: string, notes: string, userId: string, businessId?: string | null): Promise<void> {
+  const { error } = await supabase
+    .from("orders")
+    .update({ notes: notes || null, last_activity: new Date().toISOString(), updated_by: userId } as any)
+    .eq("id", orderId);
+  if (error) throw error;
+  await logActivity({ userId, orderId, action: "notes_updated", description: notes ? notes.slice(0, 140) : "Note cleared" });
+  await logAudit({ business_id: businessId ?? null, action: "ORDER_NOTES_UPDATED", entity_type: "order", entity_id: orderId });
 }
 
 // ── Party hierarchy, item demand, and the Party Wise report ────────────────

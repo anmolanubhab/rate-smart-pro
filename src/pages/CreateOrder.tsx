@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { fetchParties, Party } from "@/lib/parties";
 import { searchProducts, Product } from "@/lib/products";
+import { fetchActiveWarehouses, resolveDefaultWarehouseId, type Warehouse } from "@/lib/warehouses";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import {
   computeItem,
   computeTotals,
@@ -98,6 +100,8 @@ const CreateOrder = () => {
   const [voucherType] = useState("TVS Tax Invoice");
   const [salesman, setSalesman] = useState("");
   const [narration, setNarration] = useState("");
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [warehouseId, setWarehouseId] = useState<string | null>(null);
   const [items, setItems] = useState<Row[]>(Array.from({ length: 6 }, blankRow));
   const [saving, setSaving] = useState(false);
 
@@ -186,6 +190,21 @@ const CreateOrder = () => {
 
   useEffect(() => {
     if (!user) return;
+    const biz = getActiveBusinessIdSync();
+    if (!biz) return;
+    fetchActiveWarehouses(biz)
+      .then((list) => {
+        setWarehouses(list);
+        // Functional update: if edit-mode's own effect already set an explicit
+        // warehouse_id from the loaded order, keep it — only fall back to the
+        // business default when nothing's been set yet.
+        setWarehouseId((prev) => prev ?? resolveDefaultWarehouseId(list));
+      })
+      .catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
     fetchParties(user.id, "customer")
       .then((data) => {
         setParties(data);
@@ -205,6 +224,7 @@ const CreateOrder = () => {
           setOrderDate(o.order_date);
           setPartyId(o.party_id || "");
           setSalesman(o.salesman || "");
+          setWarehouseId(o.warehouse_id ?? null);
           setNarration(o.notes || "");
           setRefNo((o.remarks || "").replace(/^Ref:\s*/i, ""));
           setEditMode(true);
@@ -384,6 +404,7 @@ const CreateOrder = () => {
         billing_address: party?.billing_address ?? party?.address ?? null,
         shipping_address: party?.shipping_address ?? party?.address ?? null,
         salesman,
+        warehouse_id: warehouseId,
         notes: narration,
         remarks: refNo ? `Ref: ${refNo}` : null,
         mode: party?.discount_type ?? null,
@@ -502,6 +523,22 @@ const CreateOrder = () => {
 
           <DocumentHeaderInputField label="Order Received By" value={refNo} onChange={(e) => setRefNo(e.target.value)} placeholder="11299/vishal" />
           <DocumentHeaderInputField label="Salesman" labelAlign="right" value={salesman} onChange={(e) => setSalesman(e.target.value)} />
+
+          {warehouses.length > 1 && (
+            <>
+              <DocumentHeaderLabel>Warehouse</DocumentHeaderLabel>
+              <DocumentHeaderValue>
+                <select
+                  value={warehouseId ?? ""}
+                  onChange={(e) => setWarehouseId(e.target.value || null)}
+                  className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+                >
+                  <option value="">Select warehouse…</option>
+                  {warehouses.map((w) => <option key={w.id} value={w.id}>{w.warehouse_name}</option>)}
+                </select>
+              </DocumentHeaderValue>
+            </>
+          )}
 
           <DocumentHeaderLabel span={2}>Party A/c Name</DocumentHeaderLabel>
           <DocumentHeaderValue span={10}>

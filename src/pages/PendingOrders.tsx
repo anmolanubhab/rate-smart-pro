@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, Search, SlidersHorizontal, Eye, CheckCircle2,
   PauseCircle, PlayCircle, Ban, Printer, AlertTriangle, PackageX, X,
   FileSpreadsheet, FileDown, PackageCheck, Phone, MapPin, Warehouse as WarehouseIcon, Send,
-  ClipboardList, Layers,
+  ClipboardList, Layers, Truck, PanelRight, Share2, Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,13 +16,16 @@ import {
   fetchPendingOrderQueue, computeQueueSummary, fifoCompare, setOrderHold, clearOrderHold,
   groupByParty, computeItemDemand, buildPartyWiseReport, buildConsolidatedPickList,
   BUCKET_LABEL, PENDING_REASON_LABEL,
-  type QueueRow, type PendingBucket, type PendingReason, type ItemDemandRow,
+  type QueueRow, type PendingBucket, type PendingReason, type ItemDemandRow, type PartyGroup,
 } from "@/lib/pendingOrderQueue";
 import { bulkCreatePickingLists } from "@/lib/pickingLists";
+import { bulkCreateDispatches } from "@/lib/dispatches";
 import { exportPartyWiseReportPdf, exportPartyWiseReportExcel, exportCustomerShareReportExcel } from "@/lib/pendingOrderReportExport";
 import { PendingOrderReportPrintView, type ReportCompanyInfo } from "@/components/pending/PendingOrderReportPrintView";
+import { OrderDetailsPanel } from "@/components/pending/OrderDetailsPanel";
 import { exportReport } from "@/lib/gstExport";
 import { fetchParties, type Party } from "@/lib/parties";
+import { fetchActiveWarehouses, type Warehouse } from "@/lib/warehouses";
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
 import { useFormatDate } from "@/lib/dateFormat";
@@ -38,7 +41,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -86,6 +88,7 @@ interface Filters {
   salesman: string;
   city: string;
   priority: string;
+  warehouseId: string;
   orderFrom: string;
   orderTo: string;
   dueFrom: string;
@@ -94,7 +97,7 @@ interface Filters {
   minPendingDays: number | null;
 }
 const EMPTY_FILTERS: Filters = {
-  partyId: "all", salesman: "", city: "", priority: "all", orderFrom: "", orderTo: "", dueFrom: "", dueTo: "",
+  partyId: "all", salesman: "", city: "", priority: "all", warehouseId: "all", orderFrom: "", orderTo: "", dueFrom: "", dueTo: "",
   readyOnly: false, minPendingDays: null,
 };
 
@@ -108,6 +111,7 @@ const PendingOrders = () => {
 
   const [rows, setRows] = useState<QueueRow[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeBuckets, setActiveBuckets] = useState<Set<PendingBucket>>(new Set(ALL_BUCKETS));
@@ -128,6 +132,9 @@ const PendingOrders = () => {
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [pickListBusy, setPickListBusy] = useState(false);
   const [consolidatedOpen, setConsolidatedOpen] = useState(false);
+  const [dispatchConfirmOpen, setDispatchConfirmOpen] = useState(false);
+  const [dispatchBusy, setDispatchBusy] = useState(false);
+  const [detailsTarget, setDetailsTarget] = useState<QueueRow | null>(null);
 
   const partyDetails = useMemo(() => new Map(parties.map((p) => [p.id, p])), [parties]);
 
@@ -135,12 +142,14 @@ const PendingOrders = () => {
     if (!user || !business) return;
     setLoading(true);
     try {
-      const [queue, partyList] = await Promise.all([
+      const [queue, partyList, warehouseList] = await Promise.all([
         fetchPendingOrderQueue(businessId ?? null),
         fetchParties(user.id, "customer"),
+        businessId ? fetchActiveWarehouses(businessId) : Promise.resolve([]),
       ]);
       setRows(queue);
       setParties(partyList);
+      setWarehouses(warehouseList);
     } catch (e: any) {
       toast.error(e.message ?? "Could not load the order queue");
     } finally {
@@ -187,6 +196,7 @@ const PendingOrders = () => {
       if (filters.orderTo && r.order_date > filters.orderTo) return false;
       if (filters.dueFrom && (!r.due_date || r.due_date < filters.dueFrom)) return false;
       if (filters.dueTo && (!r.due_date || r.due_date > filters.dueTo)) return false;
+      if (filters.warehouseId !== "all" && r.warehouse_id !== filters.warehouseId) return false;
       if (filters.readyOnly && !r.ready_for_dispatch) return false;
       if (filters.minPendingDays != null && r.pending_days < filters.minPendingDays) return false;
       if (q) {
@@ -206,6 +216,8 @@ const PendingOrders = () => {
   const itemDemand = useMemo(() => computeItemDemand(sorted), [sorted]);
   const selectedRows = useMemo(() => sorted.filter((r) => selectedOrders.has(r.id)), [sorted, selectedOrders]);
   const consolidatedPickList = useMemo(() => buildConsolidatedPickList(selectedRows), [selectedRows]);
+  const dispatchableSelected = useMemo(() => selectedRows.filter((r) => r.is_dispatchable), [selectedRows]);
+  const nonDispatchableSelected = useMemo(() => selectedRows.filter((r) => !r.is_dispatchable), [selectedRows]);
 
   const toggleBucket = (b: PendingBucket) => {
     setActiveBuckets((prev) => {
@@ -270,6 +282,75 @@ const PendingOrders = () => {
     } finally {
       setPickListBusy(false);
     }
+  };
+
+  const onConfirmDispatchSelected = async () => {
+    if (!user || dispatchableSelected.length === 0) return;
+    setDispatchBusy(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { created, skipped } = await bulkCreateDispatches(
+        user.id,
+        dispatchableSelected.map((r) => ({
+          orderId: r.id,
+          orderNumber: r.order_number,
+          partyId: r.party_id,
+          dispatchDate: today,
+          warehouseId: r.warehouse_id,
+          items: r.items.filter((it) => it.pending_qty > 0).map((it) => ({
+            order_item_id: it.id, dispatched_qty: it.pending_qty, rate: it.net_rate, unit_id: undefined,
+          })),
+        })),
+      );
+      if (created.length) toast.success(`Created ${created.length} draft dispatch${created.length > 1 ? "es" : ""} — review and confirm from the Dispatch page.`);
+      if (skipped.length) toast.warning(`Skipped ${skipped.length}: ${skipped.map((s) => `${s.orderNumber} (${s.reason})`).join(", ")}`);
+      setSelectedOrders(new Set());
+      setDispatchConfirmOpen(false);
+      await reload();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not create dispatches");
+    } finally {
+      setDispatchBusy(false);
+    }
+  };
+
+  /** Shared by the row's "..." menu and the Details panel's Quick Actions, so the two never drift apart. */
+  const buildOrderActions = (row: QueueRow): DocumentRowAction[] => [
+    { key: "details", label: "Details", icon: PanelRight, onClick: () => setDetailsTarget(row) },
+    { key: "open", label: "Open", icon: Eye, onClick: () => nav(`/orders/edit/${row.id}`) },
+    { key: "approve", label: "Approve", icon: CheckCircle2, onClick: () => onApprove(row), hidden: row.status !== "pending" || !canApproveOrder },
+    { key: "hold", label: "Hold", icon: PauseCircle, onClick: () => { setHoldTarget(row); setHoldReasonState("manual_hold"); }, hidden: row.on_hold },
+    { key: "release-hold", label: "Release Hold", icon: PlayCircle, onClick: () => onReleaseHold(row), hidden: !row.on_hold },
+    { key: "print", label: "Print", icon: Printer, onClick: () => toast.info("Print from the queue is coming in Phase 2 — open the order to print for now.") },
+    { key: "cancel", label: "Cancel", icon: Ban, destructive: true, separatorBefore: true, onClick: () => { setCancelTarget(row); setCancelReason(""); } },
+  ];
+
+  /** Text-only summary — wa.me/mailto never support attaching a file, so this is a draft the operator reviews and sends themselves (same pattern as the existing shareOnWhatsApp in src/lib/invoice.ts), not an automated send. */
+  const buildPartyShareText = (group: PartyGroup, companyName: string): string =>
+    [
+      `*Pending Order Statement*`,
+      companyName,
+      ``,
+      `Party: ${group.party_name}`,
+      `Date: ${fd(new Date().toISOString())}`,
+      ``,
+      `Orders Pending: ${group.orders.length}`,
+      `Pending Qty: ${group.totalPendingQty.toFixed(0)}`,
+      `Pending Value: ₹${group.totalPendingValue.toFixed(0)}`,
+      `Ready to Dispatch: ₹${group.readyToDispatchValue.toFixed(0)}`,
+    ].join("\n");
+
+  const onShareWhatsApp = async (group: PartyGroup) => {
+    const info = await getCompanyInfo();
+    const text = buildPartyShareText(group, info.name);
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+  };
+
+  const onShareEmail = async (group: PartyGroup) => {
+    const info = await getCompanyInfo();
+    const text = buildPartyShareText(group, info.name);
+    const subject = `Pending Order Statement — ${group.party_name}`;
+    window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`);
   };
 
   const onExportConsolidatedPickList = () => {
@@ -465,15 +546,18 @@ const PendingOrders = () => {
                   <Input type="date" value={filters.dueTo} onChange={(e) => setFilters((f) => ({ ...f, dueTo: e.target.value }))} />
                 </div>
               </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="space-y-1.5 opacity-50 cursor-not-allowed">
-                    <Label className="text-xs flex items-center gap-1"><WarehouseIcon className="h-3 w-3" /> Warehouse</Label>
-                    <Select disabled value="all"><SelectTrigger><SelectValue placeholder="All warehouses" /></SelectTrigger><SelectContent /></Select>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>Coming later — needs per-order warehouse tracking</TooltipContent>
-              </Tooltip>
+              {warehouses.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs flex items-center gap-1"><WarehouseIcon className="h-3 w-3" /> Warehouse</Label>
+                  <Select value={filters.warehouseId} onValueChange={(v) => setFilters((f) => ({ ...f, warehouseId: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All warehouses</SelectItem>
+                      {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </PopoverContent>
           </Popover>
           <Button variant="outline" onClick={onExportExcel}><FileSpreadsheet className="h-4 w-4" /> Excel</Button>
@@ -562,6 +646,9 @@ const PendingOrders = () => {
               {pickListBusy ? <LoadingSpinner size="sm" className="mr-1" /> : <ClipboardList className="h-3.5 w-3.5" />}
               Generate Pick List{selectedOrders.size > 1 ? "s" : ""}
             </Button>
+            <Button size="sm" variant="outline" className="border-primary/40" onClick={() => setDispatchConfirmOpen(true)} disabled={dispatchableSelected.length === 0}>
+              <Truck className="h-3.5 w-3.5" /> Dispatch Selected ({dispatchableSelected.length})
+            </Button>
           </div>
         </div>
       )}
@@ -618,20 +705,21 @@ const PendingOrders = () => {
                         <div><div className="text-xs text-muted-foreground">Pending Value</div><div className="font-semibold tabular-nums">₹{g.totalPendingValue.toFixed(0)}</div></div>
                         <div><div className="text-xs text-muted-foreground">Ready Value</div><div className="font-semibold tabular-nums text-success">₹{g.readyToDispatchValue.toFixed(0)}</div></div>
                       </div>
+                      <span onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 shrink-0">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-success hover:text-success" title="Share via WhatsApp" onClick={() => onShareWhatsApp(g)}>
+                          <Share2 className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Share via Email" onClick={() => onShareEmail(g)}>
+                          <Mail className="h-4 w-4" />
+                        </Button>
+                      </span>
                     </div>
 
                     {partyOpen && (
                       <div className="border-t border-border bg-muted/20 p-3 space-y-2">
                         {g.orders.map((row) => {
                           const orderOpen = expandedOrders.has(row.id);
-                          const actions: DocumentRowAction[] = [
-                            { key: "open", label: "Open", icon: Eye, onClick: () => nav(`/orders/edit/${row.id}`) },
-                            { key: "approve", label: "Approve", icon: CheckCircle2, onClick: () => onApprove(row), hidden: row.status !== "pending" || !canApproveOrder },
-                            { key: "hold", label: "Hold", icon: PauseCircle, onClick: () => { setHoldTarget(row); setHoldReasonState("manual_hold"); }, hidden: row.on_hold },
-                            { key: "release-hold", label: "Release Hold", icon: PlayCircle, onClick: () => onReleaseHold(row), hidden: !row.on_hold },
-                            { key: "print", label: "Print", icon: Printer, onClick: () => toast.info("Print from the queue is coming in Phase 2 — open the order to print for now.") },
-                            { key: "cancel", label: "Cancel", icon: Ban, destructive: true, separatorBefore: true, onClick: () => { setCancelTarget(row); setCancelReason(""); } },
-                          ];
+                          const actions = buildOrderActions(row);
                           return (
                             <div key={row.id} className="rounded-xl border border-border bg-card">
                               <div onClick={() => toggleOrder(row.id)} className="w-full text-left p-3 flex items-center gap-3 hover:bg-muted/30 cursor-pointer">
@@ -835,9 +923,45 @@ const PendingOrders = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Dispatch Selected confirmation */}
+      <AlertDialog open={dispatchConfirmOpen} onOpenChange={(o) => !o && setDispatchConfirmOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Dispatch {dispatchableSelected.length} order{dispatchableSelected.length > 1 ? "s" : ""}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Full pending quantity ships for each order and stock is deducted immediately. Dispatches are created as
+              drafts — review and confirm (or cancel) each one from the Dispatch page before it posts to accounting.
+              {nonDispatchableSelected.length > 0 && (
+                <span className="block mt-2 text-warning">
+                  {nonDispatchableSelected.length} of your selected order{nonDispatchableSelected.length > 1 ? "s" : ""} won't be
+                  included — not fully stock-ready, or contain batch/serial-tracked items that need a manual lot/serial pick.
+                  Dispatch {nonDispatchableSelected.length > 1 ? "those" : "it"} individually from the Dispatch page.
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={dispatchBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onConfirmDispatchSelected} disabled={dispatchBusy}>
+              {dispatchBusy ? <><LoadingSpinner size="sm" className="mr-1" />Dispatching…</> : `Dispatch ${dispatchableSelected.length}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {printSections && company && (
         <PendingOrderReportPrintView company={company} sections={printSections} reportDate={fd(new Date().toISOString())} />
       )}
+
+      <OrderDetailsPanel
+        order={detailsTarget}
+        open={!!detailsTarget}
+        onOpenChange={(o) => !o && setDetailsTarget(null)}
+        actions={detailsTarget ? buildOrderActions(detailsTarget) : []}
+        userId={user?.id ?? null}
+        businessId={business?.id ?? null}
+        onNotesSaved={reload}
+      />
     </div>
   );
 };

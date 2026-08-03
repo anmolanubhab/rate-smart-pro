@@ -42,6 +42,7 @@ export interface Order {
   salesman: string | null;
   notes: string | null;
   remarks: string | null;
+  warehouse_id: string | null;
   subtotal: number;
   discount_total: number;
   cd_total: number;
@@ -174,6 +175,7 @@ export interface SaveOrderInput {
   salesman?: string | null;
   notes?: string | null;
   remarks?: string | null;
+  warehouse_id?: string | null;
   mode: "RD" | "CD" | null;
   source_type?: OrderSource;
   parent_order_ids?: string[];
@@ -204,6 +206,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
       salesman: input.salesman ?? null,
       notes: input.notes ?? null,
       remarks: input.remarks ?? null,
+      warehouse_id: input.warehouse_id ?? null,
       mode: input.mode,
       source_type: input.source_type ?? "manual",
       parent_order_ids: input.parent_order_ids ?? [],
@@ -228,6 +231,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
       salesman: input.salesman ?? null,
       notes: input.notes ?? null,
       remarks: input.remarks ?? null,
+      warehouse_id: input.warehouse_id ?? null,
       mode: input.mode,
       status: input.status,
       shipping_charges: input.shipping_charges ?? 0,
