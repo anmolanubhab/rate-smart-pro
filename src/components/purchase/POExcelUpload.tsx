@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
-  Upload, FileDown, AlertCircle, CheckCircle2, X, Loader2, ShoppingBag,
+  Upload, FileDown, AlertCircle, CheckCircle2, X, ShoppingBag,
 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -230,7 +231,7 @@ export default function POExcelUpload({ open, onOpenChange, userId, onImport }: 
             >
               {busy ? (
                 <>
-                  <Loader2 className="h-10 w-10 text-muted-foreground mx-auto mb-3 animate-spin" />
+                  <LoadingSpinner size="lg" className="mx-auto mb-3" />
                   <p className="text-muted-foreground text-sm">Matching against catalog…</p>
                 </>
               ) : (

@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import {
   Plus, Pencil, Trash2, Package, Search,
   AlertTriangle, Upload, ArrowUpDown, ArrowUp, ArrowDown,
-  RefreshCw, Download, Archive, Loader2,
+  RefreshCw, Download, Archive,
 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import ProductImport from "@/components/ProductImport";
 import { ProductsPagination } from "@/components/ProductsPagination";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -587,7 +588,7 @@ const Products = () => {
             <Upload className="h-4 w-4" /> Import Products
           </Button>
           <Button variant="outline" onClick={exportAll} disabled={exporting}>
-            <Download className="h-4 w-4" />
+            {exporting ? <LoadingSpinner size="sm" /> : <Download className="h-4 w-4" />}
             {exporting ? "Exporting…" : "Export CSV"}
           </Button>
           <Link to="/products/bulk-gst">
@@ -1046,7 +1047,7 @@ const Products = () => {
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Working…</> : "Delete"}
+              {deleting ? <><LoadingSpinner size="sm" className="mr-1" />Working…</> : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1070,7 +1071,7 @@ const Products = () => {
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Working…</> : `Delete ${selected.size}`}
+              {deleting ? <><LoadingSpinner size="sm" className="mr-1" />Working…</> : `Delete ${selected.size}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

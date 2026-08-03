@@ -26,9 +26,9 @@ import {
   Lock,
   AlertCircle,
   Menu,
-  Loader2,
   X as XIcon
 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -327,7 +327,7 @@ function HeroHeader({
                 )}
               >
                 {busy ? (
-                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+                  <LoadingSpinner size="md" />
                 ) : (
                   <>
                     <button

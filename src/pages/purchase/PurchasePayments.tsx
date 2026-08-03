@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CreditCard, PlusCircle, Trash2, Loader2 } from "lucide-react";
+import { CreditCard, PlusCircle, Trash2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -165,7 +166,7 @@ export default function PurchasePayments() {
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Deleting…</> : "Delete Payment"}
+              {deleting ? <><LoadingSpinner size="sm" className="mr-1" />Deleting…</> : "Delete Payment"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

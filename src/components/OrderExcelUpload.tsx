@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { Upload, FileDown, AlertCircle, CheckCircle2, X, Loader2 } from "lucide-react";
+import { Upload, FileDown, AlertCircle, CheckCircle2, X } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -180,7 +181,7 @@ export default function OrderExcelUpload({ open, onOpenChange, userId, defaultDi
               <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="font-medium">Click or drag file here</p>
               <p className="text-sm text-muted-foreground mt-1">.xlsx, .xls, .csv up to 10MB</p>
-              {busy && <Loader2 className="h-5 w-5 animate-spin mx-auto mt-3" />}
+              {busy && <LoadingSpinner size="sm" className="mx-auto mt-3" />}
             </div>
             <input
               ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"

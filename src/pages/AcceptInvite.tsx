@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Loader2, Building2, ShieldCheck, Eye, EyeOff, XCircle, CheckCircle2 } from "lucide-react";
+import { Building2, ShieldCheck, Eye, EyeOff, XCircle, CheckCircle2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -143,7 +144,7 @@ export default function AcceptInvite() {
   );
 
   if (loading || authLoading) {
-    return <Shell><div className="flex items-center justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></div></Shell>;
+    return <Shell><div className="flex items-center justify-center py-10"><LoadingSpinner size="md" /></div></Shell>;
   }
 
   if (notFound) {
@@ -219,7 +220,7 @@ export default function AcceptInvite() {
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={handleReject} disabled={submitting}>Decline</Button>
             <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleJoinExisting} disabled={submitting}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Join company"}
+              {submitting ? <LoadingSpinner size="sm" /> : "Join company"}
             </Button>
           </div>
         </div>
@@ -272,7 +273,7 @@ export default function AcceptInvite() {
           <div className="flex gap-2 pt-2">
             <Button variant="outline" className="flex-1" onClick={handleReject} disabled={submitting}>Decline</Button>
             <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleCreateAccount} disabled={submitting}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Account"}
+              {submitting ? <LoadingSpinner size="sm" /> : "Create Account"}
             </Button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
@@ -176,7 +177,7 @@ export default function Auth() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <LoadingSpinner size="lg" />
           <p className="text-slate-500 text-sm">Loading...</p>
         </div>
       </div>
@@ -703,7 +704,7 @@ export default function Auth() {
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <LoadingSpinner size="sm" className="mr-2" />
                     Creating Account...
                   </>
                 ) : (
