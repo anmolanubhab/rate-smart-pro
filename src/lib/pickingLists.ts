@@ -171,6 +171,54 @@ export async function cancelPickingList(id: string, reason: string, userId: stri
   if (error) throw error;
 }
 
+export interface BulkPickingListOrderInput {
+  orderId: string;
+  orderNumber: string;
+  partyId: string | null;
+  partyName: string | null;
+  items: { order_item_id: string; part_number: string; description: string; rack: string | null; qty_to_pick: number }[];
+}
+
+/** Orders (from the given set) that already have a non-cancelled picking list — used to skip duplicates in a bulk create. */
+export async function fetchOrdersWithOpenPickingList(orderIds: string[]): Promise<Set<string>> {
+  if (!orderIds.length) return new Set();
+  const { data, error } = await supabase
+    .from("picking_lists" as never)
+    .select("order_id")
+    .in("order_id", orderIds)
+    .neq("status", "cancelled");
+  if (error) throw error;
+  return new Set(((data ?? []) as any[]).map((r) => r.order_id as string));
+}
+
+/**
+ * Creates one Picking List per order (the schema ties a picking list to a
+ * single order — there's no multi-order picking_lists row). Orders that
+ * already have an open picking list, or have no pending items, are skipped
+ * rather than erroring the whole batch.
+ */
+export async function bulkCreatePickingLists(
+  userId: string,
+  orders: BulkPickingListOrderInput[],
+): Promise<{ created: PickingList[]; skipped: { orderNumber: string; reason: string }[] }> {
+  const existing = await fetchOrdersWithOpenPickingList(orders.map((o) => o.orderId));
+  const created: PickingList[] = [];
+  const skipped: { orderNumber: string; reason: string }[] = [];
+  for (const o of orders) {
+    if (existing.has(o.orderId)) {
+      skipped.push({ orderNumber: o.orderNumber, reason: "already has an open picking list" });
+      continue;
+    }
+    if (!o.items.length) {
+      skipped.push({ orderNumber: o.orderNumber, reason: "no pending items" });
+      continue;
+    }
+    const pl = await createPickingList({ userId, orderId: o.orderId, partyId: o.partyId, partyName: o.partyName, items: o.items });
+    created.push(pl);
+  }
+  return { created, skipped };
+}
+
 export async function deletePickingList(id: string): Promise<void> {
   const { data: pl, error: le } = await supabase.from("picking_lists" as never).select("order_id").eq("id", id).single();
   if (le) throw le;

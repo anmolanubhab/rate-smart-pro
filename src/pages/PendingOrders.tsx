@@ -1,8 +1,10 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronDown, ChevronRight, Search, SlidersHorizontal, Eye, CheckCircle2,
   PauseCircle, PlayCircle, Ban, Printer, AlertTriangle, PackageX, X,
+  FileSpreadsheet, FileDown, PackageCheck, Phone, MapPin, Warehouse as WarehouseIcon, Send,
+  ClipboardList, Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,10 +14,16 @@ import { canGranular } from "@/lib/permissions";
 import { setOrderStatus, cancelOrder } from "@/lib/orders";
 import {
   fetchPendingOrderQueue, computeQueueSummary, fifoCompare, setOrderHold, clearOrderHold,
-  BUCKET_LABEL, BUCKET_TONE, PENDING_REASON_LABEL,
-  type QueueRow, type PendingBucket, type PendingReason,
+  groupByParty, computeItemDemand, buildPartyWiseReport, buildConsolidatedPickList,
+  BUCKET_LABEL, PENDING_REASON_LABEL,
+  type QueueRow, type PendingBucket, type PendingReason, type ItemDemandRow,
 } from "@/lib/pendingOrderQueue";
+import { bulkCreatePickingLists } from "@/lib/pickingLists";
+import { exportPartyWiseReportPdf, exportPartyWiseReportExcel, exportCustomerShareReportExcel } from "@/lib/pendingOrderReportExport";
+import { PendingOrderReportPrintView, type ReportCompanyInfo } from "@/components/pending/PendingOrderReportPrintView";
+import { exportReport } from "@/lib/gstExport";
 import { fetchParties, type Party } from "@/lib/parties";
+import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
 import { useFormatDate } from "@/lib/dateFormat";
 import { Button } from "@/components/ui/button";
@@ -27,6 +35,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -37,11 +49,20 @@ import { cn } from "@/lib/utils";
 
 const ALL_BUCKETS = Object.keys(BUCKET_LABEL) as PendingBucket[];
 const HOLD_REASONS: PendingReason[] = ["customer_hold", "manual_hold", "payment_pending", "credit_limit_exceeded"];
+const PENDING_DAYS_OPTIONS = [7, 15, 30] as const;
 
 function PriorityBadge({ priority }: { priority: "low" | "normal" | "urgent" }) {
   if (priority === "urgent") return <Badge variant="outline" className="border-destructive/40 text-destructive bg-destructive/5 text-[10px]">Urgent</Badge>;
   if (priority === "low") return <Badge variant="outline" className="text-[10px] text-muted-foreground">Low</Badge>;
   return <Badge variant="outline" className="text-[10px]">Normal</Badge>;
+}
+
+function ReadyBadge() {
+  return (
+    <Badge variant="outline" className="border-success/40 text-success bg-success/5 text-[10px] gap-1">
+      <PackageCheck className="h-3 w-3" /> Ready for Dispatch
+    </Badge>
+  );
 }
 
 function stockPctClass(pct: number) {
@@ -69,8 +90,13 @@ interface Filters {
   orderTo: string;
   dueFrom: string;
   dueTo: string;
+  readyOnly: boolean;
+  minPendingDays: number | null;
 }
-const EMPTY_FILTERS: Filters = { partyId: "all", salesman: "", city: "", priority: "all", orderFrom: "", orderTo: "", dueFrom: "", dueTo: "" };
+const EMPTY_FILTERS: Filters = {
+  partyId: "all", salesman: "", city: "", priority: "all", orderFrom: "", orderTo: "", dueFrom: "", dueTo: "",
+  readyOnly: false, minPendingDays: null,
+};
 
 const PendingOrders = () => {
   const nav = useNavigate();
@@ -86,13 +112,24 @@ const PendingOrders = () => {
   const [search, setSearch] = useState("");
   const [activeBuckets, setActiveBuckets] = useState<Set<PendingBucket>>(new Set(ALL_BUCKETS));
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expandedParties, setExpandedParties] = useState<Set<string>>(new Set());
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"orders" | "demand">("orders");
 
   const [holdTarget, setHoldTarget] = useState<QueueRow | null>(null);
   const [holdReason, setHoldReasonState] = useState<PendingReason>("manual_hold");
   const [cancelTarget, setCancelTarget] = useState<QueueRow | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+
+  const [company, setCompany] = useState<ReportCompanyInfo | null>(null);
+  const [printSections, setPrintSections] = useState<ReturnType<typeof buildPartyWiseReport> | null>(null);
+
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  const [pickListBusy, setPickListBusy] = useState(false);
+  const [consolidatedOpen, setConsolidatedOpen] = useState(false);
+
+  const partyDetails = useMemo(() => new Map(parties.map((p) => [p.id, p])), [parties]);
 
   const reload = async () => {
     if (!user || !business) return;
@@ -118,6 +155,12 @@ const PendingOrders = () => {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [user?.id, business?.id]);
 
+  useEffect(() => {
+    if (!printSections) return;
+    const t = setTimeout(() => window.print(), 100);
+    return () => clearTimeout(t);
+  }, [printSections]);
+
   const summary = useMemo(() => computeQueueSummary(rows), [rows]);
   const bucketCounts = useMemo(() => {
     const m = new Map<PendingBucket, number>();
@@ -125,8 +168,12 @@ const PendingOrders = () => {
     for (const r of rows) for (const b of r.buckets) m.set(b, (m.get(b) ?? 0) + 1);
     return m;
   }, [rows]);
+  const readyToDispatchCount = useMemo(() => rows.filter((r) => r.ready_for_dispatch).length, [rows]);
+  const highPriorityCount = useMemo(() => rows.filter((r) => r.priority === "urgent").length, [rows]);
 
-  const activeFilterCount = Object.entries(filters).filter(([k, v]) => v && v !== EMPTY_FILTERS[k as keyof Filters]).length;
+  const activeFilterCount = Object.entries(filters).filter(
+    ([k, v]) => v !== EMPTY_FILTERS[k as keyof Filters] && v !== "" && v !== "all",
+  ).length;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -140,6 +187,8 @@ const PendingOrders = () => {
       if (filters.orderTo && r.order_date > filters.orderTo) return false;
       if (filters.dueFrom && (!r.due_date || r.due_date < filters.dueFrom)) return false;
       if (filters.dueTo && (!r.due_date || r.due_date > filters.dueTo)) return false;
+      if (filters.readyOnly && !r.ready_for_dispatch) return false;
+      if (filters.minPendingDays != null && r.pending_days < filters.minPendingDays) return false;
       if (q) {
         const hit =
           r.order_number.toLowerCase().includes(q) ||
@@ -153,6 +202,10 @@ const PendingOrders = () => {
   }, [rows, search, activeBuckets, filters]);
 
   const sorted = useMemo(() => [...filtered].sort(fifoCompare), [filtered]);
+  const partyGroups = useMemo(() => groupByParty(sorted, partyDetails), [sorted, partyDetails]);
+  const itemDemand = useMemo(() => computeItemDemand(sorted), [sorted]);
+  const selectedRows = useMemo(() => sorted.filter((r) => selectedOrders.has(r.id)), [sorted, selectedOrders]);
+  const consolidatedPickList = useMemo(() => buildConsolidatedPickList(selectedRows), [selectedRows]);
 
   const toggleBucket = (b: PendingBucket) => {
     setActiveBuckets((prev) => {
@@ -161,12 +214,77 @@ const PendingOrders = () => {
       return next.size === 0 ? new Set(ALL_BUCKETS) : next;
     });
   };
-
-  const toggleExpand = (id: string) => {
-    setExpanded((prev) => {
+  const toggleParty = (id: string) => {
+    setExpandedParties((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
+    });
+  };
+  const toggleOrder = (id: string) => {
+    setExpandedOrders((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleOrderSelection = (id: string) => {
+    setSelectedOrders((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const togglePartySelection = (orderIds: string[]) => {
+    setSelectedOrders((prev) => {
+      const allSelected = orderIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      for (const id of orderIds) (allSelected ? next.delete(id) : next.add(id));
+      return next;
+    });
+  };
+
+  const onGeneratePickLists = async () => {
+    if (!user || selectedRows.length === 0) return;
+    setPickListBusy(true);
+    try {
+      const { created, skipped } = await bulkCreatePickingLists(
+        user.id,
+        selectedRows.map((r) => ({
+          orderId: r.id,
+          orderNumber: r.order_number,
+          partyId: r.party_id,
+          partyName: r.party_name,
+          items: r.items.filter((it) => it.pending_qty > 0).map((it) => ({
+            order_item_id: it.id, part_number: it.part_number, description: it.description,
+            rack: it.rack, qty_to_pick: it.pending_qty,
+          })),
+        })),
+      );
+      if (created.length) toast.success(`Created ${created.length} picking list${created.length > 1 ? "s" : ""}`);
+      if (skipped.length) toast.warning(`Skipped ${skipped.length}: ${skipped.map((s) => `${s.orderNumber} (${s.reason})`).join(", ")}`);
+      setSelectedOrders(new Set());
+      setConsolidatedOpen(false);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not generate picking lists");
+    } finally {
+      setPickListBusy(false);
+    }
+  };
+
+  const onExportConsolidatedPickList = () => {
+    exportReport("excel", {
+      rows: consolidatedPickList.map((r) => ({
+        "Part No": r.part_number, "Item Name": r.item_name, Rack: r.rack ?? "-", Unit: r.unit ?? "-",
+        "Total Qty": r.total_qty, Orders: r.orders.map((o) => `${o.order_number} (${o.qty})`).join(", "),
+      })),
+      columns: [
+        { key: "Part No", label: "Part No" }, { key: "Item Name", label: "Item Name" }, { key: "Rack", label: "Rack" },
+        { key: "Unit", label: "Unit" }, { key: "Total Qty", label: "Total Qty", align: "right", format: "number" },
+        { key: "Orders", label: "Orders" },
+      ],
+      baseName: "consolidated-pick-list",
+      title: "Consolidated Pick List",
     });
   };
 
@@ -218,15 +336,67 @@ const PendingOrders = () => {
     finally { setBusyId(null); }
   };
 
+  const getCompanyInfo = async (): Promise<ReportCompanyInfo> => {
+    if (company) return company;
+    const { data: biz } = await supabase
+      .from("businesses")
+      .select("business_name, firm_name, address, city, state, pincode, gst_number")
+      .eq("id", business?.id ?? "")
+      .maybeSingle();
+    const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean) as string[];
+    const info: ReportCompanyInfo = { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null };
+    setCompany(info);
+    return info;
+  };
+
+  const onExportExcel = () => {
+    const sections = buildPartyWiseReport(sorted, partyDetails);
+    exportPartyWiseReportExcel(sections);
+  };
+  const onExportCustomerShare = () => {
+    const sections = buildPartyWiseReport(sorted, partyDetails);
+    if (sections.length > 1) {
+      toast.warning(`This file covers ${sections.length} parties — filter to one party first if this is going to a specific customer.`);
+    }
+    exportCustomerShareReportExcel(sections);
+  };
+  const onExportPdf = async () => {
+    const sections = buildPartyWiseReport(sorted, partyDetails);
+    const info = await getCompanyInfo();
+    exportPartyWiseReportPdf(sections, info, fd(new Date().toISOString()));
+  };
+  const onPrintReport = async () => {
+    const sections = buildPartyWiseReport(sorted, partyDetails);
+    await getCompanyInfo();
+    setPrintSections(sections);
+  };
+  const onExportItemDemand = (format: "excel" | "pdf") => {
+    exportReport(format, {
+      rows: itemDemand.map((r) => ({
+        "Part No": r.part_number, "Item Name": r.item_name, "Total Pending": r.total_pending,
+        "Available Stock": r.available_stock, Shortage: r.shortage, Parties: r.party_count,
+      })),
+      columns: [
+        { key: "Part No", label: "Part No" }, { key: "Item Name", label: "Item Name" },
+        { key: "Total Pending", label: "Total Pending", align: "right", format: "number" },
+        { key: "Available Stock", label: "Available Stock", align: "right", format: "number" },
+        { key: "Shortage", label: "Shortage", align: "right", format: "number" },
+        { key: "Parties", label: "Parties", align: "right", format: "number" },
+      ],
+      baseName: "consolidated-item-demand",
+      title: "Consolidated Item Demand",
+    });
+  };
+
   const isInitialLoading = loading || businessLoading;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in-up">
-      <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+      <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 no-print">
         <div>
           <p className="text-sm text-muted-foreground font-medium">Sales</p>
           <h1 className="font-display text-3xl font-bold mt-1">Order Control Center</h1>
-          <p className="text-muted-foreground mt-1 text-sm">Every pending order, auto-prioritized — overdue and urgent work floats to the top.</p>
+          <p className="text-muted-foreground mt-1 text-sm">Daily working screen for Sales &amp; Warehouse — party-wise pending orders, auto-prioritized.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <div className="relative">
@@ -295,19 +465,32 @@ const PendingOrders = () => {
                   <Input type="date" value={filters.dueTo} onChange={(e) => setFilters((f) => ({ ...f, dueTo: e.target.value }))} />
                 </div>
               </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="space-y-1.5 opacity-50 cursor-not-allowed">
+                    <Label className="text-xs flex items-center gap-1"><WarehouseIcon className="h-3 w-3" /> Warehouse</Label>
+                    <Select disabled value="all"><SelectTrigger><SelectValue placeholder="All warehouses" /></SelectTrigger><SelectContent /></Select>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Coming later — needs per-order warehouse tracking</TooltipContent>
+              </Tooltip>
             </PopoverContent>
           </Popover>
+          <Button variant="outline" onClick={onExportExcel}><FileSpreadsheet className="h-4 w-4" /> Excel</Button>
+          <Button variant="outline" onClick={onExportPdf}><FileDown className="h-4 w-4" /> PDF</Button>
+          <Button variant="outline" onClick={onPrintReport}><Printer className="h-4 w-4" /> Print</Button>
+          <Button variant="outline" onClick={onExportCustomerShare}><Send className="h-4 w-4" /> Customer Copy</Button>
         </div>
       </header>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 no-print">
         {[
           { label: "Total Pending Orders", value: summary.totalOrders.toString() },
-          { label: "Pending Value", value: `₹${summary.pendingValue.toFixed(0)}` },
-          { label: "Pending Qty", value: summary.pendingQty.toFixed(0) },
-          { label: "Overdue Orders", value: summary.overdueOrders.toString(), accent: summary.overdueOrders > 0 ? "text-destructive" : undefined },
-          { label: "Backorder Orders", value: summary.backorderOrders.toString(), accent: summary.backorderOrders > 0 ? "text-destructive" : undefined },
+          { label: "Total Pending Qty", value: summary.pendingQty.toFixed(0) },
+          { label: "Total Pending Value", value: `₹${summary.pendingValue.toFixed(0)}` },
+          { label: "Ready to Dispatch Value", value: `₹${summary.readyToDispatchValue.toFixed(0)}`, accent: "text-success" },
+          { label: "Waiting Stock Value", value: `₹${summary.waitingStockValue.toFixed(0)}`, accent: summary.waitingStockValue > 0 ? "text-destructive" : undefined },
         ].map((c) => (
           <div key={c.label} className="rounded-2xl bg-card border border-border shadow-soft p-4">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{c.label}</div>
@@ -316,8 +499,8 @@ const PendingOrders = () => {
         ))}
       </div>
 
-      {/* Bucket pills */}
-      <div className="flex flex-wrap gap-2">
+      {/* Smart filter pills */}
+      <div className="flex flex-wrap gap-2 no-print">
         {ALL_BUCKETS.map((b) => {
           const active = activeBuckets.has(b) && activeBuckets.size < ALL_BUCKETS.length;
           const count = bucketCounts.get(b) ?? 0;
@@ -334,143 +517,234 @@ const PendingOrders = () => {
             </button>
           );
         })}
+        <span className="w-px bg-border mx-1" />
+        <button
+          onClick={() => setFilters((f) => ({ ...f, readyOnly: !f.readyOnly }))}
+          className={cn(
+            "px-3 py-1.5 rounded-full text-xs font-medium border transition-smooth",
+            filters.readyOnly ? "bg-success text-white border-transparent" : "bg-card border-border text-muted-foreground hover:bg-muted/50",
+          )}
+        >
+          Ready to Dispatch ({readyToDispatchCount})
+        </button>
+        <button
+          onClick={() => setFilters((f) => ({ ...f, priority: f.priority === "urgent" ? "all" : "urgent" }))}
+          className={cn(
+            "px-3 py-1.5 rounded-full text-xs font-medium border transition-smooth",
+            filters.priority === "urgent" ? "gradient-primary text-white border-transparent" : "bg-card border-border text-muted-foreground hover:bg-muted/50",
+          )}
+        >
+          High Priority ({highPriorityCount})
+        </button>
+        {PENDING_DAYS_OPTIONS.map((d) => (
+          <button
+            key={d}
+            onClick={() => setFilters((f) => ({ ...f, minPendingDays: f.minPendingDays === d ? null : d }))}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-xs font-medium border transition-smooth",
+              filters.minPendingDays === d ? "gradient-primary text-white border-transparent" : "bg-card border-border text-muted-foreground hover:bg-muted/50",
+            )}
+          >
+            Pending &gt;{d} Days
+          </button>
+        ))}
       </div>
 
-      {isInitialLoading ? (
-        <div className="p-16 text-center"><LoadingSpinner size="md" className="mx-auto" /></div>
-      ) : sorted.length === 0 ? (
-        <div className="rounded-2xl bg-card border border-border p-12 text-center text-muted-foreground">
-          <CheckCircle2 className="h-10 w-10 mx-auto mb-3 opacity-40" />
-          <p className="font-medium">Nothing matches these filters</p>
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-soft overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Order No.</TableHead>
-                <TableHead>Order Date</TableHead>
-                <TableHead>Party</TableHead>
-                <TableHead>Salesman</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Pending Amt</TableHead>
-                <TableHead className="text-right">Pending Qty</TableHead>
-                <TableHead className="text-right">Stock %</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Last Activity</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sorted.map((row) => {
-                const open = expanded.has(row.id);
-                const actions: DocumentRowAction[] = [
-                  { key: "open", label: "Open", icon: Eye, onClick: () => nav(`/orders/edit/${row.id}`) },
-                  {
-                    key: "approve", label: "Approve", icon: CheckCircle2, onClick: () => onApprove(row),
-                    hidden: row.status !== "pending" || !canApproveOrder,
-                  },
-                  {
-                    key: "hold", label: "Hold", icon: PauseCircle, onClick: () => { setHoldTarget(row); setHoldReasonState("manual_hold"); },
-                    hidden: row.on_hold,
-                  },
-                  {
-                    key: "release-hold", label: "Release Hold", icon: PlayCircle, onClick: () => onReleaseHold(row),
-                    hidden: !row.on_hold,
-                  },
-                  {
-                    key: "print", label: "Print", icon: Printer,
-                    onClick: () => toast.info("Print from the queue is coming in Phase 2 — open the order to print for now."),
-                  },
-                  {
-                    key: "cancel", label: "Cancel", icon: Ban, destructive: true, separatorBefore: true,
-                    onClick: () => { setCancelTarget(row); setCancelReason(""); },
-                  },
-                ];
-                return (
-                  <Fragment key={row.id}>
-                    <TableRow className="cursor-pointer" onClick={() => toggleExpand(row.id)}>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleExpand(row.id)}>
-                          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </Button>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{row.order_number}</TableCell>
-                      <TableCell className="tabular-nums text-sm">{fd(row.order_date)}</TableCell>
-                      <TableCell className="text-sm max-w-[160px] truncate">{row.party_name}</TableCell>
-                      <TableCell className="text-sm">{row.salesman || "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums text-sm">₹{row.grand_total.toFixed(0)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-sm font-semibold">₹{row.pending_amount.toFixed(0)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-sm">{row.pending_qty.toFixed(0)}</TableCell>
-                      <TableCell className={cn("text-right tabular-nums text-sm font-semibold", stockPctClass(row.stock_available_pct))}>
-                        {row.stock_available_pct}%
-                      </TableCell>
-                      <TableCell className="tabular-nums text-sm">
-                        {row.due_date ? fd(row.due_date) : "—"}
-                        {row.buckets.includes("overdue") && <AlertTriangle className="inline h-3.5 w-3.5 text-destructive ml-1" />}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1 items-start">
-                          <DocumentStatusBadge status={row.status} />
-                          <span className="text-[10px] text-muted-foreground">{resolvePendingReasonLabel(row)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell><PriorityBadge priority={row.priority} /></TableCell>
-                      <TableCell className="text-xs text-muted-foreground tabular-nums">{row.last_activity ? fd(row.last_activity) : "—"}</TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DocumentActionMenu actions={actions} loading={busyId === row.id} />
-                      </TableCell>
-                    </TableRow>
-                    {open && (
-                      <TableRow>
-                        <TableCell colSpan={14} className="bg-muted/20 p-0">
-                          <div className="p-3 overflow-x-auto">
-                            <table className="w-full text-xs">
-                              <thead className="text-muted-foreground uppercase text-[10px]">
-                                <tr>
-                                  <th className="text-left px-2 py-1.5">Part</th>
-                                  <th className="text-left px-2 py-1.5">Description</th>
-                                  <th className="text-right px-2 py-1.5">Ordered</th>
-                                  <th className="text-right px-2 py-1.5">Dispatched</th>
-                                  <th className="text-right px-2 py-1.5">Pending</th>
-                                  <th className="text-right px-2 py-1.5">Stock</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {row.items.map((it) => {
-                                  const ready = it.stock_qty >= it.pending_qty;
-                                  const partial = it.stock_qty > 0 && it.stock_qty < it.pending_qty;
-                                  return (
-                                    <tr key={it.id} className="border-t border-border">
-                                      <td className="px-2 py-1.5 font-mono">{it.part_number}</td>
-                                      <td className="px-2 py-1.5">{it.description}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums">{it.qty.toFixed(2)}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums">{it.dispatched_qty.toFixed(2)}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{it.pending_qty.toFixed(2)}</td>
-                                      <td className={cn("px-2 py-1.5 text-right tabular-nums font-semibold flex items-center justify-end gap-1",
-                                        ready ? "text-success" : partial ? "text-warning" : "text-destructive")}>
-                                        {!ready && <PackageX className="h-3 w-3" />}
-                                        {it.stock_qty.toFixed(2)}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
+      {selectedOrders.size > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 no-print">
+          <span className="text-sm font-medium">{selectedOrders.size} order{selectedOrders.size > 1 ? "s" : ""} selected</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedOrders(new Set())}>Clear</Button>
+            <Button variant="outline" size="sm" onClick={() => setConsolidatedOpen(true)}>
+              <Layers className="h-3.5 w-3.5" /> Consolidated Pick List
+            </Button>
+            <Button size="sm" onClick={onGeneratePickLists} disabled={pickListBusy}>
+              {pickListBusy ? <LoadingSpinner size="sm" className="mr-1" /> : <ClipboardList className="h-3.5 w-3.5" />}
+              Generate Pick List{selectedOrders.size > 1 ? "s" : ""}
+            </Button>
+          </div>
         </div>
       )}
+
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "orders" | "demand")} className="no-print">
+        <TabsList>
+          <TabsTrigger value="orders">Pending Orders</TabsTrigger>
+          <TabsTrigger value="demand">Item Demand</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="orders" className="mt-4">
+          {isInitialLoading ? (
+            <div className="p-16 text-center"><LoadingSpinner size="md" className="mx-auto" /></div>
+          ) : partyGroups.length === 0 ? (
+            <div className="rounded-2xl bg-card border border-border p-12 text-center text-muted-foreground">
+              <CheckCircle2 className="h-10 w-10 mx-auto mb-3 opacity-40" />
+              <p className="font-medium">Nothing matches these filters</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {partyGroups.map((g) => {
+                const partyOpen = expandedParties.has(g.party_id);
+                return (
+                  <div key={g.party_id} className="rounded-2xl border border-border bg-card overflow-hidden shadow-soft">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleParty(g.party_id)}
+                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleParty(g.party_id)}
+                      className="w-full text-left p-4 flex items-center gap-3 hover:bg-muted/30 transition-smooth cursor-pointer"
+                    >
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={g.orders.every((o) => selectedOrders.has(o.id))}
+                          onCheckedChange={() => togglePartySelection(g.orders.map((o) => o.id))}
+                          aria-label={`Select all orders for ${g.party_name}`}
+                        />
+                      </span>
+                      {partyOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                      <div className="flex-1 grid grid-cols-2 md:grid-cols-6 gap-3 items-center">
+                        <div className="md:col-span-2">
+                          <div className="font-display font-semibold">{g.party_name}</div>
+                          <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2">
+                            {g.mobile && <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" />{g.mobile}</span>}
+                            {g.city && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{g.city}</span>}
+                            {g.salesman && <span>· {g.salesman}</span>}
+                            {g.creditStatus === "over_limit" && (
+                              <Badge variant="outline" className="border-destructive/40 text-destructive bg-destructive/5 text-[10px]">Over Credit Limit</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div><div className="text-xs text-muted-foreground">Orders</div><div className="font-semibold tabular-nums">{g.orders.length}</div></div>
+                        <div><div className="text-xs text-muted-foreground">Pending Qty</div><div className="font-semibold tabular-nums">{g.totalPendingQty.toFixed(0)}</div></div>
+                        <div><div className="text-xs text-muted-foreground">Pending Value</div><div className="font-semibold tabular-nums">₹{g.totalPendingValue.toFixed(0)}</div></div>
+                        <div><div className="text-xs text-muted-foreground">Ready Value</div><div className="font-semibold tabular-nums text-success">₹{g.readyToDispatchValue.toFixed(0)}</div></div>
+                      </div>
+                    </div>
+
+                    {partyOpen && (
+                      <div className="border-t border-border bg-muted/20 p-3 space-y-2">
+                        {g.orders.map((row) => {
+                          const orderOpen = expandedOrders.has(row.id);
+                          const actions: DocumentRowAction[] = [
+                            { key: "open", label: "Open", icon: Eye, onClick: () => nav(`/orders/edit/${row.id}`) },
+                            { key: "approve", label: "Approve", icon: CheckCircle2, onClick: () => onApprove(row), hidden: row.status !== "pending" || !canApproveOrder },
+                            { key: "hold", label: "Hold", icon: PauseCircle, onClick: () => { setHoldTarget(row); setHoldReasonState("manual_hold"); }, hidden: row.on_hold },
+                            { key: "release-hold", label: "Release Hold", icon: PlayCircle, onClick: () => onReleaseHold(row), hidden: !row.on_hold },
+                            { key: "print", label: "Print", icon: Printer, onClick: () => toast.info("Print from the queue is coming in Phase 2 — open the order to print for now.") },
+                            { key: "cancel", label: "Cancel", icon: Ban, destructive: true, separatorBefore: true, onClick: () => { setCancelTarget(row); setCancelReason(""); } },
+                          ];
+                          return (
+                            <div key={row.id} className="rounded-xl border border-border bg-card">
+                              <div onClick={() => toggleOrder(row.id)} className="w-full text-left p-3 flex items-center gap-3 hover:bg-muted/30 cursor-pointer">
+                                <span onClick={(e) => e.stopPropagation()}>
+                                  <Checkbox
+                                    checked={selectedOrders.has(row.id)}
+                                    onCheckedChange={() => toggleOrderSelection(row.id)}
+                                    aria-label={`Select order ${row.order_number}`}
+                                  />
+                                </span>
+                                {orderOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                                <div className="flex-1 grid grid-cols-2 md:grid-cols-7 gap-2 items-center text-sm">
+                                  <div className="font-mono text-xs">{row.order_number}</div>
+                                  <div className="tabular-nums text-xs">{fd(row.order_date)}</div>
+                                  <div className="text-xs">{row.pending_days}d pending {row.buckets.includes("overdue") && <AlertTriangle className="inline h-3 w-3 text-destructive ml-0.5" />}</div>
+                                  <div><DocumentStatusBadge status={row.status} /></div>
+                                  <div><PriorityBadge priority={row.priority} /></div>
+                                  <div className="md:col-span-1">{row.ready_for_dispatch && <ReadyBadge />}</div>
+                                  <div className="text-right font-semibold tabular-nums">₹{row.pending_amount.toFixed(0)}</div>
+                                </div>
+                                <div onClick={(e) => e.stopPropagation()}>
+                                  <DocumentActionMenu actions={actions} loading={busyId === row.id} />
+                                </div>
+                              </div>
+                              {orderOpen && (
+                                <div className="border-t border-border overflow-x-auto">
+                                  <table className="w-full text-xs">
+                                    <thead className="text-muted-foreground uppercase text-[10px]">
+                                      <tr>
+                                        <th className="text-left px-2 py-1.5">Part</th>
+                                        <th className="text-left px-2 py-1.5">Description</th>
+                                        <th className="text-left px-2 py-1.5">Unit</th>
+                                        <th className="text-right px-2 py-1.5">Ordered</th>
+                                        <th className="text-right px-2 py-1.5">Dispatched</th>
+                                        <th className="text-right px-2 py-1.5">Pending</th>
+                                        <th className="text-right px-2 py-1.5">Stock</th>
+                                        <th className="text-right px-2 py-1.5">Dispatch Qty</th>
+                                        <th className="text-right px-2 py-1.5">Value</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {row.items.map((it) => {
+                                        const ready = it.stock_qty >= it.pending_qty;
+                                        const partial = it.stock_qty > 0 && it.stock_qty < it.pending_qty;
+                                        return (
+                                          <tr key={it.id} className="border-t border-border">
+                                            <td className="px-2 py-1.5 font-mono">{it.part_number}</td>
+                                            <td className="px-2 py-1.5">{it.description}</td>
+                                            <td className="px-2 py-1.5">{it.unit ?? "-"}</td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums">{it.qty.toFixed(2)}</td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums">{it.dispatched_qty.toFixed(2)}</td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{it.pending_qty.toFixed(2)}</td>
+                                            <td className={cn("px-2 py-1.5 text-right tabular-nums font-semibold", ready ? "text-success" : partial ? "text-warning" : "text-destructive")}>
+                                              <span className="inline-flex items-center gap-1 justify-end">{!ready && <PackageX className="h-3 w-3" />}{it.stock_qty.toFixed(2)}</span>
+                                            </td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums">{Math.min(it.pending_qty, it.stock_qty).toFixed(2)}</td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums">₹{(it.pending_qty * it.net_rate).toFixed(2)}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="demand" className="mt-4">
+          <div className="flex justify-end gap-2 mb-3">
+            <Button variant="outline" size="sm" onClick={() => onExportItemDemand("excel")}><FileSpreadsheet className="h-3.5 w-3.5" /> Excel</Button>
+            <Button variant="outline" size="sm" onClick={() => onExportItemDemand("pdf")}><FileDown className="h-3.5 w-3.5" /> PDF</Button>
+          </div>
+          {itemDemand.length === 0 ? (
+            <div className="rounded-2xl bg-card border border-border p-12 text-center text-muted-foreground">No pending demand for these filters.</div>
+          ) : (
+            <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-soft">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Part No</TableHead>
+                    <TableHead>Item Name</TableHead>
+                    <TableHead className="text-right">Total Pending</TableHead>
+                    <TableHead className="text-right">Available Stock</TableHead>
+                    <TableHead className="text-right">Shortage</TableHead>
+                    <TableHead className="text-right">Parties</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {itemDemand.map((r) => (
+                    <TableRow key={r.part_number}>
+                      <TableCell className="font-mono text-xs">{r.part_number}</TableCell>
+                      <TableCell className="text-sm">{r.item_name}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.total_pending.toFixed(2)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.available_stock.toFixed(2)}</TableCell>
+                      <TableCell className={cn("text-right tabular-nums font-semibold", r.shortage > 0 ? "text-destructive" : "text-success")}>{r.shortage.toFixed(2)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.party_count}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Hold dialog */}
       <AlertDialog open={!!holdTarget} onOpenChange={(o) => !o && setHoldTarget(null)}>
@@ -517,6 +791,53 @@ const PendingOrders = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Consolidated Pick List dialog */}
+      <Dialog open={consolidatedOpen} onOpenChange={setConsolidatedOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Consolidated Pick List</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {selectedOrders.size} order{selectedOrders.size > 1 ? "s" : ""} merged into one item-wise pick sheet — walk the floor once, then still get one Picking List per order for tracking.
+          </p>
+          <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Part No</TableHead>
+                  <TableHead>Item Name</TableHead>
+                  <TableHead>Rack</TableHead>
+                  <TableHead className="text-right">Total Qty</TableHead>
+                  <TableHead>Orders</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {consolidatedPickList.map((r) => (
+                  <TableRow key={r.part_number}>
+                    <TableCell className="font-mono text-xs">{r.part_number}</TableCell>
+                    <TableCell className="text-sm">{r.item_name}</TableCell>
+                    <TableCell className="text-sm">{r.rack ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums font-semibold">{r.total_qty.toFixed(2)} {r.unit ?? ""}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{r.orders.map((o) => `${o.order_number} (${o.qty})`).join(", ")}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={onExportConsolidatedPickList}><FileSpreadsheet className="h-4 w-4" /> Export Excel</Button>
+            <Button onClick={onGeneratePickLists} disabled={pickListBusy}>
+              {pickListBusy ? <LoadingSpinner size="sm" className="mr-1" /> : <ClipboardList className="h-4 w-4" />}
+              Create {selectedOrders.size} Picking List{selectedOrders.size > 1 ? "s" : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {printSections && company && (
+        <PendingOrderReportPrintView company={company} sections={printSections} reportDate={fd(new Date().toISOString())} />
+      )}
     </div>
   );
 };

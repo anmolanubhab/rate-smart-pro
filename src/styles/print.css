@@ -114,4 +114,30 @@
     page-break-after: auto;
     break-after: auto;
   }
+
+  /* Pending Order Report (Order Control Center): one .pending-report-page
+     per party, same positioning/visibility idiom as .print-copy-run above. */
+  .pending-report-print,
+  .pending-report-print * {
+    visibility: visible !important;
+  }
+
+  .pending-report-print {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 190mm;
+    max-width: 190mm;
+    transform: translateX(-50%);
+  }
+
+  .pending-report-print .pending-report-page {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .pending-report-print .pending-report-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
 }

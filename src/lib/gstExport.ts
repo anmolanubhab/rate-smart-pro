@@ -21,10 +21,36 @@ function csvEscape(value: unknown): string {
   return s;
 }
 
+/** Auto-fits each column to its widest cell (header or value), so exported sheets don't need manual resizing in Excel. */
+function autoSizeColumns(rows: Record<string, any>[]): { wch: number }[] {
+  if (rows.length === 0) return [];
+  const headers = Object.keys(rows[0]);
+  return headers.map((h) => {
+    const maxLen = rows.reduce((max, r) => {
+      const v = r[h];
+      const len = v === null || v === undefined ? 0 : String(v).length;
+      return Math.max(max, len);
+    }, h.length);
+    return { wch: Math.min(Math.max(maxLen + 2, 8), 40) };
+  });
+}
+
 export function exportToExcel(rows: Record<string, any>[], filename: string, sheetName = "Sheet1") {
   const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = autoSizeColumns(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+  XLSX.writeFile(wb, filename);
+}
+
+/** For multi-sheet workbooks (e.g. Detailed + Customer Share report in one file). */
+export function exportToExcelMultiSheet(sheets: { name: string; rows: Record<string, any>[] }[], filename: string) {
+  const wb = XLSX.utils.book_new();
+  for (const s of sheets) {
+    const ws = XLSX.utils.json_to_sheet(s.rows);
+    ws["!cols"] = autoSizeColumns(s.rows);
+    XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31));
+  }
   XLSX.writeFile(wb, filename);
 }
 
