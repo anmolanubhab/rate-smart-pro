@@ -1,44 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, CheckCircle, XCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
+import { Save, CheckCircle2, Ban, Copy, X, Boxes, Printer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
-import { fetchProductUnits, fetchUnits, toStockQty, stockUnitOf, type ProductUnit, type Unit as MeasureUnit } from "@/lib/units";
+import { fetchUnits, fetchProductUnits, stockUnitOf, toStockQty, type Unit as MeasureUnit, type ProductUnit } from "@/lib/units";
 import WarehouseFormDialog, { type WarehouseRow } from "@/components/inventory/WarehouseFormDialog";
-import { Warehouse as WarehouseIcon, PlusCircle, Boxes } from "lucide-react";
 import GRNBatchSerialDialog, { type GRNBatchSerialResult } from "@/components/inventory/GRNBatchSerialDialog";
-import { receiveProductBatch } from "@/lib/productBatches";
-import { createProductSerialsBulk } from "@/lib/productSerials";
-import type { ProductTrackingType } from "@/lib/products";
-
-interface GRNItem {
-  purchase_order_item_id: string | null;
-  product_id: string;
-  product_name: string;
-  part_number: string;
-  tracking_type: ProductTrackingType;
-  ordered_qty: number;
-  received_qty: number;
-  damaged_qty: number;
-  accepted_qty: number;
-  pending_qty: number;
-  short_qty: number;
-  excess_qty: number;
-  quality_remarks: string;
-  qc_reason_category: string | null;
-  unit_id: string | null;
-  stock_accepted_qty: number | null;
-  tracking?: GRNBatchSerialResult;
-}
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  fetchGoodsReceipt, fetchGoodsReceiptItems, fetchPendingPOItemsForGRN, saveGRN, deleteGRN,
+  duplicateGRN, cancelGRN, logGRNActivity, fetchGRNActivityLogs,
+  type GRNLine, type GRNStatus, type GRNActivityLog,
+} from "@/lib/goodsReceipts";
+import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/documentEngine/DocumentRoot";
+import { DocumentToolbar, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
+import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
+import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
+import { DocumentGridTable, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
+import { DocumentTimeline } from "@/components/documentEngine/DocumentTimeline";
+import { DocumentAuditLog } from "@/components/documentEngine/DocumentAuditLog";
+import { useDocumentShortcuts } from "@/hooks/useDocumentShortcuts";
 
 const QC_REASON_OPTIONS: { value: string; label: string }[] = [
   { value: "short_supply", label: "Short Supply" },
@@ -50,538 +36,469 @@ const QC_REASON_OPTIONS: { value: string; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+const GRID_COLUMNS: DocumentGridColumn[] = [
+  { key: "product", header: "Product", widthClass: "min-w-[160px]" },
+  { key: "part", header: "Part No.", widthClass: "min-w-[100px]" },
+  { key: "unit", header: "Unit", widthClass: "w-16" },
+  { key: "ordered", header: "Ordered", align: "right", widthClass: "w-16" },
+  { key: "received", header: "Received", align: "right", widthClass: "w-20" },
+  { key: "damaged", header: "Damaged", align: "right", widthClass: "w-20" },
+  { key: "accepted", header: "Accepted", align: "right", widthClass: "w-16" },
+  { key: "pending", header: "Pending", align: "right", widthClass: "w-16" },
+  { key: "short", header: "Short", align: "right", widthClass: "w-14" },
+  { key: "excess", header: "Excess", align: "right", widthClass: "w-14" },
+  { key: "remarks", header: "Quality Remarks", widthClass: "min-w-[140px]" },
+  { key: "reason", header: "Reason", widthClass: "w-40" },
+  { key: "tracking", header: "Batch/Serial", widthClass: "w-32" },
+];
+
+const fmt = (n: number) => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
 export default function PurchaseGRN() {
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const { id: editId } = useParams<{ id?: string }>();
   const { user } = useAuth();
   const { business } = useBusiness();
   const businessId = business?.id ?? getActiveBusinessIdSync();
 
-  const [grnNumber, setGrnNumber] = useState('');
-  const [grnDate, setGrnDate] = useState(new Date().toISOString().split('T')[0]);
-  const [remarks, setRemarks] = useState('');
+  const [grnNumber, setGrnNumber] = useState("");
+  const [grnDate, setGrnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [remarks, setRemarks] = useState("");
 
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [warehouseDialogOpen, setWarehouseDialogOpen] = useState(false);
 
-  const [selectedSupplier, setSelectedSupplier] = useState('');
-  const [selectedWarehouse, setSelectedWarehouse] = useState('');
-  const [selectedPO, setSelectedPO] = useState('');
+  const [selectedSupplier, setSelectedSupplier] = useState("");
+  const [selectedWarehouse, setSelectedWarehouse] = useState("");
+  const [selectedPO, setSelectedPO] = useState("");
 
-  const [items, setItems] = useState<GRNItem[]>([]);
+  const [items, setItems] = useState<GRNLine[]>([]);
   const [trackingDialogIdx, setTrackingDialogIdx] = useState<number | null>(null);
   const [unitsByProduct, setUnitsByProduct] = useState<Record<string, ProductUnit[]>>({});
   const [allUnits, setAllUnits] = useState<MeasureUnit[]>([]);
   useEffect(() => { fetchUnits().then(setAllUnits).catch(() => {}); }, []);
   const unitLabel = (unitId: string) => allUnits.find((u) => u.id === unitId)?.symbol ?? "";
-  const [loading, setLoading] = useState(false);
 
-  // Fetch suppliers (parties), warehouses, and POs eligible for receipt
+  const [loading, setLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [status, setStatus] = useState<GRNStatus>("draft");
+  const [duplicating, setDuplicating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [activityLogs, setActivityLogs] = useState<GRNActivityLog[]>([]);
+  const grnIdRef = useRef<string | null>(editId || null);
+  const readOnly = editMode && status !== "draft";
+
+  // ─── Load master data + (in edit mode) the existing GRN ─────────────────────
   useEffect(() => {
     if (!businessId) return;
-    const fetchMasterData = async () => {
-      try {
-        const [{ data: partyData }, { data: warehouseData }, { data: poData }] = await Promise.all([
-          supabase.from('parties').select('id, name').eq('business_id', businessId).eq('preferred_supplier', true).order('name'),
-          supabase.from('warehouses').select('id, warehouse_name, address, is_default, status')
-            .eq('business_id', businessId)
-            .order('is_default', { ascending: false })
-            .order('warehouse_name', { ascending: true }),
-          supabase.from('purchase_orders').select('id, po_number, supplier_id, warehouse_id')
-            .eq('business_id', businessId)
-            .in('status', ['approved', 'ordered', 'partially_received'])
-            .order('created_at', { ascending: false }),
-        ]);
-        if (partyData) setSuppliers(partyData);
-        if (warehouseData) {
-          const wh = warehouseData as unknown as WarehouseRow[];
-          setWarehouses(wh);
-          // Pre-select the default warehouse, or the only one if there's just one
-          const defaultWh = wh.find((w) => w.is_default);
-          if (defaultWh) setSelectedWarehouse(defaultWh.id);
-          else if (wh.length === 1) setSelectedWarehouse(wh[0].id);
-        }
-        if (poData) setPurchaseOrders(poData);
-
-        const { data: grnNo } = await supabase.rpc('next_grn_number', { _business_id: businessId } as any);
-        setGrnNumber((grnNo as string) || `GRN-${Date.now().toString().slice(-6)}`);
-      } catch (err: any) {
-        console.error("Error loading master data:", err.message);
+    (async () => {
+      const [{ data: partyData }, { data: warehouseData }, { data: poData }] = await Promise.all([
+        supabase.from("parties").select("id, name").eq("business_id", businessId).eq("preferred_supplier", true).order("name"),
+        supabase.from("warehouses").select("id, warehouse_name, address, is_default, status")
+          .eq("business_id", businessId).order("is_default", { ascending: false }).order("warehouse_name", { ascending: true }),
+        supabase.from("purchase_orders").select("id, po_number, supplier_id, warehouse_id")
+          .eq("business_id", businessId).in("status", ["approved", "ordered", "partially_received"]).order("created_at", { ascending: false }),
+      ]);
+      if (partyData) setSuppliers(partyData);
+      let wh: WarehouseRow[] = [];
+      if (warehouseData) {
+        wh = warehouseData as unknown as WarehouseRow[];
+        setWarehouses(wh);
       }
-    };
-    fetchMasterData();
-  }, [businessId]);
+      if (poData) setPurchaseOrders(poData);
 
-  // Re-fetch just the warehouse list (used after adding one inline from this screen)
+      if (!editId) {
+        const defaultWh = wh.find((w) => w.is_default);
+        if (defaultWh) setSelectedWarehouse(defaultWh.id);
+        else if (wh.length === 1) setSelectedWarehouse(wh[0].id);
+        const { data: grnNo } = await supabase.rpc("next_grn_number", { _business_id: businessId } as any);
+        setGrnNumber((grnNo as string) || `GRN-${Date.now().toString().slice(-6)}`);
+      } else {
+        try {
+          const grn = await fetchGoodsReceipt(editId);
+          const its = await fetchGoodsReceiptItems(editId);
+          setGrnNumber(grn.grn_number);
+          setGrnDate(grn.grn_date);
+          setRemarks(grn.remarks ?? "");
+          setSelectedSupplier(grn.supplier_id ?? "");
+          setSelectedWarehouse(grn.warehouse_id ?? "");
+          setSelectedPO(grn.purchase_order_id ?? "");
+          setStatus(grn.status);
+          setEditMode(true);
+          grnIdRef.current = grn.id;
+          setItems(
+            its.map((it): GRNLine => ({
+              id: it.id,
+              purchase_order_item_id: it.purchase_order_item_id,
+              product_id: it.product_id,
+              product_name: it.product_name ?? "Unknown Product",
+              part_number: it.part_number ?? "N/A",
+              tracking_type: it.tracking_type ?? "none",
+              ordered_qty: Number(it.ordered_qty),
+              received_qty: Number(it.received_qty),
+              damaged_qty: Number(it.damaged_qty),
+              accepted_qty: Number(it.accepted_qty),
+              pending_qty: Number(it.pending_qty),
+              short_qty: Number(it.short_qty),
+              excess_qty: Number(it.excess_qty),
+              quality_remarks: it.quality_remarks ?? "",
+              qc_reason_category: it.qc_reason_category,
+              unit_id: it.unit_id,
+              stock_accepted_qty: it.stock_accepted_qty,
+            })),
+          );
+          fetchGRNActivityLogs(grn.id).then(setActivityLogs).catch(() => {});
+        } catch (e: any) {
+          toast.error(e.message);
+        }
+      }
+    })();
+  }, [businessId, editId]);
+
   const reloadWarehouses = async (selectId?: string) => {
     if (!businessId) return;
     const { data, error } = await supabase
-      .from('warehouses')
-      .select('id, warehouse_name, address, is_default, status')
-      .eq('business_id', businessId)
-      .order('is_default', { ascending: false })
-      .order('warehouse_name', { ascending: true });
+      .from("warehouses").select("id, warehouse_name, address, is_default, status")
+      .eq("business_id", businessId).order("is_default", { ascending: false }).order("warehouse_name", { ascending: true });
     if (!error && data) {
       setWarehouses(data as unknown as WarehouseRow[]);
       if (selectId) setSelectedWarehouse(selectId);
     }
   };
 
-  // When a Purchase Order is selected, auto-fill details and fetch items
+  // ─── PO selection → auto-fill + pending items (partial-receive aware) ──────
   const handlePOChange = async (poId: string) => {
     setSelectedPO(poId);
     setLoading(true);
-
-    const { data: poDetails } = await supabase
-      .from('purchase_orders')
-      .select('supplier_id, warehouse_id')
-      .eq('id', poId)
-      .single();
-
-    if (poDetails) {
-      if (poDetails.supplier_id) setSelectedSupplier(poDetails.supplier_id);
-      if (poDetails.warehouse_id) setSelectedWarehouse(poDetails.warehouse_id);
-    }
-
-    // Already-received quantities against this PO (for partial GRN support)
-    const { data: priorReceipts } = await supabase
-      .from('goods_receipt_items')
-      .select('product_id, accepted_qty, goods_receipts!inner(purchase_order_id, status)')
-      .eq('goods_receipts.purchase_order_id', poId)
-      .eq('goods_receipts.status', 'received');
-
-    const receivedMap = new Map<string, number>();
-    (priorReceipts ?? []).forEach((r: any) => {
-      receivedMap.set(r.product_id, (receivedMap.get(r.product_id) ?? 0) + Number(r.accepted_qty ?? 0));
-    });
-
-    const { data: poItems, error } = await supabase
-      .from('purchase_order_items')
-      .select(`
-        id, product_id, qty, unit_id,
-        product:products(name, part_number, tracking_type)
-      `)
-      .eq('purchase_order_id', poId);
-
-    if (error) {
-      toast({ title: "Error fetching PO items", description: error.message, variant: "destructive" });
-    } else if (poItems) {
-      // Layer C1: preload each distinct product's unit mappings once (avoid N+1)
-      const productIds = [...new Set(poItems.map((i: any) => i.product_id).filter(Boolean))];
-      const puByProduct: Record<string, ProductUnit[]> = {};
-      await Promise.all(
-        productIds.map(async (pid: string) => {
-          try { puByProduct[pid] = await fetchProductUnits(pid); } catch { puByProduct[pid] = []; }
-        })
-      );
-      setUnitsByProduct(puByProduct);
-
-      const mappedItems: GRNItem[] = poItems
-        .map((item: any) => {
-          const ordered = Number(item.qty);
-          const alreadyReceived = receivedMap.get(item.product_id) ?? 0;
-          const remaining = Math.max(0, ordered - alreadyReceived);
-          const pu = puByProduct[item.product_id] ?? [];
-          return {
-            purchase_order_item_id: item.id,
-            product_id: item.product_id,
-            product_name: item.product?.name || 'Unknown Product',
-            part_number: item.product?.part_number || 'N/A',
-            tracking_type: (item.product?.tracking_type as ProductTrackingType) ?? 'none',
-            ordered_qty: remaining,
-            received_qty: remaining,
-            damaged_qty: 0,
-            accepted_qty: remaining,
-            pending_qty: 0,
-            short_qty: 0,
-            excess_qty: 0,
-            quality_remarks: '',
-            qc_reason_category: null,
-            unit_id: item.unit_id ?? null,
-            stock_accepted_qty: pu.length ? toStockQty(remaining, item.unit_id, pu) : null,
-          };
-        })
-        .filter((it) => it.ordered_qty > 0);
-      setItems(mappedItems);
-      if (mappedItems.length === 0) {
-        toast({ title: "Nothing pending", description: "All items on this PO have already been received." });
-      }
-    }
-    setLoading(false);
-  };
-
-  const handleQtyChange = (index: number, field: 'received_qty' | 'damaged_qty', value: number) => {
-    const updatedItems = [...items];
-    const item = { ...updatedItems[index] };
-
-    if (field === 'received_qty') item.received_qty = Math.max(0, value);
-    if (field === 'damaged_qty') item.damaged_qty = Math.max(0, value);
-
-    item.accepted_qty = Math.max(0, item.received_qty - item.damaged_qty);
-    item.pending_qty = Math.max(0, item.ordered_qty - item.received_qty);
-    item.short_qty = Math.max(0, item.ordered_qty - item.received_qty);
-    item.excess_qty = Math.max(0, item.received_qty - item.ordered_qty);
-
-    const pu = unitsByProduct[item.product_id];
-    item.stock_accepted_qty = pu?.length ? toStockQty(item.accepted_qty, item.unit_id, pu) : null;
-
-    // Accepted qty changed — any previously-entered batch/serial selection no longer matches it.
-    item.tracking = undefined;
-
-    updatedItems[index] = item;
-    setItems(updatedItems);
-  };
-
-  const handleTrackingConfirm = (index: number, result: GRNBatchSerialResult) => {
-    const updated = [...items];
-    updated[index] = { ...updated[index], tracking: result };
-    setItems(updated);
-  };
-
-  const handleRemarksChange = (index: number, value: string) => {
-    const updatedItems = [...items];
-    updatedItems[index] = { ...updatedItems[index], quality_remarks: value };
-    setItems(updatedItems);
-  };
-
-  const handleReasonChange = (index: number, value: string) => {
-    const updatedItems = [...items];
-    updatedItems[index] = { ...updatedItems[index], qc_reason_category: value };
-    setItems(updatedItems);
-  };
-
-  const handleSaveGRN = async (status: 'draft' | 'received' | 'closed') => {
-    if (!businessId) {
-      toast({ title: "No active company", description: "Select a business first.", variant: "destructive" });
-      return;
-    }
-    if (!selectedSupplier || !selectedWarehouse) {
-      toast({ title: "Validation Error", description: "Supplier and Warehouse are required.", variant: "destructive" });
-      return;
-    }
-    if (status === 'received' && items.length === 0) {
-      toast({ title: "No items", description: "Select a Purchase Order with pending items first.", variant: "destructive" });
-      return;
-    }
-    const missingTracking = items.find(
-      (it) => it.accepted_qty > 0 && it.tracking_type !== 'none' && !it.tracking
-    );
-    if (missingTracking) {
-      toast({
-        title: "Batch/Serial required",
-        description: `Enter ${missingTracking.tracking_type} details for ${missingTracking.product_name} before saving.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
-      setLoading(true);
-
-      const { data: grn, error: grnError } = await supabase
-        .from('goods_receipts')
-        .insert([{
-          business_id: businessId,
-          grn_number: grnNumber,
-          purchase_order_id: selectedPO || null,
-          supplier_id: selectedSupplier,
-          warehouse_id: selectedWarehouse,
-          grn_date: grnDate,
-          status,
-          remarks,
-          created_by: user?.id ?? null,
-        }])
-        .select()
-        .single();
-
-      if (grnError) throw grnError;
-
-      if (items.length > 0) {
-        const grnItemsPayload = items.map(item => ({
-          goods_receipt_id: grn.id,
-          purchase_order_item_id: item.purchase_order_item_id,
-          product_id: item.product_id,
-          ordered_qty: item.ordered_qty,
-          received_qty: item.received_qty,
-          damaged_qty: item.damaged_qty,
-          accepted_qty: item.accepted_qty,
-          pending_qty: item.pending_qty,
-          short_qty: item.short_qty,
-          excess_qty: item.excess_qty,
-          quality_remarks: item.quality_remarks || null,
-          qc_reason_category: item.qc_reason_category || null,
-          unit_id: item.unit_id,
-          stock_accepted_qty: item.stock_accepted_qty,
-        }));
-
-        const { data: insertedItems, error: itemsError } = await supabase
-          .from('goods_receipt_items')
-          .insert(grnItemsPayload)
-          .select('id, product_id')
-          .order('created_at', { ascending: true });
-
-        if (itemsError) throw itemsError;
-
-        // Stock (available + on-hold), inventory_movements logging, QC status,
-        // and PO status/qty rollup are all now handled server-side by DB
-        // triggers the moment these goods_receipt_items rows land — no
-        // client-side computation needed, and it stays correct no matter
-        // which screen or process wrote the GRN.
-
-        // Record which batch/serial(s) this line received, matched back to
-        // its inserted row by position (insert order mirrors items order).
-        try {
-          for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            const inserted = (insertedItems ?? [])[i] as { id: string; product_id: string } | undefined;
-            if (!inserted || !item.tracking || item.accepted_qty <= 0) continue;
-
-            if (item.tracking_type === 'batch' && item.tracking.batch) {
-              const batchId = await receiveProductBatch(businessId, {
-                product_id: item.product_id,
-                warehouse_id: selectedWarehouse,
-                batch_number: item.tracking.batch.batch_number,
-                mfg_date: item.tracking.batch.mfg_date,
-                expiry_date: item.tracking.batch.expiry_date,
-                qty: item.accepted_qty,
-                notes: null,
-              });
-              await supabase.from('goods_receipt_item_batches' as never).insert({
-                business_id: businessId,
-                goods_receipt_item_id: inserted.id,
-                batch_id: batchId,
-                qty: item.accepted_qty,
-              } as never);
-            } else if (item.tracking_type === 'serial' && item.tracking.serial_numbers?.length) {
-              const serialIds = await createProductSerialsBulk(
-                businessId,
-                { product_id: item.product_id, warehouse_id: selectedWarehouse, status: 'in_stock', received_at: grnDate, notes: null },
-                item.tracking.serial_numbers
-              );
-              const rows = serialIds.map((serial_id) => ({
-                business_id: businessId,
-                goods_receipt_item_id: inserted.id,
-                serial_id,
-              }));
-              if (rows.length) await supabase.from('goods_receipt_item_serials' as never).insert(rows as never);
-            }
-          }
-        } catch (trackingErr: any) {
-          // The GRN itself is already saved — surface this as a warning rather
-          // than rolling back a receipt that already moved physical stock.
-          toast({
-            title: "GRN saved, but batch/serial recording failed",
-            description: trackingErr.message ?? "Check Inventory → Batches/Serials and fix manually.",
-            variant: "destructive",
-          });
-        }
+      const { data: poDetails } = await supabase.from("purchase_orders").select("supplier_id, warehouse_id").eq("id", poId).single();
+      if (poDetails) {
+        if (poDetails.supplier_id) setSelectedSupplier(poDetails.supplier_id);
+        if (poDetails.warehouse_id) setSelectedWarehouse(poDetails.warehouse_id);
       }
-
-      toast({ title: "Success", description: `GRN created as ${status.toUpperCase()}` });
-      navigate(`/purchase/grn/${grn.id}`);
-
-    } catch (error: any) {
-      toast({ title: "Operation Failed", description: error.message, variant: "destructive" });
+      const pending = await fetchPendingPOItemsForGRN(poId);
+      setItems(pending);
+      const productIds = [...new Set(pending.map((p) => p.product_id))];
+      const puByProduct: Record<string, ProductUnit[]> = {};
+      await Promise.all(productIds.map(async (pid) => {
+        try { puByProduct[pid] = await fetchProductUnits(pid); } catch { puByProduct[pid] = []; }
+      }));
+      setUnitsByProduct(puByProduct);
+      if (pending.length === 0) {
+        toast.info("Nothing pending — all items on this PO have already been received.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleQtyChange = (index: number, field: "received_qty" | "damaged_qty", value: number) => {
+    setItems((rows) => rows.map((row, i) => {
+      if (i !== index) return row;
+      const item = { ...row };
+      if (field === "received_qty") item.received_qty = Math.max(0, value);
+      if (field === "damaged_qty") item.damaged_qty = Math.max(0, value);
+      item.accepted_qty = Math.max(0, item.received_qty - item.damaged_qty);
+      item.pending_qty = Math.max(0, item.ordered_qty - item.received_qty);
+      item.short_qty = Math.max(0, item.ordered_qty - item.received_qty);
+      item.excess_qty = Math.max(0, item.received_qty - item.ordered_qty);
+      const pu = unitsByProduct[item.product_id];
+      item.stock_accepted_qty = pu?.length ? toStockQty(item.accepted_qty, item.unit_id, pu) : null;
+      item.tracking = undefined; // qty changed — any prior batch/serial entry no longer matches
+      return item;
+    }));
+  };
+
+  const handleTrackingConfirm = (index: number, result: GRNBatchSerialResult) =>
+    setItems((rows) => rows.map((r, i) => (i === index ? { ...r, tracking: result } : r)));
+  const handleRemarksChange = (index: number, value: string) =>
+    setItems((rows) => rows.map((r, i) => (i === index ? { ...r, quality_remarks: value } : r)));
+  const handleReasonChange = (index: number, value: string) =>
+    setItems((rows) => rows.map((r, i) => (i === index ? { ...r, qc_reason_category: value } : r)));
+
+  const handleSave = async (targetStatus: "draft" | "received") => {
+    if (!user || !businessId || loading || readOnly) return;
+    if (!selectedSupplier || !selectedWarehouse) { toast.error("Supplier and Warehouse are required."); return; }
+    if (targetStatus === "received" && items.length === 0) { toast.error("Select a Purchase Order with pending items first."); return; }
+    const missingTracking = items.find((it) => it.accepted_qty > 0 && it.tracking_type !== "none" && !it.tracking);
+    if (missingTracking) {
+      toast.error(`Enter ${missingTracking.tracking_type} details for ${missingTracking.product_name} before saving.`);
+      return;
+    }
+    const isNewGRN = !grnIdRef.current;
+    try {
+      setLoading(true);
+      const saved = await saveGRN({
+        userId: user.id,
+        id: grnIdRef.current || undefined,
+        grn_number: grnNumber,
+        purchase_order_id: selectedPO || null,
+        supplier_id: selectedSupplier,
+        warehouse_id: selectedWarehouse,
+        grn_date: grnDate,
+        remarks: remarks || null,
+        status: targetStatus,
+        items,
+      });
+      grnIdRef.current = saved.id;
+      setStatus(saved.status);
+      setEditMode(true);
+      await logGRNActivity({
+        userId: user.id,
+        goodsReceiptId: saved.id,
+        action: isNewGRN ? "created" : targetStatus === "received" ? "posted" : "draft_saved",
+        description: isNewGRN ? `Created as ${saved.grn_number}` : undefined,
+      });
+      fetchGRNActivityLogs(saved.id).then(setActivityLogs).catch(() => {});
+      toast.success(targetStatus === "received" ? `GRN ${saved.grn_number} posted — stock received` : "Draft saved", { duration: 1500 });
+      if (isNewGRN) navigate(`/purchase/grn/edit/${saved.id}`, { replace: true });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!grnIdRef.current || !user) return;
+    setCancelling(true);
+    try {
+      await cancelGRN(grnIdRef.current);
+      await logGRNActivity({ userId: user.id, goodsReceiptId: grnIdRef.current, action: "cancelled", oldData: { status }, newData: { status: "cancelled" } });
+      setStatus("cancelled");
+      fetchGRNActivityLogs(grnIdRef.current).then(setActivityLogs).catch(() => {});
+      toast.success(`GRN ${grnNumber} cancelled — stock reversed`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not cancel GRN");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    if (!grnIdRef.current || !user || duplicating) return;
+    setDuplicating(true);
+    try {
+      const clone = await duplicateGRN(grnIdRef.current, user.id);
+      toast.success(`Duplicated as ${clone.grn_number}`);
+      navigate(`/purchase/grn/edit/${clone.id}`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to duplicate GRN");
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+  useDocumentShortcuts(
+    {
+      onSaveDraft: () => handleSave("draft"),
+      onSubmit: () => handleSave("received"),
+      onEscape: () => navigate("/purchase/grn"),
+    },
+    [items, selectedSupplier, selectedWarehouse, selectedPO, grnNumber, grnDate, remarks, readOnly],
+  );
+
+  const totals = useMemo(() => items.reduce((acc, it) => ({
+    ordered: acc.ordered + it.ordered_qty,
+    received: acc.received + it.received_qty,
+    damaged: acc.damaged + it.damaged_qty,
+    accepted: acc.accepted + it.accepted_qty,
+  }), { ordered: 0, received: 0, damaged: 0, accepted: 0 }), [items]);
+
+  const toolbarActions: DocumentToolbarAction[] = [
+    { key: "save", label: "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: () => handleSave("draft"), disabled: loading || readOnly },
+    { key: "post", label: "Post (Receive Stock)", icon: CheckCircle2, shortcut: "Ctrl+Enter", onClick: () => handleSave("received"), disabled: loading || readOnly, variant: "primary" },
+    { key: "cancel", label: cancelling ? "Cancelling…" : "Cancel GRN", icon: Ban, onClick: handleCancel, disabled: cancelling, hidden: !editMode || status === "cancelled", className: "border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700" },
+    { key: "duplicate", label: duplicating ? "Duplicating…" : "Duplicate", icon: Copy, onClick: handleDuplicate, disabled: duplicating, hidden: !editMode },
+    { key: "print", label: "Print", icon: Printer, onClick: () => window.print(), hidden: !editMode },
+    { key: "close", label: "Close", icon: X, onClick: () => navigate("/purchase/grn"), variant: "ghost", className: "text-muted-foreground" },
+  ];
+
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h1 className="text-2xl font-bold tracking-tight">Goods Receipt Note (GRN)</h1>
-      </div>
+    <DocumentRoot type="grn" printTitle="GOODS RECEIPT NOTE" className="grn-entry space-y-0">
+      <DocumentToolbar
+        statusSlot={
+          <>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
+              {editMode ? "Edit Goods Receipt Note" : "New Goods Receipt Note"}
+            </span>
+            {grnNumber && <Badge variant="outline" className="text-[10px]">#{grnNumber}</Badge>}
+            {editMode && <DocumentStatusBadge status={status} label={status === "received" ? "Posted" : undefined} />}
+          </>
+        }
+        actions={toolbarActions}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>GRN Information</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label>GRN Number</Label>
-            <Input value={grnNumber} onChange={(e) => setGrnNumber(e.target.value)} />
-          </div>
+      <DocumentSheet>
+        <DocumentSheetBanner left="Goods Receipt Note" center="RD Pro" />
 
-          <div className="space-y-2">
-            <Label>GRN Date</Label>
-            <Input type="date" value={grnDate} onChange={(e) => setGrnDate(e.target.value)} />
-          </div>
+        <DocumentHeaderGrid mobileResponsive>
+          <DocumentHeaderInputField label="GRN Number" value={grnNumber} onChange={(e) => setGrnNumber(e.target.value)} disabled={readOnly} />
+          <DocumentHeaderInputField label="GRN Date" labelAlign="right" type="date" value={grnDate} onChange={(e) => setGrnDate(e.target.value)} disabled={readOnly} />
 
-          <div className="space-y-2">
-            <Label>Link Purchase Order</Label>
-            <Select value={selectedPO} onValueChange={handlePOChange}>
-              <SelectTrigger><SelectValue placeholder="Select approved PO" /></SelectTrigger>
-              <SelectContent>
-                {purchaseOrders.map((po) => <SelectItem key={po.id} value={po.id}>{po.po_number}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Supplier</Label>
-            <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
-              <SelectTrigger><SelectValue placeholder="Select Supplier" /></SelectTrigger>
-              <SelectContent>
-                {suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Warehouse</Label>
-            <Select
-              value={selectedWarehouse}
-              onValueChange={(v) => {
-                if (v === '__add_new__') { setWarehouseDialogOpen(true); return; }
-                setSelectedWarehouse(v);
-              }}
+          <DocumentHeaderLabel>Link Purchase Order</DocumentHeaderLabel>
+          <DocumentHeaderValue>
+            <select
+              value={selectedPO}
+              onChange={(e) => handlePOChange(e.target.value)}
+              disabled={readOnly}
+              className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60"
             >
-              <SelectTrigger><SelectValue placeholder="Select Warehouse" /></SelectTrigger>
-              <SelectContent>
-                {warehouses.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.warehouse_name}{w.is_default ? " (Default)" : ""}
-                  </SelectItem>
-                ))}
-                <SelectItem value="__add_new__" className="text-primary font-medium">
-                  <span className="inline-flex items-center gap-1.5"><PlusCircle className="h-3.5 w-3.5" /> Add Warehouse…</span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            {warehouses.length === 0 && (
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <WarehouseIcon className="h-3 w-3" /> No warehouses yet — add one above to receive stock.
-              </p>
-            )}
+              <option value="">Select approved PO…</option>
+              {purchaseOrders.map((po) => <option key={po.id} value={po.id}>{po.po_number}</option>)}
+            </select>
+          </DocumentHeaderValue>
+          <DocumentHeaderLabel align="right">Supplier</DocumentHeaderLabel>
+          <DocumentHeaderValue>
+            <select
+              value={selectedSupplier}
+              onChange={(e) => setSelectedSupplier(e.target.value)}
+              disabled={readOnly}
+              className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60"
+            >
+              <option value="">Select supplier…</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </DocumentHeaderValue>
+
+          <DocumentHeaderLabel>Warehouse</DocumentHeaderLabel>
+          <DocumentHeaderValue>
+            <select
+              value={selectedWarehouse}
+              onChange={(e) => {
+                if (e.target.value === "__add_new__") { setWarehouseDialogOpen(true); return; }
+                setSelectedWarehouse(e.target.value);
+              }}
+              disabled={readOnly}
+              className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60"
+            >
+              <option value="">Select warehouse…</option>
+              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.warehouse_name}{w.is_default ? " (Default)" : ""}</option>)}
+              {!readOnly && <option value="__add_new__">+ Add Warehouse…</option>}
+            </select>
+          </DocumentHeaderValue>
+          <DocumentHeaderValue />
+
+          <DocumentHeaderLabel span={2}>Remarks</DocumentHeaderLabel>
+          <DocumentHeaderValue span={10}>
+            <Textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              disabled={readOnly}
+              rows={1}
+              placeholder="Add description…"
+              className="text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary resize-none min-h-0 h-6 py-0"
+            />
+          </DocumentHeaderValue>
+        </DocumentHeaderGrid>
+
+        <DocumentGridTable
+          columns={GRID_COLUMNS}
+          rows={items}
+          showSpacerRows={false}
+          hasRowActions={false}
+          emptyMessage="Select an approved Purchase Order above to load pending items."
+          renderRow={(item, idx) => (
+            <>
+              <td className="px-1.5 py-1 font-medium">{item.product_name}</td>
+              <td className="px-1.5 py-1 text-muted-foreground font-mono text-[11px]">{item.part_number}</td>
+              <td className="px-1.5 py-1 text-center text-[10px] text-muted-foreground">
+                {item.unit_id ? unitLabel(item.unit_id) : "—"}
+                {item.stock_accepted_qty != null && (
+                  <div className="text-[9px] leading-none mt-0.5">
+                    → {fmt(item.stock_accepted_qty)} {(() => {
+                      const su = stockUnitOf(unitsByProduct[item.product_id] ?? []);
+                      return su ? unitLabel(su.unit_id) : "";
+                    })()}
+                  </div>
+                )}
+              </td>
+              <td className="px-1.5 py-1 text-right font-semibold tabular-nums">{fmt(item.ordered_qty)}</td>
+              <td className="px-0.5 py-0.5">
+                <input
+                  type="number" disabled={readOnly} value={item.received_qty}
+                  onChange={(e) => handleQtyChange(idx, "received_qty", Number(e.target.value))}
+                  className="h-6 w-full text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary disabled:opacity-60"
+                />
+              </td>
+              <td className="px-0.5 py-0.5">
+                <input
+                  type="number" disabled={readOnly} value={item.damaged_qty}
+                  onChange={(e) => handleQtyChange(idx, "damaged_qty", Number(e.target.value))}
+                  className="h-6 w-full text-[12px] font-mono px-1 text-right text-destructive rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary disabled:opacity-60"
+                />
+              </td>
+              <td className="px-1.5 py-1 text-right font-bold text-emerald-600 tabular-nums">{fmt(item.accepted_qty)}</td>
+              <td className="px-1.5 py-1 text-right font-bold text-orange-500 tabular-nums">{fmt(item.pending_qty)}</td>
+              <td className="px-1.5 py-1 text-right font-semibold text-destructive tabular-nums">{item.short_qty || "—"}</td>
+              <td className="px-1.5 py-1 text-right font-semibold text-blue-500 tabular-nums">{item.excess_qty || "—"}</td>
+              <td className="px-0.5 py-0.5">
+                <input
+                  disabled={readOnly} value={item.quality_remarks} placeholder="e.g. damaged in transit"
+                  onChange={(e) => handleRemarksChange(idx, e.target.value)}
+                  className="h-6 w-full text-[11px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary disabled:opacity-60"
+                />
+              </td>
+              <td className="px-0.5 py-0.5">
+                {item.damaged_qty > 0 || item.short_qty > 0 ? (
+                  <select
+                    value={item.qc_reason_category ?? ""} disabled={readOnly}
+                    onChange={(e) => handleReasonChange(idx, e.target.value)}
+                    className="h-6 w-full text-[11px] font-mono px-0.5 rounded-none border-0 bg-transparent focus-visible:ring-0 disabled:opacity-60"
+                  >
+                    <option value="">Select reason</option>
+                    {QC_REASON_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground px-1">—</span>
+                )}
+              </td>
+              <td className="px-1.5 py-1">
+                {item.tracking_type === "none" || item.accepted_qty <= 0 ? (
+                  <span className="text-[10px] text-muted-foreground">—</span>
+                ) : (
+                  <Button type="button" size="sm" variant={item.tracking ? "secondary" : "outline"} className="h-6 text-[10px] gap-1" disabled={readOnly} onClick={() => setTrackingDialogIdx(idx)}>
+                    <Boxes className="h-3 w-3" />
+                    {item.tracking
+                      ? (item.tracking_type === "batch" ? item.tracking.batch?.batch_number : `${item.tracking.serial_numbers?.length ?? 0} serials`)
+                      : `Add ${item.tracking_type}`}
+                  </Button>
+                )}
+              </td>
+            </>
+          )}
+        />
+
+        {items.length > 0 && (
+          <div className="grid grid-cols-4 gap-3 px-3 py-2 border-t border-border text-[12px] font-sans">
+            <div><span className="text-muted-foreground">Total Ordered: </span><strong>{fmt(totals.ordered)}</strong></div>
+            <div><span className="text-muted-foreground">Total Received: </span><strong>{fmt(totals.received)}</strong></div>
+            <div><span className="text-destructive">Total Damaged: </span><strong>{fmt(totals.damaged)}</strong></div>
+            <div><span className="text-emerald-600">Total Accepted: </span><strong>{fmt(totals.accepted)}</strong></div>
           </div>
+        )}
 
-          <div className="space-y-2 md:col-span-3">
-            <Label>Remarks</Label>
-            <Textarea placeholder="Add description..." value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+        {editMode && activityLogs.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-3 py-3 border-t border-border">
+            <div>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2 font-sans">Activity Timeline</p>
+              <DocumentTimeline entries={activityLogs} />
+            </div>
+            <div>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2 font-sans">Audit Log</p>
+              <DocumentAuditLog entries={activityLogs} />
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </DocumentSheet>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Items Matrix</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full text-sm text-left border-collapse">
-            <thead>
-              <tr className="border-b bg-muted/60">
-                <th className="p-3">Product</th>
-                <th className="p-3">Part Number</th>
-                <th className="p-3 text-center">Unit</th>
-                <th className="p-3 text-center">Ordered</th>
-                <th className="p-3 text-center">Received</th>
-                <th className="p-3 text-center">Damaged</th>
-                <th className="p-3 text-center">Accepted</th>
-                <th className="p-3 text-center">Pending</th>
-                <th className="p-3 text-center">Short</th>
-                <th className="p-3 text-center">Excess</th>
-                <th className="p-3">Quality Remarks</th>
-                <th className="p-3">Reason (if damaged/short)</th>
-                <th className="p-3">Batch/Serial</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={13} className="p-4 text-center text-muted-foreground">Please select an approved Purchase Order above to process items.</td>
-                </tr>
-              ) : (
-                items.map((item, idx) => (
-                  <tr key={idx} className="border-b hover:bg-muted/10">
-                    <td className="p-3 font-medium">{item.product_name}</td>
-                    <td className="p-3 text-muted-foreground">{item.part_number}</td>
-                    <td className="p-3 text-center text-xs text-muted-foreground">
-                      {item.unit_id ? unitLabel(item.unit_id) : "—"}
-                      {item.stock_accepted_qty != null && (
-                        <div className="text-[10px] leading-none mt-0.5">
-                          → {item.stock_accepted_qty} {(() => {
-                            const su = stockUnitOf(unitsByProduct[item.product_id] ?? []);
-                            return su ? unitLabel(su.unit_id) : "";
-                          })()}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3 text-center font-semibold">{item.ordered_qty}</td>
-                    <td className="p-3">
-                      <Input type="number" className="w-24 mx-auto text-center" value={item.received_qty} onChange={(e) => handleQtyChange(idx, 'received_qty', Number(e.target.value))} />
-                    </td>
-                    <td className="p-3">
-                      <Input type="number" className="w-24 mx-auto text-center text-red-500 font-medium" value={item.damaged_qty} onChange={(e) => handleQtyChange(idx, 'damaged_qty', Number(e.target.value))} />
-                    </td>
-                    <td className="p-3 text-center text-green-600 font-bold">{item.accepted_qty}</td>
-                    <td className="p-3 text-center text-orange-500 font-bold">{item.pending_qty}</td>
-                    <td className="p-3 text-center text-red-500 font-semibold">{item.short_qty || '—'}</td>
-                    <td className="p-3 text-center text-blue-500 font-semibold">{item.excess_qty || '—'}</td>
-                    <td className="p-3">
-                      <Input
-                        className="w-40 text-xs"
-                        placeholder="e.g. damaged in transit"
-                        value={item.quality_remarks}
-                        onChange={(e) => handleRemarksChange(idx, e.target.value)}
-                      />
-                    </td>
-                    <td className="p-3">
-                      {item.damaged_qty > 0 || item.short_qty > 0 ? (
-                        <Select value={item.qc_reason_category ?? ""} onValueChange={(v) => handleReasonChange(idx, v)}>
-                          <SelectTrigger className="w-44 text-xs"><SelectValue placeholder="Select reason" /></SelectTrigger>
-                          <SelectContent>
-                            {QC_REASON_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {item.tracking_type === 'none' ? (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      ) : item.accepted_qty <= 0 ? (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={item.tracking ? "secondary" : "outline"}
-                          className="h-7 text-xs gap-1"
-                          onClick={() => setTrackingDialogIdx(idx)}
-                        >
-                          <Boxes className="h-3 w-3" />
-                          {item.tracking
-                            ? (item.tracking_type === 'batch' ? item.tracking.batch?.batch_number : `${item.tracking.serial_numbers?.length ?? 0} serials`)
-                            : `Add ${item.tracking_type}`}
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
-        <Button variant="outline" className="gap-2" onClick={() => handleSaveGRN('draft')} disabled={loading}>
-          <Save className="h-4 w-4" /> Save Draft
-        </Button>
-        <Button variant="secondary" className="gap-2 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleSaveGRN('received')} disabled={loading}>
-          <CheckCircle className="h-4 w-4" /> Receive Stock
-        </Button>
-        <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => handleSaveGRN('closed')} disabled={loading}>
-          <XCircle className="h-4 w-4" /> Close GRN
-        </Button>
-      </div>
+      <style>{`
+        .grn-entry input[type=number]::-webkit-outer-spin-button,
+        .grn-entry input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .grn-entry input[type=number] { -moz-appearance: textfield; }
+      `}</style>
 
       <WarehouseFormDialog
         open={warehouseDialogOpen}
@@ -596,12 +513,12 @@ export default function PurchaseGRN() {
           open={trackingDialogIdx !== null}
           onOpenChange={(o) => { if (!o) setTrackingDialogIdx(null); }}
           productLabel={items[trackingDialogIdx].product_name}
-          trackingType={items[trackingDialogIdx].tracking_type as 'batch' | 'serial'}
+          trackingType={items[trackingDialogIdx].tracking_type as "batch" | "serial"}
           neededQty={items[trackingDialogIdx].accepted_qty}
           initial={items[trackingDialogIdx].tracking}
           onConfirm={(result) => handleTrackingConfirm(trackingDialogIdx, result)}
         />
       )}
-    </div>
+    </DocumentRoot>
   );
 }
