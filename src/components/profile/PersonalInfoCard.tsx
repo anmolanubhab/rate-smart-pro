@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { User } from "@supabase/supabase-js";
-import { Mail, Phone, Camera, Upload, Trash2, Loader2 } from "lucide-react";
+import { Mail, Phone, Camera, Upload, Trash2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { toast } from "sonner";
 import { Profile } from "@/hooks/useProfileData";
 import { useAvatarUpload } from "@/hooks/useAvatarUpload";
@@ -130,7 +131,7 @@ const PersonalInfoCard = ({ profile, user }: Props) => {
                 aria-label="Change profile photo"
               >
                 {uploading || removing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <LoadingSpinner size="sm" />
                 ) : (
                   <Camera className="h-4 w-4" />
                 )}
@@ -197,7 +198,7 @@ const PersonalInfoCard = ({ profile, user }: Props) => {
               disabled={removing}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {removing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {removing && <LoadingSpinner size="sm" className="mr-2" />}
               Remove
             </AlertDialogAction>
           </AlertDialogFooter>

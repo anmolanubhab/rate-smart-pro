@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Loader2, Search, FileText, Eye, Pencil, Printer, Ban, Trash2, CheckCircle, Copy, Undo2,
+  Search, FileText, Eye, Pencil, Printer, Ban, Trash2, CheckCircle, Copy, Undo2,
 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, duplicateInvoice, SalesInvoice } from "@/lib/salesInvoices";
@@ -353,7 +354,7 @@ export default function InvoicesPage() {
 
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
         {isLoading ? (
-          <div className="p-10 text-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
+          <div className="p-10 text-center text-muted-foreground"><LoadingSpinner size="sm" className="mx-auto" /></div>
         ) : paged.length === 0 ? (
           <div className="p-10 text-center text-muted-foreground">
             <FileText className="h-8 w-8 mx-auto mb-2 opacity-60" />
@@ -568,7 +569,7 @@ export default function InvoicesPage() {
               disabled={busy === deleteTarget?.id}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {busy === deleteTarget?.id ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Deleting…</> : "Delete Invoice"}
+              {busy === deleteTarget?.id ? <><LoadingSpinner size="sm" className="mr-1" />Deleting…</> : "Delete Invoice"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

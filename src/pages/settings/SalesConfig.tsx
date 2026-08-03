@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Save, AlertTriangle, ArrowRight } from "lucide-react";
+import { Save, AlertTriangle, ArrowRight } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 const PRESET_OPTIONS: { key: WorkflowPreset; label: string; hint: string }[] = [
   { key: "basic", label: "Basic", hint: "Order → Invoice → Payment" },
@@ -91,7 +92,7 @@ export default function SalesConfigPage() {
   const enabledStages = useMemo(() => (workflow ? getEnabledStages(workflow) : []), [workflow]);
 
   if (!business || !cfg) {
-    return <div className="flex items-center justify-center min-h-[40vh] text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…</div>;
+    return <div className="flex items-center justify-center min-h-[40vh] text-muted-foreground"><LoadingSpinner size="sm" className="mr-2" /> Loading…</div>;
   }
 
   const set = <K extends keyof SalesConfig>(k: K, v: SalesConfig[K]) =>
@@ -261,7 +262,7 @@ export default function SalesConfigPage() {
 
       <div className="flex justify-end">
         <Button onClick={save} disabled={saving || !canEdit} className="gradient-primary text-white border-0">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {saving ? <LoadingSpinner size="sm" /> : <Save className="h-4 w-4" />}
           Save Configuration
         </Button>
       </div>

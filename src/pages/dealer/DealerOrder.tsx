@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Plus, Minus, Trash2, Loader2 } from "lucide-react";
+import { Search, Plus, Minus, Trash2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
@@ -326,7 +327,7 @@ export default function DealerOrder() {
               </div>
               <p className="text-[11px] text-muted-foreground">GST and final totals are computed on the order.</p>
               <Button className="w-full" disabled={cartRows.length === 0 || submitting} onClick={placeOrder}>
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {submitting && <LoadingSpinner size="sm" className="mr-2" />}
                 Place Order
               </Button>
             </CardContent>

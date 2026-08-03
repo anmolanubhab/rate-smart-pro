@@ -15,9 +15,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Loader2,
   ChevronRight,
 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -664,7 +664,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
                 disabled={processing || validCount === 0}
                 className="gradient-primary text-white border-0 hover:opacity-90"
               >
-                {processing ? (<><Loader2 className="h-4 w-4 animate-spin" /> Importing...</>) : `Import ${validCount} Products`}
+                {processing ? (<><LoadingSpinner size="sm" /> Importing...</>) : `Import ${validCount} Products`}
               </Button>
             </>
           )}
