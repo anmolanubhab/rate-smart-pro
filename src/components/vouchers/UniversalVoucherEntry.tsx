@@ -240,12 +240,17 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   const { data: supplierLedgers = [] } = useQuery({
     queryKey: ["ledgers-supplier", user?.id, business?.id],
     enabled: !!user?.id && needsSupplier,
-    queryFn: () => getLedgerAccountOptions(user!.id, "supplier"),
+    // Payment's party row must also accept direct expense ledgers (e.g.
+    // "Advertisement Expense") — most Payment vouchers pay a cash expense
+    // outright rather than settling a supplier bill.
+    queryFn: () => getLedgerAccountOptions(user!.id, ["supplier", "expense"]),
   });
   const { data: customerLedgers = [] } = useQuery({
     queryKey: ["ledgers-customer", user?.id, business?.id],
     enabled: !!user?.id && needsCustomer,
-    queryFn: () => getLedgerAccountOptions(user!.id, "customer"),
+    // Mirrors supplierLedgers: Receipt's party row also accepts direct
+    // income ledgers (e.g. "Interest Received") received outside a sale.
+    queryFn: () => getLedgerAccountOptions(user!.id, ["customer", "income"]),
   });
   const { data: bankCashLedgers = [] } = useQuery({
     queryKey: ["ledgers-bank-cash", user?.id, business?.id],
