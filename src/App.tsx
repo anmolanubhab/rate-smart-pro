@@ -57,6 +57,9 @@ const TaxRegister = lazy(() => import("./pages/gst/TaxRegister"));
 const HsnSummary = lazy(() => import("./pages/gst/HsnSummary"));
 const HsnSummaryPurchase = lazy(() => import("./pages/gst/HsnSummaryPurchase"));
 const HsnMaster = lazy(() => import("./pages/gst/HsnMaster"));
+const GstConfiguration = lazy(() => import("./pages/gst/GstConfiguration"));
+const EInvoiceRegister = lazy(() => import("./pages/gst/EInvoiceRegister"));
+const EWayBillRegister = lazy(() => import("./pages/gst/EWayBillRegister"));
 const GstFiling = lazy(() => import("./pages/gst/GstFiling"));
 const Gstr2Reconciliation = lazy(() => import("./pages/gst/Gstr2Reconciliation"));
 const Gstr9 = lazy(() => import("./pages/gst/Gstr9"));
@@ -239,6 +242,9 @@ const App = () => (
               <Route path="/gst/hsn-summary" element={L(<HsnSummary />)} />
               <Route path="/gst/hsn-summary-purchase" element={L(<HsnSummaryPurchase />)} />
               <Route path="/gst/hsn-master" element={L(<HsnMaster />)} />
+              <Route path="/gst/configuration" element={L(<GstConfiguration />)} />
+              <Route path="/gst/einvoice-register" element={L(<EInvoiceRegister />)} />
+              <Route path="/gst/ewaybill-register" element={L(<EWayBillRegister />)} />
               <Route path="/gst/filing" element={L(<GstFiling />)} />
               <Route path="/gst/gstr-2-reconciliation" element={L(<Gstr2Reconciliation />)} />
               <Route path="/gst/gstr-9" element={L(<Gstr9 />)} />

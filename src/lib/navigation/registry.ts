@@ -1003,23 +1003,23 @@ export const NAV_ITEMS: NavItem[] = [
     id: "gst-einvoice-register",
     title: "e-Invoice Register",
     description: "All e-Invoices generated across sales invoices, with IRN status",
+    route: "/gst/einvoice-register",
     icon: FileText,
     module: "GST",
     parentId: "gst-group-utilities",
     order: 2,
-    disabled: true,
-    disabledReason: "Coming soon — generate from a sales invoice's row menu for now",
+    keywords: ["einvoice", "irn", "ack"],
   },
   {
     id: "gst-ewaybill-register",
     title: "e-Way Bill Register",
     description: "All e-Way Bills generated across sales invoices, with validity status",
+    route: "/gst/ewaybill-register",
     icon: TruckIcon,
     module: "GST",
     parentId: "gst-group-utilities",
     order: 3,
-    disabled: true,
-    disabledReason: "Coming soon — generate from a sales invoice's row menu for now",
+    keywords: ["ewaybill", "e-way bill", "vehicle", "transport"],
   },
 
   {
@@ -1031,11 +1031,12 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "gst-configuration",
     title: "GST Configuration",
-    description: "Default registration, return preferences, e-Invoice/e-Way Bill thresholds",
+    description: "GSTIN registrations, HSN compliance, e-Invoice/e-Way Bill applicability, return preferences",
+    route: "/gst/configuration",
     icon: SettingsIcon,
     module: "GST",
     parentId: "gst-group-settings",
-    disabled: true,
+    keywords: ["gstin", "registration", "e-invoice", "e-way bill", "config"],
   },
 
   // ==========================================================================

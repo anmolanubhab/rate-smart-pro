@@ -9,10 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Switch } from "@/components/ui/switch";
 import {
   fetchLockDate, setLockDate, fetchFinancialNoteSettings, setFinancialNoteSettings,
-  fetchHsnComplianceSettings, setHsnComplianceSettings,
   type FinancialNoteGstMode, type FinancialNoteLedgerMode,
 } from "@/lib/accountingLock";
 import { logAudit } from "@/lib/audit";
@@ -53,23 +51,6 @@ export default function AccountingLock() {
       await setDateFormat(business.id, format);
       await logAudit({ business_id: business.id, action: "DATE_FORMAT_UPDATE", entity_type: "accounting_settings", new_value: { date_format: format } });
       qc.invalidateQueries({ queryKey: ["date-format", business.id] });
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  };
-
-  const { data: hsnSettings } = useQuery({
-    queryKey: ["hsn-compliance-settings", business?.id],
-    enabled: !!business?.id,
-    queryFn: () => fetchHsnComplianceSettings(business!.id),
-  });
-
-  const updateHsnSetting = async (requireHsnOnInvoice: boolean) => {
-    if (!business?.id) return;
-    try {
-      await setHsnComplianceSettings(business.id, requireHsnOnInvoice);
-      await logAudit({ business_id: business.id, action: "HSN_COMPLIANCE_SETTINGS_UPDATE", entity_type: "accounting_settings", new_value: { require_hsn_on_invoice: requireHsnOnInvoice } });
-      qc.invalidateQueries({ queryKey: ["hsn-compliance-settings", business.id] });
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -246,30 +227,6 @@ export default function AccountingLock() {
         </section>
       )}
 
-      {!tableMissing && (
-        <section className="rounded-2xl bg-card border p-6 space-y-5">
-          <div>
-            <h2 className="font-semibold text-sm">HSN Compliance</h2>
-            <p className="text-xs text-muted-foreground mt-1">
-              When on, Sales &amp; Purchase Invoices can't be saved if any line's product has no
-              HSN linked. Quotations and Orders only show a warning — they're not final tax
-              documents, so they're never blocked.
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-3 max-w-md">
-            <div>
-              <Label className="cursor-pointer">Require HSN on Invoice</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Blocks saving an invoice line with no HSN</p>
-            </div>
-            <Switch
-              disabled={!editable}
-              checked={hsnSettings?.require_hsn_on_invoice ?? false}
-              onCheckedChange={(v) => updateHsnSetting(v)}
-            />
-          </div>
-        </section>
-      )}
     </div>
   );
 }

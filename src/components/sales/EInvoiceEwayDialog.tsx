@@ -66,6 +66,26 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
     }
   };
 
+  const [einvoiceCancelReason, setEinvoiceCancelReason] = useState("");
+  const cancelEinvoice = async () => {
+    if (!einvoiceRecordId) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc("einvoice_cancel_record" as never, {
+        _record_id: einvoiceRecordId, _reason: einvoiceCancelReason || null,
+      } as never);
+      if (error) throw error;
+      toast.success("e-Invoice cancelled");
+      setEinvoiceRecordId(null);
+      setEinvoicePayload(null);
+      setIrn(""); setAckNo(""); setAckDate(""); setQrCode(""); setEinvoiceCancelReason("");
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not cancel e-Invoice");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const generateEway = async () => {
     setBusy(true);
     try {
@@ -80,6 +100,26 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
       toast.success("e-Way Bill payload generated — ready to submit via your configured GSP.");
     } catch (e: any) {
       toast.error(e.message ?? "Could not generate e-Way Bill payload");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const [ewayCancelReason, setEwayCancelReason] = useState("");
+  const cancelEway = async () => {
+    if (!ewayRecordId) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc("ewaybill_cancel_record" as never, {
+        _record_id: ewayRecordId, _reason: ewayCancelReason || null,
+      } as never);
+      if (error) throw error;
+      toast.success("e-Way Bill cancelled");
+      setEwayRecordId(null);
+      setEwayPayload(null);
+      setEwayBillNo(""); setValidUntil(""); setEwayCancelReason("");
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not cancel e-Way Bill");
     } finally {
       setBusy(false);
     }
@@ -137,6 +177,10 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
                   <div className="space-y-1"><Label className="text-xs">Signed QR Code</Label><Input value={qrCode} onChange={(e) => setQrCode(e.target.value)} /></div>
                 </div>
                 <Button size="sm" variant="outline" onClick={recordEinvoiceResponse} disabled={busy}>Record IRN</Button>
+                <div className="flex items-end gap-2 pt-2 border-t">
+                  <div className="flex-1 space-y-1"><Label className="text-xs">Cancel reason (optional)</Label><Input value={einvoiceCancelReason} onChange={(e) => setEinvoiceCancelReason(e.target.value)} /></div>
+                  <Button size="sm" variant="destructive" onClick={cancelEinvoice} disabled={busy}>Cancel e-Invoice</Button>
+                </div>
               </div>
             )}
           </TabsContent>
@@ -160,6 +204,10 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
                   <div className="space-y-1"><Label className="text-xs">Valid Until</Label><Input type="datetime-local" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></div>
                 </div>
                 <Button size="sm" variant="outline" onClick={recordEwayResponse} disabled={busy}>Record e-Way Bill No</Button>
+                <div className="flex items-end gap-2 pt-2 border-t">
+                  <div className="flex-1 space-y-1"><Label className="text-xs">Cancel reason (optional)</Label><Input value={ewayCancelReason} onChange={(e) => setEwayCancelReason(e.target.value)} /></div>
+                  <Button size="sm" variant="destructive" onClick={cancelEway} disabled={busy}>Cancel e-Way Bill</Button>
+                </div>
               </div>
             )}
           </TabsContent>

@@ -156,7 +156,53 @@ export async function assertHsnCompliance(
   if (missing.length) {
     const names = missing.map((it) => it.part_number || "unnamed line").join(", ");
     throw new Error(
-      `Cannot save invoice — HSN is required for every line but missing for: ${names}. Set an HSN in Product Master, or turn off "Require HSN on Invoice" in Settings → Accounting Lock.`
+      `Cannot save invoice — HSN is required for every line but missing for: ${names}. Set an HSN in Product Master, or turn off "Require HSN on Invoice" in GST & Compliance → Configuration.`
     );
+  }
+}
+
+// ── GST Configuration settings ───────────────────────────────────────────
+// Same accounting_settings row again. e-Invoice/e-Way Bill enable flags are
+// simple on/off toggles for now (GST Compliance Suite Phase 1) — they don't
+// gate anything yet since generation is already available from a posted
+// Sales Invoice's row menu regardless; they exist so GST Configuration can
+// show applicability status, and later phases can use them to drive
+// auto-generation.
+
+export type GstReturnFrequency = "monthly" | "quarterly";
+
+export interface GstComplianceConfig {
+  business_id: string;
+  enable_einvoice: boolean;
+  enable_ewaybill: boolean;
+  gst_return_frequency: GstReturnFrequency;
+}
+
+export async function fetchGstComplianceConfig(businessId: string): Promise<GstComplianceConfig | null> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("business_id, enable_einvoice, enable_ewaybill, gst_return_frequency")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data as unknown as GstComplianceConfig) ?? null;
+}
+
+export async function setGstComplianceConfig(
+  businessId: string,
+  patch: Partial<Pick<GstComplianceConfig, "enable_einvoice" | "enable_ewaybill" | "gst_return_frequency">>
+): Promise<void> {
+  const { error } = await supabase.from("accounting_settings" as any).upsert({
+    business_id: businessId,
+    ...patch,
+  });
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("GST configuration settings aren't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
   }
 }

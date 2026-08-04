@@ -199,7 +199,7 @@ export default function InvoicesPage() {
         supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", inv.business_id).maybeSingle(),
         fetchEnabledPrintCopyTypes(inv.business_id),
         fetchDefaultPrintProfile(inv.business_id, "sales_invoice"),
-        supabase.from("einvoice_records").select("signed_qr_code").eq("invoice_id", inv.id).not("signed_qr_code", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("einvoice_records").select("signed_qr_code, irn, ack_no, ack_date").eq("invoice_id", inv.id).eq("status", "generated").order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
 
       const party = inv.party_snapshot ?? {};
@@ -224,6 +224,9 @@ export default function InvoicesPage() {
           numberLabel: "Invoice No",
           date: inv.invoice_date,
           qrCodeValue: einvoice?.signed_qr_code ?? null,
+          irn: einvoice?.irn ?? null,
+          ackNo: einvoice?.ack_no ?? null,
+          ackDate: einvoice?.ack_date ? new Date(einvoice.ack_date).toLocaleDateString("en-IN") : null,
         },
         items: (items as any[]).map((it) => ({
           partNumber: it.part_number ?? "",
