@@ -1,4 +1,4 @@
-// Shared "Create New Ledger" dialog — extracted from src/pages/accounts/LedgerAccounts.tsx
+// Shared "Create/Edit Ledger" dialog — extracted from src/pages/accounts/LedgerAccounts.tsx
 // so both the Ledger Accounts page and the Universal Voucher Engine's Ctrl+N
 // shortcut use one implementation instead of two divergent copies.
 import { useEffect, useState } from "react";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { assertLedgerNameAvailable, updateLedger, type LedgerRow } from "@/lib/accounting";
 
 export const LEDGER_TYPES = [
   "expense", "income", "asset", "liability", "customer", "supplier",
@@ -27,17 +28,20 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   businessId: string;
   userId: string;
-  /** Called after a successful create with the new ledger's id + name, so the
+  /** Called after a successful create/edit with the ledger's id + name, so the
    *  caller (e.g. the voucher grid) can immediately select it. */
   onCreated: (ledger: { id: string; name: string }) => void;
+  /** When set, the dialog edits this ledger instead of creating a new one. */
+  ledger?: LedgerRow | null;
 }
 
-export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId, userId, onCreated }: Props) {
+const emptyForm = { name: "", ledger_type: "expense", group_id: "", opening_balance: "0", opening_balance_type: "dr" as "dr" | "cr" };
+
+export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId, userId, onCreated, ledger }: Props) {
+  const isEdit = !!ledger;
   const [saving, setSaving] = useState(false);
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
-  const [form, setForm] = useState({
-    name: "", ledger_type: "expense", group_id: "", opening_balance: "0", opening_balance_type: "dr",
-  });
+  const [form, setForm] = useState(emptyForm);
 
   useEffect(() => {
     if (!open || !businessId) return;
@@ -45,30 +49,58 @@ export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId
       .then(({ data }) => setGroups(data ?? []));
   }, [open, businessId]);
 
-  const reset = () => setForm({ name: "", ledger_type: "expense", group_id: "", opening_balance: "0", opening_balance_type: "dr" });
+  useEffect(() => {
+    if (!open) return;
+    setForm(
+      ledger
+        ? {
+            name: ledger.name,
+            ledger_type: ledger.ledger_type,
+            group_id: ledger.group_id ?? "",
+            opening_balance: String(ledger.opening_balance ?? 0),
+            opening_balance_type: ledger.opening_balance_type,
+          }
+        : emptyForm
+    );
+  }, [open, ledger]);
 
   const save = async () => {
     if (!form.name.trim()) { toast.error("Ledger name is required"); return; }
     setSaving(true);
     try {
-      const { data, error } = await supabase.from("ledger_accounts").insert({
-        business_id: businessId,
-        user_id: userId,
-        name: form.name.trim(),
-        ledger_type: form.ledger_type,
-        group_id: form.group_id || null,
-        opening_balance: Number(form.opening_balance) || 0,
-        opening_balance_type: form.opening_balance_type,
-        is_system: false,
-        status: "active",
-      } as never).select("id, name").single();
-      if (error) throw error;
-      toast.success(`Ledger "${form.name}" created`);
-      onOpenChange(false);
-      onCreated({ id: (data as any).id, name: (data as any).name });
-      reset();
+      await assertLedgerNameAvailable(businessId, form.name, ledger?.id);
+
+      if (isEdit) {
+        await updateLedger(ledger!.id, {
+          name: form.name.trim(),
+          ledger_type: form.ledger_type,
+          group_id: form.group_id || null,
+          opening_balance: Number(form.opening_balance) || 0,
+          opening_balance_type: form.opening_balance_type,
+        });
+        toast.success(`Ledger "${form.name}" updated`);
+        onOpenChange(false);
+        onCreated({ id: ledger!.id, name: form.name.trim() });
+      } else {
+        const { data, error } = await supabase.from("ledger_accounts").insert({
+          business_id: businessId,
+          user_id: userId,
+          name: form.name.trim(),
+          ledger_type: form.ledger_type,
+          group_id: form.group_id || null,
+          opening_balance: Number(form.opening_balance) || 0,
+          opening_balance_type: form.opening_balance_type,
+          is_system: false,
+          status: "active",
+        } as never).select("id, name").single();
+        if (error) throw error;
+        toast.success(`Ledger "${form.name}" created`);
+        onOpenChange(false);
+        onCreated({ id: (data as any).id, name: (data as any).name });
+        setForm(emptyForm);
+      }
     } catch (e: any) {
-      toast.error(e.message ?? "Could not create ledger");
+      toast.error(e.message ?? `Could not ${isEdit ? "update" : "create"} ledger`);
     } finally {
       setSaving(false);
     }
@@ -77,7 +109,7 @@ export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent onKeyDown={(e) => e.stopPropagation()}>
-        <DialogHeader><DialogTitle>Create New Ledger</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? "Edit Ledger" : "Create New Ledger"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Ledger Name *</Label>
@@ -127,7 +159,9 @@ export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving}>{saving ? "Creating…" : "Create Ledger"}</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? (isEdit ? "Saving…" : "Creating…") : isEdit ? "Save Changes" : "Create Ledger"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

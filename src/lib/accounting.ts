@@ -110,6 +110,68 @@ export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow
   });
 }
 
+export interface LedgerEditPatch {
+  name: string;
+  ledger_type: string;
+  group_id: string | null;
+  opening_balance: number;
+  opening_balance_type: "dr" | "cr";
+}
+
+/** Rejects a name that collides (case-insensitively) with another ledger in
+ *  the same business — `excludeId` lets an edit save keep its own name. */
+export async function assertLedgerNameAvailable(businessId: string, name: string, excludeId?: string) {
+  const { data, error } = await supabase
+    .from("ledger_accounts")
+    .select("id")
+    .eq("business_id", businessId)
+    .ilike("name", name.trim())
+    .maybeSingle();
+  if (error) throw error;
+  if (data && data.id !== excludeId) {
+    throw new Error(`A ledger named "${name.trim()}" already exists.`);
+  }
+}
+
+export async function updateLedger(ledgerId: string, patch: LedgerEditPatch) {
+  const { error } = await supabase
+    .from("ledger_accounts")
+    .update({
+      name: patch.name.trim(),
+      ledger_type: patch.ledger_type,
+      group_id: patch.group_id,
+      opening_balance: patch.opening_balance,
+      opening_balance_type: patch.opening_balance_type,
+    } as never)
+    .eq("id", ledgerId);
+  if (error) throw error;
+}
+
+/**
+ * Deletes a ledger outright when nothing references it; if the database
+ * rejects the delete with a foreign-key violation (it has voucher entries,
+ * a linked party, etc.) falls back to deactivating it instead so historical
+ * records don't silently lose their ledger. Refuses system ledgers upfront
+ * — the DB's RLS policy blocks those too, but this gives a clear message
+ * instead of a silent no-op delete.
+ */
+export async function deleteLedger(ledger: { id: string; name: string; is_system: boolean }): Promise<{ archived: boolean }> {
+  if (ledger.is_system) throw new Error(`"${ledger.name}" is a system ledger and can't be deleted.`);
+
+  const { error } = await supabase.from("ledger_accounts").delete().eq("id", ledger.id);
+  if (!error) return { archived: false };
+
+  if (error.code === "23503") {
+    const { error: archiveErr } = await supabase
+      .from("ledger_accounts")
+      .update({ status: "inactive" } as never)
+      .eq("id", ledger.id);
+    if (archiveErr) throw archiveErr;
+    return { archived: true };
+  }
+  throw error;
+}
+
 export async function fetchVouchers(userId: string, opts: { type?: string; from?: string; to?: string; limit?: number } = {}) {
   const biz = getActiveBusinessIdSync();
   let q = supabase
