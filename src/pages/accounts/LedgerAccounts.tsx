@@ -9,7 +9,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchLedgersWithBalance, seedAccounts, deleteLedger, fmtInr, type LedgerRow } from "@/lib/accounting";
 import { useNavigate } from "react-router-dom"; // NEW
+import { useLedgerEditRouter } from "@/hooks/useLedgerEditRouter";
+import { resolveLinkedEntity } from "@/lib/ledgerEditRouter";
 import QuickCreateLedgerDialog from "@/components/vouchers/QuickCreateLedgerDialog";
+
+/** 👤 entity-linked (Party Master owns it) / ⚙ system / 📒 plain accounting
+ *  ledger — lets an accountant tell at a glance which editor "Edit" will
+ *  open, before they even click it. */
+const kindIcon = (l: LedgerRow) => (l.is_system ? "⚙" : resolveLinkedEntity(l) ? "👤" : "📒");
 
 export default function LedgerAccounts() {
   useEffect(() => { document.title = "Ledger Accounts — RD Pro"; }, []);
@@ -20,6 +27,10 @@ export default function LedgerAccounts() {
   const [open, setOpen] = useState(false);
   const [editingLedger, setEditingLedger] = useState<LedgerRow | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Party-linked ledgers (customer/supplier) are edited on the Party Master,
+  // never here -- keeps a single editable source per entity. See
+  // src/hooks/useLedgerEditRouter.ts.
+  const routeEdit = useLedgerEditRouter<LedgerRow>((ledger) => setEditingLedger(ledger));
 
   const { data: ledgers = [], isLoading } = useQuery({
     queryKey: ["ledgers", user?.id, business?.id],
@@ -47,7 +58,7 @@ export default function LedgerAccounts() {
   const rows = useMemo(() => ledgers.map((l) => {
     const bal = l.balance ?? 0;
     return {
-      name: l.name,
+      name: `${kindIcon(l)} ${l.name}`,
       type: l.ledger_type,
       group: l.group?.name ?? "—",
       opening: l.opening_balance,
@@ -99,7 +110,7 @@ export default function LedgerAccounts() {
         const actions: DocumentRowAction[] = [
           {
             key: "edit", label: "Edit", icon: Pencil,
-            onClick: () => setEditingLedger(ledger),
+            onClick: () => routeEdit(ledger),
             disabled: ledger.is_system,
           },
           {

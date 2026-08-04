@@ -2,6 +2,7 @@
 // so both the Ledger Accounts page and the Universal Voucher Engine's Ctrl+N
 // shortcut use one implementation instead of two divergent copies.
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -10,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { assertLedgerNameAvailable, updateLedger, type LedgerRow } from "@/lib/accounting";
+import { resolveLedgerEditor } from "@/lib/ledgerEditRouter";
 
 export const LEDGER_TYPES = [
   "expense", "income", "asset", "liability", "customer", "supplier",
@@ -39,9 +41,24 @@ const emptyForm = { name: "", ledger_type: "expense", group_id: "", opening_bala
 
 export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId, userId, onCreated, ledger }: Props) {
   const isEdit = !!ledger;
+  const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
   const [form, setForm] = useState(emptyForm);
+
+  // Defense in depth for the Smart Edit Router (src/lib/ledgerEditRouter.ts):
+  // no matter how this dialog was reached, it must never render as an
+  // editor for an entity-linked ledger -- redirect to that entity's own
+  // master instead of letting its business fields be edited from here too.
+  useEffect(() => {
+    if (!open || !ledger) return;
+    const resolution = resolveLedgerEditor(ledger);
+    if (resolution.kind === "entity") {
+      onOpenChange(false);
+      navigate(resolution.path);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, ledger]);
 
   useEffect(() => {
     if (!open || !businessId) return;
