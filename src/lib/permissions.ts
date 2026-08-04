@@ -26,6 +26,7 @@ const APPROVERS: BusinessRole[] = ["owner", "admin", "manager", "accountant"];
 const APPROVAL_CENTER_ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant"];
 const AUDIT_LOG_ROLES: BusinessRole[] = ["owner", "admin", "manager"];
 const VOUCHER_UNLOCK_ROLES: BusinessRole[] = ["owner", "admin"];
+const MAINTENANCE_ROLES: BusinessRole[] = ["owner", "admin"];
 const FREEZE_OVERRIDE_ROLES: BusinessRole[] = ["owner"];
 const PERIOD_CLOSE_ROLES: BusinessRole[] = ["owner"];
 const READ_ONLY_ROLES: BusinessRole[] = ["viewer"];
@@ -129,6 +130,11 @@ export function canUnlockVouchers(
   financialRights?: FinancialRights | null,
 ): boolean {
   return hasRole(role, VOUCHER_UNLOCK_ROLES) || !!financialRights?.can_edit_locked_voucher;
+}
+
+/** Can this role reach Settings → Maintenance (data-rebuild actions like Recalculate Balances)? */
+export function canAccessMaintenance(role: BusinessRole | null): boolean {
+  return hasRole(role, MAINTENANCE_ROLES);
 }
 
 export function canOverrideFreezeDate(role: BusinessRole | null): boolean {

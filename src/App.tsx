@@ -70,6 +70,7 @@ const MeasurementUnits = lazy(() => import("./pages/settings/MeasurementUnits"))
 const AccountingLock = lazy(() => import("./pages/settings/AccountingLock"));
 const FinancialNoteCategories = lazy(() => import("./pages/settings/FinancialNoteCategories"));
 const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
+const Maintenance = lazy(() => import("./pages/settings/Maintenance"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
@@ -321,6 +322,7 @@ const App = () => (
               <Route path="/settings/financial-note-categories" element={L(<FinancialNoteCategories />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
               <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
+              <Route path="/settings/maintenance" element={L(<Maintenance />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/sales/receive-payment" element={L(<ReceivePayment />)} />
               <Route path="/sales/picking-list" element={L(<PickingList />)} />

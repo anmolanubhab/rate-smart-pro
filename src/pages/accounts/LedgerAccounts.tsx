@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, Plus } from "lucide-react";
-import { toast } from "sonner";
+import { Plus } from "lucide-react";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { backfillAccounting, fetchLedgersWithBalance, seedAccounts, fmtInr } from "@/lib/accounting";
+import { fetchLedgersWithBalance, seedAccounts, fmtInr } from "@/lib/accounting";
 import { useNavigate } from "react-router-dom"; // NEW
 import QuickCreateLedgerDialog from "@/components/vouchers/QuickCreateLedgerDialog";
 
@@ -16,7 +15,6 @@ export default function LedgerAccounts() {
   const { business } = useBusiness();
   const qc = useQueryClient();
   const navigate = useNavigate(); // NEW
-  const [syncing, setSyncing] = useState(false);
   const [open, setOpen] = useState(false);
 
   const { data: ledgers = [], isLoading } = useQuery({
@@ -27,19 +25,6 @@ export default function LedgerAccounts() {
       return fetchLedgersWithBalance(user!.id);
     },
   });
-
-  const handleSync = async () => {
-    if (!user?.id) return;
-    setSyncing(true);
-    try {
-      const r = await backfillAccounting(user.id);
-      toast.success(`Synced ${r.parties} parties · balances recalculated from voucher history`);
-      qc.invalidateQueries({ queryKey: ["ledgers"] });
-      qc.invalidateQueries({ queryKey: ["vouchers"] });
-    } catch (e: any) {
-      toast.error(e.message ?? "Sync failed");
-    } finally { setSyncing(false); }
-  };
 
   const rows = useMemo(() => ledgers.map((l) => {
     const bal = l.balance ?? 0;
@@ -67,15 +52,9 @@ export default function LedgerAccounts() {
       title="Ledger Accounts"
       description={isLoading ? "Loading…" : "Chart of accounts with running balances computed from posted vouchers."}
       actions={
-        <div className="flex gap-2">
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" /> New Ledger
-          </Button>
-          <Button variant="outline" onClick={handleSync} disabled={syncing}>
-            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Recalculate Balances
-          </Button>
-        </div>
+        <Button onClick={() => setOpen(true)}>
+          <Plus className="h-4 w-4 mr-1" /> New Ledger
+        </Button>
       }
       kpis={[
         { label: "Total Ledgers", value: ledgers.length },
