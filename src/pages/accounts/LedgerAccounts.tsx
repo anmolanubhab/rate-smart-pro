@@ -8,22 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { backfillAccounting, fetchLedgersWithBalance, seedAccounts, fmtInr } from "@/lib/accounting";
 import { useNavigate } from "react-router-dom"; // NEW
-import { supabase } from "@/integrations/supabase/client";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-const LEDGER_TYPES = [
-  "expense", "income", "asset", "liability", "customer", "supplier",
-  "cash", "bank", "capital", "loan", "employee", "gst_input", "gst_output",
-] as const;
-const LEDGER_TYPE_LABELS: Record<string, string> = {
-  expense: "Expense", income: "Income", asset: "Asset", liability: "Liability",
-  customer: "Customer", supplier: "Supplier", cash: "Cash", bank: "Bank",
-  capital: "Capital", loan: "Loan", employee: "Employee",
-  gst_input: "GST Input", gst_output: "GST Output",
-};
+import QuickCreateLedgerDialog from "@/components/vouchers/QuickCreateLedgerDialog";
 
 export default function LedgerAccounts() {
   useEffect(() => { document.title = "Ledger Accounts — RD Pro"; }, []);
@@ -33,45 +18,6 @@ export default function LedgerAccounts() {
   const navigate = useNavigate(); // NEW
   const [syncing, setSyncing] = useState(false);
   const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
-  const [form, setForm] = useState({
-    name: "", ledger_type: "expense", group_id: "", opening_balance: "0", opening_balance_type: "dr",
-  });
-
-  useEffect(() => {
-    if (!business) return;
-    supabase.from("account_groups").select("id, name").eq("business_id", business.id).order("name")
-      .then(({ data }) => setGroups(data ?? []));
-  }, [business, open]);
-
-  const saveLedger = async () => {
-    if (!business || !user) return;
-    if (!form.name.trim()) { toast.error("Ledger name is required"); return; }
-    setSaving(true);
-    try {
-      const { error } = await supabase.from("ledger_accounts").insert({
-        business_id: business.id,
-        user_id: user.id,
-        name: form.name.trim(),
-        ledger_type: form.ledger_type,
-        group_id: form.group_id || null,
-        opening_balance: Number(form.opening_balance) || 0,
-        opening_balance_type: form.opening_balance_type,
-        is_system: false,
-        status: "active",
-      } as never);
-      if (error) throw error;
-      toast.success(`Ledger "${form.name}" created`);
-      setOpen(false);
-      setForm({ name: "", ledger_type: "expense", group_id: "", opening_balance: "0", opening_balance_type: "dr" });
-      qc.invalidateQueries({ queryKey: ["ledgers"] });
-    } catch (e: any) {
-      toast.error(e.message ?? "Could not create ledger");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const { data: ledgers = [], isLoading } = useQuery({
     queryKey: ["ledgers", user?.id, business?.id],
@@ -152,61 +98,15 @@ export default function LedgerAccounts() {
       }}
     />
 
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Create New Ledger</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Ledger Name *</Label>
-            <Input placeholder="e.g. Diwali Bonus Expense" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Ledger Type</Label>
-              <Select value={form.ledger_type} onValueChange={(v) => setForm({ ...form, ledger_type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {LEDGER_TYPES.map((t) => <SelectItem key={t} value={t}>{LEDGER_TYPE_LABELS[t]}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Account Group</Label>
-              <Select value={form.group_id} onValueChange={(v) => setForm({ ...form, group_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select group" /></SelectTrigger>
-                <SelectContent>
-                  {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Opening Balance</Label>
-              <Input type="number" value={form.opening_balance} onChange={(e) => setForm({ ...form, opening_balance: e.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Balance Type</Label>
-              <Select value={form.opening_balance_type} onValueChange={(v) => setForm({ ...form, opening_balance_type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="dr">Debit (Dr)</SelectItem>
-                  <SelectItem value="cr">Credit (Cr)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Tip: for a new expense category (e.g. "Vehicle Insurance"), choose Type = Expense and
-            Group = Indirect Expenses. It'll immediately show up in the Payment/Receipt/Journal voucher form.
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={saveLedger} disabled={saving}>{saving ? "Creating…" : "Create Ledger"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    {business && user && (
+      <QuickCreateLedgerDialog
+        open={open}
+        onOpenChange={setOpen}
+        businessId={business.id}
+        userId={user.id}
+        onCreated={() => qc.invalidateQueries({ queryKey: ["ledgers"] })}
+      />
+    )}
     </>
   );
 }

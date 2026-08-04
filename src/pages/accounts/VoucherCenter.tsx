@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchVouchers } from "@/lib/accounting";
+import { VOUCHER_TYPE_CONFIGS, VOUCHER_TYPE_ORDER } from "@/lib/voucherTypeConfig";
+import { useVoucherShortcuts } from "@/hooks/useVoucherShortcuts";
 
 const TYPES = ["All", "sales", "purchase", "receipt", "payment", "journal", "contra", "credit_note", "debit_note"];
 const labels: Record<string, string> = {
@@ -14,7 +18,12 @@ const labels: Record<string, string> = {
 export default function VoucherCenter() {
   useEffect(() => { document.title = "Voucher Center — RD Pro"; }, []);
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [filter, setFilter] = useState("All");
+
+  // F4/F5/F6/F7/Ctrl+F8/Ctrl+F9 jump straight into a new voucher of that
+  // type from the listing page too, not just from inside an entry screen.
+  useVoucherShortcuts({ onSwitchType: (t) => navigate(VOUCHER_TYPE_CONFIGS[t].path) }, [navigate]);
 
   const { data = [], isLoading } = useQuery({
     queryKey: ["vouchers", user?.id, filter],
@@ -34,6 +43,16 @@ export default function VoucherCenter() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {VOUCHER_TYPE_ORDER.map((t) => {
+          const cfg = VOUCHER_TYPE_CONFIGS[t];
+          return (
+            <Button key={t} size="sm" variant="outline" className={cfg.themeClass} onClick={() => navigate(cfg.path)}>
+              {cfg.label} <span className="ml-1.5 text-[10px] opacity-60">{cfg.shortcutLabel}</span>
+            </Button>
+          );
+        })}
+      </div>
       <div className="flex flex-wrap gap-2">
         {TYPES.map((t) => (
           <Badge key={t} variant="outline" onClick={() => setFilter(t)}

@@ -1,5 +1,16 @@
 // src/pages/accounting/VoucherForm.tsx
 // Routes: /accounting/vouchers/new  |  /accounting/vouchers/:id/edit
+//
+// Retired as the entry point for Payment/Receipt/Contra/Journal/Credit Note/
+// Debit Note — those 6 types now live in the Universal Voucher Engine (see
+// src/components/vouchers/UniversalVoucherEntry.tsx). App.tsx's
+// NewVoucherRedirect/EditVoucherRedirect send those types there before this
+// component ever mounts, so in normal navigation this form only ever
+// actually renders for Sales/Purchase (manual/adjustment entries — the
+// normal path is still auto-posting from invoices) and Opening Balance,
+// which have no other entry point. The type dropdown below is restricted to
+// match on new-voucher creation; edit mode keeps the full list as a safety
+// net for pre-existing drafts of any type.
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -41,6 +52,12 @@ import {
   type AdjustmentCategorySnapshot,
   typeFromDb,
 } from "@/lib/voucherService";
+
+// Types this form still owns for NEW-voucher creation — the other 6 moved
+// to the Universal Voucher Engine (src/lib/voucherTypeConfig.ts).
+const LEGACY_VOUCHER_TYPES = VOUCHER_TYPES.filter(
+  (t) => t === "Sales" || t === "Purchase" || t === "Opening Balance"
+);
 
 // ── empty row factory ─────────────────────────────────────────────────────────
 
@@ -99,11 +116,14 @@ export default function VoucherForm() {
 
   // ── form state ──────────────────────────────────────────────────────────
   const today = new Date().toISOString().slice(0, 10);
-  // ?type=debit_note / credit_note (etc.) pre-sets the voucher type when
-  // arriving from a dedicated entry point (e.g. the Debit/Credit Note pages'
-  // "New" button) — edit mode always uses the loaded voucher's own type.
+  // ?type=... pre-sets the voucher type when arriving from a dedicated entry
+  // point — edit mode always uses the loaded voucher's own type. In practice
+  // App.tsx's NewVoucherRedirect already sends Payment/Receipt/Contra/
+  // Journal/Credit Note/Debit Note to the Universal Voucher Engine before
+  // this form ever mounts, so a fresh "new voucher" here is always one of
+  // LEGACY_VOUCHER_TYPES.
   const presetType = !isEdit && searchParams.get("type") ? typeFromDb(searchParams.get("type")!) : null;
-  const [vType, setVType] = useState<VoucherType>(presetType ?? "Journal");
+  const [vType, setVType] = useState<VoucherType>(presetType ?? "Opening Balance");
   const [vDate, setVDate] = useState(today);
   const [narration, setNarration] = useState("");
   const [items, setItems] = useState<VoucherItem[]>([emptyRow(), emptyRow()]);
@@ -536,7 +556,11 @@ export default function VoucherForm() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {VOUCHER_TYPES.map((t) => (
+                {/* Editing a pre-existing voucher of any type (e.g. an old
+                    draft from before the Universal Voucher Engine) keeps the
+                    full list so it doesn't get stuck with an invalid value;
+                    new vouchers only offer the types this form still owns. */}
+                {(isEdit ? VOUCHER_TYPES : LEGACY_VOUCHER_TYPES).map((t) => (
                   <SelectItem key={t} value={t}>{t}</SelectItem>
                 ))}
               </SelectContent>
