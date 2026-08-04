@@ -411,7 +411,7 @@ const Products = () => {
       const headers = [
         "Part Number", "Name", "Vehicle Model", "Category",
         "MRP (₹)", "Dealer Rate (₹)", "Stock", "Low Stock Threshold",
-        "GST %", "Barcode", "Status",
+        "HSN Code", "GST %", "Barcode", "Status",
       ];
 
       const escape = (v: string | number | null | undefined) => {
@@ -427,7 +427,7 @@ const Products = () => {
           [
             p.part_number, p.name, p.vehicle_model || "",
             p.category, p.mrp, p.dealer_rate, p.stock,
-            p.low_stock_threshold, p.gst_pct, p.barcode || "", p.status,
+            p.low_stock_threshold, p.hsn_code || "", p.gst_pct, p.barcode || "", p.status,
           ]
             .map(escape)
             .join(",")
