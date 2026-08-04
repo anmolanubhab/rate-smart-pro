@@ -953,6 +953,17 @@ export const NAV_ITEMS: NavItem[] = [
     order: 3,
     keywords: ["hsn", "gstr1"],
   },
+  {
+    id: "gst-hsn-summary-purchase",
+    title: "HSN Summary (Purchase)",
+    description: "Purchases grouped by HSN code and GST rate",
+    route: "/gst/hsn-summary-purchase",
+    icon: Barcode,
+    module: "GST",
+    parentId: "gst-group-reports",
+    order: 4,
+    keywords: ["hsn", "purchase", "input tax"],
+  },
 
   {
     id: "gst-group-masters",
