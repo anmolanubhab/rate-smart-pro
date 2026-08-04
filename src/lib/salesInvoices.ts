@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchOrder, fetchOrderItems, computeTotals } from "@/lib/orders";
 import { cancelVoucher } from "@/lib/voucherService";
+import { assertHsnCompliance } from "@/lib/accountingLock";
 
 export interface SalesInvoice {
   id: string;
@@ -162,6 +163,15 @@ export async function generateInvoiceFromDispatch(opts: {
   const taxable = +lineItems.reduce((s, i) => s + i._lineNet, 0).toFixed(2);
   const grand_total = +(taxable + gst_total + (order.shipping_charges || 0)).toFixed(2);
 
+  // lineItems already carries each line's resolved hsn (from products.hsn_code
+  // via the dispatch_items(order_items(products(hsn_code))) select above), so
+  // the compliance check here is a direct filter, not another product fetch.
+  await assertHsnCompliance(
+    opts.businessId,
+    lineItems.map((it) => ({ product_id: it.product_id, part_number: it.part_number })),
+    lineItems.filter((it) => it.product_id).map((it) => ({ id: it.product_id as string, hsn_code: it.hsn }))
+  );
+
   // 4. Create invoice
   const invoice_number = await nextInvoiceNumber(opts.userId);
   const { data: inv, error: ie } = await supabase
@@ -296,6 +306,17 @@ export async function generateInvoiceFromOrder(opts: {
   } as never);
   const isInterstate = interstateErr ? false : !!interstateData;
 
+  // HSN Lock groundwork, done before the invoice header is created so a
+  // blocked invoice never gets a half-created row: resolve each line's
+  // product HSN up front, then enforce the "Require HSN on Invoice" company
+  // setting against it if that setting is on.
+  const productIds = Array.from(new Set(items.map((it: any) => it.product_id).filter(Boolean)));
+  const { data: productsData } = productIds.length
+    ? await supabase.from("products").select("id, name, hsn_code").in("id", productIds as string[])
+    : { data: [] as { id: string; name: string; hsn_code: string | null }[] };
+  const hsnByProduct = new Map((productsData || []).map((p: any) => [p.id, p.hsn_code]));
+  await assertHsnCompliance(opts.businessId, items as any[], productsData || []);
+
   const invoice_number = await nextInvoiceNumber(opts.userId);
   const status = opts.requireApproval ? "draft" : "posted";
 
@@ -326,12 +347,6 @@ export async function generateInvoiceFromOrder(opts: {
     .select()
     .single();
   if (error) throw error;
-
-  const productIds = Array.from(new Set(items.map((it: any) => it.product_id).filter(Boolean)));
-  const { data: productsData } = productIds.length
-    ? await supabase.from("products").select("id, hsn_code").in("id", productIds as string[])
-    : { data: [] as { id: string; hsn_code: string | null }[] };
-  const hsnByProduct = new Map((productsData || []).map((p: any) => [p.id, p.hsn_code]));
 
   const rows = items.map((it: any, idx) => {
     const lineTaxable = (it.net_rate || 0) * (it.qty || 0);
