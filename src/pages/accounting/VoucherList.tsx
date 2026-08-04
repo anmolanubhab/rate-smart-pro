@@ -33,6 +33,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canUnlockVouchers, canDeleteDirectly } from "@/lib/permissions";
 import { createApprovalRequest } from "@/lib/approvals";
+import { VOUCHER_TYPE_CONFIGS, VOUCHER_TYPE_ORDER } from "@/lib/voucherTypeConfig";
 import { fmtInr } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
 
@@ -207,9 +208,27 @@ export default function VoucherList() {
             <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Printer className="h-3.5 w-3.5 mr-1" /> Print
             </Button>
-            <Button onClick={() => navigate("/accounting/vouchers/new")}>
-              <Plus className="h-4 w-4 mr-1" /> New Voucher
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-1" /> New Voucher
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {VOUCHER_TYPE_ORDER.map((t) => {
+                  const cfg = VOUCHER_TYPE_CONFIGS[t];
+                  return (
+                    <DropdownMenuItem key={t} onClick={() => navigate(cfg.path)}>
+                      {cfg.label} <span className="ml-auto text-xs text-muted-foreground">{cfg.shortcutLabel}</span>
+                    </DropdownMenuItem>
+                  );
+                })}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/accounting/vouchers/new?type=opening_balance")}>
+                  Opening Balance
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
