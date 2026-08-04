@@ -82,41 +82,31 @@ export async function ensurePartyLedgers(userId: string) {
   }
 }
 
+// Reads the stored current_balance column instead of live-aggregating every
+// voucher_items row on every call. current_balance is kept correct and
+// automatic by DB triggers (trg_voucher_items_balance +
+// trg_vouchers_sync_balance_on_status_change — see
+// supabase/migrations/20260804120000_fix_ledger_balance_trigger_and_status_sync.sql)
+// which apply/reverse it exactly when a voucher is actually posted/cancelled —
+// draft vouchers never affect it. current_balance is the accumulated posted
+// voucher Dr−Cr only (not including opening_balance), matching how the DB
+// side (apply_ledger_balance_delta/recompute_all_balances) defines it, so
+// opening_balance is still added here the same way as before.
 export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow[]> {
   const biz = getActiveBusinessIdSync();
   let lq = supabase
     .from("ledger_accounts")
-    .select("id, name, ledger_type, group_id, party_id, opening_balance, opening_balance_type, is_system, status, group:account_groups(name, nature)")
+    .select("id, name, ledger_type, group_id, party_id, opening_balance, opening_balance_type, is_system, status, current_balance, group:account_groups(name, nature)")
     .eq("user_id", userId)
     .order("name");
   if (biz) lq = lq.eq("business_id", biz);
   const { data: ledgers, error } = await lq;
   if (error) throw error;
 
-  // Only posted vouchers affect a ledger's balance — draft (unconfirmed)
-  // and cancelled vouchers must not.
-  let iq = supabase
-    .from("voucher_items")
-    .select("ledger_account_id, dr_amount, cr_amount, vouchers!inner(status)")
-    .eq("user_id", userId)
-    .eq("vouchers.status", "posted");
-  if (biz) iq = iq.eq("business_id", biz);
-  const { data: items, error: e2 } = await iq;
-  if (e2) throw e2;
-
-  const agg = new Map<string, { dr: number; cr: number }>();
-  (items ?? []).forEach((it: any) => {
-    const a = agg.get(it.ledger_account_id) ?? { dr: 0, cr: 0 };
-    a.dr += Number(it.dr_amount ?? 0);
-    a.cr += Number(it.cr_amount ?? 0);
-    agg.set(it.ledger_account_id, a);
-  });
-
   return (ledgers ?? []).map((l: any) => {
-    const a = agg.get(l.id) ?? { dr: 0, cr: 0 };
     const open = Number(l.opening_balance ?? 0) * (l.opening_balance_type === "cr" ? -1 : 1);
-    const bal = open + a.dr - a.cr;
-    return { ...l, balance: bal, total_dr: a.dr, total_cr: a.cr } as LedgerRow;
+    const bal = open + Number(l.current_balance ?? 0);
+    return { ...l, balance: bal } as LedgerRow;
   });
 }
 
