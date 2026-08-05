@@ -128,6 +128,16 @@ export default function VoucherLedgerGrid({
     setTimeout(() => focusCell(idx + 1, "ledger"), 10);
   };
 
+  const isBalanced = () => {
+    const debit = Math.round(items.reduce((s, r) => s + (r.debit || 0), 0) * 100);
+    const credit = Math.round(items.reduce((s, r) => s + (r.credit || 0), 0) * 100);
+    return debit > 0 && debit === credit;
+  };
+
+  const focusPostButton = () => {
+    document.querySelector<HTMLButtonElement>("[data-post-voucher-button]")?.focus();
+  };
+
   /** Picking a ledger for a still-blank row also auto-fills the amount that
    *  balances the voucher so far (the "remaining balance"), on whichever
    *  side (Dr/Cr) is short — the operator only has to type an amount at all
@@ -160,13 +170,24 @@ export default function VoucherLedgerGrid({
       }
       if (e.key === "Escape") { e.preventDefault(); closeDropdown(); return; }
     }
-    // Once Debit is keyed for this row, Tab/Enter jumps straight to the next
-    // row's Ledger cell — Credit and Remarks on a debit-side row are already
-    // zero/irrelevant, so stepping through them is wasted keystrokes.
-    if (col === "debit" && (e.key === "Enter" || e.key === "Tab") && (items[idx].debit || 0) > 0) {
-      e.preventDefault();
-      focusNextRowLedger(idx);
-      return;
+    if ((col === "debit" || col === "credit") && (e.key === "Enter" || e.key === "Tab")) {
+      // Debit and Credit just matched (voucher balanced) -- Tally-style: stop
+      // prompting for another row and send the operator straight to Post
+      // instead of an unneeded new row or this row's Remarks.
+      if (isBalanced()) {
+        e.preventDefault();
+        setTimeout(focusPostButton, 10);
+        return;
+      }
+      // Not balanced yet: once Debit is keyed for this row, Tab/Enter jumps
+      // straight to the next row's Ledger cell — Credit and Remarks on a
+      // debit-side row are already zero/irrelevant, so stepping through
+      // them is wasted keystrokes.
+      if (col === "debit" && (items[idx].debit || 0) > 0) {
+        e.preventDefault();
+        focusNextRowLedger(idx);
+        return;
+      }
     }
     handleGridKey(e, idx, col, { rowCount: items.length, onAddRow });
   };

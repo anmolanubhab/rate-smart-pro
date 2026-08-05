@@ -592,6 +592,7 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
             <Save className="h-4 w-4 mr-1" /> {saving ? "Saving…" : "Save Draft"}
           </Button>
           <Button
+            data-post-voucher-button
             onClick={handlePost}
             disabled={saving || posting || !totals.isBalanced}
             title={!totals.isBalanced ? "Debit and Credit must be equal to post" : "Alt+S"}
