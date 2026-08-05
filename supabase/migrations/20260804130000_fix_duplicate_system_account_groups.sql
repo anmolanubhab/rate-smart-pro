@@ -14,6 +14,14 @@
 -- to happen again; (3) fixes the seed function's guard to be business-scoped
 -- (falling back to the old user-scoped behavior only for legacy rows with no
 -- business_id, so solo/no-business accounts keep working exactly as before).
+--
+-- NOTE: already applied directly to the production database (2026-08-04) to
+-- fix the live duplicates immediately -- this file lands it in migration
+-- history for every other/future environment. Safe to re-run anywhere,
+-- including on the already-fixed production DB: step 1 is a pure no-op once
+-- no duplicate rows remain (the merge/repoint/delete queries simply match
+-- zero rows), step 2's index and step 3's function replacement are already
+-- idempotent (IF NOT EXISTS / CREATE OR REPLACE).
 
 -- ── 1. Merge duplicate system account_groups (per business_id, per name) ──
 
