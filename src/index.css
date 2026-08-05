@@ -290,6 +290,120 @@
     --primary-glow: 172 66% 53%;
     --ring: 172 66% 46%;
   }
+
+  /* Universal Voucher Engine (Phase 1) — one class per accounting voucher
+     type, same scoped CSS-var-only override shape as .theme-quotation/
+     .theme-po above. Colors follow the Tally-inspired convention agreed
+     for RD Pro: Payment red, Receipt green, Contra blue, Journal purple,
+     Credit Note teal, Debit Note brown — each picked to stay visually
+     distinct from the Sales/Purchase Document Engine palette above. */
+  .voucher-payment {
+    --primary: 0 84% 55%;
+    --primary-hover: 0 74% 47%;
+    --primary-light: 0 100% 96%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 0 91% 65%;
+    --ring: 0 84% 55%;
+    --gradient-primary: linear-gradient(135deg, hsl(0 84% 55%), hsl(14 88% 50%));
+  }
+  .dark .voucher-payment {
+    --primary: 0 91% 68%;
+    --primary-hover: 0 84% 58%;
+    --primary-light: 0 50% 20%;
+    --primary-foreground: 0 39% 11%;
+    --primary-glow: 0 91% 74%;
+    --ring: 0 91% 68%;
+  }
+
+  .voucher-receipt {
+    --primary: 150 70% 32%;
+    --primary-hover: 150 75% 26%;
+    --primary-light: 150 76% 95%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 150 66% 42%;
+    --ring: 150 70% 32%;
+    --gradient-primary: linear-gradient(135deg, hsl(150 70% 32%), hsl(164 76% 36%));
+  }
+  .dark .voucher-receipt {
+    --primary: 150 66% 46%;
+    --primary-hover: 150 70% 38%;
+    --primary-light: 150 45% 17%;
+    --primary-foreground: 150 61% 8%;
+    --primary-glow: 150 66% 53%;
+    --ring: 150 66% 46%;
+  }
+
+  .voucher-contra {
+    --primary: 217 91% 55%;
+    --primary-hover: 217 85% 47%;
+    --primary-light: 217 100% 96%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 217 91% 65%;
+    --ring: 217 91% 55%;
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 55%), hsl(199 89% 48%));
+  }
+  .dark .voucher-contra {
+    --primary: 217 91% 68%;
+    --primary-hover: 217 91% 58%;
+    --primary-light: 217 50% 20%;
+    --primary-foreground: 217 39% 11%;
+    --primary-glow: 217 91% 74%;
+    --ring: 217 91% 68%;
+  }
+
+  .voucher-journal {
+    --primary: 271 81% 56%;
+    --primary-hover: 271 76% 48%;
+    --primary-light: 271 100% 97%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 271 83% 66%;
+    --ring: 271 81% 56%;
+    --gradient-primary: linear-gradient(135deg, hsl(271 81% 56%), hsl(288 70% 55%));
+  }
+  .dark .voucher-journal {
+    --primary: 271 83% 70%;
+    --primary-hover: 271 81% 58%;
+    --primary-light: 271 45% 22%;
+    --primary-foreground: 271 39% 11%;
+    --primary-glow: 271 83% 76%;
+    --ring: 271 83% 70%;
+  }
+
+  .voucher-credit-note {
+    --primary: 187 85% 34%;
+    --primary-hover: 187 90% 28%;
+    --primary-light: 187 76% 95%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 187 70% 44%;
+    --ring: 187 85% 34%;
+    --gradient-primary: linear-gradient(135deg, hsl(187 85% 34%), hsl(200 90% 40%));
+  }
+  .dark .voucher-credit-note {
+    --primary: 187 70% 48%;
+    --primary-hover: 187 85% 40%;
+    --primary-light: 187 45% 17%;
+    --primary-foreground: 187 61% 8%;
+    --primary-glow: 187 70% 55%;
+    --ring: 187 70% 48%;
+  }
+
+  .voucher-debit-note {
+    --primary: 25 55% 35%;
+    --primary-hover: 25 60% 28%;
+    --primary-light: 30 60% 94%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 28 60% 46%;
+    --ring: 25 55% 35%;
+    --gradient-primary: linear-gradient(135deg, hsl(25 55% 35%), hsl(15 60% 32%));
+  }
+  .dark .voucher-debit-note {
+    --primary: 28 60% 55%;
+    --primary-hover: 25 55% 45%;
+    --primary-light: 25 40% 20%;
+    --primary-foreground: 25 39% 10%;
+    --primary-glow: 28 60% 62%;
+    --ring: 28 60% 55%;
+  }
 }
 
 @layer base {

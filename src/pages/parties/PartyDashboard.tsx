@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import PartyActivityTimeline from "@/components/parties/PartyActivityTimeline";
+import PartyPricingCard from "@/components/parties/PartyPricingCard";
 import { useFormatDate } from "@/lib/dateFormat";
 
 type PartyRow = {
@@ -194,12 +195,15 @@ export default function PartyDashboard() {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader><CardTitle className="text-base">Activity Timeline</CardTitle></CardHeader>
-          <CardContent>
-            <PartyActivityTimeline partyId={party.id} />
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          {business?.id && <PartyPricingCard partyId={party.id} businessId={business.id} />}
+          <Card>
+            <CardHeader><CardTitle className="text-base">Activity Timeline</CardTitle></CardHeader>
+            <CardContent>
+              <PartyActivityTimeline partyId={party.id} />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

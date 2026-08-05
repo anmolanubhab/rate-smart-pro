@@ -1,9 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { useBusiness } from "@/hooks/useBusiness";
-import { isOwner as isOwnerRole } from "@/lib/permissions";
+import { isOwner as isOwnerRole, canAccessMaintenance } from "@/lib/permissions";
 import {
   Building2, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags,
+  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags, Wrench,
 } from "lucide-react";
 
 const items = [
@@ -70,6 +70,7 @@ export default function Settings() {
   const navigate = useNavigate();
   const { business, role } = useBusiness();
   const isOwner = isOwnerRole(role);
+  const canMaintain = canAccessMaintenance(role);
 
 
   return (
@@ -121,6 +122,27 @@ export default function Settings() {
           ))}
         </div>
       </div>
+
+      {canMaintain && (
+        <div>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1 mb-2">Administration</h2>
+          <div className="divide-y divide-border rounded-xl border bg-card shadow-sm overflow-hidden">
+            <button
+              onClick={() => navigate("/settings/maintenance")}
+              className="w-full flex items-center gap-4 px-5 py-4 hover:bg-muted/50 transition-colors text-left"
+            >
+              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Wrench className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm">Maintenance</div>
+                <div className="text-xs text-muted-foreground mt-0.5 truncate">Rebuild ledger balances and other data-recovery actions (Owner/Admin only)</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {isOwner && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 overflow-hidden">

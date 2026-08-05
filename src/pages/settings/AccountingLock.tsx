@@ -226,6 +226,7 @@ export default function AccountingLock() {
           </div>
         </section>
       )}
+
     </div>
   );
 }

@@ -20,6 +20,7 @@ export interface OrderItem {
   discount_pct: number;
   net_rate: number;
   gst_pct: number;
+  hsn?: string | null;
   total: number;
   position?: number;
   item_status?: "pending" | "partial" | "completed";
@@ -125,6 +126,7 @@ export function computeItem(item: Partial<OrderItem>): OrderItem {
     discount_pct: disc,
     net_rate: net,
     gst_pct: gstPct,
+    hsn: item.hsn ?? null,
     total,
     position: item.position,
   };
@@ -286,6 +288,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
         discount_pct: it.discount_pct,
         net_rate: it.net_rate,
         gst_pct: it.gst_pct,
+        hsn: it.hsn || null,
         total: it.total,
         position: idx,
         unit_id: it.unit_id ?? null,

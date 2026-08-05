@@ -29,6 +29,8 @@ import {
   fetchCategories, fetchUnits, fetchProductUnits, saveProductUnits,
   type MeasurementCategory, type Unit,
 } from "@/lib/units";
+import { fetchHsnDetail, searchHsnByDescription, type HsnMasterListItem } from "@/lib/hsnMaster";
+import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +54,7 @@ const EMPTY_FORM = {
   stock: "0",
   low_stock_threshold: "5",
   gst_pct: "18",
+  hsn_code: "",
   barcode: "",
   weight_kg: "",
   tracking_type: "none" as ProductTrackingType,
@@ -79,6 +82,7 @@ const PRODUCT_COLUMNS = `
   reserved_qty,
   low_stock_threshold,
   gst_pct,
+  hsn_code,
   status,
   barcode,
   weight_kg,
@@ -276,6 +280,43 @@ const Products = () => {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
+  // HSN picker — form.hsn_code is the committed value; hsnQuery is just the
+  // display/search text, so typing without selecting never silently changes
+  // the product's actual HSN reference.
+  const [hsnQuery, setHsnQuery] = useState("");
+  const [hsnResults, setHsnResults] = useState<HsnMasterListItem[]>([]);
+  const runHsnSearch = async (q: string) => {
+    setHsnQuery(q);
+    try {
+      setHsnResults(await searchHsnByDescription(q));
+    } catch {
+      setHsnResults([]);
+    }
+  };
+  const pickHsn = (item: HsnMasterListItem) => {
+    setForm((f) => ({ ...f, hsn_code: item.hsn_code, gst_pct: item.current_rate != null ? String(item.current_rate) : f.gst_pct }));
+    setHsnQuery(item.description ? `${item.hsn_code} — ${item.description}` : item.hsn_code);
+    setHsnResults([]);
+    setNameHsnResults([]);
+  };
+
+  // Auto-suggest HSN by typed product name, new products only, and only
+  // until an HSN is actually picked — no point re-suggesting once the field
+  // above already has a committed value.
+  const [nameHsnResults, setNameHsnResults] = useState<HsnMasterListItem[]>([]);
+  const debouncedName = useDebounce(form.name, 300);
+  useEffect(() => {
+    if (editing || open === false || form.hsn_code || debouncedName.trim().length < 3) {
+      setNameHsnResults([]);
+      return;
+    }
+    let cancelled = false;
+    searchHsnByDescription(debouncedName)
+      .then((r) => { if (!cancelled) setNameHsnResults(r); })
+      .catch(() => { if (!cancelled) setNameHsnResults([]); });
+    return () => { cancelled = true; };
+  }, [debouncedName, editing, open, form.hsn_code]);
+
   // Measurement Engine (Layer A + B) — categories/units come entirely from the
   // Unit Master, never hard-coded, so any custom unit a business adds shows up automatically.
   const [measCategories, setMeasCategories] = useState<MeasurementCategory[]>([]);
@@ -370,7 +411,7 @@ const Products = () => {
       const headers = [
         "Part Number", "Name", "Vehicle Model", "Category",
         "MRP (₹)", "Dealer Rate (₹)", "Stock", "Low Stock Threshold",
-        "GST %", "Barcode", "Status",
+        "HSN Code", "GST %", "Barcode", "Status",
       ];
 
       const escape = (v: string | number | null | undefined) => {
@@ -386,7 +427,7 @@ const Products = () => {
           [
             p.part_number, p.name, p.vehicle_model || "",
             p.category, p.mrp, p.dealer_rate, p.stock,
-            p.low_stock_threshold, p.gst_pct, p.barcode || "", p.status,
+            p.low_stock_threshold, p.hsn_code || "", p.gst_pct, p.barcode || "", p.status,
           ]
             .map(escape)
             .join(",")
@@ -425,6 +466,8 @@ const Products = () => {
   const openNew = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setHsnQuery("");
+    setHsnResults([]);
     setOpen(true);
   };
 
@@ -440,6 +483,7 @@ const Products = () => {
       stock: String(p.stock),
       low_stock_threshold: String(p.low_stock_threshold),
       gst_pct: String(p.gst_pct),
+      hsn_code: p.hsn_code || "",
       barcode: p.barcode || "",
       weight_kg: p.weight_kg != null ? String(p.weight_kg) : "",
       tracking_type: p.tracking_type ?? "none",
@@ -451,6 +495,8 @@ const Products = () => {
       sales_unit_id: "",
       sales_unit_factor: "1",
     });
+    setHsnQuery(p.hsn_code || "");
+    setHsnResults([]);
     setOpen(true);
     try {
       const pu = await fetchProductUnits(p.id);
@@ -465,6 +511,18 @@ const Products = () => {
       }));
     } catch {
       // non-fatal — product still opens for editing even if unit mapping fetch fails
+    }
+    // Show the HSN's description alongside its code once it loads, instead of
+    // the bare code — fetched separately (not via searchHsnByDescription,
+    // which only returns active entries) so an inactive-but-still-referenced
+    // HSN still displays correctly.
+    if (p.hsn_code) {
+      try {
+        const detail = await fetchHsnDetail(p.hsn_code);
+        if (detail?.description) setHsnQuery(`${detail.hsn_code} — ${detail.description}`);
+      } catch {
+        // non-fatal — code alone is still shown
+      }
     }
   };
 
@@ -486,6 +544,7 @@ const Products = () => {
         stock: parseFloat(form.stock) || 0,
         low_stock_threshold: parseFloat(form.low_stock_threshold) || 0,
         gst_pct: parseFloat(form.gst_pct) || 0,
+        hsn_code: form.hsn_code.trim() || null,
         barcode: form.barcode.trim() || null,
         weight_kg: form.weight_kg.trim() ? parseFloat(form.weight_kg) : null,
         tracking_type: form.tracking_type,
@@ -711,7 +770,10 @@ const Products = () => {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{p.gst_pct}%</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {p.gst_pct}%
+                        {p.hsn_code && <div className="text-[10px] text-muted-foreground font-mono">{p.hsn_code}</div>}
+                      </td>
                       <td className="px-4 py-2.5">
                         {p.status === "inactive" ? (
                           <Badge variant="outline" className="border-muted-foreground/40 text-muted-foreground gap-1">
@@ -775,11 +837,25 @@ const Products = () => {
             </div>
             <div className="space-y-1.5">
               <Label>Product Name *</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              <DocumentEntitySearchField
+                results={nameHsnResults}
+                getKey={(h) => h.hsn_code}
+                query={form.name}
+                onQueryChange={(v) => setForm({ ...form, name: v })}
+                onSelect={(h) => pickHsn(h)}
                 placeholder="e.g. Brake Shoe Set"
+                inputClassName="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                renderRow={(h) => (
+                  <>
+                    <span className="font-mono font-semibold">{h.hsn_code}</span>
+                    {h.description && <span className="text-muted-foreground"> — {h.description}</span>}
+                    {h.current_rate != null && <span className="ml-1 text-muted-foreground">({h.current_rate}%)</span>}
+                  </>
+                )}
               />
+              {nameHsnResults.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">Matching HSN codes found — pick one to auto-fill HSN &amp; GST%.</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Vehicle Model</Label>
@@ -837,12 +913,32 @@ const Products = () => {
               />
             </div>
             <div className="space-y-1.5">
+              <Label>HSN / SAC Code</Label>
+              <DocumentEntitySearchField
+                results={hsnResults}
+                getKey={(h) => h.hsn_code}
+                query={hsnQuery}
+                onQueryChange={runHsnSearch}
+                onSelect={(h) => pickHsn(h)}
+                placeholder="Search by code or description…"
+                inputClassName="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                renderRow={(h) => (
+                  <>
+                    <span className="font-mono font-semibold">{h.hsn_code}</span>
+                    {h.description && <span className="text-muted-foreground"> — {h.description}</span>}
+                    {h.current_rate != null && <span className="ml-1 text-muted-foreground">({h.current_rate}%)</span>}
+                  </>
+                )}
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label>GST %</Label>
               <Input
                 type="number"
                 value={form.gst_pct}
                 onChange={(e) => setForm({ ...form, gst_pct: e.target.value })}
               />
+              <p className="text-[11px] text-muted-foreground">Auto-filled from HSN; editable for exceptions.</p>
             </div>
             <div className="space-y-1.5">
               <Label>Barcode</Label>

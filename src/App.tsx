@@ -1,6 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -50,11 +50,22 @@ const BalanceSheet = lazy(() => import("./pages/accounts/BalanceSheet"));
 const PartyLedger = lazy(() => import("./pages/accounts/PartyLedger")); // NEW
 const Receivables = lazy(() => import("./pages/accounts/Receivables"));
 const Payables = lazy(() => import("./pages/accounts/Payables"));
+const GstDashboard = lazy(() => import("./pages/gst/GstDashboard"));
+const PricingTestBench = lazy(() => import("./pages/pricing/PricingTestBench"));
+const PriceLists = lazy(() => import("./pages/pricing/PriceLists"));
+const PriceListEditor = lazy(() => import("./pages/pricing/PriceListEditor"));
+const PricingRules = lazy(() => import("./pages/pricing/PricingRules"));
+const PricingRuleEditor = lazy(() => import("./pages/pricing/PricingRuleEditor"));
 const GstSummary = lazy(() => import("./pages/gst/GstSummary"));
 const Gstr3B = lazy(() => import("./pages/gst/Gstr3B"));
 const Gstr1 = lazy(() => import("./pages/gst/Gstr1"));
 const TaxRegister = lazy(() => import("./pages/gst/TaxRegister"));
 const HsnSummary = lazy(() => import("./pages/gst/HsnSummary"));
+const HsnSummaryPurchase = lazy(() => import("./pages/gst/HsnSummaryPurchase"));
+const HsnMaster = lazy(() => import("./pages/gst/HsnMaster"));
+const GstConfiguration = lazy(() => import("./pages/gst/GstConfiguration"));
+const EInvoiceRegister = lazy(() => import("./pages/gst/EInvoiceRegister"));
+const EWayBillRegister = lazy(() => import("./pages/gst/EWayBillRegister"));
 const GstFiling = lazy(() => import("./pages/gst/GstFiling"));
 const Gstr2Reconciliation = lazy(() => import("./pages/gst/Gstr2Reconciliation"));
 const Gstr9 = lazy(() => import("./pages/gst/Gstr9"));
@@ -70,6 +81,7 @@ const MeasurementUnits = lazy(() => import("./pages/settings/MeasurementUnits"))
 const AccountingLock = lazy(() => import("./pages/settings/AccountingLock"));
 const FinancialNoteCategories = lazy(() => import("./pages/settings/FinancialNoteCategories"));
 const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
+const Maintenance = lazy(() => import("./pages/settings/Maintenance"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
@@ -86,12 +98,25 @@ const VoucherList   = lazy(() => import("./pages/accounting/VoucherList"));
 const VoucherForm   = lazy(() => import("./pages/accounting/VoucherForm"));
 const VoucherDetail = lazy(() => import("./pages/accounting/VoucherDetail"));
 
+// Universal Voucher Engine (Phase 1) — keyboard-first Payment/Receipt/Contra/
+// Journal/Credit Note/Debit Note entry. VoucherForm above remains the entry
+// point for the types this engine doesn't cover (Sales/Purchase/Opening
+// Balance) until those migrate to the Document Engine in a later phase.
+const PaymentVoucher = lazy(() => import("./pages/vouchers/PaymentVoucher"));
+const ReceiptVoucher = lazy(() => import("./pages/vouchers/ReceiptVoucher"));
+const ContraVoucher = lazy(() => import("./pages/vouchers/ContraVoucher"));
+const JournalVoucher = lazy(() => import("./pages/vouchers/JournalVoucher"));
+const CreditNoteVoucher = lazy(() => import("./pages/vouchers/CreditNoteVoucher"));
+const DebitNoteVoucher = lazy(() => import("./pages/vouchers/DebitNoteVoucher"));
+
 const PurchaseDashboard = lazy(() => import("./pages/purchase/PurchaseDashboard"));
 const PurchaseOrders = lazy(() => import("./pages/purchase/PurchaseOrders"));
 const PurchaseGRN = lazy(() => import("./pages/purchase/PurchaseGRN"));
 const GRNList = lazy(() => import("./pages/purchase/GRNList"));
 const GRNDetail = lazy(() => import("./pages/purchase/GRNDetail"));
 const PurchaseInvoices = lazy(() => import("./pages/purchase/PurchaseInvoices"));
+const CreatePurchaseInvoice = lazy(() => import("./pages/purchase/CreatePurchaseInvoice"));
+const PurchaseInvoiceDetail = lazy(() => import("./pages/purchase/PurchaseInvoiceDetail"));
 const PurchasePayments = lazy(() => import("./pages/purchase/PurchasePayments"));
 const PurchaseReports = lazy(() => import("./pages/purchase/PurchaseReports"));
 const CreatePurchaseOrder = lazy(() => import("./pages/purchase/CreatePurchaseOrder"));
@@ -126,10 +151,9 @@ const AbcAnalysis          = lazy(() => import("./pages/reports/inventory/AbcAna
 const FsnAnalysis          = lazy(() => import("./pages/reports/inventory/FsnAnalysis"));
 
 // Phase 5 — Dedicated Accounts screens
-const JournalVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.JournalVoucher })));
-const ContraVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.ContraVoucher })));
-const PaymentVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.PaymentVoucher })));
-const ReceiptVoucher = lazy(() => import("./pages/accounts/VoucherTypes").then(m => ({ default: m.ReceiptVoucher })));
+// (Journal/Contra/Payment/Receipt mock pages from ./pages/accounts/VoucherTypes
+// retired in favor of the Universal Voucher Engine pages imported above —
+// see the /accounts/journal etc. routes below, now pointed at those instead.)
 const DebitNote = lazy(() => import("./pages/accounts/DebitNote"));
 const CreditNote = lazy(() => import("./pages/accounts/CreditNote"));
 const CashFlow = lazy(() => import("./pages/accounts/CashFlow"));
@@ -150,6 +174,53 @@ const queryClient = new QueryClient();
 const DealerRedirect = ({ to }: { to: string }) => {
   const loc = useLocation();
   return <Navigate to={`${to}${loc.search}`} replace />;
+};
+
+// Maps the Universal Voucher Engine's covered types to their route. Sales,
+// Purchase, and Opening Balance are NOT covered (they stay on VoucherForm
+// until a later phase), so those keys are intentionally absent.
+const VOUCHER_ENGINE_PATH: Record<string, string> = {
+  payment: "/vouchers/payment",
+  receipt: "/vouchers/receipt",
+  contra: "/vouchers/contra",
+  journal: "/vouchers/journal",
+  credit_note: "/vouchers/credit-note",
+  debit_note: "/vouchers/debit-note",
+};
+
+// /accounting/vouchers/new?type=... — send the 6 covered types to their new
+// keyboard-first entry screen; anything else (or no type) keeps using the
+// old generic VoucherForm (still rendered by the caller as a fallback).
+const NewVoucherRedirect = ({ fallback }: { fallback: React.ReactNode }) => {
+  const [params] = useSearchParams();
+  const dbType = params.get("type");
+  const path = dbType ? VOUCHER_ENGINE_PATH[dbType] : VOUCHER_ENGINE_PATH.journal;
+  if (!path) return <>{fallback}</>;
+  return <Navigate to={path} replace />;
+};
+
+// /accounting/vouchers/:id/edit — same idea, but the type is only known
+// after fetching the voucher, so this renders the fallback until resolved.
+const EditVoucherRedirect = ({ fallback }: { fallback: React.ReactNode }) => {
+  const { id } = useParams<{ id: string }>();
+  const [path, setPath] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!id) return;
+    import("@/lib/voucherService").then(({ getVoucher, typeToDb }) =>
+      getVoucher(id).then((v) => {
+        if (cancelled) return;
+        const dbType = v ? typeToDb(v.voucher_type) : null;
+        setPath(dbType && VOUCHER_ENGINE_PATH[dbType] ? `${VOUCHER_ENGINE_PATH[dbType]}/${id}/edit` : null);
+      }).catch(() => !cancelled && setPath(null))
+    );
+    return () => { cancelled = true; };
+  }, [id]);
+
+  if (path === undefined) return <RouteFallback />;
+  if (path === null) return <>{fallback}</>;
+  return <Navigate to={path} replace />;
 };
 
 const RouteFallback = () => (
@@ -225,14 +296,39 @@ const App = () => (
               <Route path="/accounts/payables" element={L(<Payables />)} />
               {/* Voucher Engine — new routes */}
               <Route path="/accounting/vouchers" element={L(<VoucherList />)} />
-              <Route path="/accounting/vouchers/new" element={L(<VoucherForm />)} />
-              <Route path="/accounting/vouchers/:id/edit" element={L(<VoucherForm />)} />
+              <Route path="/accounting/vouchers/new" element={L(<NewVoucherRedirect fallback={<VoucherForm />} />)} />
+              <Route path="/accounting/vouchers/:id/edit" element={L(<EditVoucherRedirect fallback={<VoucherForm />} />)} />
               <Route path="/accounting/vouchers/:id" element={L(<VoucherDetail />)} />
+
+              {/* Universal Voucher Engine (Phase 1) — Payment/Receipt/Contra/Journal/Credit Note/Debit Note */}
+              <Route path="/vouchers/payment" element={L(<PaymentVoucher />)} />
+              <Route path="/vouchers/payment/:id/edit" element={L(<PaymentVoucher />)} />
+              <Route path="/vouchers/receipt" element={L(<ReceiptVoucher />)} />
+              <Route path="/vouchers/receipt/:id/edit" element={L(<ReceiptVoucher />)} />
+              <Route path="/vouchers/contra" element={L(<ContraVoucher />)} />
+              <Route path="/vouchers/contra/:id/edit" element={L(<ContraVoucher />)} />
+              <Route path="/vouchers/journal" element={L(<JournalVoucher />)} />
+              <Route path="/vouchers/journal/:id/edit" element={L(<JournalVoucher />)} />
+              <Route path="/vouchers/credit-note" element={L(<CreditNoteVoucher />)} />
+              <Route path="/vouchers/credit-note/:id/edit" element={L(<CreditNoteVoucher />)} />
+              <Route path="/vouchers/debit-note" element={L(<DebitNoteVoucher />)} />
+              <Route path="/vouchers/debit-note/:id/edit" element={L(<DebitNoteVoucher />)} />
+              <Route path="/gst/dashboard" element={L(<GstDashboard />)} />
+              <Route path="/pricing/test-bench" element={L(<PricingTestBench />)} />
+              <Route path="/pricing/price-lists" element={L(<PriceLists />)} />
+              <Route path="/pricing/price-lists/:id" element={L(<PriceListEditor />)} />
+              <Route path="/pricing/rules" element={L(<PricingRules />)} />
+              <Route path="/pricing/rules/:id" element={L(<PricingRuleEditor />)} />
               <Route path="/gst/summary" element={L(<GstSummary />)} />
               <Route path="/gst/gstr-3b" element={L(<Gstr3B />)} />
               <Route path="/gst/gstr-1" element={L(<Gstr1 />)} />
               <Route path="/gst/tax-register" element={L(<TaxRegister />)} />
               <Route path="/gst/hsn-summary" element={L(<HsnSummary />)} />
+              <Route path="/gst/hsn-summary-purchase" element={L(<HsnSummaryPurchase />)} />
+              <Route path="/gst/hsn-master" element={L(<HsnMaster />)} />
+              <Route path="/gst/configuration" element={L(<GstConfiguration />)} />
+              <Route path="/gst/einvoice-register" element={L(<EInvoiceRegister />)} />
+              <Route path="/gst/ewaybill-register" element={L(<EWayBillRegister />)} />
               <Route path="/gst/filing" element={L(<GstFiling />)} />
               <Route path="/gst/gstr-2-reconciliation" element={L(<Gstr2Reconciliation />)} />
               <Route path="/gst/gstr-9" element={L(<Gstr9 />)} />
@@ -248,6 +344,7 @@ const App = () => (
               <Route path="/settings/financial-note-categories" element={L(<FinancialNoteCategories />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
               <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
+              <Route path="/settings/maintenance" element={L(<Maintenance />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/sales/receive-payment" element={L(<ReceivePayment />)} />
               <Route path="/sales/picking-list" element={L(<PickingList />)} />
@@ -267,6 +364,8 @@ const App = () => (
               <Route path="/purchase/grn/edit/:id" element={L(<PurchaseGRN />)} />
               <Route path="/purchase/grn/:id" element={L(<GRNDetail />)} />
               <Route path="/purchase/invoices" element={L(<PurchaseInvoices />)} />
+              <Route path="/purchase/invoices/new" element={L(<CreatePurchaseInvoice />)} />
+              <Route path="/purchase/invoices/:id" element={L(<PurchaseInvoiceDetail />)} />
               <Route path="/purchase/payments" element={L(<PurchasePayments />)} />
               <Route path="/purchase/reports" element={L(<PurchaseReports />)} />
               {/* Phase 3 — Purchase mocks */}
