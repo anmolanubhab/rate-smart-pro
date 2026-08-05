@@ -38,7 +38,12 @@ type Row = {
   status: string;
   cancel_reason: string | null;
   created_at: string;
-  sales_invoices: { invoice_number: string; party_name: string | null; invoice_date: string } | null;
+  synced_at: string | null;
+  sync_error: string | null;
+  sales_invoices: {
+    invoice_number: string; party_name: string | null; invoice_date: string;
+    subtotal: number | null; discount_total: number | null; party_snapshot: any;
+  } | null;
 };
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -48,6 +53,16 @@ const STATUS_TONE: Record<string, string> = {
   cancelled: "bg-muted-foreground/60 hover:bg-muted-foreground/60",
   failed: "bg-destructive hover:bg-destructive",
 };
+
+// synced_at/sync_error are placeholders for a future API-mode provider (see
+// src/lib/gstProvider.ts) — nothing writes them yet, so every record reads
+// as "Manual" today. Kept as a real column read (not a hardcoded label) so
+// this needs zero changes once a provider starts populating them.
+function syncStatus(r: Pick<Row, "synced_at" | "sync_error">): { label: string; className: string } {
+  if (r.sync_error) return { label: "Error", className: "border-destructive/40 text-destructive bg-destructive/10" };
+  if (r.synced_at) return { label: "Synced", className: "border-emerald-500/40 text-emerald-600 bg-emerald-500/10" };
+  return { label: "Manual", className: "border-border text-muted-foreground" };
+}
 
 export default function EInvoiceRegister() {
   const { business, role, permissions } = useBusiness();
@@ -88,7 +103,7 @@ export default function EInvoiceRegister() {
 
       let query = supabase
         .from("einvoice_records" as any)
-        .select("id, invoice_id, irn, ack_no, ack_date, status, cancel_reason, created_at", { count: "exact" })
+        .select("id, invoice_id, irn, ack_no, ack_date, status, cancel_reason, created_at, synced_at, sync_error", { count: "exact" })
         .eq("business_id", business!.id)
         .order("created_at", { ascending: false })
         .range(page * pageSize, page * pageSize + pageSize - 1);
@@ -100,7 +115,7 @@ export default function EInvoiceRegister() {
       const records = (data ?? []) as unknown as Omit<Row, "sales_invoices">[];
       const invoiceIds = Array.from(new Set(records.map((r) => r.invoice_id)));
       const { data: invoices, error: invErr } = invoiceIds.length
-        ? await supabase.from("sales_invoices").select("id, invoice_number, party_name, invoice_date").in("id", invoiceIds)
+        ? await supabase.from("sales_invoices").select("id, invoice_number, party_name, invoice_date, subtotal, discount_total, party_snapshot").in("id", invoiceIds)
         : { data: [], error: null };
       if (invErr) throw invErr;
       const invoiceById = new Map((invoices ?? []).map((inv) => [inv.id, inv]));
@@ -174,30 +189,43 @@ export default function EInvoiceRegister() {
                 <TableHead>Invoice #</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Invoice Date</TableHead>
+                <TableHead>GSTIN</TableHead>
+                <TableHead className="text-right">Taxable Value</TableHead>
                 <TableHead>IRN</TableHead>
+                <TableHead>Ack No</TableHead>
                 <TableHead>Ack Date</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>IRN Status</TableHead>
+                <TableHead>Sync Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {q.isLoading && <TableRow><TableCell colSpan={7} className="text-center text-sm py-8 text-muted-foreground">Loading…</TableCell></TableRow>}
+              {q.isLoading && <TableRow><TableCell colSpan={11} className="text-center text-sm py-8 text-muted-foreground">Loading…</TableCell></TableRow>}
               {q.isError && (
-                <TableRow><TableCell colSpan={7} className="text-center text-sm py-8 text-destructive">
+                <TableRow><TableCell colSpan={11} className="text-center text-sm py-8 text-destructive">
                   Could not load e-Invoices: {(q.error as any)?.message ?? "Unknown error"}
                 </TableCell></TableRow>
               )}
               {!q.isLoading && !q.isError && (q.data?.rows ?? []).length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-sm py-8 text-muted-foreground">No e-Invoices yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center text-sm py-8 text-muted-foreground">No e-Invoices yet.</TableCell></TableRow>
               )}
-              {(q.data?.rows ?? []).map((r) => (
+              {(q.data?.rows ?? []).map((r) => {
+                const taxable = r.sales_invoices
+                  ? Number(r.sales_invoices.subtotal ?? 0) - Number(r.sales_invoices.discount_total ?? 0)
+                  : null;
+                const sync = syncStatus(r);
+                return (
                 <TableRow key={r.id}>
                   <TableCell className="font-mono text-xs">{r.sales_invoices?.invoice_number ?? "—"}</TableCell>
                   <TableCell className="text-sm">{r.sales_invoices?.party_name ?? "—"}</TableCell>
                   <TableCell className="text-xs">{r.sales_invoices?.invoice_date ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{r.sales_invoices?.party_snapshot?.gst ?? "—"}</TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">{taxable != null ? `₹ ${Math.round(taxable).toLocaleString("en-IN")}` : "—"}</TableCell>
                   <TableCell className="font-mono text-[11px] max-w-[220px] truncate" title={r.irn ?? ""}>{r.irn ?? "—"}</TableCell>
+                  <TableCell className="text-xs">{r.ack_no ?? "—"}</TableCell>
                   <TableCell className="text-xs">{r.ack_date ? new Date(r.ack_date).toLocaleDateString("en-IN") : "—"}</TableCell>
                   <TableCell><Badge className={STATUS_TONE[r.status] ?? ""}>{r.status}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={sync.className}>{sync.label}</Badge></TableCell>
                   <TableCell className="text-right">
                     {editable && r.status !== "cancelled" && (
                       <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(r)}>
@@ -206,7 +234,8 @@ export default function EInvoiceRegister() {
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </div>

@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PartyActivityTimeline from "@/components/parties/PartyActivityTimeline";
+import PartyPriceListSummary from "@/components/parties/PartyPriceListSummary";
 import { ProductsPagination } from "@/components/ProductsPagination";
 import { useDebounce } from "@/hooks/useDebounce";
 import PartyExcelUpload from "@/components/PartyExcelUpload";
@@ -903,6 +904,7 @@ const Parties = () => {
                   <Label>Pricing Notes</Label>
                   <Textarea value={form.pricing_notes} onChange={e => setForm({...form, pricing_notes: e.target.value})} rows={2} placeholder="Special pricing terms..." />
                 </div>
+                <PartyPriceListSummary partyId={editing?.id} />
               </div>
             )}
 

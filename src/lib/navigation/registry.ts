@@ -846,10 +846,11 @@ export const NAV_ITEMS: NavItem[] = [
     id: "gst-dashboard",
     title: "GST Dashboard",
     description: "At-a-glance output tax, ITC, and net payable across periods",
+    route: "/gst/dashboard",
     icon: Activity,
     module: "GST",
     parentId: "gst-group-dashboard",
-    disabled: true,
+    keywords: ["dashboard", "output tax", "itc", "net payable", "overview"],
   },
 
   {
@@ -1037,6 +1038,44 @@ export const NAV_ITEMS: NavItem[] = [
     module: "GST",
     parentId: "gst-group-settings",
     keywords: ["gstin", "registration", "e-invoice", "e-way bill", "config"],
+  },
+
+  // ==========================================================================
+  // PRICING & PROMOTION ENGINE
+  // ==========================================================================
+  // Phase 1B — only a diagnostic tool exists so far (no Price List/Discount/
+  // Scheme UI yet, that's Phase 1C/1D/2). Gated the same way GST
+  // Configuration is (settings.edit) — this reads raw pricing_rules data,
+  // not a general-access screen.
+  {
+    id: "pricing-price-lists",
+    title: "Price Lists",
+    description: "Retail/Wholesale/Dealer/... price lists the Pricing Engine resolves against",
+    route: "/pricing/price-lists",
+    icon: Tags,
+    module: "Pricing",
+    order: 1,
+    keywords: ["pricing", "price list", "dealer price", "wholesale", "retail"],
+  },
+  {
+    id: "pricing-rules",
+    title: "Pricing Rules",
+    description: "Party/Item/Category discount rules the Pricing Engine applies on top of the base price list",
+    route: "/pricing/rules",
+    icon: Zap,
+    module: "Pricing",
+    order: 2,
+    keywords: ["pricing", "discount", "rule", "scheme", "party discount", "item discount"],
+  },
+  {
+    id: "pricing-test-bench",
+    title: "Pricing Test Bench",
+    description: "Run calculatePricing() against real data — trace, explain, rejected rules, snapshot preview",
+    route: "/pricing/test-bench",
+    icon: Calculator,
+    module: "Pricing",
+    order: 3,
+    keywords: ["pricing", "discount", "scheme", "test", "trace", "explain", "rule engine"],
   },
 
   // ==========================================================================

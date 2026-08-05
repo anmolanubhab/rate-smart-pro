@@ -1,12 +1,16 @@
 import { useState } from "react";
 import { toast } from "sonner";
+import { Download, Eye, EyeOff } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { useBusiness } from "@/hooks/useBusiness";
+import { fetchGstComplianceConfig } from "@/lib/accountingLock";
+import { getGstProvider } from "@/lib/gstProvider";
 
 type Props = {
   open: boolean;
@@ -15,11 +19,34 @@ type Props = {
   invoiceNumber: string;
 };
 
+function downloadJson(payload: unknown, filename: string) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invoiceNumber }: Props) {
+  const { business } = useBusiness();
   const [busy, setBusy] = useState(false);
+
+  // Drives which GSTProvider handles generate/record/cancel below. Only
+  // "manual" exists today (see src/lib/gstProvider.ts) — the moment a real
+  // provider lands, changing Integration Mode in GST Configuration is
+  // enough to switch this dialog over, no changes needed here.
+  const { data: gstConfig } = useQuery({
+    queryKey: ["gst-compliance-config", business?.id],
+    enabled: !!business?.id,
+    queryFn: () => fetchGstComplianceConfig(business!.id),
+  });
+  const provider = getGstProvider(gstConfig?.gst_integration_mode ?? "manual");
 
   const [einvoicePayload, setEinvoicePayload] = useState<any>(null);
   const [einvoiceRecordId, setEinvoiceRecordId] = useState<string | null>(null);
+  const [showEinvoiceJson, setShowEinvoiceJson] = useState(true);
   const [irn, setIrn] = useState("");
   const [ackNo, setAckNo] = useState("");
   const [ackDate, setAckDate] = useState("");
@@ -29,18 +56,18 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
   const [distanceKm, setDistanceKm] = useState("");
   const [ewayPayload, setEwayPayload] = useState<any>(null);
   const [ewayRecordId, setEwayRecordId] = useState<string | null>(null);
+  const [showEwayJson, setShowEwayJson] = useState(true);
   const [ewayBillNo, setEwayBillNo] = useState("");
   const [validUntil, setValidUntil] = useState("");
 
   const generateEinvoice = async () => {
     setBusy(true);
     try {
-      const { data, error } = await supabase.rpc("einvoice_generate_payload" as never, { _invoice_id: invoiceId } as never);
-      if (error) throw error;
-      const result = data as any;
+      const result = await provider.generateIRN(invoiceId);
       setEinvoicePayload(result.payload);
-      setEinvoiceRecordId(result.record_id);
-      toast.success("e-Invoice payload generated — ready to submit via your configured GSP.");
+      setEinvoiceRecordId(result.recordId);
+      setShowEinvoiceJson(true);
+      toast.success("IRN JSON generated — ready to submit via your configured GSP.");
     } catch (e: any) {
       toast.error(e.message ?? "Could not generate e-Invoice payload");
     } finally {
@@ -53,11 +80,10 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
     if (!irn.trim()) { toast.error("IRN is required"); return; }
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("einvoice_record_response" as never, {
-        _record_id: einvoiceRecordId, _irn: irn, _ack_no: ackNo || null,
-        _ack_date: ackDate ? new Date(ackDate).toISOString() : null, _signed_qr_code: qrCode || null,
-      } as never);
-      if (error) throw error;
+      await provider.recordIrnResponse(
+        einvoiceRecordId, irn, ackNo || null,
+        ackDate ? new Date(ackDate).toISOString() : null, qrCode || null,
+      );
       toast.success("IRN recorded — e-Invoice marked generated");
     } catch (e: any) {
       toast.error(e.message ?? "Could not record e-Invoice response");
@@ -71,10 +97,7 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
     if (!einvoiceRecordId) return;
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("einvoice_cancel_record" as never, {
-        _record_id: einvoiceRecordId, _reason: einvoiceCancelReason || null,
-      } as never);
-      if (error) throw error;
+      await provider.cancelIRN(einvoiceRecordId, einvoiceCancelReason || null);
       toast.success("e-Invoice cancelled");
       setEinvoiceRecordId(null);
       setEinvoicePayload(null);
@@ -89,15 +112,11 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
   const generateEway = async () => {
     setBusy(true);
     try {
-      const { data, error } = await supabase.rpc("ewaybill_generate_payload" as never, {
-        _invoice_id: invoiceId, _vehicle_number: vehicleNumber || null,
-        _distance_km: distanceKm ? Number(distanceKm) : null,
-      } as never);
-      if (error) throw error;
-      const result = data as any;
+      const result = await provider.generateEWay(invoiceId, vehicleNumber || null, distanceKm ? Number(distanceKm) : null);
       setEwayPayload(result.payload);
-      setEwayRecordId(result.record_id);
-      toast.success("e-Way Bill payload generated — ready to submit via your configured GSP.");
+      setEwayRecordId(result.recordId);
+      setShowEwayJson(true);
+      toast.success("e-Way Bill JSON generated — ready to submit via your configured GSP.");
     } catch (e: any) {
       toast.error(e.message ?? "Could not generate e-Way Bill payload");
     } finally {
@@ -110,10 +129,7 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
     if (!ewayRecordId) return;
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("ewaybill_cancel_record" as never, {
-        _record_id: ewayRecordId, _reason: ewayCancelReason || null,
-      } as never);
-      if (error) throw error;
+      await provider.cancelEWay(ewayRecordId, ewayCancelReason || null);
       toast.success("e-Way Bill cancelled");
       setEwayRecordId(null);
       setEwayPayload(null);
@@ -130,11 +146,7 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
     if (!ewayBillNo.trim()) { toast.error("e-Way Bill number is required"); return; }
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("ewaybill_record_response" as never, {
-        _record_id: ewayRecordId, _eway_bill_no: ewayBillNo,
-        _valid_until: validUntil ? new Date(validUntil).toISOString() : null,
-      } as never);
-      if (error) throw error;
+      await provider.recordEwayResponse(ewayRecordId, ewayBillNo, validUntil ? new Date(validUntil).toISOString() : null);
       toast.success("e-Way Bill number recorded");
     } catch (e: any) {
       toast.error(e.message ?? "Could not record e-Way Bill response");
@@ -161,23 +173,36 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
           </TabsList>
 
           <TabsContent value="einvoice" className="space-y-3 mt-3">
-            <Button size="sm" onClick={generateEinvoice} disabled={busy}>Generate Payload</Button>
-            {einvoicePayload && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={generateEinvoice} disabled={busy}>Generate IRN JSON</Button>
+              {einvoicePayload && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => setShowEinvoiceJson((s) => !s)}>
+                    {showEinvoiceJson ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                    {showEinvoiceJson ? "Hide JSON" : "View JSON"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => downloadJson(einvoicePayload, `irn-${invoiceNumber}.json`)}>
+                    <Download className="h-3.5 w-3.5 mr-1" /> Download JSON
+                  </Button>
+                </>
+              )}
+            </div>
+            {einvoicePayload && showEinvoiceJson && (
               <pre className="text-[11px] bg-muted rounded-lg p-3 overflow-auto max-h-52">
                 {JSON.stringify(einvoicePayload, null, 2)}
               </pre>
             )}
             {einvoiceRecordId && (
               <div className="space-y-2 border-t pt-3">
-                <Badge variant="outline">Record ready — enter the IRP/GSP response</Badge>
-                <div className="grid grid-cols-2 gap-2">
+                <Badge variant="outline">Update GST Response — enter the IRP/GSP response</Badge>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="space-y-1"><Label className="text-xs">IRN</Label><Input value={irn} onChange={(e) => setIrn(e.target.value)} /></div>
                   <div className="space-y-1"><Label className="text-xs">Ack No</Label><Input value={ackNo} onChange={(e) => setAckNo(e.target.value)} /></div>
                   <div className="space-y-1"><Label className="text-xs">Ack Date</Label><Input type="datetime-local" value={ackDate} onChange={(e) => setAckDate(e.target.value)} /></div>
                   <div className="space-y-1"><Label className="text-xs">Signed QR Code</Label><Input value={qrCode} onChange={(e) => setQrCode(e.target.value)} /></div>
                 </div>
-                <Button size="sm" variant="outline" onClick={recordEinvoiceResponse} disabled={busy}>Record IRN</Button>
-                <div className="flex items-end gap-2 pt-2 border-t">
+                <Button size="sm" variant="outline" onClick={recordEinvoiceResponse} disabled={busy}>Update GST Response</Button>
+                <div className="flex flex-col sm:flex-row sm:items-end gap-2 pt-2 border-t">
                   <div className="flex-1 space-y-1"><Label className="text-xs">Cancel reason (optional)</Label><Input value={einvoiceCancelReason} onChange={(e) => setEinvoiceCancelReason(e.target.value)} /></div>
                   <Button size="sm" variant="destructive" onClick={cancelEinvoice} disabled={busy}>Cancel e-Invoice</Button>
                 </div>
@@ -186,25 +211,38 @@ export default function EInvoiceEwayDialog({ open, onOpenChange, invoiceId, invo
           </TabsContent>
 
           <TabsContent value="eway" className="space-y-3 mt-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="space-y-1"><Label className="text-xs">Vehicle Number</Label><Input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="BR01AB1234" /></div>
               <div className="space-y-1"><Label className="text-xs">Distance (km)</Label><Input type="number" value={distanceKm} onChange={(e) => setDistanceKm(e.target.value)} /></div>
             </div>
-            <Button size="sm" onClick={generateEway} disabled={busy}>Generate Payload</Button>
-            {ewayPayload && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={generateEway} disabled={busy}>Generate e-Way JSON</Button>
+              {ewayPayload && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => setShowEwayJson((s) => !s)}>
+                    {showEwayJson ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                    {showEwayJson ? "Hide JSON" : "View JSON"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => downloadJson(ewayPayload, `eway-${invoiceNumber}.json`)}>
+                    <Download className="h-3.5 w-3.5 mr-1" /> Download JSON
+                  </Button>
+                </>
+              )}
+            </div>
+            {ewayPayload && showEwayJson && (
               <pre className="text-[11px] bg-muted rounded-lg p-3 overflow-auto max-h-52">
                 {JSON.stringify(ewayPayload, null, 2)}
               </pre>
             )}
             {ewayRecordId && (
               <div className="space-y-2 border-t pt-3">
-                <Badge variant="outline">Record ready — enter the govt portal response</Badge>
-                <div className="grid grid-cols-2 gap-2">
+                <Badge variant="outline">Update GST Response — enter the govt portal response</Badge>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="space-y-1"><Label className="text-xs">e-Way Bill No</Label><Input value={ewayBillNo} onChange={(e) => setEwayBillNo(e.target.value)} /></div>
                   <div className="space-y-1"><Label className="text-xs">Valid Until</Label><Input type="datetime-local" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></div>
                 </div>
-                <Button size="sm" variant="outline" onClick={recordEwayResponse} disabled={busy}>Record e-Way Bill No</Button>
-                <div className="flex items-end gap-2 pt-2 border-t">
+                <Button size="sm" variant="outline" onClick={recordEwayResponse} disabled={busy}>Update GST Response</Button>
+                <div className="flex flex-col sm:flex-row sm:items-end gap-2 pt-2 border-t">
                   <div className="flex-1 space-y-1"><Label className="text-xs">Cancel reason (optional)</Label><Input value={ewayCancelReason} onChange={(e) => setEwayCancelReason(e.target.value)} /></div>
                   <Button size="sm" variant="destructive" onClick={cancelEway} disabled={busy}>Cancel e-Way Bill</Button>
                 </div>

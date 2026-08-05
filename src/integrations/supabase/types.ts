@@ -91,12 +91,20 @@ export type Database = {
           allow_negative_stock: boolean
           business_id: string
           date_format: string
+          default_place_of_supply: string | null
+          enable_einvoice: boolean
+          enable_ewaybill: boolean
           financial_note_gst_mode: string
           financial_note_ledger_mode: string
+          gst_integration_mode: string
+          gst_return_frequency: string
           lock_date: string | null
           locked_at: string | null
           locked_by: string | null
+          max_discount_pct: number | null
+          minimum_margin_pct: number | null
           permission_mode: string
+          pricing_policy: string
           require_hsn_on_invoice: boolean
           updated_at: string
         }
@@ -104,12 +112,20 @@ export type Database = {
           allow_negative_stock?: boolean
           business_id: string
           date_format?: string
+          default_place_of_supply?: string | null
+          enable_einvoice?: boolean
+          enable_ewaybill?: boolean
           financial_note_gst_mode?: string
           financial_note_ledger_mode?: string
+          gst_integration_mode?: string
+          gst_return_frequency?: string
           lock_date?: string | null
           locked_at?: string | null
           locked_by?: string | null
+          max_discount_pct?: number | null
+          minimum_margin_pct?: number | null
           permission_mode?: string
+          pricing_policy?: string
           require_hsn_on_invoice?: boolean
           updated_at?: string
         }
@@ -117,12 +133,20 @@ export type Database = {
           allow_negative_stock?: boolean
           business_id?: string
           date_format?: string
+          default_place_of_supply?: string | null
+          enable_einvoice?: boolean
+          enable_ewaybill?: boolean
           financial_note_gst_mode?: string
           financial_note_ledger_mode?: string
+          gst_integration_mode?: string
+          gst_return_frequency?: string
           lock_date?: string | null
           locked_at?: string | null
           locked_by?: string | null
+          max_discount_pct?: number | null
+          minimum_margin_pct?: number | null
           permission_mode?: string
+          pricing_policy?: string
           require_hsn_on_invoice?: boolean
           updated_at?: string
         }
@@ -1566,49 +1590,6 @@ export type Database = {
           },
         ]
       }
-      customer_price_mapping: {
-        Row: {
-          business_id: string | null
-          id: string
-          party_id: string | null
-          price_list_id: string | null
-        }
-        Insert: {
-          business_id?: string | null
-          id?: string
-          party_id?: string | null
-          price_list_id?: string | null
-        }
-        Update: {
-          business_id?: string | null
-          id?: string
-          party_id?: string | null
-          price_list_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "customer_price_mapping_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "customer_price_mapping_party_id_fkey"
-            columns: ["party_id"]
-            isOneToOne: false
-            referencedRelation: "parties"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "customer_price_mapping_price_list_id_fkey"
-            columns: ["price_list_id"]
-            isOneToOne: false
-            referencedRelation: "price_lists"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       dealer_applications: {
         Row: {
           address: string | null
@@ -1757,35 +1738,6 @@ export type Database = {
             columns: ["party_id"]
             isOneToOne: false
             referencedRelation: "parties"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      dealer_price_lists: {
-        Row: {
-          business_id: string | null
-          created_at: string | null
-          dealer_name: string | null
-          id: string
-        }
-        Insert: {
-          business_id?: string | null
-          created_at?: string | null
-          dealer_name?: string | null
-          id?: string
-        }
-        Update: {
-          business_id?: string | null
-          created_at?: string | null
-          dealer_name?: string | null
-          id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "dealer_price_lists_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
@@ -2284,6 +2236,8 @@ export type Database = {
         Row: {
           ack_date: string | null
           ack_no: string | null
+          api_request_id: string | null
+          api_response: Json | null
           business_id: string
           cancel_reason: string | null
           cancelled_at: string | null
@@ -2291,12 +2245,18 @@ export type Database = {
           id: string
           invoice_id: string
           irn: string | null
+          last_sync_attempt: string | null
+          signed_invoice: string | null
           signed_qr_code: string | null
           status: string
+          sync_error: string | null
+          synced_at: string | null
         }
         Insert: {
           ack_date?: string | null
           ack_no?: string | null
+          api_request_id?: string | null
+          api_response?: Json | null
           business_id: string
           cancel_reason?: string | null
           cancelled_at?: string | null
@@ -2304,12 +2264,18 @@ export type Database = {
           id?: string
           invoice_id: string
           irn?: string | null
+          last_sync_attempt?: string | null
+          signed_invoice?: string | null
           signed_qr_code?: string | null
           status?: string
+          sync_error?: string | null
+          synced_at?: string | null
         }
         Update: {
           ack_date?: string | null
           ack_no?: string | null
+          api_request_id?: string | null
+          api_response?: Json | null
           business_id?: string
           cancel_reason?: string | null
           cancelled_at?: string | null
@@ -2317,8 +2283,12 @@ export type Database = {
           id?: string
           invoice_id?: string
           irn?: string | null
+          last_sync_attempt?: string | null
+          signed_invoice?: string | null
           signed_qr_code?: string | null
           status?: string
+          sync_error?: string | null
+          synced_at?: string | null
         }
         Relationships: [
           {
@@ -2386,35 +2356,56 @@ export type Database = {
       }
       ewaybill_records: {
         Row: {
+          api_request_id: string | null
+          api_response: Json | null
           business_id: string
+          cancel_reason: string | null
+          cancelled_at: string | null
           created_at: string
           distance_km: number | null
           eway_bill_no: string | null
           id: string
           invoice_id: string
+          last_sync_attempt: string | null
           status: string
+          sync_error: string | null
+          synced_at: string | null
           valid_until: string | null
           vehicle_number: string | null
         }
         Insert: {
+          api_request_id?: string | null
+          api_response?: Json | null
           business_id: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
           created_at?: string
           distance_km?: number | null
           eway_bill_no?: string | null
           id?: string
           invoice_id: string
+          last_sync_attempt?: string | null
           status?: string
+          sync_error?: string | null
+          synced_at?: string | null
           valid_until?: string | null
           vehicle_number?: string | null
         }
         Update: {
+          api_request_id?: string | null
+          api_response?: Json | null
           business_id?: string
+          cancel_reason?: string | null
+          cancelled_at?: string | null
           created_at?: string
           distance_km?: number | null
           eway_bill_no?: string | null
           id?: string
           invoice_id?: string
+          last_sync_attempt?: string | null
           status?: string
+          sync_error?: string | null
+          synced_at?: string | null
           valid_until?: string | null
           vehicle_number?: string | null
         }
@@ -5821,6 +5812,86 @@ export type Database = {
           },
         ]
       }
+      party_price_assignments: {
+        Row: {
+          business_id: string
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          is_active: boolean
+          party_group_id: string | null
+          party_id: string | null
+          price_list_id: string
+          priority: number
+          remarks: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          is_active?: boolean
+          party_group_id?: string | null
+          party_id?: string | null
+          price_list_id: string
+          priority?: number
+          remarks?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          is_active?: boolean
+          party_group_id?: string | null
+          party_id?: string | null
+          price_list_id?: string
+          priority?: number
+          remarks?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "party_price_assignments_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_price_assignments_party_group_id_fkey"
+            columns: ["party_group_id"]
+            isOneToOne: false
+            referencedRelation: "party_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_price_assignments_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_price_assignments_price_list_id_fkey"
+            columns: ["price_list_id"]
+            isOneToOne: false
+            referencedRelation: "price_lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payment_allocations: {
         Row: {
           amount: number
@@ -6358,21 +6429,132 @@ export type Database = {
           },
         ]
       }
-      price_lists: {
+      price_list_items: {
         Row: {
-          business_id: string | null
+          cost: number | null
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          formula: string | null
           id: string
-          name: string
+          mrp: number | null
+          price: number
+          price_list_id: string
+          product_id: string
+          updated_at: string
+          updated_by: string | null
         }
         Insert: {
-          business_id?: string | null
+          cost?: number | null
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          formula?: string | null
           id?: string
-          name: string
+          mrp?: number | null
+          price: number
+          price_list_id: string
+          product_id: string
+          updated_at?: string
+          updated_by?: string | null
         }
         Update: {
-          business_id?: string | null
+          cost?: number | null
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          formula?: string | null
           id?: string
+          mrp?: number | null
+          price?: number
+          price_list_id?: string
+          product_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_list_items_price_list_id_fkey"
+            columns: ["price_list_id"]
+            isOneToOne: false
+            referencedRelation: "price_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_list_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_lists: {
+        Row: {
+          business_id: string
+          code: string | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          description: string | null
+          effective_from: string | null
+          effective_to: string | null
+          id: string
+          is_active: boolean
+          is_default: boolean
+          list_type: string | null
+          name: string
+          price_basis: string | null
+          price_source: string | null
+          rounding_policy: string | null
+          status: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          business_id: string
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          list_type?: string | null
+          name: string
+          price_basis?: string | null
+          price_source?: string | null
+          rounding_policy?: string | null
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          business_id?: string
+          code?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          list_type?: string | null
           name?: string
+          price_basis?: string | null
+          price_source?: string | null
+          rounding_policy?: string | null
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
@@ -6380,6 +6562,223 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pricing_rule_benefits: {
+        Row: {
+          benefit_type: string
+          created_at: string
+          free_product_id: string | null
+          free_qty: number | null
+          id: string
+          max_benefit_amount: number | null
+          rule_id: string
+          value: number | null
+        }
+        Insert: {
+          benefit_type: string
+          created_at?: string
+          free_product_id?: string | null
+          free_qty?: number | null
+          id?: string
+          max_benefit_amount?: number | null
+          rule_id: string
+          value?: number | null
+        }
+        Update: {
+          benefit_type?: string
+          created_at?: string
+          free_product_id?: string | null
+          free_qty?: number | null
+          id?: string
+          max_benefit_amount?: number | null
+          rule_id?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_rule_benefits_free_product_id_fkey"
+            columns: ["free_product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pricing_rule_benefits_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "pricing_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pricing_rule_conditions: {
+        Row: {
+          condition_type: string
+          created_at: string
+          id: string
+          operator: string
+          rule_id: string
+          value: Json
+        }
+        Insert: {
+          condition_type: string
+          created_at?: string
+          id?: string
+          operator: string
+          rule_id: string
+          value: Json
+        }
+        Update: {
+          condition_type?: string
+          created_at?: string
+          id?: string
+          operator?: string
+          rule_id?: string
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_rule_conditions_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "pricing_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pricing_rule_targets: {
+        Row: {
+          created_at: string
+          id: string
+          rule_id: string
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          rule_id: string
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          rule_id?: string
+          target_id?: string | null
+          target_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_rule_targets_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "pricing_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pricing_rules: {
+        Row: {
+          applicable_from_time: string | null
+          applicable_to_time: string | null
+          approval_required: boolean
+          approval_status: string
+          approved_at: string | null
+          approved_by: string | null
+          business_id: string
+          created_at: string
+          created_by: string | null
+          day_of_week: string[] | null
+          description: string | null
+          effective_from: string | null
+          effective_to: string | null
+          financial_year: string | null
+          id: string
+          name: string
+          priority: number
+          reason: string | null
+          remarks: string | null
+          rule_type: string
+          stacking_mode: string | null
+          status: string
+          supersedes_rule_id: string | null
+          updated_at: string
+          updated_by: string | null
+          version: number
+        }
+        Insert: {
+          applicable_from_time?: string | null
+          applicable_to_time?: string | null
+          approval_required?: boolean
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          business_id: string
+          created_at?: string
+          created_by?: string | null
+          day_of_week?: string[] | null
+          description?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          financial_year?: string | null
+          id?: string
+          name: string
+          priority?: number
+          reason?: string | null
+          remarks?: string | null
+          rule_type: string
+          stacking_mode?: string | null
+          status?: string
+          supersedes_rule_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Update: {
+          applicable_from_time?: string | null
+          applicable_to_time?: string | null
+          approval_required?: boolean
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          business_id?: string
+          created_at?: string
+          created_by?: string | null
+          day_of_week?: string[] | null
+          description?: string | null
+          effective_from?: string | null
+          effective_to?: string | null
+          financial_year?: string | null
+          id?: string
+          name?: string
+          priority?: number
+          reason?: string | null
+          remarks?: string | null
+          rule_type?: string
+          stacking_mode?: string | null
+          status?: string
+          supersedes_rule_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_rules_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pricing_rules_supersedes_rule_id_fkey"
+            columns: ["supersedes_rule_id"]
+            isOneToOne: false
+            referencedRelation: "pricing_rules"
             referencedColumns: ["id"]
           },
         ]
@@ -6750,42 +7149,6 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "product_groups"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      product_prices: {
-        Row: {
-          id: string
-          price_list_id: string | null
-          product_id: string | null
-          selling_price: number | null
-        }
-        Insert: {
-          id?: string
-          price_list_id?: string | null
-          product_id?: string | null
-          selling_price?: number | null
-        }
-        Update: {
-          id?: string
-          price_list_id?: string | null
-          product_id?: string | null
-          selling_price?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "product_prices_price_list_id_fkey"
-            columns: ["price_list_id"]
-            isOneToOne: false
-            referencedRelation: "price_lists"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "product_prices_product_id_fkey"
-            columns: ["product_id"]
-            isOneToOne: false
-            referencedRelation: "products"
             referencedColumns: ["id"]
           },
         ]
@@ -10401,6 +10764,10 @@ export type Database = {
         Args: { _reason: string; _record_id: string }
         Returns: undefined
       }
+      einvoice_cancel_record: {
+        Args: { _reason: string; _record_id: string }
+        Returns: undefined
+      }
       einvoice_generate_payload: {
         Args: { _invoice_id: string }
         Returns: Json
@@ -10428,6 +10795,10 @@ export type Database = {
         Returns: string
       }
       ewaybill_cancel: { Args: { _record_id: string }; Returns: undefined }
+      ewaybill_cancel_record: {
+        Args: { _reason: string; _record_id: string }
+        Returns: undefined
+      }
       ewaybill_generate_payload: {
         Args: {
           _distance_km: number

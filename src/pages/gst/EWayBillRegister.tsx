@@ -48,8 +48,19 @@ type Row = {
   status: string;
   cancel_reason: string | null;
   created_at: string;
+  synced_at: string | null;
+  sync_error: string | null;
   sales_invoices: { invoice_number: string; party_name: string | null; invoice_date: string } | null;
 };
+
+// synced_at/sync_error are placeholders for a future API-mode provider (see
+// src/lib/gstProvider.ts) — nothing writes them yet, so every record reads
+// as "Manual" today.
+function syncStatus(r: Pick<Row, "synced_at" | "sync_error">): { label: string; className: string } {
+  if (r.sync_error) return { label: "Error", className: "border-destructive/40 text-destructive bg-destructive/10" };
+  if (r.synced_at) return { label: "Synced", className: "border-emerald-500/40 text-emerald-600 bg-emerald-500/10" };
+  return { label: "Manual", className: "border-border text-muted-foreground" };
+}
 
 type PrintData = {
   company: PrintCompany;
@@ -108,7 +119,7 @@ export default function EWayBillRegister() {
 
       let query = supabase
         .from("ewaybill_records" as any)
-        .select("id, invoice_id, eway_bill_no, vehicle_number, distance_km, valid_until, status, cancel_reason, created_at", { count: "exact" })
+        .select("id, invoice_id, eway_bill_no, vehicle_number, distance_km, valid_until, status, cancel_reason, created_at, synced_at, sync_error", { count: "exact" })
         .eq("business_id", business!.id)
         .order("created_at", { ascending: false })
         .range(page * pageSize, page * pageSize + pageSize - 1);
@@ -260,32 +271,42 @@ export default function EWayBillRegister() {
             <TableHeader>
               <TableRow>
                 <TableHead>Invoice #</TableHead>
+                <TableHead>Date</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Vehicle No</TableHead>
+                <TableHead className="text-right">Distance</TableHead>
                 <TableHead>e-Way Bill No</TableHead>
+                <TableHead>Generated On</TableHead>
                 <TableHead>Valid Until</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Sync Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {q.isLoading && <TableRow><TableCell colSpan={7} className="text-center text-sm py-8 text-muted-foreground">Loading…</TableCell></TableRow>}
+              {q.isLoading && <TableRow><TableCell colSpan={11} className="text-center text-sm py-8 text-muted-foreground">Loading…</TableCell></TableRow>}
               {q.isError && (
-                <TableRow><TableCell colSpan={7} className="text-center text-sm py-8 text-destructive">
+                <TableRow><TableCell colSpan={11} className="text-center text-sm py-8 text-destructive">
                   Could not load e-Way Bills: {(q.error as any)?.message ?? "Unknown error"}
                 </TableCell></TableRow>
               )}
               {!q.isLoading && !q.isError && (q.data?.rows ?? []).length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-sm py-8 text-muted-foreground">No e-Way Bills yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center text-sm py-8 text-muted-foreground">No e-Way Bills yet.</TableCell></TableRow>
               )}
-              {(q.data?.rows ?? []).map((r) => (
+              {(q.data?.rows ?? []).map((r) => {
+                const sync = syncStatus(r);
+                return (
                 <TableRow key={r.id}>
                   <TableCell className="font-mono text-xs">{r.sales_invoices?.invoice_number ?? "—"}</TableCell>
+                  <TableCell className="text-xs">{r.sales_invoices?.invoice_date ?? "—"}</TableCell>
                   <TableCell className="text-sm">{r.sales_invoices?.party_name ?? "—"}</TableCell>
                   <TableCell className="text-xs">{r.vehicle_number ?? "—"}</TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">{r.distance_km != null ? `${r.distance_km} km` : "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{r.eway_bill_no ?? "—"}</TableCell>
+                  <TableCell className="text-xs">{new Date(r.created_at).toLocaleDateString("en-IN")}</TableCell>
                   <TableCell className="text-xs">{r.valid_until ? new Date(r.valid_until).toLocaleString("en-IN") : "—"}</TableCell>
                   <TableCell><Badge className={STATUS_TONE[r.status] ?? ""}>{r.status}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={sync.className}>{sync.label}</Badge></TableCell>
                   <TableCell className="text-right space-x-1">
                     <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => printSlip(r)} disabled={printing === r.id}>
                       <Printer className="h-3.5 w-3.5 mr-1" /> {printing === r.id ? "Preparing…" : "Print"}
@@ -297,7 +318,8 @@ export default function EWayBillRegister() {
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </div>

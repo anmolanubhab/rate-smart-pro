@@ -168,20 +168,28 @@ export async function assertHsnCompliance(
 // Sales Invoice's row menu regardless; they exist so GST Configuration can
 // show applicability status, and later phases can use them to drive
 // auto-generation.
+//
+// gst_integration_mode/default_place_of_supply are the GST Portal Sync
+// architecture placeholder: "manual" is the only real mode (no GSP/ASP
+// subscription exists), "api" is reserved for a future provider — see
+// src/lib/gstProvider.ts.
 
 export type GstReturnFrequency = "monthly" | "quarterly";
+export type GstIntegrationMode = "manual" | "api";
 
 export interface GstComplianceConfig {
   business_id: string;
   enable_einvoice: boolean;
   enable_ewaybill: boolean;
   gst_return_frequency: GstReturnFrequency;
+  gst_integration_mode: GstIntegrationMode;
+  default_place_of_supply: string | null;
 }
 
 export async function fetchGstComplianceConfig(businessId: string): Promise<GstComplianceConfig | null> {
   const { data, error } = await supabase
     .from("accounting_settings" as any)
-    .select("business_id, enable_einvoice, enable_ewaybill, gst_return_frequency")
+    .select("business_id, enable_einvoice, enable_ewaybill, gst_return_frequency, gst_integration_mode, default_place_of_supply")
     .eq("business_id", businessId)
     .maybeSingle();
   if (error) {
@@ -193,7 +201,7 @@ export async function fetchGstComplianceConfig(businessId: string): Promise<GstC
 
 export async function setGstComplianceConfig(
   businessId: string,
-  patch: Partial<Pick<GstComplianceConfig, "enable_einvoice" | "enable_ewaybill" | "gst_return_frequency">>
+  patch: Partial<Pick<GstComplianceConfig, "enable_einvoice" | "enable_ewaybill" | "gst_return_frequency" | "gst_integration_mode" | "default_place_of_supply">>
 ): Promise<void> {
   const { error } = await supabase.from("accounting_settings" as any).upsert({
     business_id: businessId,
@@ -202,6 +210,78 @@ export async function setGstComplianceConfig(
   if (error) {
     if (isMissingTable(error)) {
       throw new Error("GST configuration settings aren't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
+  }
+}
+
+// ── Pricing Engine — business-wide stacking policy ──────────────────────
+// Same accounting_settings row again. Consumed by
+// src/lib/pricing/conflictResolver.ts: when 'rule_based' (the default),
+// a matched rule with no stacking_mode of its own falls back to its
+// rule_type's default behavior (src/lib/pricing/ruleTypeDefaults.ts);
+// otherwise one fixed mode applies uniformly to every matched rule.
+
+export type PricingPolicyValue = "rule_based" | "highest_wins" | "add_together" | "sequential" | "lowest_wins" | "custom";
+
+export async function fetchPricingPolicy(businessId: string): Promise<PricingPolicyValue | null> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("pricing_policy")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data as { pricing_policy: PricingPolicyValue } | null)?.pricing_policy ?? null;
+}
+
+export async function setPricingPolicy(businessId: string, pricingPolicy: PricingPolicyValue): Promise<void> {
+  const { error } = await supabase.from("accounting_settings" as any).upsert({
+    business_id: businessId,
+    pricing_policy: pricingPolicy,
+  });
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("Pricing policy setting isn't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
+  }
+}
+
+// ── Pricing Engine — warning/approval thresholds ─────────────────────────
+// Same accounting_settings row again. Consumed by src/lib/pricing/warnings.ts
+// and src/lib/pricing/approval.ts. Both nullable — null means "no policy
+// set, don't warn" — a business adopts these gradually, never forced.
+
+export interface PricingThresholds {
+  minimumMarginPct: number | null;
+  maxDiscountPct: number | null;
+}
+
+export async function fetchPricingThresholds(businessId: string): Promise<PricingThresholds> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("minimum_margin_pct, max_discount_pct")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return { minimumMarginPct: null, maxDiscountPct: null };
+    throw error;
+  }
+  const row = data as { minimum_margin_pct: number | null; max_discount_pct: number | null } | null;
+  return { minimumMarginPct: row?.minimum_margin_pct ?? null, maxDiscountPct: row?.max_discount_pct ?? null };
+}
+
+export async function setPricingThresholds(businessId: string, patch: Partial<PricingThresholds>): Promise<void> {
+  const payload: Record<string, unknown> = { business_id: businessId };
+  if ("minimumMarginPct" in patch) payload.minimum_margin_pct = patch.minimumMarginPct;
+  if ("maxDiscountPct" in patch) payload.max_discount_pct = patch.maxDiscountPct;
+  const { error } = await supabase.from("accounting_settings" as any).upsert(payload);
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("Pricing threshold settings aren't set up on this database yet — apply the latest migration.");
     }
     throw error;
   }

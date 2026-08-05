@@ -50,6 +50,12 @@ const BalanceSheet = lazy(() => import("./pages/accounts/BalanceSheet"));
 const PartyLedger = lazy(() => import("./pages/accounts/PartyLedger")); // NEW
 const Receivables = lazy(() => import("./pages/accounts/Receivables"));
 const Payables = lazy(() => import("./pages/accounts/Payables"));
+const GstDashboard = lazy(() => import("./pages/gst/GstDashboard"));
+const PricingTestBench = lazy(() => import("./pages/pricing/PricingTestBench"));
+const PriceLists = lazy(() => import("./pages/pricing/PriceLists"));
+const PriceListEditor = lazy(() => import("./pages/pricing/PriceListEditor"));
+const PricingRules = lazy(() => import("./pages/pricing/PricingRules"));
+const PricingRuleEditor = lazy(() => import("./pages/pricing/PricingRuleEditor"));
 const GstSummary = lazy(() => import("./pages/gst/GstSummary"));
 const Gstr3B = lazy(() => import("./pages/gst/Gstr3B"));
 const Gstr1 = lazy(() => import("./pages/gst/Gstr1"));
@@ -307,6 +313,12 @@ const App = () => (
               <Route path="/vouchers/credit-note/:id/edit" element={L(<CreditNoteVoucher />)} />
               <Route path="/vouchers/debit-note" element={L(<DebitNoteVoucher />)} />
               <Route path="/vouchers/debit-note/:id/edit" element={L(<DebitNoteVoucher />)} />
+              <Route path="/gst/dashboard" element={L(<GstDashboard />)} />
+              <Route path="/pricing/test-bench" element={L(<PricingTestBench />)} />
+              <Route path="/pricing/price-lists" element={L(<PriceLists />)} />
+              <Route path="/pricing/price-lists/:id" element={L(<PriceListEditor />)} />
+              <Route path="/pricing/rules" element={L(<PricingRules />)} />
+              <Route path="/pricing/rules/:id" element={L(<PricingRuleEditor />)} />
               <Route path="/gst/summary" element={L(<GstSummary />)} />
               <Route path="/gst/gstr-3b" element={L(<Gstr3B />)} />
               <Route path="/gst/gstr-1" element={L(<Gstr1 />)} />
