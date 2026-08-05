@@ -30,6 +30,25 @@ export type LedgerAccountType =
   | "liability"
   | "equity";
 
+/**
+ * Every account_type except bank/cash -- the "party or expense" leg of a
+ * Payment/Receipt voucher. Accounting-wise, a voucher's *type* doesn't
+ * restrict which ledger can appear on that leg: a Sundry Debtor can
+ * legitimately carry a Dr balance needing a refund payment (advance
+ * received then returned), a Sundry Creditor can legitimately carry a Cr
+ * balance needing a refund receipt, and so on -- Cash/Bank is the only
+ * thing actually reserved, for the counter-leg. Supersedes the narrower
+ * ["supplier","expense","customer"]/["customer","income","supplier"]
+ * lists this replaces (Payment/Receipt allowing the opposite party type,
+ * shipped separately) by also covering purchase/sales/tax/asset/
+ * liability/equity. Kept as an explicit list rather than a "NOT IN" query
+ * so a new account_type added later is a deliberate decision to include
+ * here, same as LedgerAccountType itself being an explicit union.
+ */
+export const NON_CASH_BANK_LEDGER_TYPES: LedgerAccountType[] = [
+  "customer", "supplier", "purchase", "sales", "expense", "income", "tax", "asset", "liability", "equity",
+];
+
 export interface LedgerOption {
   id: string;
   name: string;
