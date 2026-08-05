@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Ban, Copy, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, Ban, Copy, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -16,13 +16,8 @@ import {
   fetchPurchaseInvoice, fetchInvoiceItems, cancelPurchaseInvoice, deletePurchaseInvoice,
   logInvoiceActivity, fetchInvoiceActivityLogs, type PurchaseInvoiceStatus,
 } from "@/lib/purchaseInvoices";
-import { supabase } from "@/integrations/supabase/client";
-import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
-import PrintCopyDialog from "@/components/print/PrintCopyDialog";
-import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
-import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
-import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
-import { fetchProductWeights } from "@/lib/productWeights";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildPurchaseInvoiceUdm } from "@/lib/documentUdm/purchaseInvoiceUdm";
 import { DocumentTimeline } from "@/components/documentEngine/DocumentTimeline";
 import { DocumentAuditLog } from "@/components/documentEngine/DocumentAuditLog";
 import { useFormatDate } from "@/lib/dateFormat";
@@ -48,13 +43,6 @@ export default function PurchaseInvoiceDetail() {
   const [cancelling, setCancelling] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
-  const [printing, setPrinting] = useState(false);
-
-  const [printData, setPrintData] = useState<any>(null);
-  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
-  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
-  const [copyLabels, setCopyLabels] = useState<string[]>([]);
 
   const { data: invoice, isLoading: loadingInvoice, error } = useQuery({
     queryKey: ["purchase-invoice-detail", id],
@@ -114,48 +102,6 @@ export default function PurchaseInvoiceDetail() {
     navigate("/purchase/invoices/new", { state: { duplicateFromId: id } });
   };
 
-  const handlePrint = async () => {
-    if (!invoice) return;
-    setPrinting(true);
-    try {
-      const [{ data: biz }, { data: supplier }, types, profile] = await Promise.all([
-        supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", invoice.business_id).maybeSingle(),
-        supabase.from("parties").select("name, phone, address, gst").eq("id", invoice.supplier_id).maybeSingle(),
-        fetchEnabledPrintCopyTypes(invoice.business_id),
-        fetchDefaultPrintProfile(invoice.business_id, "purchase_invoice"),
-      ]);
-      const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
-      const weights = await fetchProductWeights(items.map((it) => it.product_id));
-
-      setPrintData({
-        company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
-        party: { name: supplier?.name ?? "—", mobile: supplier?.phone ?? null, address: supplier?.address ?? null, gstNo: supplier?.gst ?? null },
-        meta: { number: invoice.invoice_number, numberLabel: "Invoice No", date: invoice.invoice_date },
-        items: items.map((it) => ({
-          partNumber: it.part_number ?? "",
-          description: it.description ?? "",
-          hsn: null,
-          qty: Number(it.qty) || 0,
-          rate: Number(it.rate) || 0,
-          gstPct: Number(it.gst_percent) || 0,
-          amount: Number(it.total_amount) || 0,
-          discountPct: it.discount_percent != null ? Number(it.discount_percent) : null,
-          weight: it.product_id ? weights.get(it.product_id) ?? null : null,
-        })),
-        totals: {
-          subtotal: invoice.subtotal, discount: invoice.discount_total, tax: invoice.tax_total, grandTotal: invoice.grand_total,
-        },
-      });
-      setPrintProfile(profile);
-      setCopyTypes(types);
-      setCopyDialogOpen(true);
-    } catch (e: any) {
-      toast.error(e.message ?? "Could not prepare invoice for printing");
-    } finally {
-      setPrinting(false);
-    }
-  };
-
   if (loadingInvoice) {
     return <div className="max-w-5xl mx-auto py-16 text-center text-muted-foreground">Loading…</div>;
   }
@@ -202,9 +148,12 @@ export default function PurchaseInvoiceDetail() {
           <Button variant="outline" size="sm" onClick={handleDuplicate} disabled={duplicating}>
             <Copy className="h-3.5 w-3.5 mr-1" /> {duplicating ? "Duplicating…" : "Duplicate"}
           </Button>
-          <Button variant="outline" size="sm" onClick={handlePrint} disabled={printing}>
-            <Printer className="h-3.5 w-3.5 mr-1" /> {printing ? "Preparing…" : "Print"}
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="purchase_invoice"
+            documentId={invoice.id}
+            documentNumber={invoice.invoice_number}
+            getUdm={() => buildPurchaseInvoiceUdm(invoice)}
+          />
         </div>
       </div>
 
@@ -310,31 +259,6 @@ export default function PurchaseInvoiceDetail() {
           </div>
         )}
       </div>
-
-      {printData && printProfile && (
-        <PrintCopyDialog
-          open={copyDialogOpen}
-          onOpenChange={setCopyDialogOpen}
-          copyTypes={copyTypes}
-          onConfirm={(labels) => {
-            applyPrintPageStyle(printProfile);
-            setCopyLabels(labels);
-            setTimeout(() => window.print(), 50);
-          }}
-        />
-      )}
-      {printData && printProfile && copyLabels.length > 0 && (
-        <MultiCopyPrintRun
-          copyLabels={copyLabels}
-          config={profileToPrintConfig(printProfile)}
-          company={printData.company}
-          party={printData.party}
-          meta={printData.meta}
-          items={printData.items}
-          totals={printData.totals}
-          contentWidthMm={contentWidthMm(printProfile)}
-        />
-      )}
 
       <AlertDialog open={cancelConfirmOpen} onOpenChange={(o) => !o && setCancelConfirmOpen(false)}>
         <AlertDialogContent>

@@ -35,6 +35,8 @@ import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPag
 import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
 import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintDocumentType, type PrintProfile } from "@/lib/printProfiles";
 import type { PrintItem } from "@/components/print/PrintDocument";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildVoucherUdm, isPhase3VoucherType } from "@/lib/documentUdm/voucherUdm";
 
 const ENGINE_PRINT_DOCUMENT_TYPE: Partial<Record<string, PrintDocumentType>> = {
   "Debit Note": "debit_note",
@@ -246,14 +248,23 @@ export default function VoucherDetail() {
           </Button>
 
           <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={preparingPrint}
-              onClick={() => (engineDocumentType ? handleEnginePrint() : window.print())}
-            >
-              <Printer className="h-3.5 w-3.5 mr-1" /> {preparingPrint ? "Preparing…" : "Print"}
-            </Button>
+            {isPhase3VoucherType(voucher.voucher_type) ? (
+              <DocumentOutputCenter
+                documentTypeId={voucher.voucher_type === "Payment" ? "payment_voucher" : voucher.voucher_type === "Receipt" ? "receipt_voucher" : voucher.voucher_type === "Journal" ? "journal_voucher" : "contra_voucher"}
+                documentId={voucher.id}
+                documentNumber={voucher.voucher_no}
+                getUdm={() => buildVoucherUdm(voucher)}
+              />
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={preparingPrint}
+                onClick={() => (engineDocumentType ? handleEnginePrint() : window.print())}
+              >
+                <Printer className="h-3.5 w-3.5 mr-1" /> {preparingPrint ? "Preparing…" : "Print"}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

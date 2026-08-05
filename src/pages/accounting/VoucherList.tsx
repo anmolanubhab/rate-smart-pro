@@ -7,9 +7,11 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Plus, Search, Filter, Printer, FileSpreadsheet, FileDown,
+  Plus, Search, Filter, FileDown,
   Eye, Pencil, Trash2, CheckCircle, MoreHorizontal, RefreshCw,
 } from "lucide-react";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildVoucherRegisterUdm } from "@/lib/documentUdm/voucherUdm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -58,28 +60,6 @@ const typeTone: Record<string, string> = {
 };
 
 const PAGE_SIZE = 25;
-
-// ── CSV export ────────────────────────────────────────────────────────────────
-
-function exportCSV(rows: Voucher[]) {
-  const headers = ["Voucher No", "Date", "Type", "Narration", "Amount", "Status"];
-  const lines = rows.map((r) => [
-    r.voucher_no,
-    r.voucher_date,
-    r.voucher_type,
-    (r.narration ?? "").replace(/,/g, " "),
-    (r.total_debit ?? 0).toFixed(2),
-    r.status,
-  ]);
-  const csv = [headers, ...lines].map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Vouchers_${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 // ── component ────────────────────────────────────────────────────────────────
 
@@ -202,12 +182,11 @@ export default function VoucherList() {
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
             </Button>
-            <Button variant="outline" size="sm" onClick={() => exportCSV(vouchers)}>
-              <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Export CSV
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <Printer className="h-3.5 w-3.5 mr-1" /> Print
-            </Button>
+            <DocumentOutputCenter
+              documentTypeId="voucher_register"
+              documentNumber="Voucher Register"
+              getReportUdm={() => buildVoucherRegisterUdm(vouchers)}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button>

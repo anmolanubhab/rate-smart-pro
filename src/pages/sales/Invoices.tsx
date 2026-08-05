@@ -3,21 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Search, FileText, Eye, Pencil, Printer, Ban, Trash2, CheckCircle, Copy, Undo2,
+  Search, FileText, Eye, Pencil, Ban, Trash2, CheckCircle, Copy, Undo2,
 } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchInvoices, fetchInvoiceItems, postInvoice, cancelInvoice, deleteInvoice, duplicateInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import { fetchInvoices, postInvoice, cancelInvoice, deleteInvoice, duplicateInvoice, SalesInvoice } from "@/lib/salesInvoices";
 import { fetchReturnedQtyByInvoice, type InvoiceReturnStatus } from "@/lib/salesReturns";
 import { createApprovalRequest } from "@/lib/approvals";
 import { canDeleteDirectly } from "@/lib/permissions";
-import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
-import PrintCopyDialog from "@/components/print/PrintCopyDialog";
-import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
-import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
-import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
-import { fetchProductWeights } from "@/lib/productWeights";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildSalesInvoiceUdm } from "@/lib/documentUdm/salesInvoiceUdm";
 import EInvoiceEwayDialog from "@/components/sales/EInvoiceEwayDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -46,7 +42,6 @@ function invoiceRowActions(
     onView: (inv: SalesInvoice) => void;
     onPost: (inv: SalesInvoice) => void;
     onEdit: (inv: SalesInvoice) => void;
-    onPrint: (inv: SalesInvoice) => void;
     onDuplicate: (inv: SalesInvoice) => void;
     navigate: ReturnType<typeof useNavigate>;
     setComplianceTarget: (inv: SalesInvoice) => void;
@@ -54,12 +49,11 @@ function invoiceRowActions(
     setDeleteTarget: (inv: SalesInvoice) => void;
   },
 ): DocumentRowAction[] {
-  const { isCancelled, onView, onPost, onEdit, onPrint, onDuplicate, navigate, setComplianceTarget, setCancelTarget, setDeleteTarget } = handlers;
+  const { isCancelled, onView, onPost, onEdit, onDuplicate, navigate, setComplianceTarget, setCancelTarget, setDeleteTarget } = handlers;
   return [
     { key: "view", label: "View Invoice", icon: Eye, onClick: () => onView(i) },
     { key: "post", label: "Post Invoice", icon: CheckCircle, onClick: () => onPost(i), className: "text-emerald-600 focus:text-emerald-600", hidden: i.status !== "draft" },
     { key: "edit", label: "Edit Invoice", icon: Pencil, onClick: () => onEdit(i), disabled: isCancelled || i.status === "posted" },
-    { key: "print", label: "Print Invoice", icon: Printer, onClick: () => onPrint(i) },
     { key: "duplicate", label: "Duplicate", icon: Copy, onClick: () => onDuplicate(i) },
     { key: "return", label: "Create Return", icon: Undo2, onClick: () => navigate(`/sales/returns/new?invoiceId=${i.id}`), className: "text-teal-600 focus:text-teal-600", hidden: i.status !== "posted" },
     { key: "compliance", label: "e-Invoice / e-Way Bill", icon: FileText, onClick: () => setComplianceTarget(i), hidden: i.status !== "posted" },
@@ -89,13 +83,7 @@ export default function InvoicesPage() {
   const [cancelTarget, setCancelTarget] = useState<SalesInvoice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SalesInvoice | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [printData, setPrintData] = useState<any>(null);
-  const [printing, setPrinting] = useState<string | null>(null);
   const [complianceTarget, setComplianceTarget] = useState<SalesInvoice | null>(null);
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
-  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
-  const [copyLabels, setCopyLabels] = useState<string[]>([]);
-  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
 
   // Edit (draft-only — posted invoices already have a voucher/ledger
   // entry, so free-editing them would desync accounting; cancel + issue
@@ -188,75 +176,6 @@ export default function InvoicesPage() {
       toast.error(e.message ?? "Could not update invoice");
     } finally {
       setSavingEdit(false);
-    }
-  };
-
-  const onPrint = async (inv: SalesInvoice) => {
-    setPrinting(inv.id);
-    try {
-      const [items, { data: biz }, types, profile, { data: einvoice }] = await Promise.all([
-        fetchInvoiceItems(inv.id),
-        supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", inv.business_id).maybeSingle(),
-        fetchEnabledPrintCopyTypes(inv.business_id),
-        fetchDefaultPrintProfile(inv.business_id, "sales_invoice"),
-        supabase.from("einvoice_records").select("signed_qr_code, irn, ack_no, ack_date").eq("invoice_id", inv.id).eq("status", "generated").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      ]);
-
-      const party = inv.party_snapshot ?? {};
-      const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
-      const weights = await fetchProductWeights((items as any[]).map((it) => it.product_id));
-
-      setPrintData({
-        company: {
-          name: biz?.business_name ?? "—",
-          addressLines,
-          gstin: biz?.gst_number ?? null,
-          logoUrl: biz?.logo_url ?? null,
-        },
-        party: {
-          name: inv.party_name ?? party.name ?? "—",
-          mobile: party.phone ?? null,
-          address: inv.billing_address ?? party.address ?? null,
-          gstNo: party.gst ?? null,
-        },
-        meta: {
-          number: inv.invoice_number,
-          numberLabel: "Invoice No",
-          date: inv.invoice_date,
-          qrCodeValue: einvoice?.signed_qr_code ?? null,
-          irn: einvoice?.irn ?? null,
-          ackNo: einvoice?.ack_no ?? null,
-          ackDate: einvoice?.ack_date ? new Date(einvoice.ack_date).toLocaleDateString("en-IN") : null,
-        },
-        items: (items as any[]).map((it) => ({
-          partNumber: it.part_number ?? "",
-          description: it.description ?? it.name ?? "",
-          hsn: it.hsn ?? null,
-          qty: Number(it.qty) || 0,
-          rate: Number(it.net_rate ?? it.rate) || 0,
-          gstPct: Number(it.gst_pct) || 0,
-          amount: Number(it.total) || 0,
-          mrp: it.mrp != null ? Number(it.mrp) : null,
-          discountPct: it.discount_pct != null ? Number(it.discount_pct) : null,
-          weight: it.product_id ? weights.get(it.product_id) ?? null : null,
-        })),
-        totals: {
-          subtotal: Number(inv.subtotal) || 0,
-          discount: Number(inv.discount_total) || 0,
-          cgst: (items as any[]).reduce((s, it) => s + (Number(it.cgst_amount) || 0), 0),
-          sgst: (items as any[]).reduce((s, it) => s + (Number(it.sgst_amount) || 0), 0),
-          igst: (items as any[]).reduce((s, it) => s + (Number(it.igst_amount) || 0), 0),
-          tax: Number(inv.gst_total) || 0,
-          grandTotal: Number(inv.grand_total) || 0,
-        },
-      });
-      setPrintProfile(einvoice?.signed_qr_code ? { ...profile, show_qr_code: true } : profile);
-      setCopyTypes(types);
-      setCopyDialogOpen(true);
-    } catch (e: any) {
-      toast.error(e.message ?? "Could not prepare invoice for printing");
-    } finally {
-      setPrinting(null);
     }
   };
 
@@ -459,12 +378,20 @@ export default function InvoicesPage() {
                             <TooltipContent>Edit</TooltipContent>
                           </Tooltip>
 
+                          {/* Print ▼ — Universal Document Output Center */}
+                          <DocumentOutputCenter
+                            documentTypeId="sales_invoice"
+                            documentId={i.id}
+                            documentNumber={i.invoice_number}
+                            getUdm={() => buildSalesInvoiceUdm(i)}
+                          />
+
                           {/* More actions */}
                           <DocumentActionMenu
                             loading={busy === i.id}
                             triggerDisabled={busy === i.id}
                             contentClassName="w-52"
-                            actions={invoiceRowActions(i, { isCancelled, onView, onPost, onEdit, onPrint, onDuplicate, navigate, setComplianceTarget, setCancelTarget, setDeleteTarget })}
+                            actions={invoiceRowActions(i, { isCancelled, onView, onPost, onEdit, onDuplicate, navigate, setComplianceTarget, setCancelTarget, setDeleteTarget })}
                           />
                         </div>
                       </td>
@@ -519,9 +446,13 @@ export default function InvoicesPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Close</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { setViewTarget(null); onPrint(viewTarget); }}>
-                <Printer className="h-4 w-4 mr-1" /> Print
-              </AlertDialogAction>
+              <DocumentOutputCenter
+                documentTypeId="sales_invoice"
+                documentId={viewTarget.id}
+                documentNumber={viewTarget.invoice_number}
+                getUdm={() => buildSalesInvoiceUdm(viewTarget)}
+                size="default"
+              />
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -608,33 +539,6 @@ export default function InvoicesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* ── Off-screen print target — CSS in styles/print.css shows only
-          .print-copy-run during window.print(), everything else hides. ── */}
-      {printData && printProfile && (
-        <PrintCopyDialog
-          open={copyDialogOpen}
-          onOpenChange={setCopyDialogOpen}
-          copyTypes={copyTypes}
-          onConfirm={(labels) => {
-            applyPrintPageStyle(printProfile);
-            setCopyLabels(labels);
-            setTimeout(() => window.print(), 50);
-          }}
-        />
-      )}
-      {printData && printProfile && copyLabels.length > 0 && (
-        <MultiCopyPrintRun
-          copyLabels={copyLabels}
-          config={profileToPrintConfig(printProfile)}
-          company={printData.company}
-          party={printData.party}
-          meta={printData.meta}
-          items={printData.items}
-          totals={printData.totals}
-          contentWidthMm={contentWidthMm(printProfile)}
-        />
-      )}
 
       {complianceTarget && (
         <EInvoiceEwayDialog
