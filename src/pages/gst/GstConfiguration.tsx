@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Pencil, Star, Lock, FileText, Truck, Link2 } from "lucide-react";
+import { Plus, Pencil, Star, Lock, FileText, Truck, Link2, Info } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canGranular } from "@/lib/permissions";
@@ -26,7 +26,7 @@ import {
 import {
   fetchHsnComplianceSettings, setHsnComplianceSettings,
   fetchGstComplianceConfig, setGstComplianceConfig,
-  type GstReturnFrequency,
+  type GstReturnFrequency, type GstIntegrationMode,
 } from "@/lib/accountingLock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -197,7 +197,10 @@ export default function GstConfiguration() {
     enabled: !!business?.id,
     queryFn: () => fetchGstComplianceConfig(business!.id),
   });
-  const updateGstConfig = async (patch: { enable_einvoice?: boolean; enable_ewaybill?: boolean; gst_return_frequency?: GstReturnFrequency }) => {
+  const updateGstConfig = async (patch: {
+    enable_einvoice?: boolean; enable_ewaybill?: boolean; gst_return_frequency?: GstReturnFrequency;
+    gst_integration_mode?: GstIntegrationMode; default_place_of_supply?: string | null;
+  }) => {
     if (!business?.id) return;
     try {
       await setGstComplianceConfig(business.id, patch);
@@ -207,6 +210,12 @@ export default function GstConfiguration() {
       toast.error(e.message);
     }
   };
+
+  // Local buffer so typing doesn't fire a write per keystroke; committed on blur.
+  const [placeOfSupplyDraft, setPlaceOfSupplyDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (gstConfig && placeOfSupplyDraft === null) setPlaceOfSupplyDraft(gstConfig.default_place_of_supply ?? "");
+  }, [gstConfig, placeOfSupplyDraft]);
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in-up">
@@ -317,6 +326,74 @@ export default function GstConfiguration() {
         </div>
       </section>
 
+      {/* GST Portal Sync — Integration Mode */}
+      <section className="rounded-2xl bg-card border p-6 space-y-4">
+        <div>
+          <h2 className="font-semibold text-sm">GST Portal Sync</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            How e-Invoice/e-Way Bill payloads move between RD Pro and the government portal.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-lg border p-3 bg-muted/30">
+          <div>
+            <p className="text-xs text-muted-foreground">Legal Name</p>
+            <p className="text-sm font-medium truncate">{business?.business_name || "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Trade Name</p>
+            <p className="text-sm font-medium truncate">{business?.firm_name || "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">State</p>
+            <p className="text-sm font-medium truncate">{business?.state || "—"}</p>
+          </div>
+        </div>
+        <Link to="/settings/business-profile" className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline -mt-2">
+          <Link2 className="h-3 w-3" /> Edit in Business Profile
+        </Link>
+
+        <div className="space-y-1.5 max-w-xs">
+          <Label className="text-xs uppercase tracking-wide text-muted-foreground">Default Place of Supply</Label>
+          <Input
+            disabled={!editable}
+            value={placeOfSupplyDraft ?? ""}
+            onChange={(e) => setPlaceOfSupplyDraft(e.target.value)}
+            onBlur={() => {
+              if (placeOfSupplyDraft !== (gstConfig?.default_place_of_supply ?? "")) {
+                updateGstConfig({ default_place_of_supply: placeOfSupplyDraft || null });
+              }
+            }}
+            placeholder="e.g. Bihar"
+          />
+          <p className="text-xs text-muted-foreground">Prefilled on new e-Invoice/e-Way Bill payloads. Can still be overridden per document.</p>
+        </div>
+
+        <div className="space-y-1.5 max-w-xs">
+          <Label className="text-xs uppercase tracking-wide text-muted-foreground">Integration Mode</Label>
+          <Select
+            disabled={!editable}
+            value={gstConfig?.gst_integration_mode ?? "manual"}
+            onValueChange={(v) => updateGstConfig({ gst_integration_mode: v as GstIntegrationMode })}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="manual">Manual (Default)</SelectItem>
+              <SelectItem value="api" disabled>API — Coming Soon</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-start gap-2 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <p>
+            Currently using the manual GST workflow: generate a payload from a posted invoice, submit it to your
+            GSP or the government portal yourself, then record the response back here. API Integration (direct
+            GSP/GSTN sync) can be enabled later without any data migration — it plugs into the same records this
+            page and the e-Invoice/e-Way Bill Registers already use.
+          </p>
+        </div>
+      </section>
+
       {/* e-Invoice */}
       <section className="rounded-2xl bg-card border p-6 space-y-4">
         <div>
@@ -348,11 +425,14 @@ export default function GstConfiguration() {
         <CredentialStatusCard icon={Truck} title="e-Way Bill Portal API Credentials" />
       </section>
 
-      {/* GST Portal */}
+      {/* GST Portal — Return Filing & 2A/2B */}
       <section className="rounded-2xl bg-card border p-6 space-y-4">
         <div>
-          <h2 className="font-semibold text-sm">GST Portal</h2>
-          <p className="text-xs text-muted-foreground mt-1">Direct GSTN/GSP connection for filing and 2A/2B pull.</p>
+          <h2 className="font-semibold text-sm">Return Filing &amp; 2A/2B Sync</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Direct GSTN/GSP connection for filing GSTR-1/3B and pulling 2A/2B — separate from e-Invoice/e-Way Bill
+            above, and a bigger scope for its own future planning pass.
+          </p>
         </div>
         <CredentialStatusCard icon={Link2} title="GST Portal Connection" />
       </section>
