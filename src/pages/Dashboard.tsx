@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { cn } from "@/lib/utils";
 import { useFormatDate } from "@/lib/dateFormat";
 import { getSectionOrder } from "@/lib/dashboardFocus";
@@ -186,6 +187,14 @@ const Dashboard = () => {
     });
     return buckets;
   }, [filtered]);
+
+  if (loading || nameLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">

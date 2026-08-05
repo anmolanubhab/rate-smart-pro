@@ -188,6 +188,49 @@ export async function createDispatch(input: {
   return dispatch as Dispatch;
 }
 
+export interface BulkDispatchOrderInput {
+  orderId: string;
+  orderNumber: string;
+  partyId: string | null;
+  dispatchDate: string;
+  warehouseId?: string | null;
+  items: { order_item_id: string; dispatched_qty: number; rate: number; unit_id?: string | null }[];
+}
+
+/**
+ * Creates one draft Dispatch per order (the schema ties a dispatch to a
+ * single order, same as Picking Lists) — always with plain qty+rate lines,
+ * no batch_selections/serial_ids. Callers must only pass orders whose items
+ * are all tracking_type 'none': auto-picking a specific batch (FEFO) or a
+ * specific serial number on the operator's behalf is a warehouse-floor
+ * judgment call this function deliberately never makes. Each order is
+ * independent — one order's DB-trigger rejection (e.g. insufficient stock
+ * if it changed since the page loaded) doesn't abort the rest.
+ */
+export async function bulkCreateDispatches(
+  userId: string,
+  orders: BulkDispatchOrderInput[],
+): Promise<{ created: Dispatch[]; skipped: { orderNumber: string; reason: string }[] }> {
+  const created: Dispatch[] = [];
+  const skipped: { orderNumber: string; reason: string }[] = [];
+  for (const o of orders) {
+    if (!o.items.length) {
+      skipped.push({ orderNumber: o.orderNumber, reason: "no pending items" });
+      continue;
+    }
+    try {
+      const dispatch = await createDispatch({
+        userId, orderId: o.orderId, partyId: o.partyId, dispatchDate: o.dispatchDate,
+        warehouseId: o.warehouseId ?? null, items: o.items,
+      });
+      created.push(dispatch);
+    } catch (e: any) {
+      skipped.push({ orderNumber: o.orderNumber, reason: e.message ?? "dispatch failed" });
+    }
+  }
+  return { created, skipped };
+}
+
 /**
  * Confirm a dispatch → sets status = 'confirmed'.
  * The caller (Dispatch.tsx) should then call generateInvoiceFromDispatch()

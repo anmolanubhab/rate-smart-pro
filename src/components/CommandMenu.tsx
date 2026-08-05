@@ -68,7 +68,7 @@ export default function CommandMenu({
     { label: "RD Calculator", path: "/calculator", icon: Calculator, group: "Main Navigation" },
     { label: "Orders", path: "/orders", icon: ShoppingCart, group: "Orders" },
     { label: "Create Order", path: "/orders/new", icon: PlusSquare, group: "Orders" },
-    { label: "Pending Orders", path: "/pending", icon: Boxes, group: "Orders" },
+    { label: "Order Control Center", path: "/pending", icon: Boxes, group: "Orders" },
     { label: "Dispatch", path: "/dispatch", icon: Package, group: "Orders" },
     { label: "Parties", path: "/parties", icon: Users, group: "Catalog" },
     { label: "Products", path: "/products", icon: Package, group: "Catalog" },

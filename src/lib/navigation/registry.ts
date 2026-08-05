@@ -180,8 +180,8 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     id: "pending",
-    title: "Pending Orders",
-    description: "Orders awaiting dispatch or approval",
+    title: "Order Control Center",
+    description: "Live queue of every pending order, auto-prioritized",
     route: "/pending",
     icon: Boxes,
     module: "Sales",
