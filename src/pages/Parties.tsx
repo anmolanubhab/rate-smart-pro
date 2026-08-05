@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Plus, Pencil, Trash2, Users, Search, Upload,
   ArrowUpDown, ArrowUp, ArrowDown, Download, RefreshCw,
@@ -183,6 +183,7 @@ const Parties = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const businessId = business?.id ?? null;
   const [parties, setParties]   = useState<Party[]>([]);
   const [total, setTotal]       = useState(0);
@@ -313,6 +314,26 @@ const Parties = () => {
     setActiveTab("general");
     setOpen(true);
   };
+
+  // Deep link for the Smart Edit Router (src/hooks/useLedgerEditRouter.ts):
+  // any screen with a party-linked ledger sends the user here instead of
+  // opening its own editor, so this dialog stays the single place a party's
+  // fields can be edited. The target may not be on the currently loaded
+  // page/search of `parties`, so it's fetched directly by id.
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    if (!editId || !user) return;
+    (async () => {
+      let q = supabase.from("parties").select(PARTY_COLS).eq("id", editId).eq("user_id", user.id);
+      if (businessId) q = q.eq("business_id", businessId);
+      const { data, error } = await q.maybeSingle();
+      if (error) { toast.error(error.message); }
+      else if (!data) { toast.error("Party not found."); }
+      else { openEdit(data as unknown as Party); }
+      setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("edit"); return next; }, { replace: true });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, user, businessId]);
 
   const handleSave = async () => {
     if (!user) return;
