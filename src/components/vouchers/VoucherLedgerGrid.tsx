@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
@@ -10,10 +11,10 @@ type Col = "ledger" | "debit" | "credit" | "remarks";
 const COLS: readonly Col[] = ["ledger", "debit", "credit", "remarks"];
 
 const COLUMNS: DocumentGridColumn[] = [
-  { key: "ledger", header: "Ledger Account", widthClass: "min-w-[240px]" },
-  { key: "debit", header: "Debit (Dr)", align: "right", widthClass: "w-32" },
-  { key: "credit", header: "Credit (Cr)", align: "right", widthClass: "w-32" },
-  { key: "remarks", header: "Remarks", widthClass: "min-w-[180px]" },
+  { key: "ledger", header: "Ledger Account", widthClass: "min-w-[380px]" },
+  { key: "debit", header: "Debit (Dr)", align: "right", widthClass: "w-28" },
+  { key: "credit", header: "Credit (Cr)", align: "right", widthClass: "w-28" },
+  { key: "remarks", header: "Remarks", widthClass: "min-w-[160px]" },
 ];
 
 interface Props {
@@ -29,12 +30,40 @@ interface Props {
   lockedRowIndex?: number | null;
 }
 
+interface DropdownRect {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
+
+/** Cash before Bank before everything else, then alphabetical — the ledger an
+ *  operator reaches for right after keying a Payment/Receipt amount is almost
+ *  always Cash-in-Hand. */
+function sortForDropdown(options: LedgerOption[]): LedgerOption[] {
+  const rank = (o: LedgerOption) => (o.account_type === "cash" ? 0 : o.account_type === "bank" ? 1 : 2);
+  return [...options].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
+function computeDropdownRect(input: HTMLInputElement): DropdownRect {
+  const r = input.getBoundingClientRect();
+  const width = Math.min(Math.max(r.width, 560), window.innerWidth - 16);
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+  const maxHeight = Math.max(200, Math.min(420, window.innerHeight - r.bottom - 16));
+  return { top: r.bottom + 4, left, width, maxHeight };
+}
+
 /**
  * Tally-style Dr/Cr ledger grid: Tab/Enter moves cell-to-cell (via the shared
  * useDocumentGridNavigation hook, same as CreateOrder.tsx's item grid), and
  * the Ledger Account cell is a type-ahead text input (not a click-open
  * dropdown) so the whole row can be filled without touching the mouse —
  * mirrors CreateOrder.tsx's product-autocomplete pattern.
+ *
+ * The suggestion list renders through a portal into document.body (not
+ * inline in the table cell) so it can never be clipped by an ancestor's
+ * `overflow-hidden`/`overflow-x-auto` — the card around this grid is exactly
+ * such an ancestor, which used to cut the dropdown down to ~1 visible row.
  */
 export default function VoucherLedgerGrid({
   items, minRows, ledgersLoading, ledgerOptionsForRow, onUpdateRow, onAddRow, onRemoveRow, lockedRowIndex,
@@ -44,31 +73,120 @@ export default function VoucherLedgerGrid({
   const [searchIdx, setSearchIdx] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [highlighted, setHighlighted] = useState(0);
+  const [dropdownRect, setDropdownRect] = useState<DropdownRect | null>(null);
 
   const results = (idx: number) => {
-    const options = ledgerOptionsForRow(idx);
+    const options = sortForDropdown(ledgerOptionsForRow(idx));
     const term = searchTerm.trim().toLowerCase();
     if (!term) return options.slice(0, 20);
     return options.filter((o) => o.name.toLowerCase().includes(term)).slice(0, 20);
   };
 
-  const pickLedger = (idx: number, option: LedgerOption) => {
-    onUpdateRow(idx, { ledger_account_id: option.id, ledger_name: option.name });
-    setSearchIdx(null);
-    setSearchTerm("");
-    setTimeout(() => {
-      document.querySelector<HTMLInputElement>(`input[data-row="${idx}"][data-col="debit"]`)?.focus();
-    }, 10);
+  const openDropdown = (idx: number, input: HTMLInputElement) => {
+    setDropdownRect(computeDropdownRect(input));
+    setSearchIdx(idx);
+    setHighlighted(0);
   };
 
-  const handleKey = (e: React.KeyboardEvent, idx: number, col: Col) => {
+  const closeDropdown = () => {
+    setSearchIdx(null);
+    setSearchTerm("");
+    setDropdownRect(null);
+  };
+
+  // Keep the portal glued to its input across page scroll/resize while open.
+  useEffect(() => {
+    if (searchIdx === null) return;
+    const reposition = () => {
+      const el = document.querySelector<HTMLInputElement>(`input[data-row="${searchIdx}"][data-col="ledger"]`);
+      if (el) setDropdownRect(computeDropdownRect(el));
+    };
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [searchIdx]);
+
+  // Deleting the row whose dropdown is open (e.g. via the trash button)
+  // doesn't fire a blur on its now-unmounted input — close the dropdown
+  // explicitly so it doesn't linger, targeting whatever row now occupies
+  // that index (or nothing, if it was the last row).
+  useEffect(() => {
+    if (searchIdx !== null && searchIdx >= items.length) closeDropdown();
+  }, [items.length, searchIdx]);
+
+  const focusCell = (row: number, col: Col) => {
+    const el = document.querySelector<HTMLInputElement>(`input[data-row="${row}"][data-col="${col}"]`);
+    el?.focus();
+    el?.select();
+  };
+
+  const focusNextRowLedger = (idx: number) => {
+    if (idx === items.length - 1) onAddRow();
+    setTimeout(() => focusCell(idx + 1, "ledger"), 10);
+  };
+
+  const isBalanced = () => {
+    const debit = Math.round(items.reduce((s, r) => s + (r.debit || 0), 0) * 100);
+    const credit = Math.round(items.reduce((s, r) => s + (r.credit || 0), 0) * 100);
+    return debit > 0 && debit === credit;
+  };
+
+  const focusPostButton = () => {
+    document.querySelector<HTMLButtonElement>("[data-post-voucher-button]")?.focus();
+  };
+
+  /** Picking a ledger for a still-blank row also auto-fills the amount that
+   *  balances the voucher so far (the "remaining balance"), on whichever
+   *  side (Dr/Cr) is short — the operator only has to type an amount at all
+   *  for a partial payment/split; otherwise Enter/Tab straight through. */
+  const pickLedger = (idx: number, option: LedgerOption) => {
+    const patch: Partial<VoucherItem> = { ledger_account_id: option.id, ledger_name: option.name };
+    let focusCol: Col = "debit";
+
+    const alreadyAmounted = (items[idx].debit || 0) > 0 || (items[idx].credit || 0) > 0;
+    if (!alreadyAmounted) {
+      const otherDebit = items.reduce((s, r, i) => (i === idx ? s : s + (r.debit || 0)), 0);
+      const otherCredit = items.reduce((s, r, i) => (i === idx ? s : s + (r.credit || 0)), 0);
+      const diff = Math.round((otherDebit - otherCredit) * 100) / 100;
+      if (diff > 0) { patch.credit = diff; focusCol = "credit"; }
+      else if (diff < 0) { patch.debit = -diff; focusCol = "debit"; }
+    }
+
+    onUpdateRow(idx, patch);
+    closeDropdown();
+    setTimeout(() => focusCell(idx, focusCol), 10);
+  };
+
+  const handleKey = (e: React.KeyboardEvent<HTMLInputElement>, idx: number, col: Col) => {
     if (col === "ledger" && searchIdx === idx) {
       const list = results(idx);
       if (list.length > 0) {
         if (e.key === "ArrowDown") { e.preventDefault(); setHighlighted((p) => Math.min(p + 1, list.length - 1)); return; }
         if (e.key === "ArrowUp") { e.preventDefault(); setHighlighted((p) => Math.max(p - 1, 0)); return; }
         if (e.key === "Enter") { e.preventDefault(); pickLedger(idx, list[highlighted]); return; }
-        if (e.key === "Escape") { setSearchIdx(null); setSearchTerm(""); return; }
+      }
+      if (e.key === "Escape") { e.preventDefault(); closeDropdown(); return; }
+    }
+    if ((col === "debit" || col === "credit") && (e.key === "Enter" || e.key === "Tab")) {
+      // Debit and Credit just matched (voucher balanced) -- Tally-style: stop
+      // prompting for another row and send the operator straight to Post
+      // instead of an unneeded new row or this row's Remarks.
+      if (isBalanced()) {
+        e.preventDefault();
+        setTimeout(focusPostButton, 10);
+        return;
+      }
+      // Not balanced yet: once Debit is keyed for this row, Tab/Enter jumps
+      // straight to the next row's Ledger cell — Credit and Remarks on a
+      // debit-side row are already zero/irrelevant, so stepping through
+      // them is wasted keystrokes.
+      if (col === "debit" && (items[idx].debit || 0) > 0) {
+        e.preventDefault();
+        focusNextRowLedger(idx);
+        return;
       }
     }
     handleGridKey(e, idx, col, { rowCount: items.length, onAddRow });
@@ -90,7 +208,7 @@ export default function VoucherLedgerGrid({
         renderRow={(row, idx) => (
           <>
             <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{idx + 1}</td>
-            <td className="px-1.5 py-0.5 relative">
+            <td className="px-1.5 py-0.5">
               <DocumentGridCellInput
                 data-row={idx}
                 data-col="ledger"
@@ -99,35 +217,14 @@ export default function VoucherLedgerGrid({
                 placeholder={ledgersLoading ? "Loading ledgers…" : "Type to search ledger…"}
                 onChange={(e) => {
                   onUpdateRow(idx, { ledger_account_id: "", ledger_name: e.target.value });
-                  setSearchIdx(idx);
                   setSearchTerm(e.target.value);
                   setHighlighted(0);
+                  if (searchIdx !== idx) openDropdown(idx, e.target);
                 }}
-                onFocus={() => { setSearchIdx(idx); setSearchTerm(row.ledger_name ?? ""); setHighlighted(0); }}
+                onFocus={(e) => { setSearchTerm(row.ledger_name ?? ""); openDropdown(idx, e.target); }}
                 onBlur={() => setTimeout(() => setSearchIdx((s) => (s === idx ? null : s)), 150)}
                 onKeyDown={(e) => handleKey(e, idx, "ledger")}
               />
-              {searchIdx === idx && results(idx).length > 0 && (
-                <div className="absolute z-50 left-0 mt-0.5 w-72 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto">
-                  {results(idx).map((o, i) => (
-                    <button
-                      key={o.id}
-                      type="button"
-                      onMouseDown={(e) => { e.preventDefault(); pickLedger(idx, o); }}
-                      className={`w-full text-left px-2 py-1 text-[12px] border-b border-border last:border-0 ${
-                        highlighted === i ? "bg-primary text-primary-foreground" : "hover:bg-muted bg-popover"
-                      }`}
-                    >
-                      <span className="font-medium">{o.name}</span>
-                      {o.group_name && (
-                        <span className={`ml-1.5 text-[10px] ${highlighted === i ? "opacity-80" : "text-muted-foreground"}`}>
-                          ({o.group_name})
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
             </td>
 
             <td className="px-1.5 py-0.5">
@@ -181,6 +278,33 @@ export default function VoucherLedgerGrid({
           </>
         )}
       />
+
+      {searchIdx !== null && dropdownRect && results(searchIdx).length > 0 && createPortal(
+        <div
+          className="fixed z-[100] bg-popover border border-border rounded-lg shadow-elegant overflow-auto"
+          style={{ top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, maxHeight: dropdownRect.maxHeight }}
+        >
+          {results(searchIdx).map((o, i) => (
+            <button
+              key={o.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); pickLedger(searchIdx, o); }}
+              onMouseEnter={() => setHighlighted(i)}
+              className={`w-full text-left px-3 py-1.5 text-[13px] border-b border-border/60 last:border-0 ${
+                highlighted === i ? "bg-primary text-primary-foreground" : "hover:bg-muted bg-popover"
+              }`}
+            >
+              <span className="font-semibold">{o.name}</span>
+              {o.group_name && (
+                <span className={`ml-2 text-[11px] ${highlighted === i ? "opacity-80" : "text-muted-foreground"}`}>
+                  {o.group_name}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
