@@ -42,6 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import type { ProductCategory } from "@/lib/products";
+import { createHsn } from "@/lib/hsnMaster";
 
 type Step = 1 | 2 | 3 | 4;
 type DupMode = "skip" | "update" | "duplicate";
@@ -55,9 +56,17 @@ interface Row {
   dealer_rate: number;
   stock: number;
   gst_pct: number;
+  hsn_code: string;
   barcode: string;
   _errors: string[];
   _duplicate?: boolean;
+  _hsnNotFound?: boolean;
+}
+
+interface MissingHsn {
+  code: string;
+  description: string;
+  gst_pct: number;
 }
 
 const FIELDS = [
@@ -68,6 +77,7 @@ const FIELDS = [
   { key: "mrp", label: "MRP", required: false },
   { key: "dealer_rate", label: "Dealer Rate", required: false },
   { key: "stock", label: "Stock", required: false },
+  { key: "hsn_code", label: "HSN Code", required: false },
   { key: "gst_pct", label: "GST %", required: false },
   { key: "barcode", label: "Barcode", required: false },
 ] as const;
@@ -80,6 +90,7 @@ const ALIASES: Record<string, string[]> = {
   mrp: ["mrp", "list price", "rate", "price"],
   dealer_rate: ["dealer rate", "dealer", "net rate", "purchase rate", "cost"],
   stock: ["stock", "qty", "quantity", "on hand", "available"],
+  hsn_code: ["hsn", "hsn code", "hsn/sac", "sac", "sac code"],
   gst_pct: ["gst", "gst %", "gst%", "tax", "tax %"],
   barcode: ["barcode", "ean", "upc"],
 };
@@ -129,6 +140,8 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [rows, setRows] = useState<Row[]>([]);
   const [existingPNs, setExistingPNs] = useState<Set<string>>(new Set());
+  const [missingHsn, setMissingHsn] = useState<MissingHsn[]>([]);
+  const [creatingHsn, setCreatingHsn] = useState(false);
   const [dupMode, setDupMode] = useState<DupMode>("update");
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -145,6 +158,8 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
     setMapping({});
     setRows([]);
     setExistingPNs(new Set());
+    setMissingHsn([]);
+    setCreatingHsn(false);
     setDupMode("update");
     setProcessing(false);
     setProgress(0);
@@ -167,6 +182,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
         "MRP": 450,
         "Dealer Rate": 380,
         "Stock": 50,
+        "HSN Code": "27101980",
         "GST %": 18,
         "Barcode": "1234567890123",
       },
@@ -178,6 +194,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
         "MRP": 280,
         "Dealer Rate": 200,
         "Stock": 30,
+        "HSN Code": "84212300",
         "GST %": 18,
         "Barcode": "1234567890124",
       },
@@ -189,6 +206,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
         "MRP": 550,
         "Dealer Rate": 420,
         "Stock": 25,
+        "HSN Code": "27101980",
         "GST %": 18,
         "Barcode": "1234567890125",
       },
@@ -236,6 +254,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
         mrp: mapping.mrp ? num(r[mapping.mrp]) : 0,
         dealer_rate: mapping.dealer_rate ? num(r[mapping.dealer_rate]) : 0,
         stock: mapping.stock ? Math.floor(num(r[mapping.stock])) : 0,
+        hsn_code: mapping.hsn_code ? String(r[mapping.hsn_code] ?? "").trim() : "",
         gst_pct: mapping.gst_pct ? num(r[mapping.gst_pct]) : 18,
         barcode: mapping.barcode ? String(r[mapping.barcode] ?? "").trim() : "",
         _errors: [],
@@ -262,6 +281,30 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
       if (existing.has(r.part_number)) r._duplicate = true;
     });
     setExistingPNs(existing);
+
+    // HSN match-or-flag: batch-check every HSN code in the file against
+    // hsn_master. A match auto-links (no prompt); a miss is flagged on the
+    // row (not a hard error — the row can still import without HSN) and
+    // collected once per unique code for the "create missing HSN" review
+    // step below.
+    const hsnCodes = Array.from(new Set(built.map((r) => r.hsn_code).filter(Boolean)));
+    const foundHsn = new Set<string>();
+    for (let i = 0; i < hsnCodes.length; i += chunk) {
+      const slice = hsnCodes.slice(i, i + chunk);
+      const { data } = await supabase.from("hsn_master" as any).select("hsn_code").in("hsn_code", slice);
+      (data as { hsn_code: string }[] | null)?.forEach((d) => foundHsn.add(d.hsn_code));
+    }
+    built.forEach((r) => {
+      if (r.hsn_code && !foundHsn.has(r.hsn_code)) r._hsnNotFound = true;
+    });
+    const missing = new Map<string, MissingHsn>();
+    built.forEach((r) => {
+      if (r._hsnNotFound && !missing.has(r.hsn_code)) {
+        missing.set(r.hsn_code, { code: r.hsn_code, description: r.name, gst_pct: r.gst_pct });
+      }
+    });
+    setMissingHsn(Array.from(missing.values()));
+
     setRows(built);
     setStep(3);
   }, [mapping, rawRows, user]);
@@ -275,6 +318,40 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
       next[idx] = r;
       return next;
     });
+  };
+
+  const updateMissingHsnField = (code: string, patch: Partial<MissingHsn>) => {
+    setMissingHsn((prev) => prev.map((m) => (m.code === code ? { ...m, ...patch } : m)));
+  };
+
+  // Batched, not one-dialog-per-code: an import file can easily have dozens
+  // of HSN codes not yet in the master, so this creates all reviewed entries
+  // in one pass and clears the corresponding rows' _hsnNotFound flag.
+  const createMissingHsnEntries = async () => {
+    setCreatingHsn(true);
+    try {
+      for (const m of missingHsn) {
+        await createHsn({
+          hsn_code: m.code,
+          description: m.description.trim() || null,
+          default_uqc: null,
+          is_service: false,
+          status: "active",
+          remarks: null,
+          rate: m.gst_pct,
+          cess_rate: 0,
+          effective_from: new Date().toISOString().slice(0, 10),
+        });
+      }
+      const createdCodes = new Set(missingHsn.map((m) => m.code));
+      setRows((prev) => prev.map((r) => (createdCodes.has(r.hsn_code) ? { ...r, _hsnNotFound: false } : r)));
+      setMissingHsn([]);
+      toast.success(`Created ${createdCodes.size} HSN Master ${createdCodes.size === 1 ? "entry" : "entries"}`);
+    } catch (e: any) {
+      toast.error("Could not create HSN entries: " + e.message);
+    } finally {
+      setCreatingHsn(false);
+    }
   };
 
   const validCount = rows.filter((r) => r._errors.length === 0).length;
@@ -305,6 +382,11 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
         mrp: r.mrp,
         dealer_rate: r.dealer_rate,
         stock: r.stock,
+        // Only send an hsn_code that's confirmed to exist in hsn_master (the
+        // FK would otherwise reject the whole row) — a still-unresolved
+        // _hsnNotFound code is imported as null rather than blocking the
+        // product import, matching "flag, don't hard-error".
+        hsn_code: r.hsn_code && !r._hsnNotFound ? r.hsn_code : null,
         gst_pct: r.gst_pct,
         barcode: r.barcode || null,
         status: "active",
@@ -352,6 +434,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
           mrp: p.mrp,
           dealer_rate: p.dealer_rate,
           stock: p.stock,
+          hsn_code: p.hsn_code,
           gst_pct: p.gst_pct,
           barcode: p.barcode,
         })
@@ -432,6 +515,14 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
       ) },
       { header: "Stock", accessorKey: "stock", cell: ({ row }) => (
         <Input type="number" value={row.original.stock} onChange={(e) => updateCell(row.index, "stock", parseInt(e.target.value) || 0)} className="h-8 w-16 text-right tabular-nums" />
+      ) },
+      { header: "HSN", accessorKey: "hsn_code", cell: ({ row }) => (
+        <div className="flex items-center gap-1">
+          <Input value={row.original.hsn_code} onChange={(e) => updateCell(row.index, "hsn_code", e.target.value)} className="h-8 w-24 font-mono text-xs" />
+          {row.original._hsnNotFound && (
+            <Badge variant="outline" className="border-amber-500 text-amber-600 text-[10px] px-1 whitespace-nowrap">New</Badge>
+          )}
+        </div>
       ) },
       { header: "GST", accessorKey: "gst_pct", cell: ({ row }) => (
         <Input type="number" value={row.original.gst_pct} onChange={(e) => updateCell(row.index, "gst_pct", parseFloat(e.target.value) || 0)} className="h-8 w-16 text-right tabular-nums" />
@@ -560,6 +651,41 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
                     <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="skip" /> Skip Existing</label>
                     <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="duplicate" /> Create New Duplicate</label>
                   </RadioGroup>
+                </div>
+              )}
+
+              {missingHsn.length > 0 && (
+                <div className="rounded-lg border border-amber-300 bg-amber-500/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">
+                      {missingHsn.length} HSN {missingHsn.length === 1 ? "code" : "codes"} in this file aren't in HSN Master yet
+                    </p>
+                    <Button size="sm" onClick={createMissingHsnEntries} disabled={creatingHsn}>
+                      {creatingHsn ? "Creating…" : `Create ${missingHsn.length} HSN ${missingHsn.length === 1 ? "entry" : "entries"}`}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Review the description and GST rate below, or skip this — those rows will still import, just without an HSN linked (fix them later from Products or Bulk HSN Update).
+                  </p>
+                  <div className="space-y-2 max-h-48 overflow-auto">
+                    {missingHsn.map((m) => (
+                      <div key={m.code} className="grid grid-cols-[100px_1fr_90px] gap-2 items-center">
+                        <span className="font-mono text-xs">{m.code}</span>
+                        <Input
+                          value={m.description}
+                          onChange={(e) => updateMissingHsnField(m.code, { description: e.target.value })}
+                          placeholder="Description"
+                          className="h-8 text-xs"
+                        />
+                        <Input
+                          type="number"
+                          value={m.gst_pct}
+                          onChange={(e) => updateMissingHsnField(m.code, { gst_pct: parseFloat(e.target.value) || 0 })}
+                          className="h-8 text-xs text-right tabular-nums"
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

@@ -98,3 +98,111 @@ export async function setFinancialNoteSettings(
     throw error;
   }
 }
+
+// ── HSN compliance settings ──────────────────────────────────────────────
+// Same accounting_settings row again. When on, Invoice creation is blocked
+// for any line whose product has no resolvable HSN; Quotation/Order only
+// ever show a non-blocking warning (see HSN Compliance Engine Phase 6).
+
+export interface HsnComplianceSettings {
+  business_id: string;
+  require_hsn_on_invoice: boolean;
+}
+
+export async function fetchHsnComplianceSettings(businessId: string): Promise<HsnComplianceSettings | null> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("business_id, require_hsn_on_invoice")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data as unknown as HsnComplianceSettings) ?? null;
+}
+
+export async function setHsnComplianceSettings(businessId: string, requireHsnOnInvoice: boolean): Promise<void> {
+  const { error } = await supabase.from("accounting_settings" as any).upsert({
+    business_id: businessId,
+    require_hsn_on_invoice: requireHsnOnInvoice,
+  });
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("HSN compliance settings aren't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
+  }
+}
+
+/**
+ * "Require HSN on Invoice" gate, shared by both Sales Invoice
+ * (salesInvoices.ts) and Purchase Invoice (purchaseInvoices.ts) creation.
+ * Callers check this once per invoice, before any row is written, so a
+ * blocked invoice never leaves a half-created header behind. Quotations and
+ * Orders deliberately never call this — they only show a non-blocking
+ * warning, since they aren't final tax documents.
+ */
+export async function assertHsnCompliance(
+  businessId: string | null,
+  items: { product_id: string | null; part_number?: string | null }[],
+  products: { id: string; hsn_code: string | null }[]
+): Promise<void> {
+  if (!businessId) return;
+  const settings = await fetchHsnComplianceSettings(businessId);
+  if (!settings?.require_hsn_on_invoice) return;
+  const hsnByProduct = new Map(products.map((p) => [p.id, p.hsn_code]));
+  const missing = items.filter((it) => !(it.product_id && hsnByProduct.get(it.product_id)));
+  if (missing.length) {
+    const names = missing.map((it) => it.part_number || "unnamed line").join(", ");
+    throw new Error(
+      `Cannot save invoice — HSN is required for every line but missing for: ${names}. Set an HSN in Product Master, or turn off "Require HSN on Invoice" in GST & Compliance → Configuration.`
+    );
+  }
+}
+
+// ── GST Configuration settings ───────────────────────────────────────────
+// Same accounting_settings row again. e-Invoice/e-Way Bill enable flags are
+// simple on/off toggles for now (GST Compliance Suite Phase 1) — they don't
+// gate anything yet since generation is already available from a posted
+// Sales Invoice's row menu regardless; they exist so GST Configuration can
+// show applicability status, and later phases can use them to drive
+// auto-generation.
+
+export type GstReturnFrequency = "monthly" | "quarterly";
+
+export interface GstComplianceConfig {
+  business_id: string;
+  enable_einvoice: boolean;
+  enable_ewaybill: boolean;
+  gst_return_frequency: GstReturnFrequency;
+}
+
+export async function fetchGstComplianceConfig(businessId: string): Promise<GstComplianceConfig | null> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("business_id, enable_einvoice, enable_ewaybill, gst_return_frequency")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data as unknown as GstComplianceConfig) ?? null;
+}
+
+export async function setGstComplianceConfig(
+  businessId: string,
+  patch: Partial<Pick<GstComplianceConfig, "enable_einvoice" | "enable_ewaybill" | "gst_return_frequency">>
+): Promise<void> {
+  const { error } = await supabase.from("accounting_settings" as any).upsert({
+    business_id: businessId,
+    ...patch,
+  });
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("GST configuration settings aren't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
+  }
+}

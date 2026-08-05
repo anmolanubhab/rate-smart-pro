@@ -73,11 +73,17 @@ export type PrintMeta = {
   vehicleNumber?: string | null;
   lrNumber?: string | null;
   ewayNumber?: string | null;
+  distanceKm?: number | null;
+  validUntil?: string | null;
   /** Voucher narration — shown when the party block is hidden (ledger-mode documents). */
   narration?: string | null;
   /** Text encoded into the QR image when showQrCode is on — e.g. a GST
    *  e-invoice signed QR payload, or a plain verification string. */
   qrCodeValue?: string | null;
+  /** e-Invoice IRN/Ack details — text alongside the QR, not a replacement for it. */
+  irn?: string | null;
+  ackNo?: string | null;
+  ackDate?: string | null;
 };
 
 export type PrintConfig = {
@@ -265,6 +271,7 @@ export default function PrintDocument({
                 <span>{L.date}: {meta.date || "—"}</span>
               </div>
               {meta.refNumber && <div>{meta.refLabel ?? L.refNo}: {meta.refNumber}</div>}
+              {meta.irn && <div className="break-all">{L.irn}: {meta.irn}</div>}
             </div>
           )}
 
@@ -445,6 +452,24 @@ export default function PrintDocument({
                     <span className="w-40 text-left">{L.yes}</span>
                   </div>
                 )}
+                {meta.irn && (
+                  <div className="flex justify-end gap-2">
+                    <span className="w-28 text-left font-semibold">{L.irn}</span>
+                    <span className="w-40 text-left break-all">{meta.irn}</span>
+                  </div>
+                )}
+                {meta.ackNo && (
+                  <div className="flex justify-end gap-2">
+                    <span className="w-28 text-left font-semibold">{L.ackNo}</span>
+                    <span className="w-40 text-left">{meta.ackNo}</span>
+                  </div>
+                )}
+                {meta.ackDate && (
+                  <div className="flex justify-end gap-2">
+                    <span className="w-28 text-left font-semibold">{L.ackDate}</span>
+                    <span className="w-40 text-left">{meta.ackDate}</span>
+                  </div>
+                )}
               </div>
               {showQrCode && meta.qrCodeValue && (
                 <div className="mt-2 flex justify-end">
@@ -481,6 +506,16 @@ export default function PrintDocument({
                   <div className="col-span-5 font-semibold">{L.vehicleNo}</div><div className="col-span-7">{meta.vehicleNumber || "—"}</div>
                   <div className="col-span-5 font-semibold">{L.lrNo}</div><div className="col-span-7">{meta.lrNumber || "—"}</div>
                   <div className="col-span-5 font-semibold">{L.ewayBillNo}</div><div className="col-span-7">{meta.ewayNumber || "—"}</div>
+                  {meta.distanceKm != null && (
+                    <>
+                      <div className="col-span-5 font-semibold">{L.distance}</div><div className="col-span-7">{meta.distanceKm}</div>
+                    </>
+                  )}
+                  {meta.validUntil && (
+                    <>
+                      <div className="col-span-5 font-semibold">{L.validUntil}</div><div className="col-span-7">{meta.validUntil}</div>
+                    </>
+                  )}
                 </div>
               </>
             ) : (

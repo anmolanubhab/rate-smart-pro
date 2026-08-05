@@ -301,6 +301,7 @@ const CreateOrder = () => {
       vehicle_model: p.vehicle_model,
       mrp: Number(p.mrp),
       gst_pct: Number(p.gst_pct),
+      hsn: p.hsn_code || "",
       discount_pct: items[idx].discount_pct || def,
       qty,
       unit_id: null,
@@ -639,8 +640,15 @@ const CreateOrder = () => {
                   onKeyDown={(e) => handleKey(e, idx, "desc")} />
               </td>
               <td className="px-0.5 py-0.5">
-                <DocumentGridCellInput data-row={idx} data-col="hsn" value={it.hsn || ""} onChange={(e) => updateRow(idx, { hsn: e.target.value })}
-                  onKeyDown={(e) => handleKey(e, idx, "hsn")} />
+                <DocumentGridCellInput
+                  data-row={idx} data-col="hsn" value={it.hsn || ""} readOnly disabled
+                  title={it.product_id && !it.hsn ? "This product has no HSN linked in Product Master" : "Auto-filled from the product's HSN"}
+                  className={
+                    it.product_id && !it.hsn
+                      ? "h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-400 cursor-default"
+                      : "h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent text-muted-foreground cursor-default"
+                  }
+                />
               </td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput align="right" data-row={idx} data-col="gst" type="number" step="any" value={it.gst_pct || ""} onChange={(e) => updateRow(idx, { gst_pct: +e.target.value })}

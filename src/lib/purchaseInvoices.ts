@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
 import { createVoucher, postVoucher, cancelVoucher, type VoucherItem } from "@/lib/voucherService";
+import { assertHsnCompliance } from "@/lib/accountingLock";
 
 export type PurchaseInvoiceStatus = "unpaid" | "partially_paid" | "paid" | "cancelled";
 
@@ -315,6 +316,17 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     if (Number(it.gst_percent) < 0) throw new Error(`${it.part_number}: GST % cannot be negative.`);
   }
 
+  // HSN Lock groundwork + "Require HSN on Invoice" gate, both done up front
+  // (before any header row is written) so a blocked invoice never leaves a
+  // half-created row behind. hsnByProduct is reused below for the actual
+  // per-line snapshot at insert time.
+  const productIdsForCheck = Array.from(new Set(validItemsForCheck.map((it) => it.product_id).filter(Boolean)));
+  const { data: productsForHsn } = productIdsForCheck.length
+    ? await supabase.from("products").select("id, hsn_code").in("id", productIdsForCheck as string[])
+    : { data: [] as { id: string; hsn_code: string | null }[] };
+  const hsnByProduct = new Map((productsForHsn || []).map((p: any) => [p.id, p.hsn_code]));
+  await assertHsnCompliance(businessId, validItemsForCheck, productsForHsn || []);
+
   // Three-way matching -- only for a DIRECT PO link (no GRN): a GRN-linked
   // invoice is already transitively bounded by the GRN's own pending-qty
   // ceiling (fetchPendingPOItemsForGRN in goodsReceipts.ts), so it isn't
@@ -398,6 +410,11 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     } as never);
     const isInterstate = interstateErr ? false : !!interstateData;
 
+    // HSN Lock: snapshot each line's product HSN at save time (hsnByProduct
+    // built above, alongside the compliance check), so a later HSN change on
+    // the product never rewrites an already-posted invoice. This was
+    // previously never written — purchase_invoice_items.hsn was always null
+    // despite the column existing.
     const rows = validItems.map((it, idx) => {
       const half = +(it.tax_amount / 2).toFixed(2);
       return {
@@ -406,6 +423,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         product_id: it.product_id,
         part_number: it.part_number,
         description: it.description,
+        hsn: it.product_id ? hsnByProduct.get(it.product_id) ?? null : null,
         quantity: it.qty,
         purchase_price: it.rate,
         discount_percent: it.discount_percent,
