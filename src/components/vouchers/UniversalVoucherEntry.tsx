@@ -240,17 +240,21 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   const { data: supplierLedgers = [] } = useQuery({
     queryKey: ["ledgers-supplier", user?.id, business?.id],
     enabled: !!user?.id && needsSupplier,
-    // Payment's party row must also accept direct expense ledgers (e.g.
+    // Payment's party row must also accept: direct expense ledgers (e.g.
     // "Advertisement Expense") — most Payment vouchers pay a cash expense
-    // outright rather than settling a supplier bill.
-    queryFn: () => getLedgerAccountOptions(user!.id, ["supplier", "expense"]),
+    // outright rather than settling a supplier bill; and customer ledgers —
+    // returning a customer's advance is a real Payment (Dr Customer, Cr
+    // Cash/Bank), not just settling what we owe a supplier.
+    queryFn: () => getLedgerAccountOptions(user!.id, ["supplier", "expense", "customer"]),
   });
   const { data: customerLedgers = [] } = useQuery({
     queryKey: ["ledgers-customer", user?.id, business?.id],
     enabled: !!user?.id && needsCustomer,
     // Mirrors supplierLedgers: Receipt's party row also accepts direct
-    // income ledgers (e.g. "Interest Received") received outside a sale.
-    queryFn: () => getLedgerAccountOptions(user!.id, ["customer", "income"]),
+    // income ledgers (e.g. "Interest Received") received outside a sale,
+    // and supplier ledgers — receiving a refund/advance-back from a
+    // supplier is a real Receipt (Dr Cash/Bank, Cr Supplier).
+    queryFn: () => getLedgerAccountOptions(user!.id, ["customer", "income", "supplier"]),
   });
   const { data: bankCashLedgers = [] } = useQuery({
     queryKey: ["ledgers-bank-cash", user?.id, business?.id],
