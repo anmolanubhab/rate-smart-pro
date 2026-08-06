@@ -137,11 +137,11 @@ export default function VoucherDetail() {
   };
 
   const handleDelete = async () => {
-    if (!id || !voucher || !business) return;
+    if (!id || !voucher || !business || !user) return;
     setBusy(true);
     try {
       if (canDeleteDirectly(role, financialRights)) {
-        await deleteVoucher(id, voucherLockOpts);
+        await deleteVoucher(user.id, id, undefined, voucherLockOpts);
         toast.success("Voucher deleted.");
         qc.invalidateQueries({ queryKey: ["vouchers-list"] });
         navigate("/accounting/vouchers");

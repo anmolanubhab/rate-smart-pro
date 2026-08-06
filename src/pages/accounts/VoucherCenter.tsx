@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Eye, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchVouchers } from "@/lib/accounting";
+import { useBusiness } from "@/hooks/useBusiness";
+import { canDeleteDirectly, canUnlockVouchers } from "@/lib/permissions";
+import { fetchVouchers, fmtInr, type VoucherRow } from "@/lib/accounting";
+import { fetchLockDate, isDateLocked } from "@/lib/accountingLock";
+import { deleteVoucher, REFERENCE_TYPE_LABEL } from "@/lib/voucherService";
 import { VOUCHER_TYPE_CONFIGS, VOUCHER_TYPE_ORDER } from "@/lib/voucherTypeConfig";
 import { useVoucherShortcuts } from "@/hooks/useVoucherShortcuts";
 
@@ -18,8 +29,12 @@ const labels: Record<string, string> = {
 export default function VoucherCenter() {
   useEffect(() => { document.title = "Voucher Center — RD Pro"; }, []);
   const { user } = useAuth();
+  const { business, role, financialRights } = useBusiness();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [filter, setFilter] = useState("All");
+  const [deleteTarget, setDeleteTarget] = useState<VoucherRow | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   // F4/F5/F6/F7/Ctrl+F8/Ctrl+F9 jump straight into a new voucher of that
   // type from the listing page too, not just from inside an entry screen.
@@ -31,7 +46,49 @@ export default function VoucherCenter() {
     queryFn: () => fetchVouchers(user!.id, { type: filter, limit: 500 }),
   });
 
+  // Fetched once per business rather than per row -- isDateLocked() below is
+  // a pure comparison against this single value, same lock date every
+  // voucher on the page shares.
+  const { data: lock } = useQuery({
+    queryKey: ["accounting-lock", business?.id],
+    enabled: !!business?.id,
+    queryFn: () => fetchLockDate(business!.id),
+  });
+  const canEditLocked = canUnlockVouchers(role, financialRights);
+  const canDelete = canDeleteDirectly(role, financialRights);
+
+  /** Mirrors the guard order inside deleteVoucher() itself so the button's
+   *  disabled state and tooltip never promise something the actual delete
+   *  call would then reject. */
+  const deleteBlockReason = (v: VoucherRow): string | null => {
+    if (v.status === "posted") return "Posted vouchers can't be deleted directly. Cancel it first.";
+    if (v.reference_type) {
+      const label = REFERENCE_TYPE_LABEL[v.reference_type] ?? v.reference_type;
+      return `This voucher was generated automatically from ${label}. Delete or cancel the source document instead.`;
+    }
+    if (!canEditLocked && isDateLocked(v.voucher_date, lock ?? null)) {
+      return "This accounting period is locked. Unlock it in Settings → Accounting Lock first.";
+    }
+    return null;
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget || !user) return;
+    setBusyId(deleteTarget.id);
+    try {
+      await deleteVoucher(user.id, deleteTarget.id, undefined, { canEditLockedVoucher: canEditLocked });
+      toast.success(`Voucher ${deleteTarget.voucher_number} deleted.`);
+      qc.invalidateQueries({ queryKey: ["vouchers"] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not delete voucher");
+    } finally {
+      setBusyId(null);
+      setDeleteTarget(null);
+    }
+  };
+
   const rows = useMemo(() => data.map((v) => ({
+    id: v.id,
     date: v.voucher_date,
     number: v.voucher_number,
     type: labels[v.voucher_type] ?? v.voucher_type,
@@ -39,6 +96,7 @@ export default function VoucherCenter() {
     amount: v.total_amount,
     status: v.status === "posted" ? "Posted" : v.status === "draft" ? "Draft" : "Cancelled",
     status_tone: v.status === "posted" ? "success" : v.status === "draft" ? "warning" : "danger",
+    _voucher: v,
   })), [data]);
 
   return (
@@ -80,7 +138,65 @@ export default function VoucherCenter() {
           { key: "status", label: "Status", format: "badge" },
         ]}
         rows={rows}
+        rowActions={(row) => {
+          const v = row._voucher as VoucherRow;
+          const blockReason = deleteBlockReason(v);
+          return (
+            <div className="flex items-center justify-end gap-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => navigate(`/accounting/vouchers/${v.id}`)}>
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>View</TooltipContent>
+              </Tooltip>
+              {canDelete && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className={`h-8 w-8 ${blockReason ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
+                      disabled={!!blockReason || busyId === v.id}
+                      onClick={() => setDeleteTarget(v)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{blockReason ?? "Delete Voucher"}</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          );
+        }}
       />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Voucher?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-left mt-2">
+                <div className="flex justify-between"><span className="text-muted-foreground">Voucher No</span><span className="font-medium text-foreground">{deleteTarget?.voucher_number}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Voucher Type</span><span className="font-medium text-foreground">{deleteTarget ? (labels[deleteTarget.voucher_type] ?? deleteTarget.voucher_type) : ""}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span className="font-medium text-foreground tabular-nums">₹ {deleteTarget ? fmtInr(deleteTarget.total_amount) : ""}</span></div>
+                <div className="pt-1 text-destructive">This action cannot be undone.</div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busyId === deleteTarget?.id}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={busyId === deleteTarget?.id}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Voucher
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
