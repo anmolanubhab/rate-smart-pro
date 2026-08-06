@@ -178,6 +178,7 @@ export async function fetchVouchers(userId: string, opts: { type?: string; from?
     .from("vouchers")
     .select("id, voucher_number, voucher_type, voucher_date, narration, total_amount, status, reference_id, reference_type")
     .eq("user_id", userId)
+    .eq("is_deleted", false)
     .order("voucher_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(opts.limit ?? 200);

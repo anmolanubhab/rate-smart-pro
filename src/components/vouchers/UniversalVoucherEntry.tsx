@@ -419,10 +419,10 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   };
 
   const handleDelete = async () => {
-    if (!id) return;
+    if (!id || !user) return;
     if (!window.confirm("Delete this draft voucher? This cannot be undone.")) return;
     try {
-      await deleteVoucher(id, voucherLockOpts);
+      await deleteVoucher(user.id, id, undefined, voucherLockOpts);
       toast.success("Voucher deleted.");
       qc.invalidateQueries({ queryKey: ["vouchers-list"] });
       navigate("/accounts/vouchers");

@@ -10,6 +10,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchLockDate, isDateLocked } from "@/lib/accountingLock";
+import { logAudit } from "@/lib/audit";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -470,16 +471,46 @@ export async function cancelVoucher(
 
 // ─── 6. deleteVoucher ────────────────────────────────────────────────────────
 
+/** Friendly source labels for the "auto-generated, delete the source instead" guard below. */
+export const REFERENCE_TYPE_LABEL: Record<string, string> = {
+  order: "Sales Order",
+  sales_invoice: "Sales Invoice",
+  purchase_invoice: "Purchase Invoice",
+  sales_return: "Sales Return",
+  purchase_return: "Purchase Return",
+  supplier_payment: "Supplier Payment",
+  inventory_adjustment: "Inventory Adjustment",
+};
+
 /**
- * Hard-deletes a draft voucher and its items.
- * Posted vouchers should be cancelled, not deleted.
+ * Soft-deletes a voucher (draft or cancelled — never posted) and its
+ * items stay intact for audit. Mirrors the is_deleted/deleted_at/deleted_by
+ * columns approveRequest() (src/lib/approvals.ts) already writes when a
+ * lower-role delete *request* gets approved -- this direct-delete path used
+ * to hard-delete instead, a real inconsistency: a manager's direct delete
+ * physically removed the row while an approved accountant's delete request
+ * only soft-deleted it. Unified on soft delete here so both paths, and
+ * every voucher list (listVouchers() already filters is_deleted=false),
+ * behave identically and nothing is ever unrecoverable.
+ *
+ * Blocks on reference_type: a voucher auto-posted from a source document
+ * (order/invoice/return/etc — see REFERENCE_TYPE_LABEL) must never be
+ * deleted on its own, since the source row still points at it and deleting
+ * it out from under that reference would orphan the source's "view voucher"
+ * link. The source document's own cancel/delete flow is what should remove
+ * or replace it.
  */
-export async function deleteVoucher(voucherId: string, opts: VoucherLockOptions = {}): Promise<void> {
+export async function deleteVoucher(
+  userId: string,
+  voucherId: string,
+  reason?: string,
+  opts: VoucherLockOptions = {}
+): Promise<void> {
   const businessId = requireBusiness();
 
   const { data: existing, error: fetchError } = await supabase
     .from("vouchers")
-    .select("status, voucher_date")
+    .select("voucher_number, status, voucher_date, reference_type, approved_by")
     .eq("id", voucherId)
     .eq("business_id", businessId)
     .single();
@@ -488,26 +519,42 @@ export async function deleteVoucher(voucherId: string, opts: VoucherLockOptions 
   if (!existing) throw new Error("Voucher not found.");
 
   if (existing.status === "posted") {
+    throw new Error("Posted vouchers cannot be deleted. Cancel it first.");
+  }
+  if (existing.reference_type) {
+    const label = REFERENCE_TYPE_LABEL[existing.reference_type] ?? existing.reference_type;
     throw new Error(
-      "Posted vouchers cannot be deleted. Cancel it first."
+      `This voucher was generated automatically from ${label}. Delete or cancel the source document instead.`
     );
+  }
+  if (existing.approved_by) {
+    throw new Error("This voucher has been approved and cannot be deleted directly.");
   }
   await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
 
-  // Delete items first (FK constraint)
-  await supabase
-    .from("voucher_items")
-    .delete()
-    .eq("voucher_id", voucherId)
-    .eq("business_id", businessId);
-
   const { error } = await supabase
     .from("vouchers")
-    .delete()
+    .update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: userId,
+      delete_reason: reason ?? null,
+      updated_at: new Date().toISOString(),
+      updated_by: userId,
+    })
     .eq("id", voucherId)
     .eq("business_id", businessId);
 
   if (error) throw new Error(`deleteVoucher: ${error.message}`);
+
+  await logAudit({
+    business_id: businessId,
+    action: "VOUCHER_DELETE",
+    entity_type: "vouchers",
+    entity_id: voucherId,
+    old_value: { voucher_number: existing.voucher_number, status: existing.status },
+    reason: reason ?? null,
+  });
 }
 
 // ─── 7. getVoucher ───────────────────────────────────────────────────────────
