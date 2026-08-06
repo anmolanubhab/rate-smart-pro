@@ -1,12 +1,12 @@
 // src/pages/reports/inventory/FsnAnalysis.tsx
 import { useEffect, useState } from "react";
-import { Download, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchFsnAnalysis, FsnRow, fmtInr, fmtQty, fyStart } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 
 const FSN_STYLES: Record<string,{badge:string;label:string;desc:string}> = {
   F: { badge:"border-emerald-500/40 text-emerald-700 bg-emerald-500/10 font-bold", label:"Fast Moving",  desc:"High frequency outward movement" },
@@ -49,14 +49,33 @@ export default function FsnAnalysis() {
           <p className="text-muted-foreground mt-1 text-sm">Fast · Slow · Non-moving stock classification by sales frequency</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={()=>window.print()}><Printer className="h-3.5 w-3.5 mr-1" />Print</Button>
-          <Button size="sm" onClick={()=>exportSheet(filtered.map(r=>({
-            Class:r.fsn_class,"Part No":r.part_number,Product:r.product_name,Brand:r.brand,
-            Category:r.category,"Sales Qty":r.outward_qty,"Sales Value":r.outward_value,
-            "Movements":r.movement_count,"Closing Qty":r.closing_qty,
-          })),"fsn-analysis.xlsx","FSN")} className="gradient-primary text-white border-0">
-            <Download className="h-3.5 w-3.5 mr-1" />Excel
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="fsn_analysis"
+            documentNumber="fsn-analysis"
+            getReportUdm={(): ReportUdm => {
+              const columns: UdmColumn[] = [
+                { key: "fsn_class", label: "Class" },
+                { key: "part_number", label: "Part No" },
+                { key: "product_name", label: "Product" },
+                { key: "brand", label: "Brand" },
+                { key: "category", label: "Category" },
+                { key: "outward_qty", label: "Sales Qty", align: "right", format: "number" },
+                { key: "outward_value", label: "Sales Value", align: "right", format: "currency" },
+                { key: "movement_count", label: "Movements", align: "right", format: "number" },
+                { key: "closing_qty", label: "Closing Qty", align: "right", format: "number" },
+              ];
+              return {
+                kind: "report",
+                documentTypeId: "fsn_analysis",
+                title: "FSN Analysis",
+                subtitle: `${fromDate} to ${toDate}`,
+                columns,
+                rows: filtered,
+                pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+              };
+            }}
+            disabled={filtered.length === 0}
+          />
         </div>
       </header>
 

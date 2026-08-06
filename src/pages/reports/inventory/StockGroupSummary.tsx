@@ -1,11 +1,11 @@
 // src/pages/reports/inventory/StockGroupSummary.tsx
 import { useEffect, useState } from "react";
-import { Download, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchStockGroupSummary, GroupSummaryRow, fmtInr, fmtQty, fyStart } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 
 export default function StockGroupSummary() {
   const { business } = useBusiness();
@@ -24,13 +24,18 @@ export default function StockGroupSummary() {
       .then(setRows).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, [business?.id, fromDate, toDate]);
 
-  const doExport = () => exportSheet(rows.map(r => ({
-    "Group": r.group_name, "Products": r.product_count,
-    "Opening Qty": r.opening_qty, "Opening Value": r.opening_value,
-    "Inward Qty": r.inward_qty, "Inward Value": r.inward_value,
-    "Outward Qty": r.outward_qty, "Outward Value": r.outward_value,
-    "Closing Qty": r.closing_qty, "Closing Value": r.closing_value,
-  })), "stock-group-summary.xlsx", "Group Summary");
+  const reportColumns: UdmColumn[] = [
+    { key: "group_name", label: "Product Group" },
+    { key: "product_count", label: "Products", align: "right", format: "number" },
+    { key: "opening_qty", label: "Op. Qty", align: "right", format: "number" },
+    { key: "opening_value", label: "Op. Value", align: "right", format: "currency" },
+    { key: "inward_qty", label: "Inward Qty", align: "right", format: "number" },
+    { key: "inward_value", label: "Inward Value", align: "right", format: "currency" },
+    { key: "outward_qty", label: "Outward Qty", align: "right", format: "number" },
+    { key: "outward_value", label: "Outward Value", align: "right", format: "currency" },
+    { key: "closing_qty", label: "Closing Qty", align: "right", format: "number" },
+    { key: "closing_value", label: "Closing Value", align: "right", format: "currency" },
+  ];
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 animate-fade-in-up">
@@ -40,8 +45,20 @@ export default function StockGroupSummary() {
           <h1 className="font-display text-3xl font-bold mt-1">Stock Group Summary</h1>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-3.5 w-3.5 mr-1" />Print</Button>
-          <Button size="sm" onClick={doExport} className="gradient-primary text-white border-0"><Download className="h-3.5 w-3.5 mr-1" />Excel</Button>
+          <DocumentOutputCenter
+            documentTypeId="stock_group_summary"
+            documentNumber="stock-group-summary"
+            getReportUdm={(): ReportUdm => ({
+              kind: "report",
+              documentTypeId: "stock_group_summary",
+              title: "Stock Group Summary",
+              subtitle: `${fromDate} to ${toDate}`,
+              columns: reportColumns,
+              rows,
+              pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+            })}
+            disabled={rows.length === 0}
+          />
         </div>
       </header>
 

@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle, Printer, Save, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, CheckCircle, Save, Trash2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,6 +32,8 @@ import {
   type VoucherItem, type CreateVoucherInput, type AdjustmentCategorySnapshot,
 } from "@/lib/voucherService";
 import { VOUCHER_TYPE_CONFIGS, rowFilterFor, type EngineVoucherType } from "@/lib/voucherTypeConfig";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildVoucherUdm, VOUCHER_REGISTRY_ID } from "@/lib/documentUdm/voucherUdm";
 import { useVoucherShortcuts } from "@/hooks/useVoucherShortcuts";
 import { applyBillAllocations, type BillAllocationLine } from "@/lib/billAllocation";
 import VoucherTypeTabs from "./VoucherTypeTabs";
@@ -466,9 +468,14 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => navigate("/accounts/vouchers")}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Voucher Center (Esc)
         </Button>
-        <Button variant="outline" size="sm" onClick={() => window.print()}>
-          <Printer className="h-4 w-4 mr-1" /> Print
-        </Button>
+        {readOnly && id && (
+          <DocumentOutputCenter
+            documentTypeId={VOUCHER_REGISTRY_ID[type]}
+            documentId={id}
+            documentNumber={voucherNo}
+            getUdm={() => getVoucher(id).then(buildVoucherUdm)}
+          />
+        )}
       </div>
 
       <VoucherTypeTabs active={type} isDirty={isDirty} />

@@ -7,21 +7,15 @@ import {
   X,
   Plus,
   Trash2,
-  FileDown,
   FileSpreadsheet,
   ChevronDown,
   ChevronUp,
   Upload,
-  Printer,
   Ban,
   Copy,
 } from "lucide-react";
-import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
-import PrintCopyDialog from "@/components/print/PrintCopyDialog";
-import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
-import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
-import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
-import { fetchProductWeights } from "@/lib/productWeights";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildPurchaseOrderUdm } from "@/lib/documentUdm/purchaseOrderUdm";
 import {
   fetchProductUnits, fetchUnits, purchaseUnitOf, stockUnitOf, toStockQty,
   type ProductUnit, type Unit as MeasureUnit,
@@ -44,7 +38,6 @@ import {
   blankPOItem,
   computePOItem,
   computePOTotals,
-  exportPOToExcel,
   downloadPOImportTemplate,
   fetchPOItems,
   fetchPurchaseOrder,
@@ -169,13 +162,6 @@ export default function CreatePurchaseOrder() {
   const [importOpen, setImportOpen] = useState(false);
   const [activityLogs, setActivityLogs] = useState<POActivityLog[]>([]);
   const [duplicating, setDuplicating] = useState(false);
-
-  // Print
-  const [printData, setPrintData] = useState<{ company: any; party: any; meta: any; items: any[]; totals: any } | null>(null);
-  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
-  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
-  const [copyLabels, setCopyLabels] = useState<string[]>([]);
 
   const poIdRef = useRef<string | null>(editId || null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
@@ -502,11 +488,6 @@ export default function CreatePurchaseOrder() {
     }
   };
 
-  const handleExport = () => {
-    if (!savedPO) { toast.error("Save the PO first to export"); return; }
-    exportPOToExcel(savedPO, validItems(), supplier?.name);
-  };
-
   const handleDuplicate = async () => {
     if (!user || !poIdRef.current || duplicating) return;
     setDuplicating(true);
@@ -518,53 +499,6 @@ export default function CreatePurchaseOrder() {
       toast.error(e.message ?? "Failed to duplicate purchase order");
     } finally {
       setDuplicating(false);
-    }
-  };
-
-  const handlePrint = async () => {
-    if (!savedPO || !businessId) { toast.error("Save the PO first to print"); return; }
-    try {
-      const [{ data: biz }, types, profile] = await Promise.all([
-        supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", businessId).maybeSingle(),
-        fetchEnabledPrintCopyTypes(businessId),
-        fetchDefaultPrintProfile(businessId, "purchase_order"),
-      ]);
-      const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
-      const items = validItems();
-      const weights = await fetchProductWeights(items.map((it) => it.product_id));
-
-      setPrintData({
-        company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
-        party: {
-          name: supplier?.name ?? "—",
-          mobile: supplier?.phone ?? null,
-          address: supplier?.address ?? null,
-          gstNo: supplier?.gst ?? null,
-        },
-        meta: { number: poNumber, numberLabel: "PO No", date: poDate },
-        items: items.map((it) => ({
-          partNumber: it.part_number ?? "",
-          description: it.description ?? "",
-          hsn: null,
-          qty: Number(it.qty) || 0,
-          rate: Number(it.rate) || 0,
-          gstPct: Number(it.gst_percent) || 0,
-          amount: Number(it.total_amount) || 0,
-          discountPct: it.discount_percent != null ? Number(it.discount_percent) : null,
-          weight: it.product_id ? weights.get(it.product_id) ?? null : null,
-        })),
-        totals: {
-          subtotal: Number(totals.subtotal) || 0,
-          discount: Number(totals.discount_total) || 0,
-          tax: Number(totals.tax_total) || 0,
-          grandTotal: finalTotal,
-        },
-      });
-      setPrintProfile(profile);
-      setCopyTypes(types);
-      setCopyDialogOpen(true);
-    } catch (e: any) {
-      toast.error(e.message ?? "Could not prepare purchase order for printing");
     }
   };
 
@@ -609,7 +543,6 @@ export default function CreatePurchaseOrder() {
   }
 
   const toolbarActions: DocumentToolbarAction[] = [
-    { key: "print", label: "Print", icon: Printer, onClick: handlePrint, hidden: !editMode },
     { key: "save", label: "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: () => handleSave("draft"), disabled: saving },
     { key: "submit", label: "Submit", icon: CheckCircle2, shortcut: "Ctrl+Enter", onClick: () => handleSave("pending_approval"), disabled: saving, variant: "primary" },
     { key: "reject", label: "Reject", icon: X, onClick: handleReject, disabled: saving, hidden: !(editMode && currentStatus === "pending_approval" && canApprove), className: "border-destructive/40 text-destructive" },
@@ -636,10 +569,18 @@ export default function CreatePurchaseOrder() {
         actions={[
           { key: "template", label: "Template", icon: FileSpreadsheet, onClick: downloadPOImportTemplate, variant: "ghost" },
           { key: "import", label: "Import XLS", icon: Upload, onClick: () => setImportOpen(true) },
-          { key: "export", label: "Export XLS", icon: FileDown, onClick: handleExport },
           ...toolbarActions,
         ]}
       />
+      <div className="print:hidden flex justify-end -mt-2 mb-2">
+        <DocumentOutputCenter
+          documentTypeId="purchase_order"
+          documentId={savedPO?.id}
+          documentNumber={poNumber}
+          getUdm={() => buildPurchaseOrderUdm(savedPO!, validItems(), supplier)}
+          disabled={!savedPO}
+        />
+      </div>
 
       {/* ── PO Sheet ────────────────────────────────────────────────────── */}
       <DocumentSheet>
@@ -1009,30 +950,6 @@ export default function CreatePurchaseOrder() {
         .po-entry input[type=number] { -moz-appearance: textfield; }
       `}</style>
 
-      {printData && printProfile && (
-        <PrintCopyDialog
-          open={copyDialogOpen}
-          onOpenChange={setCopyDialogOpen}
-          copyTypes={copyTypes}
-          onConfirm={(labels) => {
-            applyPrintPageStyle(printProfile);
-            setCopyLabels(labels);
-            setTimeout(() => window.print(), 50);
-          }}
-        />
-      )}
-      {printData && printProfile && copyLabels.length > 0 && (
-        <MultiCopyPrintRun
-          copyLabels={copyLabels}
-          config={profileToPrintConfig(printProfile)}
-          company={printData.company}
-          party={printData.party}
-          meta={printData.meta}
-          items={printData.items}
-          totals={printData.totals}
-          contentWidthMm={contentWidthMm(printProfile)}
-        />
-      )}
     </DocumentRoot>
   );
 }

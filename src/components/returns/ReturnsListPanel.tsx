@@ -25,6 +25,8 @@ import { exportSheet } from "@/lib/excelTemplates";
 import InvoiceReturnDialog, { type ReturnKind } from "@/components/returns/InvoiceReturnDialog";
 import { cancelSalesReturn, cancelPurchaseReturn } from "@/lib/returns";
 import { useFormatDate } from "@/lib/dateFormat";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildPurchaseReturnUdm } from "@/lib/documentUdm/purchaseReturnUdm";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -167,16 +169,27 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
                 <TableCell className="text-sm text-muted-foreground">{r.reason ?? "—"}</TableCell>
                 <TableCell><Badge variant={r.status === "posted" ? "default" : "secondary"}>{r.status}</Badge></TableCell>
                 <TableCell className="text-right">
-                  {r.status !== "cancelled" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-orange-700"
-                      onClick={(e) => { e.stopPropagation(); setCancelTarget(r); }}
-                    >
-                      <Ban className="h-3.5 w-3.5 mr-1.5" /> Cancel
-                    </Button>
-                  )}
+                  <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                    {kind === "purchase" && (
+                      <DocumentOutputCenter
+                        documentTypeId="purchase_return"
+                        documentId={r.id}
+                        documentNumber={r.return_number}
+                        getUdm={() => buildPurchaseReturnUdm(business!.id, r.id)}
+                        size="sm"
+                      />
+                    )}
+                    {r.status !== "cancelled" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                        onClick={() => setCancelTarget(r)}
+                      >
+                        <Ban className="h-3.5 w-3.5 mr-1.5" /> Cancel
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

@@ -13,11 +13,23 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   fetchPrintProfiles, createPrintProfile, updatePrintProfile, deletePrintProfile, setDefaultPrintProfile,
   type PrintProfile, type PrintDocumentType, type PrintPageSize, type PrintOrientation, type PrintLogoPosition,
 } from "@/lib/printProfiles";
 import type { PrintLanguage } from "@/components/print/printLabels";
+import { usePrintPreference, useSetPrintPreference, DEFAULT_PRINT_ACTION_OPTIONS, type DefaultPrintAction } from "@/lib/printPreferences";
+import { useShareLinkExpiry, setShareLinkExpiry, SHARE_LINK_EXPIRY_OPTIONS, type ShareLinkExpiry } from "@/lib/shareLinkExpiry";
+import type { TemplateId } from "@/lib/documentUdm/types";
+
+const TEMPLATE_OPTIONS: { value: TemplateId; label: string; comingSoon?: boolean }[] = [
+  { value: "classic", label: "Classic" },
+  { value: "thermal", label: "Thermal (receipt)" },
+  { value: "modern", label: "Modern", comingSoon: true },
+  { value: "gst_standard", label: "GST Standard", comingSoon: true },
+  { value: "custom", label: "Custom", comingSoon: true },
+];
 
 const LANGUAGES: { value: PrintLanguage; label: string }[] = [
   { value: "en", label: "English" },
@@ -30,19 +42,25 @@ const DOCUMENT_TYPES: { value: PrintDocumentType; label: string }[] = [
   { value: "delivery_challan", label: "Delivery Challan" },
   { value: "sales_order", label: "Sales Order" },
   { value: "purchase_order", label: "Purchase Order" },
+  { value: "grn", label: "Goods Receipt Note (GRN)" },
   { value: "quotation", label: "Quotation" },
+  { value: "sales_return", label: "Sales Return / Credit Note" },
+  { value: "purchase_return", label: "Purchase Return / Debit Note" },
   { value: "packing_slip", label: "Packing Slip" },
   { value: "debit_note", label: "Debit Note" },
   { value: "credit_note", label: "Credit Note" },
-  { value: "payment_receipt", label: "Payment Receipt" },
+  { value: "payment_receipt", label: "Payment / Receipt Voucher" },
+  { value: "journal_voucher", label: "Journal Voucher" },
+  { value: "contra_voucher", label: "Contra Voucher" },
 ];
 
-const LEDGER_DOCUMENT_TYPES: PrintDocumentType[] = ["debit_note", "credit_note", "payment_receipt"];
+const LEDGER_DOCUMENT_TYPES: PrintDocumentType[] = ["debit_note", "credit_note", "payment_receipt", "journal_voucher", "contra_voucher"];
 
 const PAGE_SIZES: PrintPageSize[] = ["A4", "A5", "Letter", "Thermal_80mm", "Thermal_58mm"];
 
 type FormState = {
   name: string;
+  template_id: TemplateId;
   page_size: PrintPageSize;
   orientation: PrintOrientation;
   margin_top_mm: number;
@@ -86,16 +104,21 @@ const DOCUMENT_LABELS: Record<PrintDocumentType, string> = {
   sales_order: "SALES ORDER",
   purchase_order: "PURCHASE ORDER",
   quotation: "QUOTATION",
+  sales_return: "CREDIT NOTE / SALES RETURN",
+  purchase_return: "DEBIT NOTE / PURCHASE RETURN",
+  grn: "GOODS RECEIPT NOTE",
   packing_slip: "PACKING SLIP",
   debit_note: "DEBIT NOTE",
   credit_note: "CREDIT NOTE",
   payment_receipt: "PAYMENT VOUCHER",
+  journal_voucher: "JOURNAL VOUCHER",
+  contra_voucher: "CONTRA VOUCHER",
 };
 
 const PARTY_LABELS: Record<PrintDocumentType, string> = {
   sales_invoice: "BILL TO", purchase_invoice: "BILL TO", delivery_challan: "DELIVER TO",
-  sales_order: "BILL TO", purchase_order: "SUPPLIER", quotation: "TO", packing_slip: "DELIVER TO",
-  debit_note: "", credit_note: "", payment_receipt: "",
+  sales_order: "BILL TO", purchase_order: "SUPPLIER", quotation: "TO", sales_return: "BILL TO", purchase_return: "SUPPLIER", grn: "SUPPLIER", packing_slip: "DELIVER TO",
+  debit_note: "", credit_note: "", payment_receipt: "", journal_voucher: "", contra_voucher: "",
 };
 
 function blankForm(documentType: PrintDocumentType): FormState {
@@ -104,6 +127,7 @@ function blankForm(documentType: PrintDocumentType): FormState {
   const isProductDoc = !isChallanLike && !isLedger;
   return {
     name: "",
+    template_id: "classic",
     page_size: "A4",
     orientation: "portrait",
     margin_top_mm: 10,
@@ -144,6 +168,7 @@ function blankForm(documentType: PrintDocumentType): FormState {
 function profileToForm(p: PrintProfile): FormState {
   return {
     name: p.name,
+    template_id: p.template_id,
     page_size: p.page_size,
     orientation: p.orientation,
     margin_top_mm: p.margin_top_mm,
@@ -185,6 +210,7 @@ function formToPayload(form: FormState, documentType: PrintDocumentType) {
   const isLedger = LEDGER_DOCUMENT_TYPES.includes(documentType);
   return {
     name: form.name,
+    template_id: form.template_id,
     item_grid_mode: (isLedger ? "ledger" : "product") as "product" | "ledger",
     show_party: !isLedger,
     page_size: form.page_size,
@@ -231,6 +257,19 @@ export default function PrintProfiles() {
   const { business, role, permissions } = useBusiness();
   const qc = useQueryClient();
   const editable = canGranular(role, "settings.edit", permissions);
+
+  const printPreference = usePrintPreference();
+  const setPrintPreference = useSetPrintPreference();
+  const shareLinkExpiry = useShareLinkExpiry();
+  const updateShareLinkExpiry = async (expiry: ShareLinkExpiry) => {
+    if (!business?.id) return;
+    try {
+      await setShareLinkExpiry(business.id, expiry);
+      qc.invalidateQueries({ queryKey: ["share-link-expiry", business.id] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update share link expiry");
+    }
+  };
 
   const [documentType, setDocumentType] = useState<PrintDocumentType>("sales_invoice");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -314,6 +353,49 @@ export default function PrintProfiles() {
         </p>
       </header>
 
+      <section className="rounded-2xl bg-card border p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-2">
+          <div>
+            <h2 className="font-semibold text-sm">Default Print Action</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              What happens when you click the Print icon directly, or press Ctrl+P. The dropdown arrow always
+              shows the full menu regardless of this setting. This is personal to your account.
+            </p>
+          </div>
+          <RadioGroup
+            value={printPreference}
+            onValueChange={(v) => setPrintPreference(v as DefaultPrintAction)}
+            className="space-y-2 mt-2"
+          >
+            {DEFAULT_PRINT_ACTION_OPTIONS.map((o) => (
+              <div key={o.value} className="flex items-start gap-2">
+                <RadioGroupItem value={o.value} id={`print-action-${o.value}`} className="mt-0.5" />
+                <Label htmlFor={`print-action-${o.value}`} className="font-normal">
+                  <span className="block">{o.label}</span>
+                  <span className="block text-xs text-muted-foreground font-normal">{o.description}</span>
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
+        </div>
+
+        <div className="space-y-2">
+          <div>
+            <h2 className="font-semibold text-sm">Share Link Expiry</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              How long a PDF share link stays valid after you send it via Email or WhatsApp. Documents are never
+              made public — the link is a signed, time-limited URL into private storage.
+            </p>
+          </div>
+          <Select disabled={!editable} value={shareLinkExpiry} onValueChange={(v) => updateShareLinkExpiry(v as ShareLinkExpiry)}>
+            <SelectTrigger className="max-w-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SHARE_LINK_EXPIRY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </section>
+
       <section className="rounded-2xl bg-card border p-6 flex flex-col md:flex-row gap-3 items-end">
         <div className="flex-1 space-y-1.5">
           <Label className="text-xs uppercase tracking-wide text-muted-foreground">Document Type</Label>
@@ -391,6 +473,24 @@ export default function PrintProfiles() {
                 <Label className="text-xs">Document Title (printed)</Label>
                 <Input value={form.document_label} onChange={(e) => set("document_label", e.target.value)} />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Template</Label>
+              <Select value={form.template_id} onValueChange={(v) => set("template_id", v as TemplateId)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TEMPLATE_OPTIONS.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}{t.comingSoon ? " — coming soon (renders as Classic)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Which visual layout renders this profile. Modern/GST Standard/Custom are reserved for a future
+                phase — picking them today would render as Classic.
+              </p>
             </div>
 
             <div className="grid grid-cols-4 gap-3">

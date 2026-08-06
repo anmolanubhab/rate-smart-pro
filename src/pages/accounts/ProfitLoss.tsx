@@ -6,6 +6,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canViewProfit } from "@/lib/permissions";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm } from "@/lib/documentUdm/types";
+
+const columns = [
+  { key: "side", label: "Side", format: "badge" as const },
+  { key: "item", label: "Particulars" },
+  { key: "amount", label: "Amount", align: "right" as const, format: "currency" as const },
+];
 
 export default function ProfitLoss() {
   useEffect(() => { document.title = "Profit & Loss — RD Pro"; }, []);
@@ -59,12 +67,29 @@ export default function ProfitLoss() {
         { label: data.profit >= 0 ? "Net Profit" : "Net Loss", value: `₹ ${fmtInr(Math.abs(data.profit))}`, tone: data.profit >= 0 ? "success" : "danger" },
         { label: "Lines", value: data.rows.length },
       ]}
-      columns={[
-        { key: "side", label: "Side", format: "badge" },
-        { key: "item", label: "Particulars" },
-        { key: "amount", label: "Amount", align: "right", format: "currency" },
-      ]}
+      columns={columns}
       rows={data.rows}
+      actions={
+        <DocumentOutputCenter
+          documentTypeId="profit_loss"
+          documentNumber="profit-loss"
+          getReportUdm={(): ReportUdm => ({
+            kind: "report",
+            documentTypeId: "profit_loss",
+            title: "Profit & Loss",
+            subtitle: `As of ${new Date().toISOString().slice(0, 10)}`,
+            columns,
+            rows: data.rows,
+            summary: [
+              { label: "Total Income", value: `₹ ${fmtInr(data.income)}` },
+              { label: "Total Expense", value: `₹ ${fmtInr(data.expense)}` },
+              { label: data.profit >= 0 ? "Net Profit" : "Net Loss", value: `₹ ${fmtInr(Math.abs(data.profit))}` },
+            ],
+            pageProfile: { pageSize: "A4", orientation: "portrait", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+          })}
+          disabled={data.rows.length === 0}
+        />
+      }
     />
   );
 }

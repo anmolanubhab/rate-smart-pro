@@ -27,6 +27,8 @@ const Orders = lazy(() => import("./pages/Orders"));
 const CreateOrder = lazy(() => import("./pages/CreateOrder"));
 // Dev-only Document Engine gallery (Phase 1A) — intentionally not in navigation/registry.ts.
 const DocumentEngineGallery = lazy(() => import("./pages/dev/DocumentEngineGallery"));
+// Dev-only Universal Document Output Center gallery (Output Center Phase 1) — intentionally not in navigation/registry.ts.
+const OutputCenterGallery = lazy(() => import("./pages/dev/OutputCenterGallery"));
 const ExcelImport = lazy(() => import("./pages/ExcelImport"));
 const Inventory = lazy(() => import("./pages/Inventory"));
 const Reports = lazy(() => import("./pages/Reports"));
@@ -425,6 +427,7 @@ const App = () => (
               <Route path="/reports/inventory/fsn-analysis"      element={L(<FsnAnalysis />)} />
 
               <Route path="/dev/document-engine" element={B(<DocumentEngineGallery />)} />
+              <Route path="/dev/output-center" element={B(<OutputCenterGallery />)} />
 
               <Route path="*" element={<NotFound />} />
             </Routes>

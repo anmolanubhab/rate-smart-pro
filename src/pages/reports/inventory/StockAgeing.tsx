@@ -1,6 +1,5 @@
 // src/pages/reports/inventory/StockAgeing.tsx
 import { useEffect, useState } from "react";
-import { Download, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +9,8 @@ import {
   fetchStockAgeing, fetchDistinctBrands, fetchDistinctCategories, fetchWarehouses,
   AgeingRow, fmtInr, fmtQty,
 } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 import { useFormatDate } from "@/lib/dateFormat";
 
 const BUCKET_LABELS = ["0-30 Days","31-60 Days","61-90 Days","91-180 Days","181-365 Days","365+ Days","Never Moved"];
@@ -73,14 +73,39 @@ export default function StockAgeing() {
           <p className="text-muted-foreground mt-1 text-sm">Stock classified by days since last movement</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-3.5 w-3.5 mr-1" />Print</Button>
-          <Button size="sm" onClick={() => exportSheet(filtered.map(r=>({
-            "Part No": r.part_number,"Product": r.product_name,"Brand": r.brand,"Category": r.category,
-            "Qty": r.closing_qty,"Value": r.closing_value,"Last Movement": r.last_movement_date,"Days": r.days_since_movement,"Bucket": r.ageing_bucket,
-            "0-30": r.bucket_0_30,"31-60": r.bucket_31_60,"61-90": r.bucket_61_90,"91-180": r.bucket_91_180,"181-365": r.bucket_181_365,"365+": r.bucket_365_plus,
-          })), "stock-ageing.xlsx", "Stock Ageing")} className="gradient-primary text-white border-0">
-            <Download className="h-3.5 w-3.5 mr-1" />Excel
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="stock_ageing"
+            documentNumber="stock-ageing"
+            getReportUdm={(): ReportUdm => {
+              const columns: UdmColumn[] = [
+                { key: "part_number", label: "Part No" },
+                { key: "product_name", label: "Product" },
+                { key: "brand", label: "Brand" },
+                { key: "category", label: "Category" },
+                { key: "closing_qty", label: "Qty", align: "right", format: "number" },
+                { key: "closing_value", label: "Value", align: "right", format: "currency" },
+                { key: "last_movement_date", label: "Last Movement" },
+                { key: "days_since_movement", label: "Days", align: "right", format: "number" },
+                { key: "ageing_bucket", label: "Bucket" },
+                { key: "bucket_0_30", label: "0-30", align: "right", format: "number" },
+                { key: "bucket_31_60", label: "31-60", align: "right", format: "number" },
+                { key: "bucket_61_90", label: "61-90", align: "right", format: "number" },
+                { key: "bucket_91_180", label: "91-180", align: "right", format: "number" },
+                { key: "bucket_181_365", label: "181-365", align: "right", format: "number" },
+                { key: "bucket_365_plus", label: "365+", align: "right", format: "number" },
+              ];
+              return {
+                kind: "report",
+                documentTypeId: "stock_ageing",
+                title: "Stock Ageing",
+                subtitle: `As of ${asOfDate}`,
+                columns,
+                rows: filtered,
+                pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+              };
+            }}
+            disabled={filtered.length === 0}
+          />
         </div>
       </header>
 

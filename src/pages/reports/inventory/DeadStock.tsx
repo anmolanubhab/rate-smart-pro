@@ -1,11 +1,12 @@
 // src/pages/reports/inventory/DeadStock.tsx
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, Printer } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchDeadStock, DeadStockRow, fmtInr, fmtQty } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 import { useFormatDate } from "@/lib/dateFormat";
 
 export default function DeadStock() {
@@ -39,13 +40,32 @@ export default function DeadStock() {
           <p className="text-muted-foreground mt-1 text-sm">Products with no sales movement for the configured period</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-3.5 w-3.5 mr-1" />Print</Button>
-          <Button size="sm" onClick={() => exportSheet(rows.map(r=>({
-            "Part No": r.part_number,"Product": r.product_name,"Brand": r.brand,"Category": r.category,
-            "Qty": r.closing_qty,"Value": r.closing_value,"Last Movement": r.last_movement_date,"Days Idle": r.days_idle,
-          })), "dead-stock.xlsx", "Dead Stock")} className="gradient-primary text-white border-0">
-            <Download className="h-3.5 w-3.5 mr-1" />Excel
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="dead_stock"
+            documentNumber="dead-stock"
+            getReportUdm={(): ReportUdm => {
+              const columns: UdmColumn[] = [
+                { key: "part_number", label: "Part No" },
+                { key: "product_name", label: "Product" },
+                { key: "brand", label: "Brand" },
+                { key: "category", label: "Category" },
+                { key: "closing_qty", label: "Qty", align: "right", format: "number" },
+                { key: "closing_value", label: "Value", align: "right", format: "currency" },
+                { key: "last_movement_date", label: "Last Movement" },
+                { key: "days_idle", label: "Days Idle", align: "right", format: "number" },
+              ];
+              return {
+                kind: "report",
+                documentTypeId: "dead_stock",
+                title: "Dead Stock Report",
+                subtitle: `No movement for ${days}+ days, as of ${asOfDate}`,
+                columns,
+                rows,
+                pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+              };
+            }}
+            disabled={rows.length === 0}
+          />
         </div>
       </header>
 

@@ -90,6 +90,7 @@ export default function Gstr1() {
 
   return (
     <ReportRunner
+      reportTypeId="gstr1"
       eyebrow="GST"
       title="GSTR-1"
       description="Invoice-wise outward supplies for the period — B2B (buyer has GSTIN) vs B2C, with CGST/SGST/IGST breakup."
@@ -97,8 +98,6 @@ export default function Gstr1() {
       fetchRows={fetchRows}
       computeKpis={computeKpis}
       exportFileName="gstr-1"
-      xmlRootTag="Gstr1"
-      xmlRowTag="Invoice"
     />
   );
 }

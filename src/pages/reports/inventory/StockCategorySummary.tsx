@@ -1,11 +1,11 @@
 // src/pages/reports/inventory/StockCategorySummary.tsx
 import { useEffect, useState } from "react";
-import { Download, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchStockCategorySummary, CategorySummaryRow, fmtInr, fmtQty, fyStart } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 
 export default function StockCategorySummary() {
   const { business } = useBusiness();
@@ -31,8 +31,34 @@ export default function StockCategorySummary() {
           <h1 className="font-display text-3xl font-bold mt-1">Stock Category Summary</h1>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-3.5 w-3.5 mr-1" />Print</Button>
-          <Button size="sm" onClick={() => exportSheet(rows, "stock-category-summary.xlsx", "Category")} className="gradient-primary text-white border-0"><Download className="h-3.5 w-3.5 mr-1" />Excel</Button>
+          <DocumentOutputCenter
+            documentTypeId="stock_category_summary"
+            documentNumber="stock-category-summary"
+            getReportUdm={(): ReportUdm => {
+              const columns: UdmColumn[] = [
+                { key: "category", label: "Category" },
+                { key: "product_count", label: "Products", align: "right", format: "number" },
+                { key: "opening_qty", label: "Op. Qty", align: "right", format: "number" },
+                { key: "opening_value", label: "Op. Value", align: "right", format: "currency" },
+                { key: "inward_qty", label: "Inward Qty", align: "right", format: "number" },
+                { key: "inward_value", label: "Inward Value", align: "right", format: "currency" },
+                { key: "outward_qty", label: "Outward Qty", align: "right", format: "number" },
+                { key: "outward_value", label: "Outward Value", align: "right", format: "currency" },
+                { key: "closing_qty", label: "Closing Qty", align: "right", format: "number" },
+                { key: "closing_value", label: "Closing Value", align: "right", format: "currency" },
+              ];
+              return {
+                kind: "report",
+                documentTypeId: "stock_category_summary",
+                title: "Stock Category Summary",
+                subtitle: `${fromDate} to ${toDate}`,
+                columns,
+                rows,
+                pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+              };
+            }}
+            disabled={rows.length === 0}
+          />
         </div>
       </header>
       <div className="rounded-2xl border border-border bg-card p-4 flex gap-3 flex-wrap">

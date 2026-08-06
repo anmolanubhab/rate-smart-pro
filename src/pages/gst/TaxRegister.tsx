@@ -111,6 +111,7 @@ export default function TaxRegister() {
 
   return (
     <ReportRunner
+      reportTypeId="tax_register"
       eyebrow="GST"
       title="Tax Register"
       description="Combined chronological register of output tax (sales) and input tax (purchases) for the period."
@@ -118,8 +119,6 @@ export default function TaxRegister() {
       fetchRows={fetchRows}
       computeKpis={computeKpis}
       exportFileName="tax-register"
-      xmlRootTag="TaxRegister"
-      xmlRowTag="Entry"
     />
   );
 }

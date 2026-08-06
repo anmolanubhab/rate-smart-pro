@@ -59,6 +59,7 @@ export default function PurchaseRegister() {
 
   return (
     <ReportRunner
+      reportTypeId="purchase_register"
       eyebrow="Purchase"
       title="Purchase Register"
       description="All purchase invoices for the selected period, from live data."

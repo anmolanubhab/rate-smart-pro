@@ -1,6 +1,6 @@
 // src/pages/reports/inventory/MovementRegister.tsx
 import { useEffect, useState, useCallback } from "react";
-import { Download, Printer, Search, RefreshCw } from "lucide-react";
+import { Search, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,8 @@ import {
   fetchMovementRegister, fetchWarehouses, MovementRow,
   fmtInr, fmtQty, fyStart, getMovementLabel,
 } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 import { useFormatDate } from "@/lib/dateFormat";
 
 const MOVEMENT_TYPES = [
@@ -61,13 +62,22 @@ export default function MovementRegister() {
   const totalOut = rows.reduce((s,r)=>s+r.outward_qty,0);
   const totalVal = rows.reduce((s,r)=>s+Math.abs(r.value),0);
 
-  const doExport = () => exportSheet(rows.map(r=>({
-    Date: r.movement_date, Product: r.product_name, "Part No": r.part_number,
-    Type: getMovementLabel(r.movement_type).label, Voucher: r.voucher_number,
-    Party: r.party_name, Warehouse: r.warehouse_name,
-    "Inward Qty": r.inward_qty, "Outward Qty": r.outward_qty,
-    Rate: r.rate, Value: r.value, "Stock Before": r.stock_before, "Stock After": r.stock_after,
-  })), `movement-register-${toDate}.xlsx`, "Movements");
+  const reportColumns: UdmColumn[] = [
+    { key: "movement_date", label: "Date" },
+    { key: "product_name", label: "Product" },
+    { key: "part_number", label: "Part No" },
+    { key: "type_label", label: "Type" },
+    { key: "voucher_number", label: "Voucher" },
+    { key: "party_name", label: "Party" },
+    { key: "warehouse_name", label: "Warehouse" },
+    { key: "inward_qty", label: "Inward Qty", align: "right", format: "number" },
+    { key: "outward_qty", label: "Outward Qty", align: "right", format: "number" },
+    { key: "rate", label: "Rate", align: "right", format: "number" },
+    { key: "value", label: "Value", align: "right", format: "currency" },
+    { key: "stock_before", label: "Before", align: "right", format: "number" },
+    { key: "stock_after", label: "After", align: "right", format: "number" },
+  ];
+  const reportRows = rows.map((r) => ({ ...r, type_label: getMovementLabel(r.movement_type).label }));
 
   return (
     <div className="max-w-full mx-auto space-y-5 animate-fade-in-up">
@@ -81,10 +91,20 @@ export default function MovementRegister() {
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading?"animate-spin":""}`} />Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-3.5 w-3.5 mr-1" />Print</Button>
-          <Button size="sm" onClick={doExport} disabled={!rows.length} className="gradient-primary text-white border-0">
-            <Download className="h-3.5 w-3.5 mr-1" />Excel
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="stock_register"
+            documentNumber={`movement-register-${toDate}`}
+            getReportUdm={(): ReportUdm => ({
+              kind: "report",
+              documentTypeId: "stock_register",
+              title: "Stock Movement Register",
+              subtitle: `${fromDate} to ${toDate}`,
+              columns: reportColumns,
+              rows: reportRows,
+              pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+            })}
+            disabled={!rows.length}
+          />
         </div>
       </header>
 

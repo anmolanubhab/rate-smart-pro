@@ -6,6 +6,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm } from "@/lib/documentUdm/types";
+
+const columns = [
+  { key: "side", label: "Side", format: "badge" as const },
+  { key: "group", label: "Group" },
+  { key: "item", label: "Particulars" },
+  { key: "amount", label: "Amount", align: "right" as const, format: "currency" as const },
+];
 
 export default function BalanceSheet() {
   useEffect(() => { document.title = "Balance Sheet — RD Pro"; }, []);
@@ -60,14 +69,30 @@ export default function BalanceSheet() {
         { label: "Difference", value: `₹ ${fmtInr(data.asset - data.liab)}`, tone: Math.abs(data.asset - data.liab) < 1 ? "success" : "danger" },
         { label: "As On", value: fd(new Date().toISOString().slice(0, 10)) },
       ]}
-      columns={[
-        { key: "side", label: "Side", format: "badge" },
-        { key: "group", label: "Group" },
-        { key: "item", label: "Particulars" },
-        { key: "amount", label: "Amount", align: "right", format: "currency" },
-      ]}
+      columns={columns}
       rows={data.rows}
       onRowClick={(row) => { if (row._party_id) navigate(`/accounts/party/${row._party_id}`); }}
+      actions={
+        <DocumentOutputCenter
+          documentTypeId="balance_sheet"
+          documentNumber="balance-sheet"
+          getReportUdm={(): ReportUdm => ({
+            kind: "report",
+            documentTypeId: "balance_sheet",
+            title: "Balance Sheet",
+            subtitle: `As on ${fd(new Date().toISOString().slice(0, 10))}`,
+            columns,
+            rows: data.rows,
+            summary: [
+              { label: "Total Assets", value: `₹ ${fmtInr(data.asset)}` },
+              { label: "Total Liabilities", value: `₹ ${fmtInr(data.liab)}` },
+              { label: "Difference", value: `₹ ${fmtInr(data.asset - data.liab)}` },
+            ],
+            pageProfile: { pageSize: "A4", orientation: "portrait", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+          })}
+          disabled={data.rows.length === 0}
+        />
+      }
     />
   );
 }

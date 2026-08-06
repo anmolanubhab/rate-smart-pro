@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
-import ExportMenu from "@/components/reports/ExportMenu";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm } from "@/lib/documentUdm/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
@@ -101,13 +102,18 @@ export default function GstSummary() {
       columns={columns}
       rows={rows}
       actions={
-        <ExportMenu
-          rows={rows}
-          columns={columns}
-          baseName="gst-summary"
-          title="GST Summary"
-          xmlRootTag="GstSummary"
-          xmlRowTag="Slab"
+        <DocumentOutputCenter
+          documentTypeId="gst_summary"
+          documentNumber="gst-summary"
+          getReportUdm={(): ReportUdm => ({
+            kind: "report",
+            documentTypeId: "gst_summary",
+            title: "GST Summary",
+            columns,
+            rows,
+            pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+          })}
+          disabled={rows.length === 0}
         />
       }
     />

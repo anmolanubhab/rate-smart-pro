@@ -52,6 +52,7 @@ export default function HsnSummaryPurchase() {
 
   return (
     <ReportRunner
+      reportTypeId="hsn_summary_purchase"
       eyebrow="GST"
       title="HSN Summary (Purchase)"
       description="Purchases grouped by HSN code and GST rate — same shape as the sales HSN Summary, sourced from purchase invoice lines."
@@ -59,8 +60,6 @@ export default function HsnSummaryPurchase() {
       fetchRows={fetchRows}
       computeKpis={computeKpis}
       exportFileName="hsn-summary-purchase"
-      xmlRootTag="HsnSummaryPurchase"
-      xmlRowTag="HsnGroup"
     />
   );
 }

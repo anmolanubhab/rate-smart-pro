@@ -1,11 +1,13 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { PrintConfig } from "@/components/print/PrintDocument";
 import type { PrintLanguage } from "@/components/print/printLabels";
+import type { TemplateId } from "@/lib/documentUdm/types";
 
 export type PrintDocumentType =
   | "sales_invoice" | "purchase_invoice" | "delivery_challan"
   | "sales_order" | "purchase_order" | "quotation" | "packing_slip"
-  | "debit_note" | "credit_note" | "payment_receipt";
+  | "debit_note" | "credit_note" | "payment_receipt"
+  | "journal_voucher" | "contra_voucher" | "sales_return" | "grn" | "purchase_return";
 export type PrintPageSize = "A4" | "A5" | "Letter" | "Thermal_80mm" | "Thermal_58mm";
 export type PrintOrientation = "portrait" | "landscape";
 export type PrintLogoPosition = "left" | "center" | "none";
@@ -56,6 +58,11 @@ export type PrintProfile = {
   show_weight: boolean;
   language: PrintLanguage;
   show_qr_code: boolean;
+  /** Universal Template Engine (Locked Decision #14) — which layout renders
+   *  this profile. Defaults 'classic'; 'thermal' is backfilled for existing
+   *  Thermal_80mm/58mm profiles. 'modern'/'gst_standard'/'custom' are
+   *  reserved ids, not implemented at launch. */
+  template_id: TemplateId;
 };
 
 /** The profile a print flow should actually use — seeds sane per-document

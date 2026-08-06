@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Save, FileCheck2, Printer, FileDown } from "lucide-react";
+import { Save, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -22,9 +22,11 @@ import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/d
 import { DocumentToolbar, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
 import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
-import { DocumentGridTable, DocumentGridPrintTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
+import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
-import { useDocumentShortcuts } from "@/hooks/useDocumentShortcuts";
+import { useOutputCenterShortcut } from "@/hooks/useOutputCenterShortcut";
+import { DocumentOutputCenter, type DocumentOutputCenterHandle } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildSalesReturnUdm } from "@/lib/documentUdm/salesReturnUdm";
 
 const fmt = (n: number) =>
   Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -44,16 +46,6 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "value", header: "Return Value", align: "right", widthClass: "w-24" },
   { key: "reason", header: "Reason", widthClass: "min-w-[100px]" },
   { key: "remarks", header: "Remarks", widthClass: "min-w-[100px]" },
-];
-
-const PRINT_COLUMNS: DocumentGridColumn[] = [
-  { key: "part", header: "Part No.", widthClass: "w-32" },
-  { key: "product", header: "Product", widthClass: "w-[30%]" },
-  { key: "batch", header: "Batch", widthClass: "w-20" },
-  { key: "return_qty", header: "Return Qty", align: "right", widthClass: "w-16" },
-  { key: "rate", header: "Rate", align: "right", widthClass: "w-20" },
-  { key: "gst", header: "GST %", align: "right", widthClass: "w-14" },
-  { key: "value", header: "Return Value", align: "right", widthClass: "w-24" },
 ];
 
 const CreateSalesReturn = () => {
@@ -85,6 +77,7 @@ const CreateSalesReturn = () => {
   const [partyId, setPartyId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
   const partyInputRef = useRef<HTMLInputElement>(null);
+  const outputCenterRef = useRef<DocumentOutputCenterHandle>(null);
   const party = useMemo(() => parties.find((p) => p.id === partyId) || null, [parties, partyId]);
   const partResults = useMemo(() => {
     const q = partyQuery.trim().toLowerCase();
@@ -152,7 +145,7 @@ const CreateSalesReturn = () => {
             const saved = byInvoiceItem.get(line.sales_invoice_item_id);
             return saved ? { ...line, qty: saved.qty, batch_id: saved.batch_id, reason: saved.reason, remarks: saved.remarks, total: saved.total } : line;
           }));
-          if (printOnLoad) setTimeout(() => window.print(), 600);
+          if (printOnLoad) setTimeout(() => outputCenterRef.current?.directPrint(), 600);
         } catch (e: any) {
           toast.error(e.message);
         }
@@ -305,13 +298,16 @@ const CreateSalesReturn = () => {
     }
   };
 
-  useDocumentShortcuts(
+  useOutputCenterShortcut(
     {
       onSaveDraft: handleSaveDraft,
       onSubmit: handlePost,
       onEscape: goToList,
       onFocusSecondary: () => invoiceSelectRef.current?.focus(),
       onFocusPrimary: () => partyInputRef.current?.focus(),
+      onPreview: () => outputCenterRef.current?.preview(),
+      onDirectPrint: () => outputCenterRef.current?.directPrint(),
+      onOpenMenu: () => outputCenterRef.current?.openMenu(),
     },
     [partyId, invoiceId, items, returnDate, reason, notes, saving, posting, readOnly],
   );
@@ -328,7 +324,7 @@ const CreateSalesReturn = () => {
       }
       if (e.altKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
-        window.print();
+        outputCenterRef.current?.directPrint();
       }
     };
     window.addEventListener("keydown", handler);
@@ -338,12 +334,12 @@ const CreateSalesReturn = () => {
   const toolbarActions: DocumentToolbarAction[] = [
     { key: "save", label: saving ? "Saving…" : "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: handleSaveDraft, disabled: saving || readOnly },
     { key: "post", label: posting ? "Posting…" : "Post Return", icon: FileCheck2, shortcut: "Ctrl+⏎", onClick: handlePost, disabled: posting || isPosted || isCancelled, variant: "primary" },
-    { key: "print", label: "Print", icon: Printer, shortcut: "Alt+P", onClick: () => window.print() },
-    { key: "pdf", label: "PDF", icon: FileDown, onClick: () => window.print() },
   ];
 
+  const businessIdForPrint = business?.id ?? getActiveBusinessIdSync();
+
   return (
-    <DocumentRoot type="sales_return" printTitle="CREDIT NOTE / SALES RETURN">
+    <DocumentRoot type="sales_return" printMode="multiCopy">
       <DocumentToolbar
         statusSlot={
           <>
@@ -357,6 +353,25 @@ const CreateSalesReturn = () => {
         }
         actions={toolbarActions}
       />
+      <div className="print:hidden flex justify-end -mt-2 mb-2">
+        <DocumentOutputCenter
+          ref={outputCenterRef}
+          documentTypeId="sales_return"
+          documentId={draftId ?? undefined}
+          documentNumber={returnNumber}
+          disabled={!businessIdForPrint}
+          getUdm={() => buildSalesReturnUdm({
+            businessId: businessIdForPrint!,
+            returnNumber,
+            returnDate,
+            reason,
+            status,
+            party,
+            items: validRows(),
+            batchesByProduct,
+          })}
+        />
+      </div>
 
       <DocumentSheet>
         <DocumentSheetBanner left="Sales Return" center={business?.business_name ?? business?.firm_name ?? ""} right={`Created by ${user?.email ?? "—"}`} />
@@ -488,26 +503,6 @@ const CreateSalesReturn = () => {
               </td>
             </>
           )}
-        />
-
-        <DocumentGridPrintTable
-          columns={PRINT_COLUMNS}
-          rows={items.filter((it) => Number(it.qty) > 0)}
-          isEmptyRow={() => false}
-          renderCells={(it) => {
-            const batchLabel = it.batch_id ? (it.product_id ? batchesByProduct[it.product_id]?.find((b) => b.id === it.batch_id)?.batch_number : "") : "";
-            return (
-              <>
-                <td className="px-1.5 py-0.5 font-mono">{it.part_number}</td>
-                <td className="px-1.5 py-0.5 font-mono">{it.description}</td>
-                <td className="px-1.5 py-0.5 font-mono">{batchLabel || "—"}</td>
-                <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.qty)}</td>
-                <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.net_rate)}</td>
-                <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.gst_pct)}</td>
-                <td className="px-1.5 py-0.5 text-right tabular-nums">{fmt(it.total)}</td>
-              </>
-            );
-          }}
         />
 
         {/* Bottom section: notes + totals */}

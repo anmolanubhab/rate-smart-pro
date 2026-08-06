@@ -29,12 +29,8 @@ import { normalizePart, Product } from "@/lib/products";
 import DispatchBatchSerialDialog, { type DispatchBatchSerialResult } from "@/components/inventory/DispatchBatchSerialDialog";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
-import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
-import PrintCopyDialog from "@/components/print/PrintCopyDialog";
-import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
-import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
-import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintProfile } from "@/lib/printProfiles";
-import type { PrintConfig } from "@/components/print/PrintDocument";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildDeliveryChallanUdm, buildPackingSlipUdm } from "@/lib/documentUdm/dispatchUdm";
 import { fetchUnits, type Unit as MeasureUnit } from "@/lib/units";
 import { useFormatDate } from "@/lib/dateFormat";
 
@@ -273,131 +269,7 @@ const Dispatch = () => {
     }
   };
 
-  // ── Print Delivery Challan ──────────────────────────────────────────────
-  const [challanData, setChallanData] = useState<{
-    company: any; party: any; meta: any; items: any[];
-  } | null>(null);
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
-  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
-  const [copyLabels, setCopyLabels] = useState<string[]>([]);
-  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
-  const [printConfigOverride, setPrintConfigOverride] = useState<PrintConfig | null>(null);
   const warehouseName = (id: string | null | undefined) => warehouses.find((w) => w.id === id)?.warehouse_name ?? null;
-
-  const printChallan = async (d: any) => {
-    try {
-      const { data: items } = await supabase
-        .from("dispatch_items")
-        .select("part_number, product_name, dispatched_qty, order_items(part_number, description)")
-        .eq("dispatch_id", d.id);
-      const { data: biz } = await supabase
-        .from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number")
-        .eq("id", business!.id).maybeSingle();
-      const { data: party } = d.orders?.party_id
-        ? await supabase.from("parties").select("name, address, phone, gst").eq("id", d.orders.party_id).maybeSingle()
-        : { data: null };
-      const [types, profile] = await Promise.all([
-        fetchEnabledPrintCopyTypes(business!.id),
-        fetchDefaultPrintProfile(business!.id, "delivery_challan"),
-      ]);
-
-      setChallanData({
-        company: {
-          name: biz?.business_name ?? "—",
-          addressLines: [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean),
-          gstin: biz?.gst_number ?? null,
-        },
-        party: {
-          name: party?.name ?? d.orders?.party_name ?? "—",
-          address: party?.address ?? null,
-          mobile: party?.phone ?? null,
-          gstNo: party?.gst ?? null,
-        },
-        meta: {
-          number: d.dispatch_number,
-          numberLabel: "Challan No",
-          date: d.dispatch_date,
-          refNumber: d.orders?.order_number ?? null,
-          refLabel: "Order No",
-          transporter: d.transporter ?? d.transport_name ?? null,
-          vehicleNumber: d.vehicle_number ?? null,
-          lrNumber: d.lr_number ?? null,
-          ewayNumber: d.eway_number ?? null,
-        },
-        items: (items as any[] ?? []).map((it) => ({
-          partNumber: it.part_number ?? it.order_items?.part_number ?? "",
-          description: it.product_name ?? it.order_items?.description ?? "",
-          qty: Number(it.dispatched_qty) || 0,
-          warehouse: warehouseName(d.warehouse_id),
-        })),
-      });
-      setPrintProfile(profile);
-      setPrintConfigOverride(null);
-      setCopyTypes(types);
-      setCopyDialogOpen(true);
-    } catch (e: any) {
-      toast.error(e.message ?? "Could not prepare challan");
-    }
-  };
-
-  // ── Print Packing Slip ───────────────────────────────────────────────────
-  const printPackingSlip = async (d: any) => {
-    try {
-      const { data: items } = await supabase
-        .from("dispatch_items")
-        .select("part_number, product_name, dispatched_qty, order_items(part_number, description)")
-        .eq("dispatch_id", d.id);
-      const { data: biz } = await supabase
-        .from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number")
-        .eq("id", business!.id).maybeSingle();
-      const { data: party } = d.orders?.party_id
-        ? await supabase.from("parties").select("name, address, phone, gst").eq("id", d.orders.party_id).maybeSingle()
-        : { data: null };
-      const [types, profile] = await Promise.all([
-        fetchEnabledPrintCopyTypes(business!.id),
-        fetchDefaultPrintProfile(business!.id, "packing_slip"),
-      ]);
-
-      const packingParts = [
-        d.box_count ? `Boxes: ${d.box_count}` : null,
-        d.case_count ? `Cases: ${d.case_count}` : null,
-        d.packing_remarks || null,
-      ].filter(Boolean);
-
-      setChallanData({
-        company: {
-          name: biz?.business_name ?? "—",
-          addressLines: [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean),
-          gstin: biz?.gst_number ?? null,
-        },
-        party: {
-          name: party?.name ?? d.orders?.party_name ?? "—",
-          address: party?.address ?? null,
-          mobile: party?.phone ?? null,
-          gstNo: party?.gst ?? null,
-        },
-        meta: {
-          number: d.dispatch_number,
-          numberLabel: "Packing Slip No",
-          date: d.dispatch_date,
-          refNumber: d.orders?.order_number ?? null,
-          refLabel: "Order No",
-        },
-        items: (items as any[] ?? []).map((it) => ({
-          partNumber: it.part_number ?? it.order_items?.part_number ?? "",
-          description: it.product_name ?? it.order_items?.description ?? "",
-          qty: Number(it.dispatched_qty) || 0,
-          warehouse: warehouseName(d.warehouse_id),
-        })),
-      });
-      setPrintProfile(profile);
-      setPrintConfigOverride(packingParts.length ? { ...profileToPrintConfig(profile), purpose: packingParts.join(" · ") } : null);
-      setCopyTypes(types);
-      setCopyDialogOpen(true);
-    } catch (e: any) {
-      toast.error(e.message ?? "Could not prepare packing slip");
-    }
-  };
 
   // ── Shipment Status ─────────────────────────────────────────────────────
   const updateShipmentStatus = async (dispatchId: string, status: string) => {
@@ -735,24 +607,20 @@ const Dispatch = () => {
                           <Eye className="h-3.5 w-3.5 mr-0.5" />View
                         </Button>
                         {d.status === "confirmed" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 text-xs"
-                            onClick={() => printChallan(d)}
-                          >
-                            <FileText className="h-3.5 w-3.5 mr-0.5" />Challan
-                          </Button>
+                          <DocumentOutputCenter
+                            documentTypeId="delivery_challan"
+                            documentId={d.id}
+                            documentNumber={d.dispatch_number}
+                            getUdm={() => buildDeliveryChallanUdm(d, business!.id, warehouseName)}
+                          />
                         )}
                         {d.status === "confirmed" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 text-xs"
-                            onClick={() => printPackingSlip(d)}
-                          >
-                            <Package className="h-3.5 w-3.5 mr-0.5" />Packing Slip
-                          </Button>
+                          <DocumentOutputCenter
+                            documentTypeId="packing_slip"
+                            documentId={d.id}
+                            documentNumber={d.dispatch_number}
+                            getUdm={() => buildPackingSlipUdm(d, business!.id, warehouseName)}
+                          />
                         )}
                         {d.status === "draft" && (
                           <Button
@@ -884,29 +752,6 @@ const Dispatch = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {challanData && printProfile && (
-        <PrintCopyDialog
-          open={copyDialogOpen}
-          onOpenChange={setCopyDialogOpen}
-          copyTypes={copyTypes}
-          onConfirm={(labels) => {
-            applyPrintPageStyle(printProfile);
-            setCopyLabels(labels);
-            setTimeout(() => window.print(), 50);
-          }}
-        />
-      )}
-      {challanData && printProfile && copyLabels.length > 0 && (
-        <MultiCopyPrintRun
-          copyLabels={copyLabels}
-          config={printConfigOverride ?? profileToPrintConfig(printProfile)}
-          company={challanData.company}
-          party={challanData.party}
-          meta={challanData.meta}
-          items={challanData.items}
-          contentWidthMm={contentWidthMm(printProfile)}
-        />
-      )}
     </div>
   );
 };

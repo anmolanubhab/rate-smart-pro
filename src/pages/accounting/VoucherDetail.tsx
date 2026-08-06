@@ -24,24 +24,12 @@ import { canUnlockVouchers, canDeleteDirectly } from "@/lib/permissions";
 import { createApprovalRequest } from "@/lib/approvals";
 import { fmtInr } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
-import { supabase } from "@/integrations/supabase/client";
 import {
   getVoucher, postVoucher, deleteVoucher, cancelVoucher,
   calculateTotals,
 } from "@/lib/voucherService";
-import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
-import PrintCopyDialog from "@/components/print/PrintCopyDialog";
-import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
-import { fetchEnabledPrintCopyTypes, type PrintCopyType } from "@/lib/printCopyTypes";
-import { fetchDefaultPrintProfile, profileToPrintConfig, type PrintDocumentType, type PrintProfile } from "@/lib/printProfiles";
-import type { PrintItem } from "@/components/print/PrintDocument";
-
-const ENGINE_PRINT_DOCUMENT_TYPE: Partial<Record<string, PrintDocumentType>> = {
-  "Debit Note": "debit_note",
-  "Credit Note": "credit_note",
-  "Payment": "payment_receipt",
-  "Receipt": "payment_receipt",
-};
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildVoucherUdm, isEngineVoucherType, VOUCHER_REGISTRY_ID, type EngineVoucherType } from "@/lib/documentUdm/voucherUdm";
 
 // ── tone maps ──────────────────────────────────────────────────────────────
 
@@ -79,15 +67,6 @@ export default function VoucherDetail() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const [printData, setPrintData] = useState<{
-    company: any; meta: any; items: PrintItem[];
-  } | null>(null);
-  const [printProfile, setPrintProfile] = useState<PrintProfile | null>(null);
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
-  const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
-  const [copyLabels, setCopyLabels] = useState<string[]>([]);
-  const [preparingPrint, setPreparingPrint] = useState(false);
 
   const { data: voucher, isLoading, error } = useQuery({
     queryKey: ["voucher-detail", id],
@@ -165,39 +144,6 @@ export default function VoucherDetail() {
     }
   };
 
-  const engineDocumentType = voucher ? ENGINE_PRINT_DOCUMENT_TYPE[voucher.voucher_type] : undefined;
-
-  const handleEnginePrint = async () => {
-    if (!voucher || !engineDocumentType) return;
-    setPreparingPrint(true);
-    try {
-      const [{ data: biz }, types, profile] = await Promise.all([
-        supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", voucher.business_id).maybeSingle(),
-        fetchEnabledPrintCopyTypes(voucher.business_id),
-        fetchDefaultPrintProfile(voucher.business_id, engineDocumentType),
-      ]);
-      const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean);
-      setPrintData({
-        company: { name: biz?.business_name ?? "—", addressLines, gstin: biz?.gst_number ?? null, logoUrl: biz?.logo_url ?? null },
-        meta: { number: voucher.voucher_no, numberLabel: "Voucher No", date: voucher.voucher_date, narration: voucher.narration || null },
-        items: (voucher.items ?? []).map((it): PrintItem => ({
-          partNumber: "",
-          description: it.ledger_name || it.ledger_account_id,
-          qty: 0,
-          debit: Number(it.debit) || 0,
-          credit: Number(it.credit) || 0,
-        })),
-      });
-      setPrintProfile(profile);
-      setCopyTypes(types);
-      setCopyDialogOpen(true);
-    } catch (e: any) {
-      toast.error(e.message ?? "Could not prepare voucher for printing");
-    } finally {
-      setPreparingPrint(false);
-    }
-  };
-
   // ── loading / error / not found ─────────────────────────────────────────
 
   if (isLoading) {
@@ -246,14 +192,18 @@ export default function VoucherDetail() {
           </Button>
 
           <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={preparingPrint}
-              onClick={() => (engineDocumentType ? handleEnginePrint() : window.print())}
-            >
-              <Printer className="h-3.5 w-3.5 mr-1" /> {preparingPrint ? "Preparing…" : "Print"}
-            </Button>
+            {isEngineVoucherType(voucher.voucher_type) ? (
+              <DocumentOutputCenter
+                documentTypeId={VOUCHER_REGISTRY_ID[voucher.voucher_type as EngineVoucherType]}
+                documentId={voucher.id}
+                documentNumber={voucher.voucher_no}
+                getUdm={() => buildVoucherUdm(voucher)}
+              />
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => window.print()}>
+                <Printer className="h-3.5 w-3.5 mr-1" /> Print
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -550,29 +500,6 @@ export default function VoucherDetail() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {printData && printProfile && (
-        <PrintCopyDialog
-          open={copyDialogOpen}
-          onOpenChange={setCopyDialogOpen}
-          copyTypes={copyTypes}
-          onConfirm={(labels) => {
-            applyPrintPageStyle(printProfile);
-            setCopyLabels(labels);
-            setTimeout(() => window.print(), 50);
-          }}
-        />
-      )}
-      {printData && printProfile && copyLabels.length > 0 && (
-        <MultiCopyPrintRun
-          copyLabels={copyLabels}
-          config={profileToPrintConfig(printProfile)}
-          company={printData.company}
-          party={{ name: "" }}
-          meta={printData.meta}
-          items={printData.items}
-          contentWidthMm={contentWidthMm(printProfile)}
-        />
-      )}
     </>
   );
 }

@@ -1,12 +1,12 @@
 // src/pages/reports/inventory/AbcAnalysis.tsx
 import { useEffect, useState } from "react";
-import { Download, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchAbcAnalysis, AbcRow, fmtInr, fmtQty, fyStart } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 
 const ABC_STYLES: Record<string, string> = {
   A: "border-emerald-500/40 text-emerald-700 bg-emerald-500/10 font-bold",
@@ -51,14 +51,33 @@ export default function AbcAnalysis() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={()=>window.print()}><Printer className="h-3.5 w-3.5 mr-1" />Print</Button>
-          <Button size="sm" onClick={()=>exportSheet(filtered.map(r=>({
-            Rank:r.rank,Class:r.abc_class,"Part No":r.part_number,Product:r.product_name,
-            Brand:r.brand,Category:r.category,"Sales Qty":r.outward_qty,
-            "Sales Value":r.outward_value,"Cumulative %":r.cumulative_pct,
-          })),"abc-analysis.xlsx","ABC")} className="gradient-primary text-white border-0">
-            <Download className="h-3.5 w-3.5 mr-1" />Excel
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="abc_analysis"
+            documentNumber="abc-analysis"
+            getReportUdm={(): ReportUdm => {
+              const columns: UdmColumn[] = [
+                { key: "rank", label: "Rank", align: "right", format: "number" },
+                { key: "abc_class", label: "Class" },
+                { key: "part_number", label: "Part No" },
+                { key: "product_name", label: "Product" },
+                { key: "brand", label: "Brand" },
+                { key: "category", label: "Category" },
+                { key: "outward_qty", label: "Sales Qty", align: "right", format: "number" },
+                { key: "outward_value", label: "Sales Value", align: "right", format: "currency" },
+                { key: "cumulative_pct", label: "Cumulative %", align: "right", format: "number" },
+              ];
+              return {
+                kind: "report",
+                documentTypeId: "abc_analysis",
+                title: "ABC Analysis",
+                subtitle: `${fromDate} to ${toDate}`,
+                columns,
+                rows: filtered,
+                pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+              };
+            }}
+            disabled={filtered.length === 0}
+          />
         </div>
       </header>
 

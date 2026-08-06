@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Save, FileCheck2, Printer, FileDown, Plus, Trash2, Upload, FileSpreadsheet, X } from "lucide-react";
+import { Save, FileCheck2, Plus, Trash2, Upload, FileSpreadsheet, X } from "lucide-react";
 import OrderExcelUpload from "@/components/OrderExcelUpload";
 import { downloadOrderTemplate } from "@/lib/excelTemplates";
 import { toast } from "sonner";
@@ -31,11 +31,13 @@ import { DocumentToolbar, type DocumentToolbarAction } from "@/components/docume
 import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
 import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
-import { DocumentGridTable, DocumentGridPrintTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
+import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
 import { DocumentImportExportButtons } from "@/components/documentEngine/DocumentImportExportButtons";
 import { useDocumentGridNavigation } from "@/hooks/useDocumentGridNavigation";
-import { useDocumentShortcuts } from "@/hooks/useDocumentShortcuts";
+import { useOutputCenterShortcut } from "@/hooks/useOutputCenterShortcut";
+import { DocumentOutputCenter, type DocumentOutputCenterHandle } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildOrderUdm } from "@/lib/documentUdm/orderUdm";
 
 /** Extended row that also carries HSN/Rack for the Tally-style UI (not persisted). */
 type Row = OrderItem & { hsn?: string; rack?: string };
@@ -62,18 +64,6 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "unit", header: "Unit", widthClass: "w-14" },
   { key: "mrp", header: "MRP", align: "right", widthClass: "w-20" },
   { key: "rate", header: "Rate", align: "right", widthClass: "w-20" },
-  { key: "disc", header: "Disc %", align: "right", widthClass: "w-14" },
-  { key: "net_rate", header: "Net Rate", align: "right", widthClass: "w-20" },
-  { key: "amount", header: "Amount", align: "right", widthClass: "w-24" },
-];
-
-const PRINT_COLUMNS: DocumentGridColumn[] = [
-  { key: "part", header: "Part No.", widthClass: "w-48" },
-  { key: "desc", header: "Description", widthClass: "w-[40%]" },
-  { key: "qty", header: "Quantity", align: "right", widthClass: "w-16" },
-  { key: "rack", header: "Rack", widthClass: "w-14" },
-  { key: "gst", header: "GST %", align: "right", widthClass: "w-14" },
-  { key: "mrp", header: "MRP", align: "right", widthClass: "w-20" },
   { key: "disc", header: "Disc %", align: "right", widthClass: "w-14" },
   { key: "net_rate", header: "Net Rate", align: "right", widthClass: "w-20" },
   { key: "amount", header: "Amount", align: "right", widthClass: "w-24" },
@@ -120,6 +110,7 @@ const CreateOrder = () => {
 
   // Autofocus input ref
   const partyInputRef = useRef<HTMLInputElement>(null);
+  const outputCenterRef = useRef<DocumentOutputCenterHandle>(null);
   const { focusCell, handleKey: handleGridKey } = useDocumentGridNavigation(COLS);
 
   const party = useMemo(() => parties.find((p) => p.id === partyId) || null, [parties, partyId]);
@@ -246,7 +237,7 @@ const CreateOrder = () => {
             ? its.map((it) => ({ ...computeItem(it), hsn: "", rack: "" }))
             : Array.from({ length: 6 }, blankRow);
           setItems(rows);
-          if (printOnLoad) setTimeout(() => window.print(), 600);
+          if (printOnLoad) setTimeout(() => outputCenterRef.current?.directPrint(), 600);
         } catch (e: any) {
           toast.error(e.message);
         }
@@ -445,11 +436,14 @@ const CreateOrder = () => {
     }
   };
 
-  useDocumentShortcuts(
+  useOutputCenterShortcut(
     {
       onSaveDraft: () => handleSave("draft"),
       onSubmit: () => handleSave("pending"),
       onAddRow: addRow,
+      onPreview: () => outputCenterRef.current?.preview(),
+      onDirectPrint: () => outputCenterRef.current?.directPrint(),
+      onOpenMenu: () => outputCenterRef.current?.openMenu(),
     },
     [items, partyId, user, orderNumber, orderDate, salesman, narration, refNo, party, saving],
   );
@@ -489,13 +483,12 @@ const CreateOrder = () => {
   const toolbarActions: DocumentToolbarAction[] = [
     { key: "save", label: editMode && editStatus === "draft" ? "Update Draft" : "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: () => handleSave("draft"), disabled: saving },
     { key: "submit", label: "Confirm Invoice", icon: FileCheck2, shortcut: "Ctrl+✍", onClick: () => handleSave("pending"), disabled: saving, variant: "primary" },
-    { key: "print", label: "Print", icon: Printer, shortcut: "Ctrl+P", onClick: () => window.print() },
-    { key: "pdf", label: "PDF", icon: FileDown, onClick: () => window.print() },
     { key: "close", label: "Close", icon: X, shortcut: "Esc", onClick: () => navigate("/orders"), variant: "ghost", className: "text-muted-foreground" },
   ];
+  const businessIdForPrint = getActiveBusinessIdSync();
 
   return (
-    <DocumentRoot type="sales_order" printTitle="ORDER">
+    <DocumentRoot type="sales_order" printMode="multiCopy">
       <DocumentToolbar
         statusSlot={
           <>
@@ -513,6 +506,25 @@ const CreateOrder = () => {
           ...toolbarActions,
         ]}
       />
+      <div className="print:hidden flex justify-end -mt-2 mb-2">
+        <DocumentOutputCenter
+          ref={outputCenterRef}
+          documentTypeId="sales_order"
+          documentId={draftId ?? undefined}
+          documentNumber={orderNumber}
+          disabled={!businessIdForPrint}
+          getUdm={() => buildOrderUdm({
+            businessId: businessIdForPrint!,
+            orderNumber,
+            orderDate,
+            refNo,
+            status: editStatus,
+            party,
+            items: validRows(),
+            unitLabel: (id) => unitLabel(id ?? ""),
+          })}
+        />
+      </div>
 
       <OrderExcelUpload
         open={uploadOpen}
@@ -806,25 +818,6 @@ const CreateOrder = () => {
           }
         />
 
-        <DocumentGridPrintTable
-          columns={PRINT_COLUMNS}
-          rows={items}
-          isEmptyRow={(it) => !it.part_number.trim() && !it.description.trim() && !Number(it.qty)}
-          renderCells={(it, _idx, empty) => (
-            <>
-              <td className="px-1.5 py-0.5 font-mono whitespace-nowrap">{empty ? "" : it.part_number}</td>
-              <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.description}</td>
-              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.qty}</td>
-              <td className="px-1.5 py-0.5 font-mono">{empty ? "" : it.rack || ""}</td>
-              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.gst_pct}</td>
-              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.mrp)}</td>
-              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : it.discount_pct}</td>
-              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.net_rate)}</td>
-              <td className="px-1.5 py-0.5 text-right tabular-nums">{empty ? "" : fmt(it.total)}</td>
-            </>
-          )}
-        />
-
         {/* Bottom section: narration + totals */}
         <div className="grid grid-cols-12 gap-3 px-3 py-2 border-t border-border">
           <div className="col-span-12 md:col-span-7 space-y-2 print:hidden">
@@ -867,24 +860,6 @@ const CreateOrder = () => {
               ]}
               grandTotal={`₹${fmt(finalTotal)}`}
             />
-          </div>
-        </div>
-
-        {/* Print footer */}
-        <div className="hidden print:block px-3 py-4 text-[11px] border-t border-border">
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <div className="font-semibold mb-8">Terms & Conditions</div>
-              <div className="text-muted-foreground">
-                Goods once sold will not be taken back. E. & O.E.
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="mt-12 border-t border-border pt-1">Receiver's Signature</div>
-            </div>
-            <div className="text-right">
-              <div className="mt-12 border-t border-border pt-1">For {business?.business_name ?? business?.firm_name ?? "the Company"}</div>
-            </div>
           </div>
         </div>
       </DocumentSheet>
