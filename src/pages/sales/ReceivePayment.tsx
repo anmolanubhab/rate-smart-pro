@@ -1,23 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { canDeleteDirectly } from "@/lib/permissions";
-import { fetchPaymentEntries, reverseSalesPayment, type PaymentEntry } from "@/lib/receivePayment";
-import { cancelVoucher } from "@/lib/voucherService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { useFormatDate } from "@/lib/dateFormat";
 
 type Party = { id: string; name: string };
@@ -27,9 +18,7 @@ type BankAccount = { id: string; account_name: string; bank_name: string };
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export default function ReceivePayment() {
-  const { user } = useAuth();
-  const { business, role, financialRights } = useBusiness();
-  const canReverse = canDeleteDirectly(role, financialRights);
+  const { business } = useBusiness();
   const fd = useFormatDate();
   useEffect(() => { document.title = "Receive Payment — RD Pro"; }, []);
 
@@ -45,17 +34,6 @@ export default function ReceivePayment() {
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
-
-  const [payments, setPayments] = useState<PaymentEntry[]>([]);
-  const [reverseTarget, setReverseTarget] = useState<PaymentEntry | null>(null);
-  const [reversing, setReversing] = useState(false);
-
-  const loadPayments = () => {
-    if (!business) return;
-    fetchPaymentEntries(business.id, partyId || undefined)
-      .then(setPayments)
-      .catch((e: any) => toast.error(e.message ?? "Could not load payment history"));
-  };
 
   useEffect(() => {
     if (!business) return;
@@ -81,41 +59,6 @@ export default function ReceivePayment() {
         setAllocations({});
       });
   }, [business, partyId]);
-
-  useEffect(() => {
-    loadPayments();
-  }, [business, partyId]);
-
-  const onReverse = async () => {
-    if (!reverseTarget) return;
-    setReversing(true);
-    try {
-      const voucherId = await reverseSalesPayment(reverseTarget.id, "Reversed from Receive Payment");
-      if (voucherId && user) {
-        try {
-          await cancelVoucher(user.id, voucherId, "Sales payment reversed");
-        } catch (e: any) {
-          console.error("onReverse: could not cancel linked voucher:", e.message);
-        }
-      }
-      toast.success("Payment reversed");
-      loadPayments();
-      // refresh invoice list — balances just changed
-      if (business && partyId) {
-        const { data } = await supabase
-          .from("sales_invoices")
-          .select("id, invoice_number, invoice_date, grand_total, paid_amount")
-          .eq("business_id", business.id).eq("party_id", partyId).eq("status", "posted")
-          .order("invoice_date", { ascending: true });
-        setInvoices(((data as OpenInvoice[]) ?? []).filter((i) => Number(i.grand_total) - Number(i.paid_amount) > 0.01));
-      }
-      setReverseTarget(null);
-    } catch (e: any) {
-      toast.error(e.message ?? "Could not reverse payment");
-    } finally {
-      setReversing(false);
-    }
-  };
 
   const totalAllocated = useMemo(
     () => Object.values(allocations).reduce((s, v) => s + (Number(v) || 0), 0),
@@ -170,7 +113,6 @@ export default function ReceivePayment() {
         .eq("business_id", business.id).eq("party_id", partyId).eq("status", "posted")
         .order("invoice_date", { ascending: true });
       setInvoices(((data as OpenInvoice[]) ?? []).filter((i) => Number(i.grand_total) - Number(i.paid_amount) > 0.01));
-      loadPayments();
     } catch (e: any) {
       toast.error(e.message ?? "Could not record payment");
     } finally {
@@ -299,68 +241,6 @@ export default function ReceivePayment() {
           {saving ? "Saving…" : "Record Payment"}
         </Button>
       </div>
-
-      <Card>
-        <CardHeader><CardTitle className="text-base">Payment History{partyId ? "" : " (all customers)"}</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Mode</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {payments.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-6 text-sm text-muted-foreground">No payments recorded yet</TableCell></TableRow>
-              ) : payments.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>{fd(p.payment_date)}</TableCell>
-                  <TableCell className="capitalize">{p.payment_mode ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-sm">{p.reference_number ?? "—"}</TableCell>
-                  <TableCell className="text-right font-semibold">{inr(p.amount)}</TableCell>
-                  <TableCell>
-                    {p.is_reversed ? <Badge variant="destructive">Reversed</Badge> : <Badge variant="secondary">Received</Badge>}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {!p.is_reversed && canReverse && (
-                      <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setReverseTarget(p)}>
-                        Reverse
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <AlertDialog open={!!reverseTarget} onOpenChange={(o) => !o && setReverseTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reverse payment of {reverseTarget ? inr(reverseTarget.amount) : ""}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This frees up the balance on every invoice this payment was allocated to, so they can be
-              cancelled/reversed in turn if needed. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={reversing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-              disabled={reversing}
-              onClick={(e) => { e.preventDefault(); onReverse(); }}
-            >
-              {reversing ? "Reversing…" : "Reverse Payment"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
