@@ -240,6 +240,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: UploadCloud,
     module: "Sales",
     keywords: ["bulk", "csv", "upload", "xlsx"],
+    showInSidebar: false,
   },
   {
     id: "parties",
