@@ -161,3 +161,14 @@ export async function cancelSalesReturn(returnId: string, userId?: string): Prom
 export async function cancelPurchaseReturn(returnId: string, userId?: string): Promise<void> {
   return cancelReturn("purchase", returnId, userId);
 }
+
+/** Cancelled: delete directly (audit trail already captured the cancel). Posted: blocked — must Cancel first, which reverses stock. */
+export async function deletePurchaseReturn(id: string): Promise<void> {
+  const { data: ret, error: le } = await supabase.from("purchase_returns" as never).select("status").eq("id", id).single();
+  if (le) throw le;
+  if ((ret as any).status === "posted") {
+    throw new Error("This claim is posted. Cancel it first, then delete.");
+  }
+  const { error } = await supabase.from("purchase_returns" as never).delete().eq("id", id);
+  if (error) throw error;
+}

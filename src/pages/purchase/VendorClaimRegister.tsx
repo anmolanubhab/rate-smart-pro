@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { Badge } from "@/components/ui/badge";
-import { Download } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { exportSheet } from "@/lib/excelTemplates";
+import { deletePurchaseReturn } from "@/lib/returns";
 
 const REASON_LABEL: Record<string, string> = {
   short_supply: "Short Supply",
@@ -37,38 +43,55 @@ export default function VendorClaimRegister() {
   const businessId = business?.id;
   const [rows, setRows] = useState<ClaimRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<ClaimRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
+  const load = async () => {
     if (!businessId) return;
-    (async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("purchase_returns" as never)
-        .select(
-          "id, return_number, return_date, reason, reason_category, source, total_amount, status, parties(id, name), purchase_invoices(invoice_number)"
-        )
-        .eq("business_id", businessId)
-        .order("return_date", { ascending: false });
-      if (!error && data) {
-        setRows(
-          (data as any[]).map((r) => ({
-            id: r.id,
-            return_number: r.return_number,
-            return_date: r.return_date,
-            supplier_name: r.parties?.name ?? "—",
-            supplier_id: r.parties?.id ?? "",
-            invoice_number: r.purchase_invoices?.invoice_number ?? null,
-            reason_category: r.reason_category,
-            reason: r.reason,
-            source: r.source ?? "manual",
-            total_amount: Number(r.total_amount ?? 0),
-            status: r.status ?? "posted",
-          }))
-        );
-      }
-      setLoading(false);
-    })();
-  }, [businessId]);
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("purchase_returns" as never)
+      .select(
+        "id, return_number, return_date, reason, reason_category, source, total_amount, status, parties(id, name), purchase_invoices(invoice_number)"
+      )
+      .eq("business_id", businessId)
+      .order("return_date", { ascending: false });
+    if (!error && data) {
+      setRows(
+        (data as any[]).map((r) => ({
+          id: r.id,
+          return_number: r.return_number,
+          return_date: r.return_date,
+          supplier_name: r.parties?.name ?? "—",
+          supplier_id: r.parties?.id ?? "",
+          invoice_number: r.purchase_invoices?.invoice_number ?? null,
+          reason_category: r.reason_category,
+          reason: r.reason,
+          source: r.source ?? "manual",
+          total_amount: Number(r.total_amount ?? 0),
+          status: r.status ?? "posted",
+        }))
+      );
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [businessId]);
+
+  const onDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deletePurchaseReturn(deleteTarget.id);
+      toast.success(`Claim ${deleteTarget.return_number} deleted`);
+      setDeleteTarget(null);
+      await load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not delete claim");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const bySupplier = useMemo(() => {
     const m = new Map<string, { name: string; total: number; count: number }>();
@@ -86,6 +109,7 @@ export default function VendorClaimRegister() {
   const manualClaims = totalClaims - qcClaims;
 
   const tableRows = rows.map((r) => ({
+    id: r.id,
     return_no: r.return_number,
     date: r.return_date,
     supplier: r.supplier_name,
@@ -145,6 +169,18 @@ export default function VendorClaimRegister() {
           { key: "status", label: "Status", format: "badge" },
         ]}
         rows={tableRows}
+        rowActions={(row) =>
+          row.status === "cancelled" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setDeleteTarget(rows.find((r) => r.id === row.id) ?? null)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          ) : null
+        }
       />
 
       {bySupplier.length > 0 && (
@@ -165,6 +201,27 @@ export default function VendorClaimRegister() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete claim {deleteTarget?.return_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes this cancelled Debit Note and its line items. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              disabled={deleting}
+              onClick={onDelete}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
