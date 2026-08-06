@@ -174,6 +174,23 @@ export async function backfillAccounting(userId: string) {
   return { parties: parties?.length ?? 0, recalculated };
 }
 
+/** Throws if another ledger in this business already has this name (case-insensitive). `excludeId` skips the ledger being edited. */
+export async function assertLedgerNameAvailable(businessId: string, name: string, excludeId?: string): Promise<void> {
+  let q = supabase.from("ledger_accounts").select("id").eq("business_id", businessId).ilike("name", name.trim());
+  if (excludeId) q = q.neq("id", excludeId);
+  const { data, error } = await q;
+  if (error) throw error;
+  if ((data ?? []).length > 0) throw new Error(`A ledger named "${name.trim()}" already exists`);
+}
+
+export async function updateLedger(
+  id: string,
+  patch: Partial<Pick<LedgerRow, "name" | "ledger_type" | "group_id" | "opening_balance" | "opening_balance_type">>
+): Promise<void> {
+  const { error } = await supabase.from("ledger_accounts").update(patch as never).eq("id", id);
+  if (error) throw error;
+}
+
 export const fmtInr = (n: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
 

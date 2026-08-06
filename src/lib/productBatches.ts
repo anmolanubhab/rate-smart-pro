@@ -58,6 +58,20 @@ export async function deleteProductBatch(id: string) {
   if (error) throw error;
 }
 
+/** Every batch of a product (including ones fully depleted), oldest-expiry
+ *  first — for pickers where a past sale's batch must stay selectable even
+ *  at zero remaining qty (e.g. a Sales Return crediting stock back to it). */
+export async function fetchBatchesForProduct(businessId: string, productId: string): Promise<ProductBatch[]> {
+  const { data, error } = await supabase
+    .from("product_batches" as never)
+    .select("*")
+    .eq("business_id", businessId)
+    .eq("product_id", productId)
+    .order("expiry_date", { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as ProductBatch[];
+}
+
 /** Batches with stock on hand for a product, oldest-expiry first (FEFO), for use in a picker. */
 export async function fetchAvailableBatches(businessId: string, productId: string, warehouseId?: string | null): Promise<ProductBatch[]> {
   let q = supabase

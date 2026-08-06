@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { PricingPolicy } from "@/lib/pricing/types";
 
 export interface AccountingLock {
   business_id: string;
@@ -94,6 +95,117 @@ export async function setFinancialNoteSettings(
   if (error) {
     if (isMissingTable(error)) {
       throw new Error("Financial Adjustment settings aren't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
+  }
+}
+
+// ── Pricing Engine settings (accounting_settings.pricing_policy / minimum_margin_pct / max_discount_pct) ──
+
+export async function fetchPricingPolicy(businessId: string): Promise<PricingPolicy | null> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("pricing_policy")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return ((data as any)?.pricing_policy as PricingPolicy) ?? null;
+}
+
+export interface PricingThresholds {
+  minimumMarginPct: number | null;
+  maxDiscountPct: number | null;
+}
+
+export async function fetchPricingThresholds(businessId: string): Promise<PricingThresholds> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("minimum_margin_pct, max_discount_pct")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return { minimumMarginPct: null, maxDiscountPct: null };
+    throw error;
+  }
+  return {
+    minimumMarginPct: (data as any)?.minimum_margin_pct ?? null,
+    maxDiscountPct: (data as any)?.max_discount_pct ?? null,
+  };
+}
+
+// ── HSN compliance settings (accounting_settings.require_hsn_on_invoice) ──
+
+export interface HsnComplianceSettings {
+  business_id: string;
+  require_hsn_on_invoice: boolean;
+}
+
+export async function fetchHsnComplianceSettings(businessId: string): Promise<HsnComplianceSettings | null> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("business_id, require_hsn_on_invoice")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data as unknown as HsnComplianceSettings) ?? null;
+}
+
+export async function setHsnComplianceSettings(businessId: string, requireHsnOnInvoice: boolean): Promise<void> {
+  const { error } = await supabase.from("accounting_settings" as any).upsert({
+    business_id: businessId,
+    require_hsn_on_invoice: requireHsnOnInvoice,
+  });
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("HSN compliance settings aren't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
+  }
+}
+
+// ── GST compliance config (accounting_settings.enable_einvoice / enable_ewaybill / gst_return_frequency / gst_integration_mode / default_place_of_supply) ──
+
+export type GstReturnFrequency = "monthly" | "quarterly";
+
+export interface GstComplianceConfig {
+  business_id: string;
+  enable_einvoice: boolean;
+  enable_ewaybill: boolean;
+  gst_return_frequency: GstReturnFrequency;
+  gst_integration_mode: string;
+  default_place_of_supply: string | null;
+}
+
+export async function fetchGstComplianceConfig(businessId: string): Promise<GstComplianceConfig | null> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("business_id, enable_einvoice, enable_ewaybill, gst_return_frequency, gst_integration_mode, default_place_of_supply")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data as unknown as GstComplianceConfig) ?? null;
+}
+
+export async function setGstComplianceConfig(
+  businessId: string,
+  patch: Partial<Pick<GstComplianceConfig, "enable_einvoice" | "enable_ewaybill" | "gst_return_frequency" | "gst_integration_mode" | "default_place_of_supply">>
+): Promise<void> {
+  const { error } = await supabase.from("accounting_settings" as any).upsert({
+    business_id: businessId,
+    ...patch,
+  });
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("GST configuration isn't set up on this database yet — apply the latest migration.");
     }
     throw error;
   }

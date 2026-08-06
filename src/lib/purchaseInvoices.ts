@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
-import { createVoucher, postVoucher, type VoucherItem } from "@/lib/voucherService";
+import { createVoucher, postVoucher, cancelVoucher, type VoucherItem } from "@/lib/voucherService";
 
 export type PurchaseInvoiceStatus = "unpaid" | "partially_paid" | "paid" | "cancelled";
 
@@ -41,6 +41,10 @@ export interface PurchaseInvoice {
   grand_total: number;
   paid_amount: number;
   created_at: string;
+  // joined, read-only
+  supplier_name?: string | null;
+  po_number?: string | null;
+  grn_number?: string | null;
 }
 
 export function computeInvoiceItem(item: Partial<PurchaseInvoiceItem>): PurchaseInvoiceItem {
@@ -507,6 +511,214 @@ async function postDirectInvoiceStock(
       notes: `Direct Purchase Invoice ${invoiceNumber} (no GRN)`,
     });
   }
+}
+
+export async function fetchPurchaseInvoice(id: string): Promise<PurchaseInvoice> {
+  const { data, error } = await supabase
+    .from("purchase_invoices")
+    .select("*, supplier:parties(name), purchase_order:purchase_orders(po_number), goods_receipt:goods_receipts(grn_number)")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  const row = data as any;
+  return {
+    id: row.id,
+    business_id: row.business_id,
+    invoice_number: row.invoice_number,
+    supplier_invoice_number: row.supplier_invoice_number,
+    supplier_id: row.supplier_id,
+    purchase_order_id: row.purchase_order_id,
+    goods_receipt_id: row.goods_receipt_id,
+    invoice_date: row.invoice_date,
+    due_date: row.due_date,
+    status: row.status,
+    remarks: row.notes,
+    subtotal: Number(row.subtotal) || 0,
+    discount_total: Number(row.discount_total) || 0,
+    tax_total: Number(row.gst_total) || 0,
+    grand_total: Number(row.grand_total) || 0,
+    paid_amount: Number(row.paid_amount) || 0,
+    created_at: row.created_at,
+    supplier_name: row.supplier?.name ?? null,
+    po_number: row.purchase_order?.po_number ?? null,
+    grn_number: row.goods_receipt?.grn_number ?? null,
+  };
+}
+
+/**
+ * Cancels a purchase invoice: flips status to "cancelled", cancels its
+ * linked accounting voucher (if any), and — only for a direct invoice with
+ * no linked GRN — reverses the stock it added on save (a GRN-linked
+ * invoice never posts its own stock, see postDirectInvoiceStock, so there's
+ * nothing to reverse there).
+ */
+export async function cancelPurchaseInvoice(id: string, userId: string): Promise<void> {
+  const { data: invoice, error: fetchErr } = await supabase.from("purchase_invoices").select("*").eq("id", id).single();
+  if (fetchErr) throw fetchErr;
+  if (invoice.status === "cancelled") return;
+
+  if (invoice.voucher_id) {
+    try {
+      await cancelVoucher(userId, invoice.voucher_id);
+    } catch (e: any) {
+      console.error("cancelPurchaseInvoice: voucher cancel failed", e.message);
+    }
+  }
+
+  if (!invoice.goods_receipt_id) {
+    const { data: items } = await supabase
+      .from("purchase_invoice_items")
+      .select("product_id, quantity, stock_qty")
+      .eq("purchase_invoice_id", id);
+    for (const it of items ?? []) {
+      if (!it.product_id) continue;
+      const qtyToReverse = it.stock_qty ?? it.quantity;
+      const { data: product } = await supabase.from("products").select("stock").eq("id", it.product_id).single();
+      const before = Number(product?.stock) || 0;
+      const after = Math.max(0, before - Number(qtyToReverse));
+      await supabase.from("products").update({ stock: after }).eq("id", it.product_id);
+      await supabase.from("inventory_movements" as any).insert({
+        user_id: userId,
+        business_id: invoice.business_id,
+        product_id: it.product_id,
+        movement_type: "purchase_invoice_cancelled",
+        qty: -qtyToReverse,
+        stock_before: before,
+        stock_after: after,
+        reference_id: id,
+        reference_type: "purchase_invoice",
+        notes: `Cancelled Purchase Invoice ${invoice.invoice_number}`,
+      });
+    }
+  }
+
+  const { error } = await supabase.from("purchase_invoices").update({ status: "cancelled" }).eq("id", id);
+  if (error) throw error;
+}
+
+/** Hard-deletes a purchase invoice and its items. The DB firewall trigger
+ *  (prevent_purchase_invoice_delete) blocks this unless the invoice is
+ *  already cancelled and has no supplier payment recorded against it. */
+export async function deletePurchaseInvoice(id: string): Promise<void> {
+  await supabase.from("purchase_invoice_items").delete().eq("purchase_invoice_id", id);
+  const { error } = await supabase.from("purchase_invoices").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export interface InvoiceActivityLog {
+  id: string;
+  user_id: string;
+  purchase_invoice_id: string;
+  action: string;
+  description: string | null;
+  old_data: any;
+  new_data: any;
+  created_at: string;
+}
+
+export async function logInvoiceActivity(input: {
+  userId: string;
+  purchaseInvoiceId: string;
+  action: string;
+  description?: string;
+  oldData?: any;
+  newData?: any;
+}) {
+  await supabase.from("purchase_invoice_activity_logs" as any).insert({
+    user_id: input.userId,
+    purchase_invoice_id: input.purchaseInvoiceId,
+    action: input.action,
+    description: input.description ?? null,
+    old_data: input.oldData ?? null,
+    new_data: input.newData ?? null,
+  });
+}
+
+export async function fetchInvoiceActivityLogs(purchaseInvoiceId: string): Promise<InvoiceActivityLog[]> {
+  const { data, error } = await supabase
+    .from("purchase_invoice_activity_logs" as any)
+    .select("*")
+    .eq("purchase_invoice_id", purchaseInvoiceId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []) as unknown as InvoiceActivityLog[];
+}
+
+/** Purchase Orders eligible to link a new Purchase Invoice to (excludes
+ *  draft/rejected/cancelled/closed — the non-active statuses). */
+export async function fetchOpenPOsForInvoice(
+  businessId: string
+): Promise<{ id: string; po_number: string; supplier_id: string | null }[]> {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("id, po_number, supplier_id")
+    .eq("business_id", businessId)
+    .in("status", ["approved", "ordered", "partially_received", "received"])
+    .order("po_date", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export interface PendingPOItem extends PurchaseInvoiceItem {
+  pending_qty: number;
+}
+
+/**
+ * PO line items not yet fully invoiced, pre-filled for a new Purchase
+ * Invoice. Pending qty is tracked per product_id (ordered qty minus qty
+ * already billed across every non-cancelled invoice linked to this PO) —
+ * there's no direct invoice-item-to-PO-item link in the schema, so lines
+ * with no product_id can't be matched against prior invoices and are
+ * treated as fully pending.
+ */
+export async function fetchPendingPOItemsForInvoice(poId: string): Promise<PendingPOItem[]> {
+  const { data: poItems, error: poErr } = await supabase
+    .from("purchase_order_items")
+    .select("*")
+    .eq("purchase_order_id", poId)
+    .order("position", { ascending: true });
+  if (poErr) throw poErr;
+  if (!poItems?.length) return [];
+
+  const { data: invoices, error: invErr } = await supabase
+    .from("purchase_invoices")
+    .select("id")
+    .eq("purchase_order_id", poId)
+    .neq("status", "cancelled");
+  if (invErr) throw invErr;
+
+  const invoicedByProduct = new Map<string, number>();
+  const invoiceIds = (invoices ?? []).map((i: any) => i.id);
+  if (invoiceIds.length) {
+    const { data: invItems, error: invItemsErr } = await supabase
+      .from("purchase_invoice_items")
+      .select("product_id, quantity")
+      .in("purchase_invoice_id", invoiceIds);
+    if (invItemsErr) throw invItemsErr;
+    (invItems ?? []).forEach((it: any) => {
+      if (!it.product_id) return;
+      invoicedByProduct.set(it.product_id, (invoicedByProduct.get(it.product_id) || 0) + Number(it.quantity));
+    });
+  }
+
+  return (poItems as any[]).map((it) => {
+    const invoicedQty = it.product_id ? invoicedByProduct.get(it.product_id) ?? 0 : 0;
+    const pendingQty = Math.max(0, Number(it.qty) - invoicedQty);
+    return {
+      ...computeInvoiceItem({
+        product_id: it.product_id,
+        part_number: it.part_number,
+        description: it.description,
+        qty: pendingQty,
+        rate: it.rate,
+        discount_percent: it.discount_percent,
+        gst_percent: it.gst_percent,
+        unit_id: it.unit_id,
+        stock_qty: it.stock_qty,
+      }),
+      pending_qty: pendingQty,
+    };
+  });
 }
 
 export async function fetchInvoiceItems(invoiceId: string): Promise<PurchaseInvoiceItem[]> {

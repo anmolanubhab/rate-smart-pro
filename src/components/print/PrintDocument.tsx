@@ -73,6 +73,8 @@ export type PrintMeta = {
   vehicleNumber?: string | null;
   lrNumber?: string | null;
   ewayNumber?: string | null;
+  distanceKm?: number | null;
+  validUntil?: string | null;
   /** Voucher narration — shown when the party block is hidden (ledger-mode documents). */
   narration?: string | null;
   /** Text encoded into the QR image when showQrCode is on — e.g. a GST

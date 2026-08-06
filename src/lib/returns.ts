@@ -41,3 +41,18 @@ export async function fetchSalesReturnedQty(businessId: string, invoiceItemIds: 
 export async function fetchPurchaseReturnedQty(businessId: string, invoiceItemIds: string[]): Promise<ReturnQtyByItem> {
   return sumQtyByInvoiceItem("purchase_return_items", "purchase_invoice_item_id", businessId, invoiceItemIds);
 }
+
+/**
+ * Cancel a posted Sales Return via the cancel_sales_return RPC (SECURITY
+ * DEFINER) — reverses the stock/batch qty that post_sales_return added and
+ * cancels the linked Credit Note voucher. `userId` is accepted for callers
+ * that pass it (e.g. salesReturns.ts's activity log) but the RPC itself
+ * always attributes the cancel to auth.uid() server-side.
+ */
+export async function cancelSalesReturn(returnId: string, _userId?: string, reason?: string | null): Promise<void> {
+  const { error } = await supabase.rpc("cancel_sales_return" as never, {
+    _return_id: returnId,
+    _reason: reason ?? null,
+  } as never);
+  if (error) throw error;
+}

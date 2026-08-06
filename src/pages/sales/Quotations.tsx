@@ -1,19 +1,26 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusCircle, ArrowRightCircle, Printer, Search } from "lucide-react";
+import { PlusCircle, ArrowRightCircle, Printer, Search, Pencil, Copy, Trash2, History } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { supabase } from "@/integrations/supabase/client";
-import CreateQuotationDialog from "@/components/sales/CreateQuotationDialog";
-import { fetchQuotations, fetchQuotationItems, convertQuotationToOrder, updateQuotationStatus, type Quotation, type QuotationStatus } from "@/lib/quotations";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  fetchQuotations, fetchQuotationItems, fetchQuotationRevisions, convertQuotationToOrder,
+  updateQuotationStatus, deleteQuotation, duplicateQuotation, type Quotation, type QuotationStatus,
+} from "@/lib/quotations";
 import { useFormatDate } from "@/lib/dateFormat";
 import MultiCopyPrintRun from "@/components/print/MultiCopyPrintRun";
 import PrintCopyDialog from "@/components/print/PrintCopyDialog";
@@ -38,7 +45,6 @@ export default function Quotations() {
   const businessId = business?.id ?? getActiveBusinessIdSync();
   const fd = useFormatDate();
   const qc = useQueryClient();
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [converting, setConverting] = useState<string | null>(null);
   const [printing, setPrinting] = useState<string | null>(null);
   const [printData, setPrintData] = useState<{
@@ -50,6 +56,12 @@ export default function Quotations() {
   const [copyTypes, setCopyTypes] = useState<PrintCopyType[]>([]);
   const [copyLabels, setCopyLabels] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Quotation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<Quotation | null>(null);
+  const [historyRows, setHistoryRows] = useState<Quotation[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["quotations", businessId],
@@ -81,6 +93,47 @@ export default function Quotations() {
       toast.error(e.message ?? "Failed to convert quotation");
     } finally {
       setConverting(null);
+    }
+  };
+
+  const handleDuplicate = async (q: Quotation) => {
+    if (!user) return;
+    setDuplicating(q.id);
+    try {
+      const copy = await duplicateQuotation(q.id, user.id);
+      toast.success(`Duplicated as ${copy.quotation_number}`);
+      qc.invalidateQueries({ queryKey: ["quotations", businessId] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to duplicate quotation");
+    } finally {
+      setDuplicating(null);
+    }
+  };
+
+  const handleViewHistory = async (q: Quotation) => {
+    setHistoryTarget(q);
+    setHistoryLoading(true);
+    try {
+      setHistoryRows(await fetchQuotationRevisions(q.root_quotation_id));
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not load revision history");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteQuotation(deleteTarget.id);
+      toast.success(`Quotation ${deleteTarget.quotation_number} deleted`);
+      qc.invalidateQueries({ queryKey: ["quotations", businessId] });
+      setDeleteTarget(null);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to delete quotation");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -137,7 +190,7 @@ export default function Quotations() {
           <h1 className="text-2xl font-bold mt-1">Quotations</h1>
           <p className="text-sm text-muted-foreground mt-1">Send price quotes to customers before they commit to a Sales Order.</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button onClick={() => navigate("/sales/quotations/new")}>
           <PlusCircle className="h-4 w-4 mr-2" />New Quotation
         </Button>
       </div>
@@ -186,7 +239,12 @@ export default function Quotations() {
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">{allRows.length === 0 ? "No quotations yet" : "No quotations match your search"}</TableCell></TableRow>
             ) : rows.map((q) => (
               <TableRow key={q.id}>
-                <TableCell className="font-mono text-sm">{q.quotation_number}</TableCell>
+                <TableCell className="font-mono text-sm">
+                  {q.quotation_number}
+                  {q.revision_number > 0 && (
+                    <Badge variant="outline" className="ml-2 text-[10px] align-middle">Rev {q.revision_number}</Badge>
+                  )}
+                </TableCell>
                 <TableCell>{q.party_name ?? "—"}</TableCell>
                 <TableCell>{fd(q.quotation_date)}</TableCell>
                 <TableCell>{fd(q.valid_until)}</TableCell>
@@ -218,6 +276,23 @@ export default function Quotations() {
                       <Printer className="h-3.5 w-3.5 mr-1.5" />
                       {printing === q.id ? "Preparing…" : "Print"}
                     </Button>
+                    {q.status !== "converted" && (
+                      <Button size="sm" variant="outline" onClick={() => navigate(`/sales/quotations/edit/${q.id}`)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {q.revision_number > 0 && (
+                      <Button size="sm" variant="outline" onClick={() => handleViewHistory(q)}>
+                        <History className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button
+                      size="sm" variant="outline"
+                      disabled={duplicating === q.id}
+                      onClick={() => handleDuplicate(q)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
                     {q.status === "converted" ? (
                       <span className="text-xs text-muted-foreground">Converted</span>
                     ) : (
@@ -230,6 +305,13 @@ export default function Quotations() {
                         {converting === q.id ? "Converting…" : "Convert to Order"}
                       </Button>
                     )}
+                    <Button
+                      size="sm" variant="outline"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(q)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -238,12 +320,65 @@ export default function Quotations() {
         </Table>
       </div>
 
-      <CreateQuotationDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        userId={user?.id ?? null}
-        onSaved={() => qc.invalidateQueries({ queryKey: ["quotations", businessId] })}
-      />
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Quotation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {deleteTarget?.quotation_number} and its line items. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={!!historyTarget} onOpenChange={(o) => !o && setHistoryTarget(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Revision History — {historyTarget?.quotation_number}</DialogTitle>
+          </DialogHeader>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Rev</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right">Print</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {historyLoading ? (
+                <TableRow><TableCell colSpan={5} className="text-center py-6 text-sm text-muted-foreground">Loading…</TableCell></TableRow>
+              ) : historyRows.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell>
+                    Rev {r.revision_number}
+                    {r.is_latest && <Badge variant="outline" className="ml-2 text-[10px]">Current</Badge>}
+                  </TableCell>
+                  <TableCell>{fd(r.quotation_date)}</TableCell>
+                  <TableCell><Badge variant={STATUS_VARIANT[r.status] ?? "secondary"}>{r.status}</Badge></TableCell>
+                  <TableCell className="text-right font-semibold">{inr(r.grand_total)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant="outline" onClick={() => onPrint(r)}>
+                      <Printer className="h-3.5 w-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+      </Dialog>
 
       {printData && printProfile && (
         <PrintCopyDialog

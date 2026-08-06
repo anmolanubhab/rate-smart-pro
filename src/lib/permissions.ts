@@ -29,6 +29,7 @@ const VOUCHER_UNLOCK_ROLES: BusinessRole[] = ["owner", "admin"];
 const FREEZE_OVERRIDE_ROLES: BusinessRole[] = ["owner"];
 const PERIOD_CLOSE_ROLES: BusinessRole[] = ["owner"];
 const READ_ONLY_ROLES: BusinessRole[] = ["viewer"];
+const MAINTENANCE_ROLES: BusinessRole[] = ["owner", "admin"];
 const ADJUSTMENT_LEDGER_OVERRIDE_ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant"];
 
 export function hasRole(role: BusinessRole | null | undefined, allowed: BusinessRole[]): boolean {
@@ -137,6 +138,11 @@ export function canOverrideFreezeDate(role: BusinessRole | null): boolean {
 
 export function canCloseAccountingPeriod(role: BusinessRole | null): boolean {
   return hasRole(role, PERIOD_CLOSE_ROLES);
+}
+
+/** Can this role view/run the Maintenance page's data-rebuild actions? */
+export function canAccessMaintenance(role: BusinessRole | null | undefined): boolean {
+  return hasRole(role as BusinessRole | null, MAINTENANCE_ROLES);
 }
 
 export function isReadOnly(role: BusinessRole | null): boolean {

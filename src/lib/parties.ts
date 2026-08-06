@@ -22,6 +22,8 @@ outstanding_balance?: number;
 notes?: string | null;
 party_group_id?: string | null;
 use_group_defaults?: boolean;
+preferred_customer?: boolean | null;
+preferred_supplier?: boolean | null;
 }
 
 export interface Segment {
@@ -38,16 +40,28 @@ segment_id: string;
 discount: number;
 }
 
-export async function fetchParties(userId: string) {
+/**
+ * Fetch parties for the active business. Pass "customer" or "supplier" to
+ * scope the picker to parties tagged with the matching preferred_customer/
+ * preferred_supplier flag (see Parties.tsx's toggles and the backend
+ * validate_customer_party/validate_supplier_party triggers that already
+ * enforce this classification on orders/sales_invoices/purchase_orders/
+ * purchase_invoices) -- omit to get every party, unfiltered.
+ */
+export async function fetchParties(userId: string, type?: "customer" | "supplier") {
 const biz = getActiveBusinessIdSync();
 
 if (!biz) return [];
 
-const { data, error } = await supabase
+let query = supabase
 .from("parties")
 .select("*")
-.eq("business_id", biz)
-.order("name", { ascending: true });
+.eq("business_id", biz);
+
+if (type === "customer") query = query.eq("preferred_customer", true);
+if (type === "supplier") query = query.eq("preferred_supplier", true);
+
+const { data, error } = await query.order("name", { ascending: true });
 
 if (error) throw error;
 return (data || []) as Party[];

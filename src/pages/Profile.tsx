@@ -13,14 +13,14 @@ import {
 
 const Profile = () => {
   const { user } = useAuth();
-  const { profile, business, role, permissions, preferences, activity, isLoading, error } =
+  const { profile, business, role, permissions, preferences, activity, loading, error } =
     useProfileData(user?.id, user);
 
   useEffect(() => {
     document.title = "Profile — RD Calculator Pro";
   }, []);
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="max-w-6xl mx-auto p-6 animate-pulse space-y-6">
         <div className="h-12 w-48 bg-muted rounded" />

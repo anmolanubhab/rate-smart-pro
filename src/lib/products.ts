@@ -19,6 +19,7 @@ stock: number;
 reserved_qty?: number;
 low_stock_threshold: number;
 gst_pct: number;
+hsn_code: string | null;
 barcode: string | null;
 weight_kg: number | null;
 tracking_type: ProductTrackingType;
