@@ -49,7 +49,7 @@ export function DocumentToolbarButton({ action, extraClassName }: { action: Docu
   return (
     <Button
       size="sm"
-      variant={isPrimary ? undefined : (action.variant ?? "outline")}
+      variant={isPrimary ? undefined : (action.variant === "primary" ? "outline" : action.variant ?? "outline")}
       onClick={action.onClick}
       disabled={action.disabled}
       className={`h-8${isPrimary ? " gradient-primary text-white border-0" : ""}${action.className ? ` ${action.className}` : ""}${extraClassName ? ` ${extraClassName}` : ""}`}
