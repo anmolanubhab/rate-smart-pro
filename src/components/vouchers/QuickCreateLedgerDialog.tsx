@@ -164,7 +164,7 @@ export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId
             </div>
             <div className="space-y-1.5">
               <Label>Balance Type</Label>
-              <Select value={form.opening_balance_type} onValueChange={(v) => setForm({ ...form, opening_balance_type: v })}>
+              <Select value={form.opening_balance_type} onValueChange={(v) => setForm({ ...form, opening_balance_type: v as "dr" | "cr" })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="dr">Debit (Dr)</SelectItem>
