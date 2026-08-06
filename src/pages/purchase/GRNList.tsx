@@ -152,11 +152,12 @@ export default function GRNList() {
             ) : (
               filtered.map((r) => {
                 const isDraft = r.status === "draft";
+                const isCancelled = r.status === "cancelled";
                 const actions: DocumentRowAction[] = [
                   { key: "view", label: isDraft ? "View / Edit" : "View", icon: isDraft ? Pencil : Eye, onClick: () => navigate(isDraft ? `/purchase/grn/edit/${r.id}` : `/purchase/grn/${r.id}`) },
                   { key: "duplicate", label: "Duplicate", icon: Copy, onClick: () => handleDuplicate(r.id) },
-                  { key: "cancel", label: "Cancel GRN", icon: Ban, onClick: () => setCancelTarget(r), className: "text-orange-600 focus:text-orange-600", hidden: r.status === "cancelled", separatorBefore: true },
-                  { key: "delete", label: "Delete", icon: Trash2, onClick: () => setDeleteTarget(r), destructive: true, hidden: !isDraft || !canDeleteDirectly(role, financialRights) },
+                  { key: "cancel", label: "Cancel GRN", icon: Ban, onClick: () => setCancelTarget(r), className: "text-orange-600 focus:text-orange-600", hidden: isCancelled, separatorBefore: true },
+                  { key: "delete", label: "Delete", icon: Trash2, onClick: () => setDeleteTarget(r), destructive: true, hidden: (!isDraft && !isCancelled) || !canDeleteDirectly(role, financialRights) },
                 ];
                 return (
                   <TableRow key={r.id} className="cursor-pointer" onClick={() => navigate(isDraft ? `/purchase/grn/edit/${r.id}` : `/purchase/grn/${r.id}`)}>
@@ -200,7 +201,9 @@ export default function GRNList() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete GRN {deleteTarget?.grn_number}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This GRN is a draft and will be permanently deleted, along with any batch/serial numbers it created. This cannot be undone.
+              {deleteTarget?.status === "draft"
+                ? "This GRN is a draft and will be permanently deleted, along with any batch/serial numbers it created. This cannot be undone."
+                : "This GRN is cancelled and will be permanently deleted. Blocked if a Purchase Invoice was ever generated from it. This cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
