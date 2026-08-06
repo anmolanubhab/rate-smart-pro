@@ -31,6 +31,12 @@ export type VoucherType = (typeof VOUCHER_TYPES)[number];
 export const VOUCHER_STATUSES = ["draft", "posted", "cancelled"] as const;
 export type VoucherStatus = (typeof VOUCHER_STATUSES)[number];
 
+/** Contra voucher instrument types — matches the vouchers.instrument_type
+ *  CHECK constraint (see contra_instrument_fields migration). Unused by
+ *  every other voucher type. */
+export const INSTRUMENT_TYPES = ["Cash", "Cheque", "NEFT", "RTGS", "IMPS", "UPI", "Transfer"] as const;
+export type InstrumentType = (typeof INSTRUMENT_TYPES)[number];
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface VoucherItem {
@@ -75,6 +81,11 @@ export interface Voucher {
   note_mode?: NoteMode | null;
   adjustment_category_id?: string | null;
   adjustment_category_snapshot?: AdjustmentCategorySnapshot | null;
+  // Contra instrument details — null for every other voucher type.
+  instrument_type?: InstrumentType | null;
+  instrument_no?: string | null;
+  instrument_date?: string | null;
+  bank_branch?: string | null;
   // computed
   total_debit?: number;
   total_credit?: number;
@@ -90,6 +101,10 @@ export interface CreateVoucherInput {
   note_mode?: NoteMode;
   adjustment_category_id?: string | null;
   adjustment_category_snapshot?: AdjustmentCategorySnapshot | null;
+  instrument_type?: InstrumentType | null;
+  instrument_no?: string | null;
+  instrument_date?: string | null;
+  bank_branch?: string | null;
 }
 
 export interface UpdateVoucherInput extends Partial<CreateVoucherInput> {
@@ -179,6 +194,35 @@ export function typeFromDb(s: string): VoucherType {
   return map[s] ?? (s as VoucherType);
 }
 
+/** Map UI InstrumentType → DB instrument_type string (snake_case) */
+export function instrumentTypeToDb(t: InstrumentType): string {
+  const map: Record<InstrumentType, string> = {
+    Cash: "cash",
+    Cheque: "cheque",
+    NEFT: "neft",
+    RTGS: "rtgs",
+    IMPS: "imps",
+    UPI: "upi",
+    Transfer: "transfer",
+  };
+  return map[t];
+}
+
+/** Map DB instrument_type → UI InstrumentType */
+export function instrumentTypeFromDb(s: string | null): InstrumentType | null {
+  if (!s) return null;
+  const map: Record<string, InstrumentType> = {
+    cash: "Cash",
+    cheque: "Cheque",
+    neft: "NEFT",
+    rtgs: "RTGS",
+    imps: "IMPS",
+    upi: "UPI",
+    transfer: "Transfer",
+  };
+  return map[s] ?? null;
+}
+
 // ─── 1. calculateTotals ───────────────────────────────────────────────────────
 
 /**
@@ -244,6 +288,69 @@ export function validateVoucher(
   return { valid: errors.length === 0, errors };
 }
 
+// ─── 2b. Contra-specific validation ────────────────────────────────────────────
+
+/**
+ * Contra structural rules that don't apply to any other voucher type, so
+ * they live outside validateVoucher(): a leg can't transfer to itself, and
+ * a pure Cash-to-Cash transfer isn't a real Contra (Tally/Busy reject it the
+ * same way — it's just a memo entry, not a fund movement between books).
+ * ledgerTypeById should carry each selected row's ledger_accounts.group's
+ * account_type ("cash" | "bank" | ...), e.g. built from the bank/cash ledger
+ * options already loaded for Contra's rows.
+ */
+export function validateContraLegs(
+  items: VoucherItem[],
+  ledgerTypeById: Record<string, string | null | undefined>
+): ValidationResult {
+  const errors: string[] = [];
+  const filled = items.filter((it) => it.ledger_account_id);
+
+  const ids = filled.map((it) => it.ledger_account_id);
+  if (new Set(ids).size !== ids.length) {
+    errors.push("From and To account cannot be the same ledger.");
+  }
+
+  const debitLegs = filled.filter((it) => (Number(it.debit) || 0) > 0);
+  const creditLegs = filled.filter((it) => (Number(it.credit) || 0) > 0);
+  if (debitLegs.length === 1 && creditLegs.length === 1) {
+    const debitType = ledgerTypeById[debitLegs[0].ledger_account_id];
+    const creditType = ledgerTypeById[creditLegs[0].ledger_account_id];
+    if (debitType === "cash" && creditType === "cash") {
+      errors.push("Cash to Cash transfer is not allowed in Contra — select at least one Bank ledger.");
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Required-field rules per Instrument Type — enforced at Post time only
+ * (mirrors how validateVoucher's balance check is post-only: a draft can be
+ * saved incomplete, but posting a Contra voucher without the paperwork it
+ * claims to represent shouldn't be allowed).
+ */
+export function validateContraInstrument(
+  instrumentType: InstrumentType | null | undefined,
+  instrumentNo: string | null | undefined,
+  instrumentDate: string | null | undefined
+): ValidationResult {
+  const errors: string[] = [];
+  if (!instrumentType) {
+    errors.push("Instrument Type is required.");
+    return { valid: false, errors };
+  }
+
+  if (instrumentType === "Cheque") {
+    if (!instrumentNo?.trim()) errors.push("Cheque Number is required.");
+    if (!instrumentDate?.trim()) errors.push("Cheque Date is required.");
+  } else if (instrumentType !== "Cash") {
+    if (!instrumentNo?.trim()) errors.push("UTR / Reference Number is required.");
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
 // ─── 3. createVoucher ─────────────────────────────────────────────────────────
 
 /**
@@ -294,6 +401,10 @@ export async function createVoucher(
       note_mode: input.note_mode ?? null,
       adjustment_category_id: input.adjustment_category_id ?? null,
       adjustment_category_snapshot: input.adjustment_category_snapshot ?? null,
+      instrument_type: input.instrument_type ? instrumentTypeToDb(input.instrument_type) : null,
+      instrument_no: input.instrument_no ?? null,
+      instrument_date: input.instrument_date ?? null,
+      bank_branch: input.bank_branch ?? null,
     })
     .select("*")
     .single();
@@ -344,6 +455,10 @@ export async function updateVoucher(
   if (input.note_mode !== undefined) patch.note_mode = input.note_mode;
   if (input.adjustment_category_id !== undefined) patch.adjustment_category_id = input.adjustment_category_id;
   if (input.adjustment_category_snapshot !== undefined) patch.adjustment_category_snapshot = input.adjustment_category_snapshot;
+  if (input.instrument_type !== undefined) patch.instrument_type = input.instrument_type ? instrumentTypeToDb(input.instrument_type) : null;
+  if (input.instrument_no !== undefined) patch.instrument_no = input.instrument_no;
+  if (input.instrument_date !== undefined) patch.instrument_date = input.instrument_date;
+  if (input.bank_branch !== undefined) patch.bank_branch = input.bank_branch;
   if (input.items) {
     patch.total_amount = input.items.reduce(
       (s, it) => s + (Number(it.debit) || 0),
@@ -711,6 +826,10 @@ function _mapVoucher(row: any, items: VoucherItem[]): Voucher {
     note_mode: (row.note_mode as NoteMode) ?? null,
     adjustment_category_id: row.adjustment_category_id ?? null,
     adjustment_category_snapshot: row.adjustment_category_snapshot ?? null,
+    instrument_type: instrumentTypeFromDb(row.instrument_type ?? null),
+    instrument_no: row.instrument_no ?? null,
+    instrument_date: row.instrument_date ?? null,
+    bank_branch: row.bank_branch ?? null,
     total_debit: totals.totalDebit || Number(row.total_amount) || 0,
     total_credit: totals.totalCredit || Number(row.total_amount) || 0,
   };

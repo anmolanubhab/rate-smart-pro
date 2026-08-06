@@ -28,8 +28,10 @@ import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
 import { canOverrideAdjustmentLedger, canUnlockVouchers } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import {
-  calculateTotals, validateVoucher, createVoucher, updateVoucher, postVoucher, deleteVoucher, getVoucher,
-  type VoucherItem, type CreateVoucherInput, type AdjustmentCategorySnapshot,
+  calculateTotals, validateVoucher, validateContraLegs, validateContraInstrument,
+  createVoucher, updateVoucher, postVoucher, deleteVoucher, getVoucher,
+  INSTRUMENT_TYPES,
+  type VoucherItem, type CreateVoucherInput, type AdjustmentCategorySnapshot, type InstrumentType,
 } from "@/lib/voucherService";
 import { VOUCHER_TYPE_CONFIGS, rowFilterFor, type EngineVoucherType } from "@/lib/voucherTypeConfig";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
@@ -82,6 +84,14 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   const [adjustmentCategoryId, setAdjustmentCategoryId] = useState("");
   const [linkedInvoiceId, setLinkedInvoiceId] = useState("");
   const [gstBaseAmount, setGstBaseAmount] = useState("");
+
+  // ── Instrument Details (Contra only) — Tally/Busy-style Bank Contra needs
+  // these but nothing in the Universal Voucher Engine collected them before. ──
+  const isContra = type === "Contra";
+  const [instrumentType, setInstrumentType] = useState<InstrumentType | "">("");
+  const [instrumentNo, setInstrumentNo] = useState("");
+  const [instrumentDate, setInstrumentDate] = useState("");
+  const [bankBranch, setBankBranch] = useState("");
 
   const { data: categories = [] } = useQuery({
     queryKey: ["note-adjustment-categories-active", business?.id],
@@ -219,6 +229,10 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
       if (existingVoucher.reference_id && existingVoucher.note_mode === "financial_adjustment") {
         setLinkedInvoiceId(existingVoucher.reference_id);
       }
+      setInstrumentType(existingVoucher.instrument_type ?? "");
+      setInstrumentNo(existingVoucher.instrument_no ?? "");
+      setInstrumentDate(existingVoucher.instrument_date ?? "");
+      setBankBranch(existingVoucher.bank_branch ?? "");
     }
   }, [existingVoucher]);
 
@@ -280,6 +294,13 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
     }
   };
 
+  // Cash-vs-Bank lookup for Contra's leg validation (same-ledger / Cash→Cash).
+  const ledgerTypeById = useMemo(
+    () => Object.fromEntries(bankCashLedgers.map((l) => [l.id, l.account_type])),
+    [bankCashLedgers]
+  );
+  const contraLegErrors = isContra ? validateContraLegs(items, ledgerTypeById).errors : [];
+
   // ── computed ──────────────────────────────────────────────────────────
   const totals = useMemo(() => calculateTotals(items), [items]);
   const partyRow = items[0];
@@ -330,6 +351,12 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
       reference_type: linkedInvoiceId ? (type === "Credit Note" ? "sales_invoice" : "purchase_invoice") : undefined,
       reference_id: linkedInvoiceId || undefined,
     }),
+    ...(isContra && {
+      instrument_type: instrumentType || null,
+      instrument_no: instrumentNo.trim() || null,
+      instrument_date: instrumentDate || null,
+      bank_branch: bankBranch.trim() || null,
+    }),
   });
 
   const logLedgerOverrideIfAny = async (voucherId: string) => {
@@ -354,8 +381,10 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
     if (!user?.id) return;
     const input = buildInput();
     const check = validateVoucher(input, { requireBalanced: false });
-    setValidationErrors(check.errors);
-    if (!check.valid) return;
+    const errors = [...check.errors];
+    if (isContra) errors.push(...validateContraLegs(items, ledgerTypeById).errors);
+    setValidationErrors(errors);
+    if (errors.length > 0) return;
 
     setSaving(true);
     try {
@@ -381,8 +410,13 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
     if (!user?.id) return;
     const input = buildInput();
     const check = validateVoucher(input, { requireBalanced: true });
-    setValidationErrors(check.errors);
-    if (!check.valid) return;
+    const errors = [...check.errors];
+    if (isContra) {
+      errors.push(...validateContraLegs(items, ledgerTypeById).errors);
+      errors.push(...validateContraInstrument(instrumentType || null, instrumentNo, instrumentDate).errors);
+    }
+    setValidationErrors(errors);
+    if (errors.length > 0) return;
 
     setPosting(true);
     try {
@@ -453,7 +487,7 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
       },
       onBillAllocation: config.billAllocation ? () => setBillAllocationOpen(true) : undefined,
     },
-    [type, isDirty, totals.isBalanced, items, vDate, narration, adjustmentCategoryId, linkedInvoiceId, isEdit, id]
+    [type, isDirty, totals.isBalanced, items, vDate, narration, adjustmentCategoryId, linkedInvoiceId, isEdit, id, instrumentType, instrumentNo, instrumentDate, bankBranch]
   );
 
   if (isEdit && loadingVoucher) {
@@ -555,6 +589,53 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
           </div>
         )}
 
+        {isContra && (
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Instrument Details</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label>Instrument Type <span className="text-destructive">*</span></Label>
+                <Select value={instrumentType} onValueChange={(v) => setInstrumentType(v as InstrumentType)}>
+                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                  <SelectContent>
+                    {INSTRUMENT_TYPES.map((it) => <SelectItem key={it} value={it}>{it}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {instrumentType === "Cheque" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label>Cheque Number <span className="text-destructive">*</span></Label>
+                    <Input value={instrumentNo} onChange={(e) => setInstrumentNo(e.target.value)} placeholder="e.g. 123456" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Cheque Date <span className="text-destructive">*</span></Label>
+                    <input
+                      type="date"
+                      value={instrumentDate}
+                      onChange={(e) => setInstrumentDate(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    />
+                  </div>
+                </>
+              )}
+
+              {instrumentType && instrumentType !== "Cheque" && instrumentType !== "Cash" && (
+                <div className="space-y-1.5">
+                  <Label>UTR / Reference Number <span className="text-destructive">*</span></Label>
+                  <Input value={instrumentNo} onChange={(e) => setInstrumentNo(e.target.value)} placeholder="e.g. UTR/transaction reference" />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Branch <span className="text-xs text-muted-foreground">(optional)</span></Label>
+                <Input value={bankBranch} onChange={(e) => setBankBranch(e.target.value)} placeholder="Branch name" />
+              </div>
+            </div>
+          </div>
+        )}
+
         <VoucherLedgerGrid
           items={items}
           minRows={config.minRows}
@@ -565,6 +646,17 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
           onRemoveRow={removeRow}
           lockedRowIndex={ledgerLocked ? 0 : null}
         />
+
+        {isContra && contraLegErrors.length > 0 && items.some((r) => r.ledger_account_id) && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {contraLegErrors.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {config.billAllocation && partyId && (
           <div className="flex justify-end items-center gap-2">
