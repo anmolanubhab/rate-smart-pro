@@ -36,22 +36,30 @@ async function uploadAndSign(payload: ShareDocumentPayload): Promise<{ url: stri
     .upload(storagePath, payload.pdfBlob, { contentType: "application/pdf", upsert: false });
   if (uploadError) throw uploadError;
 
-  const expiresIn = shareLinkExpirySeconds(payload.expiry);
-  const { data: signed, error: signError } = await supabase.storage
-    .from("document-exports")
-    .createSignedUrl(storagePath, expiresIn);
-  if (signError || !signed) throw signError ?? new Error("Failed to create signed URL");
+  // From here on, any failure must clean up the just-uploaded object —
+  // otherwise a failed sign/log leaves an orphaned PDF in the bucket with no
+  // document_share_links row to account for it.
+  try {
+    const expiresIn = shareLinkExpirySeconds(payload.expiry);
+    const { data: signed, error: signError } = await supabase.storage
+      .from("document-exports")
+      .createSignedUrl(storagePath, expiresIn);
+    if (signError || !signed) throw signError ?? new Error("Failed to create signed URL");
 
-  const expiresAt = payload.expiry === "never" ? null : new Date(Date.now() + expiresIn * 1000).toISOString();
-  const { error: logError } = await supabase.from("document_share_links" as never).insert({
-    business_id: payload.businessId,
-    storage_path: storagePath,
-    expires_at: expiresAt,
-    created_by: payload.userId,
-  } as never);
-  if (logError) throw logError;
+    const expiresAt = payload.expiry === "never" ? null : new Date(Date.now() + expiresIn * 1000).toISOString();
+    const { error: logError } = await supabase.from("document_share_links" as never).insert({
+      business_id: payload.businessId,
+      storage_path: storagePath,
+      expires_at: expiresAt,
+      created_by: payload.userId,
+    } as never);
+    if (logError) throw logError;
 
-  return { url: signed.signedUrl, storagePath, expiresAt };
+    return { url: signed.signedUrl, storagePath, expiresAt };
+  } catch (err) {
+    await supabase.storage.from("document-exports").remove([storagePath]);
+    throw err;
+  }
 }
 
 export class LinkModeStrategy implements CommunicationStrategy {
