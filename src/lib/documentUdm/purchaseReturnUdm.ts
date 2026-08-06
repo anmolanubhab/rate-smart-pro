@@ -44,16 +44,25 @@ export async function buildPurchaseReturnUdm(businessId: string, returnId: strin
     .from("purchase_returns" as never)
     .select("return_number, return_date, reason, status, supplier_id, taxable_amount, gst_amount, total_amount")
     .eq("id", returnId)
+    .eq("business_id", businessId)
     .single();
   if (retErr) throw retErr;
   const returnRow = ret as unknown as PurchaseReturnRow;
 
-  const [{ data: biz }, { data: supplier }, { data: itemRows }, profile] = await Promise.all([
+  const [
+    { data: biz, error: bizErr },
+    { data: supplier, error: supplierErr },
+    { data: itemRows, error: itemsErr },
+    profile,
+  ] = await Promise.all([
     supabase.from("businesses").select("business_name, firm_name, address, city, state, pincode, gst_number, logo_url").eq("id", businessId).maybeSingle(),
     supabase.from("parties").select("name, phone, address, billing_address, gst").eq("id", returnRow.supplier_id).maybeSingle(),
-    supabase.from("purchase_return_items" as never).select("part_number, description, qty, rate, gst_pct, line_total").eq("return_id", returnId),
+    supabase.from("purchase_return_items" as never).select("part_number, description, qty, rate, gst_pct, line_total").eq("return_id", returnId).eq("business_id", businessId),
     fetchDefaultPrintProfile(businessId, "purchase_return"),
   ]);
+  if (bizErr) throw bizErr;
+  if (supplierErr) throw supplierErr;
+  if (itemsErr) throw itemsErr;
   const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean) as string[];
   const items = (itemRows ?? []) as unknown as PurchaseReturnItemRow[];
 

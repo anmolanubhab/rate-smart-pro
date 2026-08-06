@@ -38,6 +38,7 @@ export async function buildSalesReturnUdm(input: SalesReturnPrintInput): Promise
   const addressLines = [biz?.firm_name, biz?.address, [biz?.city, biz?.state, biz?.pincode].filter(Boolean).join(", ")].filter(Boolean) as string[];
 
   const taxable = items.reduce((s, it) => s + (Number(it.net_rate) || 0) * (Number(it.qty) || 0), 0);
+  const subtotal = items.reduce((s, it) => s + (Number(it.mrp) || 0) * (Number(it.qty) || 0), 0);
   const gstTotal = items.reduce((s, it) => s + (Number(it.total) || 0) - (Number(it.net_rate) || 0) * (Number(it.qty) || 0), 0);
   const grandTotal = taxable + gstTotal;
 
@@ -78,8 +79,8 @@ export async function buildSalesReturnUdm(input: SalesReturnPrintInput): Promise
       };
     }),
     totals: {
-      subtotal: taxable,
-      discount: 0,
+      subtotal,
+      discount: subtotal - taxable,
       tax: gstTotal,
       grandTotal: Math.round(grandTotal),
     },
