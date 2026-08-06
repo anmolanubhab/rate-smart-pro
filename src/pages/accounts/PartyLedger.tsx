@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  ArrowLeft, User, Printer, FileSpreadsheet, FileDown, RefreshCw,
-  Search, Calendar, Share2,
+  ArrowLeft, User, RefreshCw,
+  Search, Calendar,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -22,6 +22,8 @@ import {
 } from "@/lib/accounting";
 import { fetchParties } from "@/lib/parties";
 import { useFormatDate } from "@/lib/dateFormat";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -75,29 +77,16 @@ const QUICK_FILTERS = [
   },
 ];
 
-// ── CSV / simple export helper ───────────────────────────────────────────────
-
-function downloadCSV(rows: PartyLedgerLine[], opening: number, closing: number, partyName: string) {
-  const lines = [
-    ["Date", "Voucher #", "Type", "Narration", "Debit", "Credit", "Running Balance", "Dr/Cr"],
-    ["", "Opening Balance", "", "", "", "", Math.abs(opening).toFixed(2), opening >= 0 ? "Dr" : "Cr"],
-    ...rows.map((r) => [
-      r.date, r.voucher_number, r.voucher_type,
-      (r.narration ?? "").replace(/,/g, " "),
-      r.dr > 0 ? r.dr.toFixed(2) : "",
-      r.cr > 0 ? r.cr.toFixed(2) : "",
-      Math.abs(r.running_balance).toFixed(2),
-      r.running_balance >= 0 ? "Dr" : "Cr",
-    ]),
-    ["", "Closing Balance", "", "", "", "", Math.abs(closing).toFixed(2), closing >= 0 ? "Dr" : "Cr"],
-  ];
-  const csv = lines.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = `${partyName.replace(/\s+/g, "_")}_Ledger.csv`;
-  a.click(); URL.revokeObjectURL(url);
-}
+const LEDGER_REPORT_COLUMNS: UdmColumn[] = [
+  { key: "date", label: "Date" },
+  { key: "voucher_number", label: "Voucher #" },
+  { key: "voucher_type", label: "Type" },
+  { key: "narration", label: "Narration" },
+  { key: "dr", label: "Debit (Dr)", align: "right", format: "currency" },
+  { key: "cr", label: "Credit (Cr)", align: "right", format: "currency" },
+  { key: "balance", label: "Balance", align: "right", format: "currency" },
+  { key: "side", label: "Dr/Cr" },
+];
 
 // ── component ────────────────────────────────────────────────────────────────
 
@@ -166,12 +155,33 @@ export default function PartyLedger() {
     setActiveQuick(label);
   };
 
-  // print
-  const handlePrint = () => window.print();
+  const ledgerName = party?.name ?? ledger?.name ?? "Party";
 
-  // export
-  const handleExportCSV = () => {
-    downloadCSV(filteredLines, openingBalance, closingBalance, party?.name ?? ledger?.name ?? "Party");
+  const getReportUdm = (): ReportUdm => {
+    const rows: Record<string, unknown>[] = [
+      { date: fd(from), voucher_number: "Opening Balance", voucher_type: "", narration: "", dr: "", cr: "", balance: Math.abs(openingBalance), side: sideBadge(openingBalance) },
+      ...filteredLines.map((l) => ({
+        date: fd(l.date), voucher_number: l.voucher_number, voucher_type: l.voucher_type,
+        narration: l.narration ?? "", dr: l.dr > 0 ? l.dr : "", cr: l.cr > 0 ? l.cr : "",
+        balance: Math.abs(l.running_balance), side: sideBadge(l.running_balance),
+      })),
+      { date: "", voucher_number: "Closing Balance", voucher_type: "", narration: "", dr: totalDr, cr: totalCr, balance: Math.abs(closingBalance), side: sideBadge(closingBalance) },
+    ];
+    return {
+      kind: "report",
+      documentTypeId: "ledger",
+      title: `${ledgerName} — Party Ledger`,
+      subtitle: `${fd(from)} to ${fd(to)}`,
+      columns: LEDGER_REPORT_COLUMNS,
+      rows,
+      summary: [
+        { label: "Opening Balance", value: `₹ ${fmtInr(Math.abs(openingBalance))} ${sideBadge(openingBalance)}` },
+        { label: "Total Debit", value: `₹ ${fmtInr(totalDr)}` },
+        { label: "Total Credit", value: `₹ ${fmtInr(totalCr)}` },
+        { label: "Closing Balance", value: `₹ ${fmtInr(Math.abs(closingBalance))} ${sideBadge(closingBalance)}` },
+      ],
+      pageProfile: { pageSize: "A4", orientation: "portrait", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+    };
   };
 
   // ── render ─────────────────────────────────────────────────────────────────
@@ -243,25 +253,12 @@ export default function PartyLedger() {
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExportCSV}>
-              <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Export CSV
-            </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint}>
-              <Printer className="h-3.5 w-3.5 mr-1" /> Print
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({ title: `${party?.name ?? "Party"} Ledger`, url: window.location.href });
-                } else {
-                  navigator.clipboard.writeText(window.location.href);
-                }
-              }}
-            >
-              <Share2 className="h-3.5 w-3.5 mr-1" /> Share
-            </Button>
+            <DocumentOutputCenter
+              documentTypeId="ledger"
+              documentNumber={`${ledgerName.replace(/\s+/g, "_")}_Ledger`}
+              getReportUdm={getReportUdm}
+              disabled={!ledger}
+            />
           </div>
         </div>
 

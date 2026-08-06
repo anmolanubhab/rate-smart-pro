@@ -6,7 +6,7 @@
 // WhatsApp/Search/Zoom/Fit/Copies-as-pages controls.
 
 import { useMemo, useState } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { PrintToolbar } from "@/components/documentEngine/PrintToolbar";
 import { PrintSurface } from "@/components/print/printEngine/PrintSurface";
 import { resolveTemplate } from "@/components/print/templates/registry";
@@ -58,6 +58,9 @@ export function DocumentPreview({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl w-[95vw] h-[90vh] p-0 flex flex-col gap-0">
+        <DialogTitle className="sr-only">
+          {udm.kind === "report" ? udm.title : "Document Preview"}
+        </DialogTitle>
         <PrintToolbar
           onBack={() => onOpenChange(false)}
           onPrint={onDirectPrint}

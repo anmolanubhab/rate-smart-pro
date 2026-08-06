@@ -60,6 +60,7 @@ export default function SalesRegister() {
 
   return (
     <ReportRunner
+      reportTypeId="sales_register"
       eyebrow="Sales"
       title="Sales Register"
       description="All sales invoices for the selected period, from live invoice data."

@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import ExportMenu from "@/components/reports/ExportMenu";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import type { MockColumn } from "@/components/accounts/MockTablePage";
+import type { ReportUdm } from "@/lib/documentUdm/types";
 
 const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -120,14 +121,18 @@ export default function Gstr3B() {
             CGST/SGST/IGST split logic as ledger posting.
           </p>
         </div>
-        <ExportMenu
-          rows={exportRows}
-          columns={exportColumns}
-          baseName="gstr-3b-summary"
-          title="GSTR-3B Summary"
-          subtitle={`${from} to ${to}`}
-          xmlRootTag="Gstr3BSummary"
-          xmlRowTag="Section"
+        <DocumentOutputCenter
+          documentTypeId="gstr3b"
+          documentNumber="gstr-3b-summary"
+          getReportUdm={(): ReportUdm => ({
+            kind: "report",
+            documentTypeId: "gstr3b",
+            title: "GSTR-3B Summary",
+            subtitle: `${from} to ${to}`,
+            columns: exportColumns,
+            rows: exportRows,
+            pageProfile: { pageSize: "A4", orientation: "portrait", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+          })}
           disabled={loading}
         />
       </div>

@@ -1,6 +1,6 @@
 // src/pages/reports/inventory/StockSummary.tsx
 import { useEffect, useState, useCallback } from "react";
-import { Download, Printer, Search, RefreshCw, ChevronRight, Filter } from "lucide-react";
+import { Search, RefreshCw, ChevronRight, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,8 @@ import {
   fetchStockSummary, fetchDistinctBrands, fetchDistinctCategories, fetchWarehouses,
   StockSummaryRow, fmtInr, fmtQty, fyStart,
 } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 import StockDrillDownModal from "@/components/inventory-reports/StockDrillDownModal";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -73,59 +74,25 @@ export default function StockSummary() {
   const totalInwardValue  = rows.reduce((s, r) => s + r.inward_value, 0);
   const totalOutwardValue = rows.reduce((s, r) => s + r.outward_value, 0);
 
-  const doExport = () => {
-    const sheet = rows.map((r) => ({
-      "Part No":       r.part_number ?? "",
-      "Product Name":  r.product_name,
-      "Brand":         r.brand ?? "",
-      "Category":      r.category ?? "",
-      "Group":         r.product_group ?? "",
-      "Unit":          r.unit ?? "",
-      "MRP":           r.mrp,
-      "Sale Rate":     r.sale_rate,
-      "Purch. Rate":   r.purchase_price,
-      "Op. Qty":       r.opening_qty,
-      "Op. Value":     r.opening_value,
-      "Inward Qty":    r.inward_qty,
-      "Inward Value":  r.inward_value,
-      "Outward Qty":   r.outward_qty,
-      "Outward Value": r.outward_value,
-      "Closing Qty":   r.closing_qty,
-      "Closing Value": r.closing_value,
-      "Avg Rate":      r.avg_rate,
-      "Margin %":      r.margin_pct,
-    }));
-    exportSheet(sheet, `stock-summary-${toDate}.xlsx`, "Stock Summary");
-  };
-
-  const doPrint = () => {
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(`<html><head><title>Stock Summary</title>
-      <style>body{font-family:Arial,sans-serif;font-size:10px;padding:16px}h2{font-size:14px;margin:0 0 4px}
-      .meta{color:#666;font-size:9px;margin-bottom:10px}table{border-collapse:collapse;width:100%}
-      th{background:#f0f4ff;padding:4px 6px;border:1px solid #ccc;font-size:9px;text-align:left}
-      td{padding:3px 6px;border:1px solid #ddd;font-size:9px}.r{text-align:right}
-      @page{size:A4 landscape;margin:10mm}</style></head><body>
-      <h2>Stock Summary Report — ${business?.business_name ?? ""}</h2>
-      <div class="meta">Period: ${fromDate} to ${toDate} | Records: ${rows.length} | Generated: ${new Date().toLocaleString("en-IN")}</div>
-      <table><thead><tr>
-        <th>Part No</th><th>Product</th><th>Brand</th><th>Category</th><th>Unit</th>
-        <th class="r">MRP</th><th class="r">Sale Rate</th><th class="r">Op Qty</th><th class="r">Op Value</th>
-        <th class="r">In Qty</th><th class="r">In Val</th><th class="r">Out Qty</th><th class="r">Out Val</th>
-        <th class="r">Cl Qty</th><th class="r">Cl Value</th><th class="r">Avg Rate</th><th class="r">Margin%</th>
-      </tr></thead><tbody>
-      ${rows.map((r) => `<tr>
-        <td>${r.part_number??""}</td><td>${r.product_name}</td><td>${r.brand??""}</td><td>${r.category??""}</td><td>${r.unit??""}</td>
-        <td class="r">${r.mrp}</td><td class="r">${r.sale_rate}</td><td class="r">${fmtQty(r.opening_qty)}</td><td class="r">${fmtQty(r.opening_value)}</td>
-        <td class="r">${fmtQty(r.inward_qty)}</td><td class="r">${fmtQty(r.inward_value)}</td>
-        <td class="r">${fmtQty(r.outward_qty)}</td><td class="r">${fmtQty(r.outward_value)}</td>
-        <td class="r"><b>${fmtQty(r.closing_qty)}</b></td><td class="r"><b>${fmtQty(r.closing_value)}</b></td>
-        <td class="r">${fmtQty(r.avg_rate)}</td><td class="r">${r.margin_pct}%</td>
-      </tr>`).join("")}
-      </tbody></table></body></html>`);
-    win.document.close(); setTimeout(() => win.print(), 300);
-  };
+  const reportColumns: UdmColumn[] = [
+    { key: "part_number", label: "Part No" },
+    { key: "product_name", label: "Product" },
+    { key: "brand", label: "Brand" },
+    { key: "category", label: "Category" },
+    { key: "unit", label: "Unit" },
+    { key: "mrp", label: "MRP", align: "right", format: "number" },
+    { key: "sale_rate", label: "Sale Rate", align: "right", format: "number" },
+    { key: "opening_qty", label: "Op. Qty", align: "right", format: "number" },
+    { key: "opening_value", label: "Op. Value", align: "right", format: "currency" },
+    { key: "inward_qty", label: "Inward Qty", align: "right", format: "number" },
+    { key: "inward_value", label: "Inward Value", align: "right", format: "currency" },
+    { key: "outward_qty", label: "Outward Qty", align: "right", format: "number" },
+    { key: "outward_value", label: "Outward Value", align: "right", format: "currency" },
+    { key: "closing_qty", label: "Closing Qty", align: "right", format: "number" },
+    { key: "closing_value", label: "Closing Value", align: "right", format: "currency" },
+    { key: "avg_rate", label: "Avg Rate", align: "right", format: "number" },
+    { key: "margin_pct", label: "Margin %", align: "right", format: "number" },
+  ];
 
   return (
     <div className="max-w-full mx-auto space-y-5 animate-fade-in-up">
@@ -145,12 +112,20 @@ export default function StockSummary() {
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={doPrint}>
-            <Printer className="h-3.5 w-3.5 mr-1" />Print
-          </Button>
-          <Button size="sm" onClick={doExport} disabled={rows.length === 0} className="gradient-primary text-white border-0">
-            <Download className="h-3.5 w-3.5 mr-1" />Excel
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="stock_summary"
+            documentNumber={`stock-summary-${toDate}`}
+            getReportUdm={(): ReportUdm => ({
+              kind: "report",
+              documentTypeId: "stock_summary",
+              title: "Stock Summary Report",
+              subtitle: `Period: ${fromDate} to ${toDate} | Records: ${rows.length}`,
+              columns: reportColumns,
+              rows,
+              pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+            })}
+            disabled={rows.length === 0}
+          />
         </div>
       </header>
 

@@ -3,10 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import MockTablePage from "@/components/accounts/MockTablePage";
-import ExportMenu from "@/components/reports/ExportMenu";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { MockColumn } from "@/components/accounts/MockTablePage";
+import type { ReportUdm } from "@/lib/documentUdm/types";
 
 const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
@@ -98,9 +99,19 @@ export default function Gstr9() {
         columns={summaryColumns}
         rows={summaryRows}
         actions={
-          <ExportMenu
-            rows={summaryRows} columns={summaryColumns} baseName={`gstr9-annual-${fyStartYear}`}
-            title="GSTR-9 Annual Summary" xmlRootTag="Gstr9Summary" xmlRowTag="Month"
+          <DocumentOutputCenter
+            documentTypeId="gstr9"
+            documentNumber={`gstr9-annual-${fyStartYear}`}
+            getReportUdm={(): ReportUdm => ({
+              kind: "report",
+              documentTypeId: "gstr9",
+              title: "GSTR-9 Annual Summary",
+              subtitle: `FY ${fyStartYear}-${fyStartYear + 1}`,
+              columns: summaryColumns,
+              rows: summaryRows,
+              pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+            })}
+            disabled={loadingAnnual}
           />
         }
       />
@@ -112,9 +123,19 @@ export default function Gstr9() {
         columns={reconColumns}
         rows={reconRows}
         actions={
-          <ExportMenu
-            rows={reconRows} columns={reconColumns} baseName={`gstr9c-reconciliation-${fyStartYear}`}
-            title="GSTR-9C Reconciliation" xmlRootTag="Gstr9cReconciliation" xmlRowTag="Metric"
+          <DocumentOutputCenter
+            documentTypeId="gstr9c_reconciliation"
+            documentNumber={`gstr9c-reconciliation-${fyStartYear}`}
+            getReportUdm={(): ReportUdm => ({
+              kind: "report",
+              documentTypeId: "gstr9c_reconciliation",
+              title: "GSTR-9C Reconciliation",
+              subtitle: `FY ${fyStartYear}-${fyStartYear + 1}`,
+              columns: reconColumns,
+              rows: reconRows,
+              pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+            })}
+            disabled={loadingRecon}
           />
         }
       />

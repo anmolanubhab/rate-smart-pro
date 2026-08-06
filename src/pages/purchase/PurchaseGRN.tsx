@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Save, CheckCircle2, Ban, Copy, X, Boxes, Printer } from "lucide-react";
+import { Save, CheckCircle2, Ban, Copy, X, Boxes } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -24,7 +24,9 @@ import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, Docu
 import { DocumentGridTable, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTimeline } from "@/components/documentEngine/DocumentTimeline";
 import { DocumentAuditLog } from "@/components/documentEngine/DocumentAuditLog";
-import { useDocumentShortcuts } from "@/hooks/useDocumentShortcuts";
+import { useOutputCenterShortcut } from "@/hooks/useOutputCenterShortcut";
+import { DocumentOutputCenter, type DocumentOutputCenterHandle } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildGRNUdm } from "@/lib/documentUdm/grnUdm";
 
 const QC_REASON_OPTIONS: { value: string; label: string }[] = [
   { value: "short_supply", label: "Short Supply" },
@@ -88,6 +90,7 @@ export default function PurchaseGRN() {
   const [cancelling, setCancelling] = useState(false);
   const [activityLogs, setActivityLogs] = useState<GRNActivityLog[]>([]);
   const grnIdRef = useRef<string | null>(editId || null);
+  const outputCenterRef = useRef<DocumentOutputCenterHandle>(null);
   const readOnly = editMode && status !== "draft";
 
   // ─── Load master data + (in edit mode) the existing GRN ─────────────────────
@@ -291,11 +294,14 @@ export default function PurchaseGRN() {
     }
   };
 
-  useDocumentShortcuts(
+  useOutputCenterShortcut(
     {
       onSaveDraft: () => handleSave("draft"),
       onSubmit: () => handleSave("received"),
       onEscape: () => navigate("/purchase/grn"),
+      onPreview: () => outputCenterRef.current?.preview(),
+      onDirectPrint: () => outputCenterRef.current?.directPrint(),
+      onOpenMenu: () => outputCenterRef.current?.openMenu(),
     },
     [items, selectedSupplier, selectedWarehouse, selectedPO, grnNumber, grnDate, remarks, readOnly],
   );
@@ -312,12 +318,11 @@ export default function PurchaseGRN() {
     { key: "post", label: "Post (Receive Stock)", icon: CheckCircle2, shortcut: "Ctrl+Enter", onClick: () => handleSave("received"), disabled: loading || readOnly, variant: "primary" },
     { key: "cancel", label: cancelling ? "Cancelling…" : "Cancel GRN", icon: Ban, onClick: handleCancel, disabled: cancelling, hidden: !editMode || status === "cancelled", className: "border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700" },
     { key: "duplicate", label: duplicating ? "Duplicating…" : "Duplicate", icon: Copy, onClick: handleDuplicate, disabled: duplicating, hidden: !editMode },
-    { key: "print", label: "Print", icon: Printer, onClick: () => window.print(), hidden: !editMode },
     { key: "close", label: "Close", icon: X, onClick: () => navigate("/purchase/grn"), variant: "ghost", className: "text-muted-foreground" },
   ];
 
   return (
-    <DocumentRoot type="grn" printTitle="GOODS RECEIPT NOTE" className="grn-entry space-y-0">
+    <DocumentRoot type="grn" printMode="multiCopy" className="grn-entry space-y-0">
       <DocumentToolbar
         statusSlot={
           <>
@@ -330,6 +335,27 @@ export default function PurchaseGRN() {
         }
         actions={toolbarActions}
       />
+      {editMode && (
+        <div className="print:hidden flex justify-end -mt-2 mb-2">
+          <DocumentOutputCenter
+            ref={outputCenterRef}
+            documentTypeId="grn"
+            documentId={grnIdRef.current ?? undefined}
+            documentNumber={grnNumber}
+            disabled={!businessId}
+            getUdm={() => buildGRNUdm({
+              businessId: businessId!,
+              grnNumber,
+              grnDate,
+              remarks,
+              status,
+              supplierId: selectedSupplier || null,
+              items,
+              unitLabel: (id) => unitLabel(id ?? ""),
+            })}
+          />
+        </div>
+      )}
 
       <DocumentSheet>
         <DocumentSheetBanner left="Goods Receipt Note" center="RD Pro" />

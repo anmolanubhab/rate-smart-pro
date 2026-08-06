@@ -78,6 +78,7 @@ export default function OutstandingAgeing() {
 
   return (
     <ReportRunner
+      reportTypeId="outstanding_ageing"
       eyebrow="Party"
       title="Outstanding Ageing"
       description="Invoices with a balance still due, as of the selected date, net of bill-wise payments received."

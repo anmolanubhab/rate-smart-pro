@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Ban, Copy, Loader2 } from "lucide-react";
+import { ArrowLeft, Ban, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ import {
 import { DocumentTimeline } from "@/components/documentEngine/DocumentTimeline";
 import { DocumentAuditLog } from "@/components/documentEngine/DocumentAuditLog";
 import { useFormatDate } from "@/lib/dateFormat";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import { buildGRNUdm } from "@/lib/documentUdm/grnUdm";
 
 const STATUS_TONE: Record<GRNStatus, string> = {
   draft: "border-amber-500/40 text-amber-600 bg-amber-500/10",
@@ -133,9 +135,21 @@ export default function GRNDetail() {
           <Button variant="outline" size="sm" onClick={handleDuplicate} disabled={duplicating}>
             <Copy className="h-3.5 w-3.5 mr-1" /> {duplicating ? "Duplicating…" : "Duplicate"}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="h-3.5 w-3.5 mr-1" /> Print
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="grn"
+            documentId={grn.id}
+            documentNumber={grn.grn_number}
+            getUdm={() => buildGRNUdm({
+              businessId: grn.business_id,
+              grnNumber: grn.grn_number,
+              grnDate: grn.grn_date,
+              remarks: grn.remarks,
+              status: grn.status,
+              supplierId: grn.supplier_id,
+              items,
+            })}
+            disabled={loadingItems}
+          />
         </div>
       </div>
 

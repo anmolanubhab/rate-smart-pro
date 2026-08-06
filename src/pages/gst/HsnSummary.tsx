@@ -57,6 +57,7 @@ export default function HsnSummary() {
 
   return (
     <ReportRunner
+      reportTypeId="hsn_summary_sales"
       eyebrow="GST"
       title="HSN Summary"
       description="Sales grouped by HSN code and GST rate, GSTR-1 Table 12 shape. Rows show 'HSN not set' until products are linked via HSN Master."
@@ -64,8 +65,6 @@ export default function HsnSummary() {
       fetchRows={fetchRows}
       computeKpis={computeKpis}
       exportFileName="hsn-summary-sales"
-      xmlRootTag="HsnSummary"
-      xmlRowTag="HsnGroup"
     />
   );
 }

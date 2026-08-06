@@ -1,6 +1,6 @@
 // src/pages/reports/inventory/StockValuation.tsx
 import { useEffect, useState } from "react";
-import { Download, Printer, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,7 +9,8 @@ import {
   fetchStockValuation, fetchDistinctBrands, fetchDistinctCategories,
   ValuationRow, fmtInr, fmtQty,
 } from "@/lib/inventoryReports";
-import { exportSheet } from "@/lib/excelTemplates";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
 
 export default function StockValuation() {
   const { business } = useBusiness();
@@ -50,13 +51,21 @@ export default function StockValuation() {
     profit: filtered.reduce((s,r)=>s+r.profit_potential,0),
   };
 
-  const doExport = () => exportSheet(filtered.map(r=>({
-    "Part No": r.part_number, "Product": r.product_name, "Brand": r.brand,
-    "Category": r.category, "Unit": r.unit, "Qty": r.closing_qty,
-    "Avg Cost": r.avg_cost, "Total Cost": r.total_cost, "MRP": r.mrp,
-    "Sale Rate": r.sale_rate, "MRP Value": r.mrp_value,
-    "Sale Value": r.sale_value, "Profit Potential": r.profit_potential,
-  })), `stock-valuation-${asOfDate}.xlsx`, "Valuation");
+  const reportColumns: UdmColumn[] = [
+    { key: "part_number", label: "Part No" },
+    { key: "product_name", label: "Product" },
+    { key: "brand", label: "Brand" },
+    { key: "category", label: "Category" },
+    { key: "unit", label: "Unit" },
+    { key: "closing_qty", label: "Qty", align: "right", format: "number" },
+    { key: "avg_cost", label: "Avg Cost", align: "right", format: "number" },
+    { key: "total_cost", label: "Total Cost", align: "right", format: "currency" },
+    { key: "mrp", label: "MRP", align: "right", format: "number" },
+    { key: "sale_rate", label: "Sale Rate", align: "right", format: "number" },
+    { key: "mrp_value", label: "MRP Value", align: "right", format: "currency" },
+    { key: "sale_value", label: "Sale Value", align: "right", format: "currency" },
+    { key: "profit_potential", label: "Profit Potential", align: "right", format: "currency" },
+  ];
 
   return (
     <div className="max-w-full mx-auto space-y-5 animate-fade-in-up">
@@ -67,10 +76,20 @@ export default function StockValuation() {
           <p className="text-muted-foreground mt-1 text-sm">Closing stock valued at cost, MRP and selling price</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={()=>window.print()}><Printer className="h-3.5 w-3.5 mr-1" />Print</Button>
-          <Button size="sm" onClick={doExport} disabled={!filtered.length} className="gradient-primary text-white border-0">
-            <Download className="h-3.5 w-3.5 mr-1" />Excel
-          </Button>
+          <DocumentOutputCenter
+            documentTypeId="stock_valuation"
+            documentNumber={`stock-valuation-${asOfDate}`}
+            getReportUdm={(): ReportUdm => ({
+              kind: "report",
+              documentTypeId: "stock_valuation",
+              title: "Stock Valuation",
+              subtitle: `As of ${asOfDate}`,
+              columns: reportColumns,
+              rows: filtered,
+              pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+            })}
+            disabled={!filtered.length}
+          />
         </div>
       </header>
 

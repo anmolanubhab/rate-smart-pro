@@ -7,7 +7,7 @@ export type PrintDocumentType =
   | "sales_invoice" | "purchase_invoice" | "delivery_challan"
   | "sales_order" | "purchase_order" | "quotation" | "packing_slip"
   | "debit_note" | "credit_note" | "payment_receipt"
-  | "journal_voucher" | "contra_voucher";
+  | "journal_voucher" | "contra_voucher" | "sales_return" | "grn" | "purchase_return";
 export type PrintPageSize = "A4" | "A5" | "Letter" | "Thermal_80mm" | "Thermal_58mm";
 export type PrintOrientation = "portrait" | "landscape";
 export type PrintLogoPosition = "left" | "center" | "none";

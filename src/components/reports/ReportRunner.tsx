@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import MockTablePage, { MockColumn, MockKpi } from "@/components/accounts/MockTablePage";
-import ExportMenu from "@/components/reports/ExportMenu";
+import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
+import type { ReportUdm } from "@/lib/documentUdm/types";
 
 export type ReportFilters = { from: string; to: string; search: string };
 
 interface Props {
+  /** Output Center registry key, e.g. "sales_register" — see src/lib/outputCenter/registry.ts. */
+  reportTypeId: string;
   eyebrow: string;
   title: string;
   description?: string;
@@ -16,9 +19,8 @@ interface Props {
   /** Optional: derive KPI cards from the currently loaded rows. */
   computeKpis?: (rows: Record<string, any>[]) => MockKpi[];
   defaultDays?: number; // how far back "from" defaults to
+  /** Used as the downloaded PDF/Excel filename base. */
   exportFileName: string;
-  xmlRootTag?: string;
-  xmlRowTag?: string;
 }
 
 function isoDaysAgo(days: number) {
@@ -28,7 +30,7 @@ function isoDaysAgo(days: number) {
 }
 
 export default function ReportRunner({
-  eyebrow, title, description, columns, fetchRows, computeKpis, defaultDays = 30, exportFileName, xmlRootTag, xmlRowTag,
+  reportTypeId, eyebrow, title, description, columns, fetchRows, computeKpis, defaultDays = 30, exportFileName,
 }: Props) {
   const [from, setFrom] = useState(isoDaysAgo(defaultDays));
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
@@ -73,14 +75,19 @@ export default function ReportRunner({
               className="pl-8 w-40"
             />
           </div>
-          <ExportMenu
-            rows={rows}
-            columns={columns}
-            baseName={exportFileName}
-            title={title}
-            subtitle={`${from} to ${to}`}
-            xmlRootTag={xmlRootTag}
-            xmlRowTag={xmlRowTag}
+          <DocumentOutputCenter
+            documentTypeId={reportTypeId}
+            documentNumber={exportFileName}
+            getReportUdm={(): ReportUdm => ({
+              kind: "report",
+              documentTypeId: reportTypeId,
+              title,
+              subtitle: `${from} to ${to}`,
+              columns,
+              rows,
+              pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+            })}
+            disabled={rows.length === 0}
           />
         </div>
       }

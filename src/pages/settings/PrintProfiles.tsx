@@ -42,7 +42,10 @@ const DOCUMENT_TYPES: { value: PrintDocumentType; label: string }[] = [
   { value: "delivery_challan", label: "Delivery Challan" },
   { value: "sales_order", label: "Sales Order" },
   { value: "purchase_order", label: "Purchase Order" },
+  { value: "grn", label: "Goods Receipt Note (GRN)" },
   { value: "quotation", label: "Quotation" },
+  { value: "sales_return", label: "Sales Return / Credit Note" },
+  { value: "purchase_return", label: "Purchase Return / Debit Note" },
   { value: "packing_slip", label: "Packing Slip" },
   { value: "debit_note", label: "Debit Note" },
   { value: "credit_note", label: "Credit Note" },
@@ -101,6 +104,9 @@ const DOCUMENT_LABELS: Record<PrintDocumentType, string> = {
   sales_order: "SALES ORDER",
   purchase_order: "PURCHASE ORDER",
   quotation: "QUOTATION",
+  sales_return: "CREDIT NOTE / SALES RETURN",
+  purchase_return: "DEBIT NOTE / PURCHASE RETURN",
+  grn: "GOODS RECEIPT NOTE",
   packing_slip: "PACKING SLIP",
   debit_note: "DEBIT NOTE",
   credit_note: "CREDIT NOTE",
@@ -111,7 +117,7 @@ const DOCUMENT_LABELS: Record<PrintDocumentType, string> = {
 
 const PARTY_LABELS: Record<PrintDocumentType, string> = {
   sales_invoice: "BILL TO", purchase_invoice: "BILL TO", delivery_challan: "DELIVER TO",
-  sales_order: "BILL TO", purchase_order: "SUPPLIER", quotation: "TO", packing_slip: "DELIVER TO",
+  sales_order: "BILL TO", purchase_order: "SUPPLIER", quotation: "TO", sales_return: "BILL TO", purchase_return: "SUPPLIER", grn: "SUPPLIER", packing_slip: "DELIVER TO",
   debit_note: "", credit_note: "", payment_receipt: "", journal_voucher: "", contra_voucher: "",
 };
 

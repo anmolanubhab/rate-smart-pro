@@ -1,13 +1,20 @@
-// Voucher -> DocumentUdm bridge (Phase 3 migration): Payment, Receipt,
-// Journal, and Contra vouchers only — Debit Note/Credit Note vouchers keep
-// using VoucherDetail.tsx's existing engine-print path (they're Phase 4
-// scope, migrated alongside the rest of Sales/Purchase return documents),
-// and Sales/Purchase/Opening Balance vouchers aren't document types this
-// roadmap covers. Replicates VoucherDetail.tsx's pre-migration
-// handleEnginePrint() data-fetch shape (ledger item grid, no party) — Payment
-// and Receipt share the same underlying print_profiles document_type
-// ("payment_receipt", the only one that existed before this phase) while
-// Journal/Contra get their own new document_type (this phase's migration).
+// Voucher -> DocumentUdm bridge. Payment/Receipt/Journal/Contra were
+// migrated in Phase 3; Debit Note/Credit Note were promised as "Phase 4
+// scope, migrated alongside the rest of Sales/Purchase return documents"
+// but that never actually happened during Phase 4 (Sales/Purchase Return
+// got their own new print_profiles document_types instead) — closed here
+// in Phase 7 hardening, since VoucherDetail.tsx's old
+// handleEnginePrint/PrintCopyDialog/MultiCopyPrintRun path was otherwise the
+// last real per-document gap left in the whole roadmap. Sales/Purchase/
+// Opening Balance vouchers still aren't covered — no dedicated document
+// layout ever existed for them (VoucherDetail.tsx's own on-screen ledger
+// table already prints reasonably via a plain window.print(), unlike GRN's
+// hidden grid, so there's nothing broken to fix there). Replicates
+// VoucherDetail.tsx's pre-migration handleEnginePrint() data-fetch shape
+// (ledger item grid, no party) — Payment and Receipt share the same
+// underlying print_profiles document_type ("payment_receipt", the only one
+// that existed before Phase 3) while Journal/Contra/Debit Note/Credit Note
+// each have their own document_type.
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Voucher } from "@/lib/voucherService";
@@ -16,32 +23,36 @@ import { profileToUdmSections, profileToUdmPageProfile } from "@/lib/documentUdm
 import { resolveWatermark } from "@/lib/watermark";
 import type { DocumentUdm, ReportUdm } from "@/lib/documentUdm/types";
 
-export type Phase3VoucherType = "Payment" | "Receipt" | "Journal" | "Contra";
+export type EngineVoucherType = "Payment" | "Receipt" | "Journal" | "Contra" | "Debit Note" | "Credit Note";
 
 /** Registry key (src/lib/outputCenter/registry.ts) per voucher_type. */
-export const VOUCHER_REGISTRY_ID: Record<Phase3VoucherType, string> = {
+export const VOUCHER_REGISTRY_ID: Record<EngineVoucherType, string> = {
   Payment: "payment_voucher",
   Receipt: "receipt_voucher",
   Journal: "journal_voucher",
   Contra: "contra_voucher",
+  "Debit Note": "debit_note",
+  "Credit Note": "credit_note",
 };
 
 /** Underlying print_profiles.document_type per voucher_type — Payment and
  *  Receipt intentionally share one row (payment_receipt), matching the
  *  pre-migration ENGINE_PRINT_DOCUMENT_TYPE map exactly. */
-const PRINT_PROFILE_DOCUMENT_TYPE: Record<Phase3VoucherType, PrintDocumentType> = {
+const PRINT_PROFILE_DOCUMENT_TYPE: Record<EngineVoucherType, PrintDocumentType> = {
   Payment: "payment_receipt",
   Receipt: "payment_receipt",
   Journal: "journal_voucher",
   Contra: "contra_voucher",
+  "Debit Note": "debit_note",
+  "Credit Note": "credit_note",
 };
 
-export function isPhase3VoucherType(voucherType: string): voucherType is Phase3VoucherType {
+export function isEngineVoucherType(voucherType: string): voucherType is EngineVoucherType {
   return voucherType in VOUCHER_REGISTRY_ID;
 }
 
 export async function buildVoucherUdm(voucher: Voucher): Promise<DocumentUdm> {
-  const voucherType = voucher.voucher_type as Phase3VoucherType;
+  const voucherType = voucher.voucher_type as EngineVoucherType;
   const documentTypeId = VOUCHER_REGISTRY_ID[voucherType];
   const printProfileDocType = PRINT_PROFILE_DOCUMENT_TYPE[voucherType];
 

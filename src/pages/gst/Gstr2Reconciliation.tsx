@@ -128,6 +128,7 @@ export default function Gstr2Reconciliation() {
 
       <ReportRunner
         key={refreshKey}
+        reportTypeId="gstr2_reconciliation"
         eyebrow="GST"
         title="Reconciliation"
         description="Purchase register vs imported GSTR-2A/2B, matched by supplier GSTIN + document number."
@@ -135,8 +136,6 @@ export default function Gstr2Reconciliation() {
         fetchRows={fetchRows}
         computeKpis={computeKpis}
         exportFileName="gstr-2-reconciliation"
-        xmlRootTag="Gstr2Reconciliation"
-        xmlRowTag="Entry"
       />
     </div>
   );
