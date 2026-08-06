@@ -10263,6 +10263,7 @@ export type Database = {
           adjustment_category_snapshot: Json | null
           approved_at: string | null
           approved_by: string | null
+          bank_branch: string | null
           business_id: string | null
           cancelled_at: string | null
           cancelled_by: string | null
@@ -10273,6 +10274,9 @@ export type Database = {
           deleted_at: string | null
           deleted_by: string | null
           id: string
+          instrument_date: string | null
+          instrument_no: string | null
+          instrument_type: string | null
           is_deleted: boolean
           is_locked: boolean
           locked_at: string | null
@@ -10295,6 +10299,7 @@ export type Database = {
           adjustment_category_snapshot?: Json | null
           approved_at?: string | null
           approved_by?: string | null
+          bank_branch?: string | null
           business_id?: string | null
           cancelled_at?: string | null
           cancelled_by?: string | null
@@ -10305,6 +10310,9 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           id?: string
+          instrument_date?: string | null
+          instrument_no?: string | null
+          instrument_type?: string | null
           is_deleted?: boolean
           is_locked?: boolean
           locked_at?: string | null
@@ -10327,6 +10335,7 @@ export type Database = {
           adjustment_category_snapshot?: Json | null
           approved_at?: string | null
           approved_by?: string | null
+          bank_branch?: string | null
           business_id?: string | null
           cancelled_at?: string | null
           cancelled_by?: string | null
@@ -10337,6 +10346,9 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           id?: string
+          instrument_date?: string | null
+          instrument_no?: string | null
+          instrument_type?: string | null
           is_deleted?: boolean
           is_locked?: boolean
           locked_at?: string | null
