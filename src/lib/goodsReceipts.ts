@@ -518,16 +518,21 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
 }
 
 /**
- * Hard delete — only ever allowed for a draft GRN (a posted one has
- * already applied real stock via the trigger; use cancelGRN() to reverse
- * that instead of deleting it, matching the Draft-delete/Posted-cancel
- * convention already used everywhere else this session). Reverses any
- * batch/serial records the draft created (receiveProductBatch() bumps
- * real product_batches.qty unconditionally regardless of GRN status, so a
- * draft can already hold live batch inventory that must be given back).
- * The existing prevent_grn_delete_with_active_documents trigger already
- * blocks this at the DB level if a live Purchase Invoice references the
- * GRN -- not duplicated here.
+ * Hard delete — allowed for a draft GRN or an already-cancelled one (a
+ * posted/received GRN has live stock applied via the trigger; use
+ * cancelGRN() to reverse that first, matching the Draft-delete/Posted-cancel
+ * convention used everywhere else, and mirroring deletePurchaseInvoice()
+ * which likewise only unlocks once status is 'cancelled'). The existing
+ * prevent_grn_delete_with_active_documents trigger blocks this at the DB
+ * level if a live Purchase Invoice still references the GRN -- not
+ * duplicated here.
+ *
+ * Only a draft's batch/serial records need reversing here
+ * (receiveProductBatch() bumps real product_batches.qty unconditionally
+ * regardless of GRN status, so a draft can already hold live batch
+ * inventory). A cancelled GRN already had that same reversal done by
+ * cancelGRN() at cancel-time -- redoing it here would double-decrement
+ * batch qty.
  */
 export async function deleteGRN(grnId: string): Promise<void> {
   const { data: grn, error: fetchErr } = await supabase
@@ -536,11 +541,13 @@ export async function deleteGRN(grnId: string): Promise<void> {
     .eq("id", grnId)
     .single();
   if (fetchErr) throw fetchErr;
-  if (grn.status !== "draft") {
-    throw new Error("Only a draft GRN can be deleted directly. Cancel it instead.");
+  if (grn.status !== "draft" && grn.status !== "cancelled") {
+    throw new Error("Only a draft or cancelled GRN can be deleted directly. Cancel it first.");
   }
 
-  await reverseGRNItemTracking(grnId);
+  if (grn.status === "draft") {
+    await reverseGRNItemTracking(grnId);
+  }
   await supabase.from("goods_receipt_items").delete().eq("goods_receipt_id", grnId);
   const { error } = await supabase.from("goods_receipts").delete().eq("id", grnId);
   if (error) throw error;
