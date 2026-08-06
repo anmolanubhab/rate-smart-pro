@@ -20,7 +20,7 @@ export interface Quotation {
   party_snapshot?: any;
   billing_address?: string | null;
   shipping_address?: string | null;
-  ref_no?: string | null;
+  reference_no?: string | null;
   salesman: string | null;
   remarks: string | null;
   subtotal: number;
@@ -92,7 +92,7 @@ export interface SaveQuotationInput {
   party_snapshot?: any;
   billing_address?: string | null;
   shipping_address?: string | null;
-  ref_no?: string | null;
+  reference_no?: string | null;
   quotation_date: string;
   valid_until?: string | null;
   salesman?: string | null;
@@ -125,7 +125,7 @@ export async function saveQuotation(input: SaveQuotationInput): Promise<Quotatio
         party_snapshot: input.party_snapshot ?? null,
         billing_address: input.billing_address ?? null,
         shipping_address: input.shipping_address ?? null,
-        ref_no: input.ref_no ?? null,
+        reference_no: input.reference_no ?? null,
         salesman: input.salesman || null,
         remarks: input.remarks || null,
         subtotal: totals.subtotal,
@@ -150,7 +150,7 @@ export async function saveQuotation(input: SaveQuotationInput): Promise<Quotatio
         party_snapshot: input.party_snapshot ?? null,
         billing_address: input.billing_address ?? null,
         shipping_address: input.shipping_address ?? null,
-        ref_no: input.ref_no ?? null,
+        reference_no: input.reference_no ?? null,
         salesman: input.salesman || null,
         remarks: input.remarks || null,
         subtotal: totals.subtotal,

@@ -178,7 +178,7 @@ const CreateQuotation = () => {
           setPartyId(q.party_id || "");
           setSalesman(q.salesman || "");
           setNarration(q.remarks || "");
-          setRefNo(q.ref_no || "");
+          setRefNo(q.reference_no || "");
           setEditMode(true);
           setEditStatus(q.status);
           setDraftId(q.id);
@@ -318,7 +318,7 @@ const CreateQuotation = () => {
         party_snapshot: party ?? null,
         billing_address: party?.billing_address ?? party?.address ?? null,
         shipping_address: party?.shipping_address ?? party?.address ?? null,
-        ref_no: refNo || null,
+        reference_no: refNo || null,
         salesman,
         remarks: narration,
         status: statusToSave,

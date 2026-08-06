@@ -8347,13 +8347,16 @@ export type Database = {
           grand_total: number
           gst_total: number
           id: string
+          is_latest: boolean
           party_id: string | null
           party_name: string | null
           party_snapshot: Json | null
           quotation_date: string
           quotation_number: string
-          ref_no: string | null
+          reference_no: string | null
           remarks: string | null
+          revision_number: number
+          root_quotation_id: string
           salesman: string | null
           shipping_address: string | null
           shipping_charges: number | null
@@ -8372,13 +8375,16 @@ export type Database = {
           grand_total?: number
           gst_total?: number
           id?: string
+          is_latest?: boolean
           party_id?: string | null
           party_name?: string | null
           party_snapshot?: Json | null
           quotation_date?: string
           quotation_number: string
-          ref_no?: string | null
+          reference_no?: string | null
           remarks?: string | null
+          revision_number?: number
+          root_quotation_id?: string
           salesman?: string | null
           shipping_address?: string | null
           shipping_charges?: number | null
@@ -8397,13 +8403,16 @@ export type Database = {
           grand_total?: number
           gst_total?: number
           id?: string
+          is_latest?: boolean
           party_id?: string | null
           party_name?: string | null
           party_snapshot?: Json | null
           quotation_date?: string
           quotation_number?: string
-          ref_no?: string | null
+          reference_no?: string | null
           remarks?: string | null
+          revision_number?: number
+          root_quotation_id?: string
           salesman?: string | null
           shipping_address?: string | null
           shipping_charges?: number | null
