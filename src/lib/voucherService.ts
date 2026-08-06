@@ -471,34 +471,50 @@ export async function cancelVoucher(
 
 // ─── 6. deleteVoucher ────────────────────────────────────────────────────────
 
-/** Friendly source labels for the "auto-generated, delete the source instead" guard below. */
-export const REFERENCE_TYPE_LABEL: Record<string, string> = {
-  order: "Sales Order",
-  sales_invoice: "Sales Invoice",
-  purchase_invoice: "Purchase Invoice",
-  sales_return: "Sales Return",
-  purchase_return: "Purchase Return",
-  supplier_payment: "Supplier Payment",
-  inventory_adjustment: "Inventory Adjustment",
-};
+/**
+ * Tables carrying a voucher_id "back reference" to vouchers.id, besides
+ * voucher_items itself. gst_return_line_items.voucher_id is excluded here --
+ * its FK is already ON DELETE SET NULL, so the DB clears it on its own.
+ * Every other table here either has no FK at all (purchase_invoices,
+ * sales_invoices, payment_entries — confirmed via live schema query, no
+ * enforced constraint) or a NO ACTION FK (inventory_adjustments,
+ * purchase_returns, sales_returns, year_closing_entries) that would reject
+ * the delete outright if left pointing at the voucher being removed.
+ */
+const VOUCHER_BACKREF_TABLES = [
+  "purchase_invoices", "sales_invoices", "payment_entries",
+  "inventory_adjustments", "purchase_returns", "sales_returns", "year_closing_entries",
+] as const;
 
 /**
- * Soft-deletes a voucher (draft or cancelled — never posted) and its
- * items stay intact for audit. Mirrors the is_deleted/deleted_at/deleted_by
- * columns approveRequest() (src/lib/approvals.ts) already writes when a
- * lower-role delete *request* gets approved -- this direct-delete path used
- * to hard-delete instead, a real inconsistency: a manager's direct delete
- * physically removed the row while an approved accountant's delete request
- * only soft-deleted it. Unified on soft delete here so both paths, and
- * every voucher list (listVouchers() already filters is_deleted=false),
- * behave identically and nothing is ever unrecoverable.
+ * Hard-deletes a voucher and its items — no soft-delete, nothing stays
+ * recoverable in the table itself (only the audit_logs entry below
+ * survives). Deliberately allows any status (including posted) and any
+ * reference_type (auto-generated from an invoice/return/order/etc): per
+ * product decision, the only gates left are the accounting-lock check
+ * below and the caller's own canDeleteDirectly() permission check — mistakes
+ * made anywhere in the flow must be fully removable, not just cancellable.
  *
- * Blocks on reference_type: a voucher auto-posted from a source document
- * (order/invoice/return/etc — see REFERENCE_TYPE_LABEL) must never be
- * deleted on its own, since the source row still points at it and deleting
- * it out from under that reference would orphan the source's "view voucher"
- * link. The source document's own cancel/delete flow is what should remove
- * or replace it.
+ * Two correctness requirements this has to satisfy itself, since nothing
+ * else in the schema does:
+ *
+ * 1. No orphan back-references (VOUCHER_BACKREF_TABLES above) — cleared to
+ *    null before the voucher itself is removed, or the NO ACTION FKs would
+ *    reject the delete outright. This only clears the pointer; it never
+ *    touches the source row's own status/stock/paid_amount, which stay the
+ *    responsibility of that source's own cancel/reverse flow (e.g.
+ *    reverseSalesPayment, cancelPurchaseReturn) — the voucher is purely the
+ *    ledger-side record of the transaction, not the transaction itself.
+ *
+ * 2. Ledger balances must reflect the removal — voucher_items_balance_trigger
+ *    (AFTER DELETE on voucher_items) reverses ledger_accounts.current_balance
+ *    only when the *parent voucher row* it looks up is still status='posted'
+ *    at the moment each item is deleted. That means items MUST be deleted
+ *    before the voucher header, explicitly, in that order -- not left to
+ *    voucher_items' ON DELETE CASCADE off the header, which would delete
+ *    them only after the parent row (and its status) is already gone,
+ *    silently skipping the reversal and leaving current_balance /
+ *    parties.outstanding_balance stale for a posted voucher.
  */
 export async function deleteVoucher(
   userId: string,
@@ -510,7 +526,7 @@ export async function deleteVoucher(
 
   const { data: existing, error: fetchError } = await supabase
     .from("vouchers")
-    .select("voucher_number, status, voucher_date, reference_type, approved_by")
+    .select("voucher_number, status, voucher_date")
     .eq("id", voucherId)
     .eq("business_id", businessId)
     .single();
@@ -518,30 +534,26 @@ export async function deleteVoucher(
   if (fetchError) throw new Error(`deleteVoucher: ${fetchError.message}`);
   if (!existing) throw new Error("Voucher not found.");
 
-  if (existing.status === "posted") {
-    throw new Error("Posted vouchers cannot be deleted. Cancel it first.");
-  }
-  if (existing.reference_type) {
-    const label = REFERENCE_TYPE_LABEL[existing.reference_type] ?? existing.reference_type;
-    throw new Error(
-      `This voucher was generated automatically from ${label}. Delete or cancel the source document instead.`
-    );
-  }
-  if (existing.approved_by) {
-    throw new Error("This voucher has been approved and cannot be deleted directly.");
-  }
   await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
+
+  for (const table of VOUCHER_BACKREF_TABLES) {
+    const { error: clearErr } = await supabase
+      .from(table as never)
+      .update({ voucher_id: null } as never)
+      .eq("voucher_id" as never, voucherId);
+    if (clearErr) throw new Error(`deleteVoucher: could not clear reference on ${table}: ${clearErr.message}`);
+  }
+
+  const { error: itemsErr } = await supabase
+    .from("voucher_items")
+    .delete()
+    .eq("voucher_id", voucherId)
+    .eq("business_id", businessId);
+  if (itemsErr) throw new Error(`deleteVoucher items: ${itemsErr.message}`);
 
   const { error } = await supabase
     .from("vouchers")
-    .update({
-      is_deleted: true,
-      deleted_at: new Date().toISOString(),
-      deleted_by: userId,
-      delete_reason: reason ?? null,
-      updated_at: new Date().toISOString(),
-      updated_by: userId,
-    })
+    .delete()
     .eq("id", voucherId)
     .eq("business_id", businessId);
 
@@ -549,7 +561,7 @@ export async function deleteVoucher(
 
   await logAudit({
     business_id: businessId,
-    action: "VOUCHER_DELETE",
+    action: "HARD_DELETE",
     entity_type: "vouchers",
     entity_id: voucherId,
     old_value: { voucher_number: existing.voucher_number, status: existing.status },

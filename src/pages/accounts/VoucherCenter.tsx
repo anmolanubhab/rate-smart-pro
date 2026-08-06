@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Eye, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -16,7 +16,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { canDeleteDirectly, canUnlockVouchers } from "@/lib/permissions";
 import { fetchVouchers, fmtInr, type VoucherRow } from "@/lib/accounting";
 import { fetchLockDate, isDateLocked } from "@/lib/accountingLock";
-import { deleteVoucher, REFERENCE_TYPE_LABEL } from "@/lib/voucherService";
+import { deleteVoucher } from "@/lib/voucherService";
 import { VOUCHER_TYPE_CONFIGS, VOUCHER_TYPE_ORDER } from "@/lib/voucherTypeConfig";
 import { useVoucherShortcuts } from "@/hooks/useVoucherShortcuts";
 
@@ -57,15 +57,12 @@ export default function VoucherCenter() {
   const canEditLocked = canUnlockVouchers(role, financialRights);
   const canDelete = canDeleteDirectly(role, financialRights);
 
-  /** Mirrors the guard order inside deleteVoucher() itself so the button's
-   *  disabled state and tooltip never promise something the actual delete
-   *  call would then reject. */
+  /** The only two gates left, by design: an accounting-period lock, or the
+   *  page-level canDelete check below (which hides the button entirely
+   *  rather than showing it disabled). No distinction between manual and
+   *  auto-generated vouchers, and no posted-status block -- deleteVoucher()
+   *  itself is what actually allows any status through. */
   const deleteBlockReason = (v: VoucherRow): string | null => {
-    if (v.status === "posted") return "Posted vouchers can't be deleted directly. Cancel it first.";
-    if (v.reference_type) {
-      const label = REFERENCE_TYPE_LABEL[v.reference_type] ?? v.reference_type;
-      return `This voucher was generated automatically from ${label}. Delete or cancel the source document instead.`;
-    }
     if (!canEditLocked && isDateLocked(v.voucher_date, lock ?? null)) {
       return "This accounting period is locked. Unlock it in Settings → Accounting Lock first.";
     }
@@ -78,7 +75,16 @@ export default function VoucherCenter() {
     try {
       await deleteVoucher(user.id, deleteTarget.id, undefined, { canEditLockedVoucher: canEditLocked });
       toast.success(`Voucher ${deleteTarget.voucher_number} deleted.`);
+      // The voucher's ledger effect is gone too now (see deleteVoucher()'s
+      // own comment on voucher_items_balance_trigger) -- refresh every page
+      // that reads a stored balance derived from it, not just this list.
       qc.invalidateQueries({ queryKey: ["vouchers"] });
+      qc.invalidateQueries({ queryKey: ["vouchers-list"] });
+      qc.invalidateQueries({ queryKey: ["ledgers"] });
+      qc.invalidateQueries({ queryKey: ["receivables"] });
+      qc.invalidateQueries({ queryKey: ["supplier-ledger"] });
+      qc.invalidateQueries({ queryKey: ["trial-balance"] });
+      qc.invalidateQueries({ queryKey: ["balance-sheet"] });
     } catch (e: any) {
       toast.error(e.message ?? "Could not delete voucher");
     } finally {
@@ -151,6 +157,20 @@ export default function VoucherCenter() {
                 </TooltipTrigger>
                 <TooltipContent>View</TooltipContent>
               </Tooltip>
+              {v.status === "draft" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon" variant="ghost"
+                      className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
+                      onClick={() => navigate(`/accounting/vouchers/${v.id}/edit`)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit</TooltipContent>
+                </Tooltip>
+              )}
               {canDelete && (
                 <Tooltip>
                   <TooltipTrigger asChild>
