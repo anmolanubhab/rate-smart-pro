@@ -528,8 +528,8 @@ export async function deletePurchaseOrder(id: string): Promise<void> {
     .eq("id", id)
     .single();
   if (fetchErr) throw fetchErr;
-  if (po.status !== "draft") {
-    throw new Error("Only a draft Purchase Order can be deleted directly. Cancel it instead.");
+  if (po.status !== "draft" && po.status !== "cancelled") {
+    throw new Error("Only a draft or cancelled Purchase Order can be deleted. Cancel it first.");
   }
 
   const { count: grnCount, error: grnErr } = await supabase
