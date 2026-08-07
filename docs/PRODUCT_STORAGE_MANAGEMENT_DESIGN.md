@@ -6,8 +6,8 @@ real WMS, not just an accounting system with a `stock` column. This document
 covers schema, migration plan, integration with existing flows, and what is
 deliberately deferred to Phase 2/3.
 
-**Status:** approved (v2 — incorporates review feedback below). Ready for
-Phase 1 implementation.
+**Status:** Phase 1 shipped (PR [#32](https://github.com/anmolanubhab/rate-smart-pro/pull/32), merged). Phase 2
+shipped — see §12. Phase 3 shipped (the achievable parts of it) — see §14.
 
 ## 1. What already exists (audit)
 
@@ -366,3 +366,146 @@ locked), so the lock is a business-logic gate, not a row-security one.
 
 Phase 1 implementation is now the 9 migrations in §5 plus the UI additions
 in §8.
+
+## 12. Phase 2 — shipped
+
+Barcode/QR, bin-level cycle count, and the leftover Split UI. Deliberately
+kept to what extends *existing* features rather than building new dedicated
+screens — see §13 for what's still open.
+
+**Migrations** (`product_storage_phase2_*`):
+1. `bin_cycle_count.sql` — `stock_take_items.bin_id`; `stock_take_load_bin_products(_sheet_id, _bin_id)`
+   (bulk-loads every product currently tracked at a bin, mirroring `merge_bin`'s
+   product traversal, `system_qty` via `get_bin_available_stock`); `post_stock_take()`
+   threads `bin_id` into its `inventory_movements` insert alongside `warehouse_id` —
+   same surgical-diff discipline as Phase 1, nullable and backward compatible
+   with every warehouse-level sheet already in the system.
+2. `bin_lock_enforcement.sql` — closed a gap from Phase 1: §9 said `is_locked`
+   would be enforced at the RPC layer, but that check was never actually
+   written into `grn_item_apply_hold_stock()` / the dispatch bin resolver.
+   Fixed now: a bin a user *explicitly* picks on a GRN or dispatch line is
+   rejected with a clear error if it's locked. Auto-resolved bins (product
+   default / warehouse unassigned) are deliberately not checked — a locked
+   default bin shouldn't silently break normal receiving for a product that
+   happens to default there.
+
+**UI:**
+- **Bin QR/label** (`Racking.tsx`) — "View / Print Label" per bin: a dialog
+  showing `QrCodeImage` (reusing the existing `qrcode`-package component from
+  the print engine) encoding `scan_code` — not `location_code`, so a later
+  re-rack doesn't invalidate a printed label — plus a one-click "Print
+  Label" that opens a minimal new window and calls `window.print()`. No
+  dependency on the heavier `DocumentOutputCenter` print engine; this is a
+  one-off label, not a business document.
+- **Bin-level physical verification** (`StockTakeDetail.tsx`) — a "Count by
+  Bin" panel: pick a bin (`BinLocationPicker`, `includeUnassigned` so the
+  residual bucket can be counted too) and either bulk-load every product
+  tracked there or add one product at a time scoped to that bin. A new
+  "Bin" column shows each line's `location_code`. Existing warehouse-level
+  counting (no bin picked) is completely unchanged — this is additive, not
+  a replacement workflow.
+- **Split Bin dialog** (`Racking.tsx`) — mirrors the existing Merge dialog's
+  structure, plus a product search (same inline Input+dropdown pattern used
+  in `StockTransfers.tsx`) and a quantity input, since `split_bin` is
+  product+qty scoped where `merge_bin` moves a bin's entire contents.
+
+**Deliberately not done in this batch** (see §13): a dedicated mobile
+scan-and-count screen, Pick List / Put-away List as their own pages, and
+product/bin category restriction. Barcode *generation* is done; barcode
+*scanning* (a camera or USB-scanner-driven workflow) is not.
+
+## 13. Still open after Phase 2
+
+- **Mobile scan workflow** — no dedicated "Scan Rack → Scan Product → Enter
+  Qty → Done" screen exists. `scan_code` and the QR labels are ready for
+  one; the workflow itself (camera/scanner input, offline-friendly UI) is
+  unbuilt.
+- **Pick List / Put-away List as dedicated screens** — today, bin selection
+  happens inline on the existing GRN/Dispatch line-item grids. A focused,
+  large-touch-target mobile screen for a picker/put-away worker walking the
+  warehouse floor is a separate, bigger UI surface, not yet built.
+- **Product/bin category restriction** — still just a design note (§4), no
+  `bin_category` column, no enforcement.
+- FEFO/expiry, Batch & Serial bin-linkage, and a Heat Map are now done —
+  see §14. Wave Picking and true Route Optimization are not — same section
+  explains why, in detail.
+
+## 14. Phase 3 — shipped (the achievable parts)
+
+Phase 3 as originally envisioned was five items: FEFO/expiry automation,
+Batch & Serial wired into GRN/dispatch, Wave Picking, Route Optimization,
+Warehouse Heat Map. Two of the five aren't buildable as literally described
+given what actually exists in this codebase — rather than fake them, they're
+addressed honestly below instead of silently skipped.
+
+**Migrations** (`product_storage_phase3_*`):
+1. `batch_serial_bin.sql` — `bin_id` on `product_batches` and
+   `product_serials` (additive/nullable, same as every prior phase).
+2. `picking_list_bin.sql` — `bin_id` on `picking_list_items`, alongside the
+   existing free-text `rack` column (left untouched for compatibility).
+
+**Batch/Serial + FEFO** (`src/lib/productBatches.ts`, `productSerials.ts`,
+`DispatchBatchSerialDialog.tsx`, `goodsReceipts.ts`):
+- At GRN receipt, `product_batches`/`product_serials` now record the bin
+  the stock actually landed in — read back from `goods_receipt_items.bin_id`
+  *after* insert (the put-away trigger resolves it, so the client can't
+  just echo back what it sent — it might have been null/auto).
+- `fetchAvailableBatches()` already sorted oldest-expiry-first before this
+  phase — the underlying FEFO ordering existed, but the dispatch picker was
+  a fully manual per-batch quantity entry with no suggestion or ordering
+  cue. Added: an "Auto-fill FEFO" button that greedily allocates the needed
+  qty from the earliest-expiry batches down, an "Earliest" badge on the
+  first row, and an "Nd left" / "Expired" badge inside the existing
+  30-day-window threshold. Same treatment for serials ("Auto-select
+  oldest", since serials have no expiry — only received-date FIFO makes
+  sense there). **Still a suggestion, not an enforced rule** — a real
+  warehouse has exceptions (damaged pallet, a customer's contractual batch)
+  that a hard FEFO lock would just get in the way of.
+- Both pickers also now show which bin each batch/serial is sitting in.
+
+**Bin-aware Pick List, i.e. the honest Route Optimization**
+(`src/lib/pickingLists.ts`, `PickingList.tsx`):
+- `fetchPendingItemsForOrder()` resolves each line's product's
+  `default_bin_id` and returns the candidates **pre-sorted by
+  `location_code`** (Zone → Rack → Shelf → Bin, lexical order).
+  `createPickingList()` assigns `position` in that order, and both the
+  create dialog and the pick/view dialog display a "Bin" column.
+- This is deliberately *not* labeled "route optimization" in the UI — it's
+  a consistent walk order through the warehouse's own addressing scheme,
+  not a shortest-path calculation. Real route optimization needs a distance
+  or graph model between bins (aisle number, x/y coordinates, physical
+  travel time) and **none of that exists anywhere in this schema** — there
+  is nothing to optimize against yet. If it's wanted later, it's a new
+  concern (a `warehouse_racks` sequence/coordinate column plus a proper
+  path-length calculation), not a follow-up to this feature.
+
+**Warehouse Heat Map** (`src/components/inventory/WarehouseHeatMap.tsx`,
+new "Heat Map" toggle in `Racking.tsx` next to the existing zone/rack/bin
+browser):
+- Per-rack occupancy: `occupied bins / total bins` (a bin counts as occupied
+  when `get_bin_available_stock` sums positive across any product), colored
+  green/amber/red by density, plus a "near full" badge on bins at ≥85% of
+  `capacity_qty` — only meaningful for bins that actually have a capacity
+  set, which is optional. Computed live from `v_bin_stock_balance` (Phase 1)
+  — no new storage, matching the ledger-computed pattern used everywhere
+  else in this feature.
+- This is occupancy *density*, not a literal spatial heat map — same
+  reason as Route Optimization: no floor-plan/coordinate data exists to
+  render bins in their actual physical layout. The numbers (Total Racks,
+  Total Bins, Occupied %, Available Bins, Near Full) are exactly the
+  dashboard metrics from the original product vision, just not drawn as a
+  literal warehouse floor plan.
+
+**Deliberately not built:**
+- **Wave Picking** — batching multiple orders into one combined pick run.
+  `picking_lists` is hard-tied to a single order per row (see the existing
+  code comment in `pickingLists.ts`); building real wave picking means
+  either restructuring that relationship or bolting on a parallel
+  multi-order concept, and there's no existing UI/workflow signal for how
+  warehouse staff here would actually want to work a wave. Building it
+  speculatively, with no real usage pattern to design against, risked
+  producing something disconnected from how picking actually happens in
+  this business. Left for when there's a concrete workflow to build against.
+- **True Route Optimization** — see above; no distance data exists.
+- **Product/bin category restriction** — still just the Phase 1 design
+  note, unchanged.

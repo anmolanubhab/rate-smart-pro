@@ -13,8 +13,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useFormatDate } from "@/lib/dateFormat";
+import BinLocationPicker from "@/components/inventory/BinLocationPicker";
 import {
-  fetchStockTakeSheet, fetchStockTakeItems, addStockTakeItem, loadAllProducts,
+  fetchStockTakeSheet, fetchStockTakeItems, addStockTakeItem, loadAllProducts, loadBinProducts,
   setCountedQty, removeStockTakeItem, postStockTake, cancelStockTake,
   type StockTakeSheet, type StockTakeItem, type StockTakeStatus,
 } from "@/lib/stockTake";
@@ -42,6 +43,7 @@ export default function StockTakeDetail() {
 
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<{ id: string; part_number: string; name: string }[]>([]);
+  const [countBinId, setCountBinId] = useState<string | null>(null);
 
   const [postConfirm, setPostConfirm] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
@@ -84,7 +86,7 @@ export default function StockTakeDetail() {
   const addProduct = async (p: { id: string; part_number: string; name: string }) => {
     if (!sheet) return;
     try {
-      await addStockTakeItem(sheet.id, p.id, sheet.warehouse_id);
+      await addStockTakeItem(sheet.id, p.id, sheet.warehouse_id, countBinId);
       toast.success(`${p.part_number} added`);
       setSearch("");
       setSearchResults([]);
@@ -103,6 +105,20 @@ export default function StockTakeDetail() {
       load();
     } catch (e: any) {
       toast.error(e.message ?? "Could not load products");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doLoadBin = async () => {
+    if (!sheet || !countBinId) return;
+    setBusy(true);
+    try {
+      const n = await loadBinProducts(sheet.id, countBinId);
+      toast.success(n > 0 ? `${n} products added from this bin` : "Every product in this bin is already on the sheet");
+      load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not load bin products");
     } finally {
       setBusy(false);
     }
@@ -201,6 +217,28 @@ export default function StockTakeDetail() {
               <ListPlus className="h-3.5 w-3.5 mr-1.5" />Load All Products
             </Button>
           </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-end gap-2 rounded-lg border bg-muted/30 p-3">
+            <div className="flex-1 space-y-1">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Count by Bin (optional)</p>
+              <BinLocationPicker
+                warehouseId={sheet.warehouse_id}
+                value={countBinId}
+                onChange={setCountBinId}
+                includeUnassigned
+                placeholder="Select a bin to count…"
+              />
+            </div>
+            <Button size="sm" variant="outline" onClick={doLoadBin} disabled={busy || !countBinId}>
+              <ListPlus className="h-3.5 w-3.5 mr-1.5" />Load This Bin's Products
+            </Button>
+          </div>
+          {countBinId && (
+            <p className="text-xs text-muted-foreground">
+              Products you search and add below will also be counted against this bin. Clear the bin to go back to warehouse-level counting.
+            </p>
+          )}
+
           <div className="relative max-w-md">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input className="pl-8" placeholder="Search part number or name to add one…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -223,6 +261,7 @@ export default function StockTakeDetail() {
             <TableRow>
               <TableHead>Part #</TableHead>
               <TableHead>Name</TableHead>
+              <TableHead>Bin</TableHead>
               <TableHead className="text-right">System Qty</TableHead>
               <TableHead className="text-right w-32">Counted Qty</TableHead>
               <TableHead className="text-right">Variance</TableHead>
@@ -231,15 +270,16 @@ export default function StockTakeDetail() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>
             ) : items.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">No items yet — search above or "Load All Products"</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">No items yet — search above or "Load All Products"</TableCell></TableRow>
             ) : items.map((it) => {
               const variance = it.counted_qty !== null ? Number(it.counted_qty) - Number(it.system_qty) : null;
               return (
                 <TableRow key={it.id}>
                   <TableCell className="font-mono text-xs">{it.products?.part_number}</TableCell>
                   <TableCell className="text-sm max-w-[280px] truncate">{it.products?.name}</TableCell>
+                  <TableCell className="font-mono text-[11px] text-muted-foreground">{it.bin?.location_code ?? "—"}</TableCell>
                   <TableCell className="text-right">{it.system_qty}</TableCell>
                   <TableCell className="text-right">
                     {isDraft ? (

@@ -29,7 +29,10 @@ const STATUS_VARIANT: Record<PickingListStatus, "default" | "secondary" | "destr
 };
 
 type CandidateOrder = { id: string; order_number: string; party_id: string | null; party_name: string | null };
-type CandidateItem = { order_item_id: string; part_number: string; description: string; rack: string | null; pending_qty: number };
+type CandidateItem = {
+  order_item_id: string; part_number: string; description: string; rack: string | null;
+  bin_id: string | null; location_code: string | null; pending_qty: number;
+};
 
 export default function PickingListPage() {
   useEffect(() => { document.title = "Picking List — RD Pro"; }, []);
@@ -97,7 +100,7 @@ export default function PickingListPage() {
         userId: user.id, orderId: order.id, partyId: order.party_id, partyName: order.party_name,
         items: items.map((it) => ({
           order_item_id: it.order_item_id, part_number: it.part_number, description: it.description,
-          rack: it.rack, qty_to_pick: it.qty_to_pick,
+          rack: it.rack, bin_id: it.bin_id, qty_to_pick: it.qty_to_pick,
         })),
       });
       toast.success("Picking list created");
@@ -252,7 +255,7 @@ export default function PickingListPage() {
                     <TableRow>
                       <TableHead>Part #</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead>Rack</TableHead>
+                      <TableHead>Bin</TableHead>
                       <TableHead className="text-right">Pending</TableHead>
                       <TableHead className="text-right w-28">Pick Qty</TableHead>
                     </TableRow>
@@ -262,7 +265,7 @@ export default function PickingListPage() {
                       <TableRow key={it.order_item_id}>
                         <TableCell className="font-mono text-sm">{it.part_number}</TableCell>
                         <TableCell>{it.description}</TableCell>
-                        <TableCell>{it.rack ?? "—"}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{it.location_code ?? it.rack ?? "—"}</TableCell>
                         <TableCell className="text-right">{it.pending_qty}</TableCell>
                         <TableCell className="text-right">
                           <Input type="number" className="text-right" value={pickQty[it.order_item_id] ?? ""}
@@ -291,7 +294,7 @@ export default function PickingListPage() {
               <TableRow>
                 <TableHead>Part #</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead>Rack</TableHead>
+                <TableHead>Bin</TableHead>
                 <TableHead className="text-right">To Pick</TableHead>
                 <TableHead className="text-right w-28">Picked</TableHead>
               </TableRow>
@@ -301,7 +304,7 @@ export default function PickingListPage() {
                 <TableRow key={it.id}>
                   <TableCell className="font-mono text-sm">{it.part_number}</TableCell>
                   <TableCell>{it.description}</TableCell>
-                  <TableCell>{it.rack ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{it.bin?.location_code ?? it.rack ?? "—"}</TableCell>
                   <TableCell className="text-right">{it.qty_to_pick}</TableCell>
                   <TableCell className="text-right">
                     <Input type="number" className="text-right" disabled={viewTarget?.status !== "pending"}

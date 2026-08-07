@@ -21,10 +21,12 @@ export interface StockTakeItem {
   id: string;
   sheet_id: string;
   product_id: string;
+  bin_id: string | null;
   system_qty: number;
   counted_qty: number | null;
   notes: string | null;
   products?: { part_number: string; name: string } | null;
+  bin?: { location_code: string | null } | null;
 }
 
 export async function fetchStockTakeSheets(businessId: string): Promise<StockTakeSheet[]> {
@@ -53,7 +55,7 @@ export async function fetchStockTakeItems(sheetId: string, page: number, pageSiz
   const to = from + pageSize - 1;
   const { data, error, count } = await supabase
     .from("stock_take_items" as never)
-    .select("*, products(part_number, name)", { count: "exact" })
+    .select("*, products(part_number, name), bin:warehouse_bins(location_code)", { count: "exact" })
     .eq("sheet_id", sheetId)
     .order("created_at", { ascending: true })
     .range(from, to);
@@ -90,23 +92,29 @@ export async function createStockTakeSheet(input: {
   return data as unknown as StockTakeSheet;
 }
 
-export async function addStockTakeItem(sheetId: string, productId: string, warehouseId: string) {
-  const { data: systemQty, error: qtyErr } = await supabase.rpc("get_warehouse_available_stock" as never, {
-    _product_id: productId,
-    _warehouse_id: warehouseId,
-  } as never);
-  if (qtyErr) throw qtyErr;
+export async function addStockTakeItem(sheetId: string, productId: string, warehouseId: string, binId?: string | null) {
+  const systemQty = binId
+    ? await supabase.rpc("get_bin_available_stock" as never, { _product_id: productId, _bin_id: binId } as never)
+    : await supabase.rpc("get_warehouse_available_stock" as never, { _product_id: productId, _warehouse_id: warehouseId } as never);
+  if (systemQty.error) throw systemQty.error;
 
   const { error } = await supabase.from("stock_take_items" as never).insert({
     sheet_id: sheetId,
     product_id: productId,
-    system_qty: Number(systemQty ?? 0),
+    bin_id: binId ?? null,
+    system_qty: Number(systemQty.data ?? 0),
   } as never);
   if (error) throw error;
 }
 
 export async function loadAllProducts(sheetId: string): Promise<number> {
   const { data, error } = await supabase.rpc("stock_take_load_all_products" as never, { _sheet_id: sheetId } as never);
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+export async function loadBinProducts(sheetId: string, binId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("stock_take_load_bin_products" as never, { _sheet_id: sheetId, _bin_id: binId } as never);
   if (error) throw error;
   return Number(data ?? 0);
 }

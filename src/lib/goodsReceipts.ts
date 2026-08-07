@@ -488,10 +488,20 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
     if (itemError) throw itemError;
     if (!inserted || !item.tracking || item.accepted_qty <= 0) continue;
 
+    // The GRN put-away trigger resolves the actual bin (explicit pick ->
+    // product default -> warehouse unassigned) and writes it back onto this
+    // row after the INSERT completes -- read it back so batch/serial
+    // records land in the bin the stock actually went to, not just
+    // whatever (possibly null/auto) bin_id the client sent.
+    const { data: resolvedItem } = await supabase
+      .from("goods_receipt_items").select("bin_id").eq("id", inserted.id).single();
+    const resolvedBinId = (resolvedItem as any)?.bin_id ?? item.bin_id ?? null;
+
     if (item.tracking_type === "batch" && item.tracking.batch) {
       const batchId = await receiveProductBatch(businessId, {
         product_id: item.product_id,
         warehouse_id: input.warehouse_id,
+        bin_id: resolvedBinId,
         batch_number: item.tracking.batch.batch_number,
         mfg_date: item.tracking.batch.mfg_date,
         expiry_date: item.tracking.batch.expiry_date,
@@ -507,7 +517,7 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
     } else if (item.tracking_type === "serial" && item.tracking.serial_numbers?.length) {
       const serialIds = await createProductSerialsBulk(
         businessId,
-        { product_id: item.product_id, warehouse_id: input.warehouse_id, status: "in_stock", received_at: input.grn_date, notes: null },
+        { product_id: item.product_id, warehouse_id: input.warehouse_id, bin_id: resolvedBinId, status: "in_stock", received_at: input.grn_date, notes: null },
         item.tracking.serial_numbers,
       );
       const rows = serialIds.map((serial_id) => ({

@@ -6439,6 +6439,7 @@ export type Database = {
       }
       picking_list_items: {
         Row: {
+          bin_id: string | null
           description: string
           id: string
           order_item_id: string | null
@@ -6450,6 +6451,7 @@ export type Database = {
           rack: string | null
         }
         Insert: {
+          bin_id?: string | null
           description?: string
           id?: string
           order_item_id?: string | null
@@ -6461,6 +6463,7 @@ export type Database = {
           rack?: string | null
         }
         Update: {
+          bin_id?: string | null
           description?: string
           id?: string
           order_item_id?: string | null
@@ -6472,6 +6475,20 @@ export type Database = {
           rack?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "picking_list_items_bin_id_fkey"
+            columns: ["bin_id"]
+            isOneToOne: false
+            referencedRelation: "v_bin_stock_balance"
+            referencedColumns: ["bin_id"]
+          },
+          {
+            foreignKeyName: "picking_list_items_bin_id_fkey"
+            columns: ["bin_id"]
+            isOneToOne: false
+            referencedRelation: "warehouse_bins"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "picking_list_items_order_item_id_fkey"
             columns: ["order_item_id"]
@@ -7406,6 +7423,7 @@ export type Database = {
       product_batches: {
         Row: {
           batch_number: string
+          bin_id: string | null
           business_id: string
           created_at: string
           expiry_date: string | null
@@ -7419,6 +7437,7 @@ export type Database = {
         }
         Insert: {
           batch_number: string
+          bin_id?: string | null
           business_id: string
           created_at?: string
           expiry_date?: string | null
@@ -7432,6 +7451,7 @@ export type Database = {
         }
         Update: {
           batch_number?: string
+          bin_id?: string | null
           business_id?: string
           created_at?: string
           expiry_date?: string | null
@@ -7444,6 +7464,20 @@ export type Database = {
           warehouse_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "product_batches_bin_id_fkey"
+            columns: ["bin_id"]
+            isOneToOne: false
+            referencedRelation: "v_bin_stock_balance"
+            referencedColumns: ["bin_id"]
+          },
+          {
+            foreignKeyName: "product_batches_bin_id_fkey"
+            columns: ["bin_id"]
+            isOneToOne: false
+            referencedRelation: "warehouse_bins"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "product_batches_business_id_fkey"
             columns: ["business_id"]
@@ -7647,6 +7681,7 @@ export type Database = {
       }
       product_serials: {
         Row: {
+          bin_id: string | null
           business_id: string
           created_at: string
           id: string
@@ -7661,6 +7696,7 @@ export type Database = {
           warehouse_id: string | null
         }
         Insert: {
+          bin_id?: string | null
           business_id: string
           created_at?: string
           id?: string
@@ -7675,6 +7711,7 @@ export type Database = {
           warehouse_id?: string | null
         }
         Update: {
+          bin_id?: string | null
           business_id?: string
           created_at?: string
           id?: string
@@ -7689,6 +7726,20 @@ export type Database = {
           warehouse_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "product_serials_bin_id_fkey"
+            columns: ["bin_id"]
+            isOneToOne: false
+            referencedRelation: "v_bin_stock_balance"
+            referencedColumns: ["bin_id"]
+          },
+          {
+            foreignKeyName: "product_serials_bin_id_fkey"
+            columns: ["bin_id"]
+            isOneToOne: false
+            referencedRelation: "warehouse_bins"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "product_serials_business_id_fkey"
             columns: ["business_id"]
@@ -10165,6 +10216,7 @@ export type Database = {
       }
       stock_take_items: {
         Row: {
+          bin_id: string | null
           counted_qty: number | null
           created_at: string
           id: string
@@ -10174,6 +10226,7 @@ export type Database = {
           system_qty: number
         }
         Insert: {
+          bin_id?: string | null
           counted_qty?: number | null
           created_at?: string
           id?: string
@@ -10183,6 +10236,7 @@ export type Database = {
           system_qty: number
         }
         Update: {
+          bin_id?: string | null
           counted_qty?: number | null
           created_at?: string
           id?: string
@@ -10192,6 +10246,20 @@ export type Database = {
           system_qty?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "stock_take_items_bin_id_fkey"
+            columns: ["bin_id"]
+            isOneToOne: false
+            referencedRelation: "v_bin_stock_balance"
+            referencedColumns: ["bin_id"]
+          },
+          {
+            foreignKeyName: "stock_take_items_bin_id_fkey"
+            columns: ["bin_id"]
+            isOneToOne: false
+            referencedRelation: "warehouse_bins"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "stock_take_items_product_id_fkey"
             columns: ["product_id"]
@@ -12608,6 +12676,10 @@ export type Database = {
       }
       stock_take_load_all_products: {
         Args: { _sheet_id: string }
+        Returns: number
+      }
+      stock_take_load_bin_products: {
+        Args: { _bin_id: string; _sheet_id: string }
         Returns: number
       }
       submit_dealer_application: {
