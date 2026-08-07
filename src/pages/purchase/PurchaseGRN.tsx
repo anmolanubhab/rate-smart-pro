@@ -47,11 +47,10 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "received", header: "Received", align: "right", widthClass: "w-20" },
   { key: "damaged", header: "Damaged", align: "right", widthClass: "w-20" },
   { key: "accepted", header: "Accepted", align: "right", widthClass: "w-16" },
-  { key: "pending", header: "Pending", align: "right", widthClass: "w-16" },
   { key: "short", header: "Short", align: "right", widthClass: "w-14" },
   { key: "excess", header: "Excess", align: "right", widthClass: "w-14" },
-  { key: "remarks", header: "Quality Remarks", widthClass: "min-w-[140px]" },
   { key: "reason", header: "Reason", widthClass: "w-40" },
+  { key: "remarks", header: "Quality Remarks", widthClass: "min-w-[140px]" },
   { key: "tracking", header: "Batch/Serial", widthClass: "w-32" },
   { key: "bin", header: "Put-away Bin", widthClass: "w-36" },
 ];
@@ -206,6 +205,10 @@ export default function PurchaseGRN() {
       const item = { ...row };
       if (field === "received_qty") item.received_qty = Math.max(0, value);
       if (field === "damaged_qty") item.damaged_qty = Math.max(0, value);
+      // Damaged qty can never exceed what was actually received -- without this,
+      // a stray large number in Damaged (with Received left at its default) produces
+      // a nonsensical state (e.g. "0 received, 700 damaged").
+      item.damaged_qty = Math.min(item.damaged_qty, item.received_qty);
       item.accepted_qty = Math.max(0, item.received_qty - item.damaged_qty);
       item.pending_qty = Math.max(0, item.ordered_qty - item.received_qty);
       item.short_qty = Math.max(0, item.ordered_qty - item.received_qty);
@@ -386,7 +389,8 @@ export default function PurchaseGRN() {
             <select
               value={selectedSupplier}
               onChange={(e) => setSelectedSupplier(e.target.value)}
-              disabled={readOnly}
+              disabled={readOnly || !!selectedPO}
+              title={selectedPO ? "Locked — supplier comes from the linked PO. Unlink the PO to change it." : undefined}
               className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60"
             >
               <option value="">Select supplier…</option>
@@ -419,7 +423,7 @@ export default function PurchaseGRN() {
               onChange={(e) => setRemarks(e.target.value)}
               disabled={readOnly}
               rows={1}
-              placeholder="Add description…"
+              placeholder="Add remarks…"
               className="text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary resize-none min-h-0 h-6 py-0"
             />
           </DocumentHeaderValue>
@@ -451,27 +455,21 @@ export default function PurchaseGRN() {
                 <input
                   type="number" disabled={readOnly} value={item.received_qty}
                   onChange={(e) => handleQtyChange(idx, "received_qty", Number(e.target.value))}
-                  className="h-6 w-full text-[12px] font-mono px-1 text-right rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary disabled:opacity-60"
+                  title="Editable: how much the supplier actually delivered"
+                  className="h-6 w-full text-[12px] font-mono px-1 text-right rounded border border-input bg-background focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60 disabled:bg-transparent disabled:border-0"
                 />
               </td>
               <td className="px-0.5 py-0.5">
                 <input
                   type="number" disabled={readOnly} value={item.damaged_qty}
                   onChange={(e) => handleQtyChange(idx, "damaged_qty", Number(e.target.value))}
-                  className="h-6 w-full text-[12px] font-mono px-1 text-right text-destructive rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary disabled:opacity-60"
+                  title="Editable: how much of the received qty was found damaged"
+                  className="h-6 w-full text-[12px] font-mono px-1 text-right text-destructive rounded border border-input bg-background focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60 disabled:bg-transparent disabled:border-0"
                 />
               </td>
               <td className="px-1.5 py-1 text-right font-bold text-emerald-600 tabular-nums">{fmt(item.accepted_qty)}</td>
-              <td className="px-1.5 py-1 text-right font-bold text-orange-500 tabular-nums">{fmt(item.pending_qty)}</td>
               <td className="px-1.5 py-1 text-right font-semibold text-destructive tabular-nums">{item.short_qty || "—"}</td>
-              <td className="px-1.5 py-1 text-right font-semibold text-blue-500 tabular-nums">{item.excess_qty || "—"}</td>
-              <td className="px-0.5 py-0.5">
-                <input
-                  disabled={readOnly} value={item.quality_remarks} placeholder="e.g. damaged in transit"
-                  onChange={(e) => handleRemarksChange(idx, e.target.value)}
-                  className="h-6 w-full text-[11px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary disabled:opacity-60"
-                />
-              </td>
+              <td className="px-1.5 py-1 text-right font-semibold text-orange-500 tabular-nums">{item.excess_qty || "—"}</td>
               <td className="px-0.5 py-0.5">
                 {item.damaged_qty > 0 || item.short_qty > 0 ? (
                   <select
@@ -485,6 +483,13 @@ export default function PurchaseGRN() {
                 ) : (
                   <span className="text-[10px] text-muted-foreground px-1">—</span>
                 )}
+              </td>
+              <td className="px-0.5 py-0.5">
+                <input
+                  disabled={readOnly} value={item.quality_remarks} placeholder="e.g. damaged in transit"
+                  onChange={(e) => handleRemarksChange(idx, e.target.value)}
+                  className="h-6 w-full text-[11px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary disabled:opacity-60"
+                />
               </td>
               <td className="px-1.5 py-1">
                 {item.tracking_type === "none" || item.accepted_qty <= 0 ? (
