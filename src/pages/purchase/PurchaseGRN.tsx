@@ -44,9 +44,9 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "part", header: "Part No.", widthClass: "min-w-[100px]" },
   { key: "unit", header: "Unit", widthClass: "w-16" },
   { key: "ordered", header: "Ordered", align: "right", widthClass: "w-16" },
-  { key: "received", header: "Received", align: "right", widthClass: "w-20" },
-  { key: "damaged", header: "Damaged", align: "right", widthClass: "w-20" },
-  { key: "accepted", header: "Accepted", align: "right", widthClass: "w-16" },
+  { key: "received", header: "Total Received", align: "right", widthClass: "w-24" },
+  { key: "damaged", header: "Damaged Qty", align: "right", widthClass: "w-24" },
+  { key: "accepted", header: "Good Stock", align: "right", widthClass: "w-20" },
   { key: "short", header: "Short", align: "right", widthClass: "w-14" },
   { key: "excess", header: "Excess", align: "right", widthClass: "w-14" },
   { key: "reason", header: "Reason", widthClass: "w-40" },
@@ -429,6 +429,12 @@ export default function PurchaseGRN() {
           </DocumentHeaderValue>
         </DocumentHeaderGrid>
 
+        {items.length > 0 && !readOnly && (
+          <p className="px-3 py-1.5 text-[10px] text-muted-foreground border-b border-border bg-muted/30 print:hidden">
+            Enter the <strong className="text-foreground">total</strong> qty the supplier delivered under <strong className="text-foreground">Total Received</strong>, then how much of that was bad under <strong className="text-foreground">Damaged Qty</strong> — Good Stock (what actually enters inventory) is calculated for you.
+          </p>
+        )}
+
         <DocumentGridTable
           columns={GRID_COLUMNS}
           rows={items}
@@ -522,7 +528,7 @@ export default function PurchaseGRN() {
             <div><span className="text-muted-foreground">Total Ordered: </span><strong>{fmt(totals.ordered)}</strong></div>
             <div><span className="text-muted-foreground">Total Received: </span><strong>{fmt(totals.received)}</strong></div>
             <div><span className="text-destructive">Total Damaged: </span><strong>{fmt(totals.damaged)}</strong></div>
-            <div><span className="text-emerald-600">Total Accepted: </span><strong>{fmt(totals.accepted)}</strong></div>
+            <div><span className="text-emerald-600">Total Good Stock: </span><strong>{fmt(totals.accepted)}</strong></div>
           </div>
         )}
 
