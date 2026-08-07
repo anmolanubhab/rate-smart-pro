@@ -25,6 +25,8 @@ export interface StockTransferItemInput {
   qty: number;
   unit_id?: string | null;
   notes?: string | null;
+  from_bin_id?: string | null;
+  to_bin_id?: string | null;
 }
 
 export async function fetchStockTransfers(businessId: string): Promise<StockTransfer[]> {
@@ -49,7 +51,10 @@ export async function createStockTransfer(input: {
 }): Promise<StockTransfer> {
   const items = input.items.filter((i) => Number(i.qty) > 0);
   if (!items.length) throw new Error("Add at least one line item");
-  if (input.fromWarehouseId === input.toWarehouseId) throw new Error("From and To warehouse must be different");
+  const sameWarehouse = input.fromWarehouseId === input.toWarehouseId;
+  if (sameWarehouse && items.some((i) => !i.from_bin_id || !i.to_bin_id)) {
+    throw new Error("Same-warehouse transfers need a From Bin and To Bin on every line");
+  }
 
   const { data: transferNo, error: numErr } = await supabase.rpc("next_stock_transfer_number" as never, {
     _business_id: input.businessId,
@@ -79,6 +84,8 @@ export async function createStockTransfer(input: {
     qty: it.qty,
     unit_id: it.unit_id ?? null,
     notes: it.notes ?? null,
+    from_bin_id: it.from_bin_id ?? null,
+    to_bin_id: it.to_bin_id ?? null,
   }));
   const { error: itemsErr } = await supabase.from("stock_transfer_items" as never).insert(rows as never);
   if (itemsErr) {

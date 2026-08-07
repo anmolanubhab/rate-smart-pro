@@ -131,6 +131,7 @@ const SupplierLedger = lazy(() => import("./pages/purchase/SupplierLedger"));
 
 // Phase 4 — Inventory mock screens
 const Warehouses = lazy(() => import("./pages/inventory/Warehouses"));
+const Racking = lazy(() => import("./pages/inventory/Racking"));
 const Batches = lazy(() => import("./pages/inventory/Batches"));
 const Serials = lazy(() => import("./pages/inventory/Serials"));
 const Barcodes = lazy(() => import("./pages/inventory/Barcodes"));
@@ -377,6 +378,7 @@ const App = () => (
               <Route path="/purchase/supplier-ledger" element={L(<SupplierLedger />)} />
               {/* Phase 4 — Inventory mocks */}
               <Route path="/inventory/warehouses" element={L(<Warehouses />)} />
+              <Route path="/inventory/racking" element={L(<Racking />)} />
               <Route path="/inventory/batches" element={L(<Batches />)} />
               <Route path="/inventory/serials" element={L(<Serials />)} />
               <Route path="/inventory/barcodes" element={L(<Barcodes />)} />

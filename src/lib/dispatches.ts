@@ -37,6 +37,8 @@ export interface DispatchItemInput {
   batch_selections?: DispatchBatchSelection[];
   /** For serial-tracked products: which serial(s) (exactly dispatched_qty of them) are shipped on this line. */
   serial_ids?: string[];
+  /** Pick bin. Null = auto (product's default bin, else the warehouse's Unassigned bin). */
+  bin_id?: string | null;
 }
 
 /** Records which batch(es)/serial(s) a dispatch line consumed, and applies the corresponding
@@ -164,6 +166,7 @@ export async function createDispatch(input: {
     total: +(it.dispatched_qty * it.rate).toFixed(2),
     unit_id: it.unit_id ?? null,
     stock_dispatched_qty: it.stock_dispatched_qty ?? null,
+    bin_id: it.bin_id ?? null,
   }));
   const { data: insertedItems, error: e2 } = await supabase.from("dispatch_items").insert(rows).select("id, order_item_id");
   if (e2) {

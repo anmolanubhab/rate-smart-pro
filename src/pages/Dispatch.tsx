@@ -27,6 +27,7 @@ import { createDispatch, confirmDispatch, cancelDispatch, deleteDispatch, fetchD
 import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
 import DispatchBatchSerialDialog, { type DispatchBatchSerialResult } from "@/components/inventory/DispatchBatchSerialDialog";
+import BinLocationPicker from "@/components/inventory/BinLocationPicker";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
@@ -53,6 +54,7 @@ const Dispatch = () => {
   const [orderId, setOrderId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
   const [qtys, setQtys] = useState<Record<string, number>>({});
+  const [bins, setBins] = useState<Record<string, string | null>>({});
   const [dispatchDate, setDispatchDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [recent, setRecent] = useState<any[]>([]);
@@ -160,11 +162,12 @@ const Dispatch = () => {
   }, [products]);
 
   useEffect(() => {
-    if (!orderId) { setItems([]); setQtys({}); return; }
+    if (!orderId) { setItems([]); setQtys({}); setBins({}); return; }
     fetchOrderItems(orderId).then((its) => {
       const pending = its.filter((it) => Number(it.pending_qty) > 0);
       setItems(pending);
       setQtys(Object.fromEntries(pending.map((it) => [it.id!, 0])));
+      setBins(Object.fromEntries(pending.map((it) => [it.id!, null])));
     });
   }, [orderId]);
 
@@ -197,6 +200,7 @@ const Dispatch = () => {
           rate: Number(it.net_rate),
           unit_id: it.unit_id ?? null,
           stock_dispatched_qty: factor != null ? +(dispatched_qty * factor).toFixed(4) : null,
+          bin_id: bins[it.id!] ?? null,
         };
       })
       .filter((l) => l.dispatched_qty > 0);
@@ -234,7 +238,7 @@ const Dispatch = () => {
       toast.success(`Dispatch ${dispatch.dispatch_number} saved as Draft — review and Confirm to generate invoice`);
       setDraftDispatch({ id: dispatch.id, dispatch_number: dispatch.dispatch_number });
       // Reset form but keep the confirm panel visible
-      setOrderId(""); setItems([]); setQtys({}); setNotes("");
+      setOrderId(""); setItems([]); setQtys({}); setBins({}); setNotes("");
       setBoxCount(0); setCaseCount(0); setPackingRemarks("");
       setTransporter(""); setLrNumber(""); setVehicleNumber(""); setEwayNumber(""); setDispatchRemarks("");
       reload();
@@ -481,11 +485,12 @@ const Dispatch = () => {
                   <th className="text-right px-3 py-2">Pending</th>
                   <th className="text-right px-3 py-2">Rate</th>
                   <th className="text-right px-3 py-2 w-32">Dispatch Now</th>
+                  <th className="text-left px-3 py-2 w-40">Pick Bin</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">No pending items in this order.</td></tr>
+                  <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">No pending items in this order.</td></tr>
                 ) : items.map((it) => {
                   const stock = stockOf(it);
                   const entered = Number(qtys[it.id!] || 0);
@@ -510,6 +515,15 @@ const Dispatch = () => {
                           value={qtys[it.id!] ?? 0}
                           onChange={(e) => setQtys((m) => ({ ...m, [it.id!]: +e.target.value }))}
                           className={`h-8 text-right ${overStock ? "border-destructive focus-visible:ring-destructive" : ""}`} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <BinLocationPicker
+                          warehouseId={warehouseId || null}
+                          value={bins[it.id!] ?? null}
+                          onChange={(binId) => setBins((m) => ({ ...m, [it.id!]: binId }))}
+                          placeholder="Auto"
+                          className="h-8 text-xs"
+                        />
                       </td>
                     </tr>
                   );

@@ -44,6 +44,7 @@ export interface GoodsReceiptItem {
   qc_reason_category: string | null;
   unit_id: string | null;
   stock_accepted_qty: number | null;
+  bin_id: string | null;
   // joined, read-only
   product_name?: string;
   part_number?: string;
@@ -221,6 +222,8 @@ export interface GRNLine {
   qc_reason_category: string | null;
   unit_id: string | null;
   stock_accepted_qty: number | null;
+  /** Put-away bin. Null = auto (product's default bin, else the warehouse's Unassigned bin). */
+  bin_id: string | null;
   tracking?: GRNBatchSerialResult;
 }
 
@@ -280,6 +283,7 @@ export async function fetchPendingPOItemsForGRN(poId: string): Promise<GRNLine[]
         qc_reason_category: null,
         unit_id: item.unit_id ?? null,
         stock_accepted_qty: pu.length ? toStockQty(remaining, item.unit_id, pu) : null,
+        bin_id: null,
       };
     })
     .filter((it) => it.ordered_qty > 0);
@@ -477,6 +481,7 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
         qc_reason_category: item.qc_reason_category || null,
         unit_id: item.unit_id,
         stock_accepted_qty: item.stock_accepted_qty,
+        bin_id: item.bin_id ?? null,
       })
       .select("id, product_id")
       .single();

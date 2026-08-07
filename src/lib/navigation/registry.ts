@@ -409,6 +409,15 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Inventory",
   },
   {
+    id: "inventory-racking",
+    title: "Storage Locations",
+    description: "Zone, rack and bin locations per warehouse",
+    route: "/inventory/racking",
+    icon: LayoutGrid,
+    module: "Inventory",
+    aliases: ["racking", "bins", "zones", "racks"],
+  },
+  {
     id: "inventory-batches",
     title: "Batch Tracking",
     description: "Track stock by batch/lot",

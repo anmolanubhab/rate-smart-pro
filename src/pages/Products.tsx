@@ -31,6 +31,7 @@ import {
 } from "@/lib/units";
 import { fetchHsnDetail, searchHsnByDescription, type HsnMasterListItem } from "@/lib/hsnMaster";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
+import BinLocationPicker from "@/components/inventory/BinLocationPicker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ const EMPTY_FORM = {
   purchase_unit_factor: "1",
   sales_unit_id: "",
   sales_unit_factor: "1",
+  default_bin_id: null as string | null,
 };
 
 // ─── Optimized columns (no select *) ─────────────────────────────────────────
@@ -88,7 +90,8 @@ const PRODUCT_COLUMNS = `
   weight_kg,
   tracking_type,
   measurement_category_id,
-  base_unit_id
+  base_unit_id,
+  default_bin_id
 `.trim();
 
 // ─── Server-side fetch with pagination, search, sort ─────────────────────────
@@ -280,6 +283,22 @@ const Products = () => {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
+  // Storage location: default_bin_id is the only thing persisted on the product —
+  // this warehouse select is just a local filter for which bins BinLocationPicker offers.
+  const [warehouses, setWarehouses] = useState<{ id: string; warehouse_name: string; is_default: boolean }[]>([]);
+  const [defaultBinWarehouseId, setDefaultBinWarehouseId] = useState("");
+
+  useEffect(() => {
+    if (!businessId) return;
+    supabase
+      .from("warehouses")
+      .select("id, warehouse_name, is_default")
+      .eq("business_id", businessId)
+      .eq("status", "active")
+      .order("warehouse_name", { ascending: true })
+      .then(({ data }) => setWarehouses((data as unknown as { id: string; warehouse_name: string; is_default: boolean }[]) ?? []));
+  }, [businessId]);
+
   // HSN picker — form.hsn_code is the committed value; hsnQuery is just the
   // display/search text, so typing without selecting never silently changes
   // the product's actual HSN reference.
@@ -468,6 +487,7 @@ const Products = () => {
     setForm(EMPTY_FORM);
     setHsnQuery("");
     setHsnResults([]);
+    setDefaultBinWarehouseId(warehouses.find((w) => w.is_default)?.id ?? warehouses[0]?.id ?? "");
     setOpen(true);
   };
 
@@ -494,9 +514,22 @@ const Products = () => {
       purchase_unit_factor: "1",
       sales_unit_id: "",
       sales_unit_factor: "1",
+      default_bin_id: p.default_bin_id ?? null,
     });
     setHsnQuery(p.hsn_code || "");
     setHsnResults([]);
+    setDefaultBinWarehouseId(warehouses.find((w) => w.is_default)?.id ?? warehouses[0]?.id ?? "");
+    if (p.default_bin_id) {
+      supabase
+        .from("warehouse_bins" as never)
+        .select("rack:warehouse_racks!inner(zone:warehouse_zones!inner(warehouse_id))")
+        .eq("id", p.default_bin_id)
+        .single()
+        .then(({ data }) => {
+          const whId = (data as any)?.rack?.zone?.warehouse_id;
+          if (whId) setDefaultBinWarehouseId(whId);
+        });
+    }
     setOpen(true);
     try {
       const pu = await fetchProductUnits(p.id);
@@ -551,6 +584,7 @@ const Products = () => {
         status: form.status,
         measurement_category_id: form.measurement_category_id || null,
         base_unit_id: form.base_unit_id || null,
+        default_bin_id: form.default_bin_id || null,
       };
       let productId = editing?.id;
       if (editing) {
@@ -983,6 +1017,30 @@ const Products = () => {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="md:col-span-2 border-t pt-3 mt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Storage Location (optional)
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Warehouse</Label>
+              <Select value={defaultBinWarehouseId} onValueChange={(v) => { setDefaultBinWarehouseId(v); setForm({ ...form, default_bin_id: null }); }}>
+                <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
+                <SelectContent>
+                  {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Default Rack / Bin</Label>
+              <BinLocationPicker
+                warehouseId={defaultBinWarehouseId || null}
+                value={form.default_bin_id}
+                onChange={(binId) => setForm({ ...form, default_bin_id: binId })}
+                placeholder="Auto (put-away bin picked at GRN time)"
+              />
             </div>
 
             <div className="md:col-span-2 border-t pt-3 mt-1">
