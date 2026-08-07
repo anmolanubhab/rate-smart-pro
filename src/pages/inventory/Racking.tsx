@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { ChevronRight, Plus, Pencil, MoreVertical, GitMerge, Lock } from "lucide-react";
+import QRCode from "qrcode";
+import { ChevronRight, Plus, Pencil, MoreVertical, GitMerge, Split, Lock, QrCode as QrCodeIcon, Printer, LayoutGrid, Flame } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
@@ -15,12 +16,14 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import BinLocationPicker from "@/components/inventory/BinLocationPicker";
+import QrCodeImage from "@/components/print/QrCodeImage";
+import WarehouseHeatMap from "@/components/inventory/WarehouseHeatMap";
 
 interface WarehouseOpt { id: string; warehouse_name: string; is_default: boolean }
 interface ZoneRow { id: string; code: string; name: string | null; is_active: boolean }
 interface RackRow { id: string; code: string; name: string | null; status: string }
 interface BinRow {
-  id: string; shelf_code: string | null; bin_code: string; location_code: string | null;
+  id: string; shelf_code: string | null; bin_code: string; location_code: string | null; scan_code: string | null;
   bin_type: string; status: string; capacity_qty: number | null; capacity_weight: number | null;
   capacity_volume: number | null; is_locked: boolean; is_unassigned: boolean; merged_into_bin_id: string | null;
 }
@@ -39,6 +42,7 @@ export default function Racking() {
 
   const [warehouses, setWarehouses] = useState<WarehouseOpt[]>([]);
   const [warehouseId, setWarehouseId] = useState("");
+  const [viewMode, setViewMode] = useState<"browse" | "heatmap">("browse");
 
   const [zones, setZones] = useState<ZoneRow[]>([]);
   const [zoneId, setZoneId] = useState<string | null>(null);
@@ -53,6 +57,16 @@ export default function Racking() {
   const [mergeTarget, setMergeTarget] = useState<BinRow | null>(null);
   const [mergeInto, setMergeInto] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
+
+  const [labelTarget, setLabelTarget] = useState<BinRow | null>(null);
+
+  const [splitTarget, setSplitTarget] = useState<BinRow | null>(null);
+  const [splitInto, setSplitInto] = useState<string | null>(null);
+  const [splitProduct, setSplitProduct] = useState<{ id: string; part_number: string; name: string } | null>(null);
+  const [splitProductSearch, setSplitProductSearch] = useState("");
+  const [splitProductResults, setSplitProductResults] = useState<{ id: string; part_number: string; name: string }[]>([]);
+  const [splitQty, setSplitQty] = useState("");
+  const [splitting, setSplitting] = useState(false);
 
   useEffect(() => { document.title = "Racking — RD Pro"; }, []);
 
@@ -110,7 +124,7 @@ export default function Racking() {
     setLoading(true);
     const { data, error } = await supabase
       .from("warehouse_bins" as never)
-      .select("id, shelf_code, bin_code, location_code, bin_type, status, capacity_qty, capacity_weight, capacity_volume, is_locked, is_unassigned, merged_into_bin_id")
+      .select("id, shelf_code, bin_code, location_code, scan_code, bin_type, status, capacity_qty, capacity_weight, capacity_volume, is_locked, is_unassigned, merged_into_bin_id")
       .eq("rack_id", rackId)
       .order("bin_code", { ascending: true });
     if (error) toast.error(error.message);
@@ -120,8 +134,64 @@ export default function Racking() {
 
   useEffect(() => { loadBins(); }, [rackId, loadBins]);
 
+  useEffect(() => {
+    if (!business || !splitTarget || splitProductSearch.trim().length < 2) { setSplitProductResults([]); return; }
+    const t = setTimeout(async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, part_number, name")
+        .eq("business_id", business.id)
+        .or(`part_number.ilike.%${splitProductSearch}%,name.ilike.%${splitProductSearch}%`)
+        .limit(20);
+      setSplitProductResults((data as any[]) ?? []);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [splitProductSearch, splitTarget, business]);
+
   const selectedZone = zones.find((z) => z.id === zoneId) ?? null;
   const selectedRack = racks.find((r) => r.id === rackId) ?? null;
+
+  const printLabel = async (b: BinRow) => {
+    const dataUrl = await QRCode.toDataURL(b.scan_code ?? b.location_code ?? b.id, { margin: 1, width: 300, errorCorrectionLevel: "M" });
+    const w = window.open("", "_blank", "width=380,height=480");
+    if (!w) { toast.error("Pop-up blocked — allow pop-ups to print the label"); return; }
+    w.document.write(`<!doctype html><html><head><title>${b.location_code ?? b.bin_code}</title></head>
+      <body style="font-family:ui-monospace,monospace;text-align:center;padding:28px;">
+        <img src="${dataUrl}" width="220" height="220" alt="QR" />
+        <div style="font-size:22px;font-weight:700;margin-top:14px;letter-spacing:0.5px;">${b.location_code ?? b.bin_code}</div>
+        <div style="font-size:11px;color:#666;margin-top:4px;text-transform:uppercase;">${b.bin_type}</div>
+      </body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+
+  const openSplit = (b: BinRow) => {
+    setSplitTarget(b);
+    setSplitInto(null);
+    setSplitProduct(null);
+    setSplitProductSearch("");
+    setSplitProductResults([]);
+    setSplitQty("");
+  };
+
+  const doSplit = async () => {
+    if (!splitTarget || !splitInto || !splitProduct || !splitQty) return;
+    setSplitting(true);
+    try {
+      const { error } = await supabase.rpc("split_bin" as never, {
+        _from_bin_id: splitTarget.id, _to_bin_id: splitInto, _product_id: splitProduct.id, _qty: Number(splitQty),
+      } as never);
+      if (error) throw error;
+      toast.success(`${splitQty} × ${splitProduct.part_number} moved to the new bin`);
+      setSplitTarget(null);
+      loadBins();
+    } catch (e: any) {
+      toast.error(e.message ?? "Split failed");
+    } finally {
+      setSplitting(false);
+    }
+  };
 
   const doMerge = async () => {
     if (!mergeTarget || !mergeInto) return;
@@ -152,16 +222,32 @@ export default function Racking() {
           <h1 className="font-display text-2xl md:text-3xl font-bold mt-1">Storage Locations</h1>
           <p className="text-muted-foreground mt-1 text-sm">Zone → Rack → Bin — every product's warehouse address.</p>
         </div>
-        <div className="w-full md:w-64">
-          <Select value={warehouseId} onValueChange={setWarehouseId}>
-            <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
-            <SelectContent>
-              {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="flex-1 md:w-64">
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
+              <SelectContent>
+                {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="inline-flex rounded-md border p-0.5 bg-muted/40">
+            <Button size="sm" variant={viewMode === "browse" ? "secondary" : "ghost"} className="h-8" onClick={() => setViewMode("browse")}>
+              <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />Browse
+            </Button>
+            <Button size="sm" variant={viewMode === "heatmap" ? "secondary" : "ghost"} className="h-8" onClick={() => setViewMode("heatmap")}>
+              <Flame className="h-3.5 w-3.5 mr-1.5" />Heat Map
+            </Button>
+          </div>
         </div>
       </header>
 
+      {viewMode === "heatmap" ? (
+        warehouseId ? <WarehouseHeatMap warehouseId={warehouseId} /> : (
+          <div className="py-8 text-center text-sm text-muted-foreground">Select a warehouse to see its occupancy.</div>
+        )
+      ) : (
+      <>
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-sm">
         <button
@@ -293,6 +379,12 @@ export default function Racking() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => setBinDialog(b)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setLabelTarget(b)}>
+                          <QrCodeIcon className="h-3.5 w-3.5 mr-2" />View / Print Label
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openSplit(b)}>
+                          <Split className="h-3.5 w-3.5 mr-2" />Split into…
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => { setMergeTarget(b); setMergeInto(null); }}>
                           <GitMerge className="h-3.5 w-3.5 mr-2" />Merge into…
                         </DropdownMenuItem>
@@ -304,6 +396,8 @@ export default function Racking() {
             </TableBody>
           </Table>
         </div>
+      )}
+      </>
       )}
 
       <ZoneDialog
@@ -342,6 +436,85 @@ export default function Racking() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setMergeTarget(null)} disabled={merging}>Cancel</Button>
             <Button onClick={doMerge} disabled={merging || !mergeInto}>{merging ? "Merging…" : "Merge"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!labelTarget} onOpenChange={(o) => !o && setLabelTarget(null)}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader><DialogTitle>{labelTarget?.location_code}</DialogTitle></DialogHeader>
+          {labelTarget && (
+            <div className="flex flex-col items-center gap-3 py-2">
+              <QrCodeImage value={labelTarget.scan_code ?? labelTarget.location_code ?? labelTarget.id} sizePx={180} />
+              <Badge variant="secondary">{labelTarget.bin_type}</Badge>
+              <p className="text-xs text-muted-foreground text-center">
+                Encodes the bin's scan code — stays valid even if this bin is later re-racked and its location code changes.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLabelTarget(null)}>Close</Button>
+            <Button onClick={() => labelTarget && printLabel(labelTarget)}>
+              <Printer className="h-3.5 w-3.5 mr-1.5" />Print Label
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!splitTarget} onOpenChange={(o) => !o && setSplitTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Split {splitTarget?.location_code}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Move a specific quantity of one product out of this bin into another — the bin itself stays as-is, only the stock moves.
+            </p>
+            <div className="space-y-1.5 relative">
+              <Label>Product</Label>
+              {splitProduct ? (
+                <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                  <span>{splitProduct.part_number} — {splitProduct.name}</span>
+                  <Button variant="ghost" size="sm" onClick={() => { setSplitProduct(null); setSplitProductSearch(""); }}>Change</Button>
+                </div>
+              ) : (
+                <>
+                  <Input placeholder="Search part number or name…" value={splitProductSearch} onChange={(e) => setSplitProductSearch(e.target.value)} />
+                  {splitProductResults.length > 0 && (
+                    <div className="mt-1 border rounded-lg max-h-40 overflow-y-auto absolute bg-popover z-10 w-full shadow-md">
+                      {splitProductResults.map((p) => (
+                        <button
+                          key={p.id}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
+                          onClick={() => { setSplitProduct(p); setSplitProductResults([]); }}
+                        >
+                          {p.part_number} — {p.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Quantity to move</Label>
+              <Input type="number" min="0" value={splitQty} onChange={(e) => setSplitQty(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Move to</Label>
+              <BinLocationPicker
+                warehouseId={warehouseId}
+                value={splitInto}
+                onChange={setSplitInto}
+                excludeBinId={splitTarget?.id}
+                includeUnassigned={false}
+                placeholder="Select destination bin…"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSplitTarget(null)} disabled={splitting}>Cancel</Button>
+            <Button onClick={doSplit} disabled={splitting || !splitInto || !splitProduct || !splitQty}>
+              {splitting ? "Splitting…" : "Split"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

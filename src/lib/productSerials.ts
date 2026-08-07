@@ -7,6 +7,7 @@ export interface ProductSerial {
   business_id: string;
   product_id: string;
   warehouse_id: string | null;
+  bin_id: string | null;
   serial_number: string;
   status: ProductSerialStatus;
   received_at: string;
@@ -20,6 +21,7 @@ export interface ProductSerial {
   product_part_number?: string;
   warehouse_name?: string | null;
   invoice_number?: string | null;
+  bin?: { location_code: string | null } | null;
 }
 
 export async function fetchProductSerials(businessId: string): Promise<ProductSerial[]> {
@@ -41,6 +43,7 @@ export async function fetchProductSerials(businessId: string): Promise<ProductSe
 export interface SaveProductSerialInput {
   product_id: string;
   warehouse_id: string | null;
+  bin_id?: string | null;
   serial_number: string;
   status: ProductSerialStatus;
   received_at: string;
@@ -64,7 +67,7 @@ export async function createProductSerialsBulk(businessId: string, base: Omit<Sa
 export async function fetchAvailableSerials(businessId: string, productId: string, warehouseId?: string | null): Promise<ProductSerial[]> {
   let q = supabase
     .from("product_serials" as never)
-    .select("*")
+    .select("*, bin:warehouse_bins(location_code)")
     .eq("business_id", businessId)
     .eq("product_id", productId)
     .eq("status", "in_stock")

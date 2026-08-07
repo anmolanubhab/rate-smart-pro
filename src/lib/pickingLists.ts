@@ -28,9 +28,11 @@ export interface PickingListItem {
   part_number: string;
   description: string;
   rack: string | null;
+  bin_id: string | null;
   qty_to_pick: number;
   qty_picked: number;
   position: number;
+  bin?: { location_code: string | null } | null;
 }
 
 export async function nextPickingNumber(businessId: string): Promise<string> {
@@ -52,29 +54,58 @@ export async function fetchPickingLists(businessId: string): Promise<PickingList
 export async function fetchPickingListItems(pickingListId: string): Promise<PickingListItem[]> {
   const { data, error } = await supabase
     .from("picking_list_items" as never)
-    .select("*")
+    .select("*, bin:warehouse_bins(location_code)")
     .eq("picking_list_id", pickingListId)
     .order("position", { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as PickingListItem[];
 }
 
-/** Order items still pending dispatch for an approved order — the candidate set a new Picking List is created from. */
+/**
+ * Order items still pending dispatch for an approved order — the candidate
+ * set a new Picking List is created from. Resolves each product's default
+ * bin and returns candidates pre-sorted by that bin's location_code —
+ * see the migration header comment for why this (not real route
+ * optimization) is what "walk order" means here.
+ */
 export async function fetchPendingItemsForOrder(orderId: string) {
   const { data, error } = await supabase
     .from("order_items")
-    .select("id, part_number, description, rack, qty, dispatched_qty, pending_qty")
+    .select("id, product_id, part_number, description, rack, qty, dispatched_qty, pending_qty")
     .eq("order_id", orderId);
   if (error) throw error;
-  return ((data ?? []) as any[])
+  const rows = ((data ?? []) as any[])
     .map((it) => ({
       order_item_id: it.id as string,
+      product_id: it.product_id as string | null,
       part_number: it.part_number ?? "",
       description: it.description ?? "",
       rack: it.rack ?? null,
       pending_qty: it.pending_qty != null ? Number(it.pending_qty) : Number(it.qty) - Number(it.dispatched_qty ?? 0),
     }))
     .filter((it) => it.pending_qty > 0);
+
+  const productIds = [...new Set(rows.map((r) => r.product_id).filter(Boolean))] as string[];
+  const binByProduct = new Map<string, { bin_id: string; location_code: string | null }>();
+  if (productIds.length) {
+    const { data: products } = await supabase
+      .from("products")
+      .select("id, default_bin_id, bin:warehouse_bins(id, location_code)")
+      .in("id", productIds);
+    ((products ?? []) as any[]).forEach((p) => {
+      if (p.default_bin_id) binByProduct.set(p.id, { bin_id: p.default_bin_id, location_code: p.bin?.location_code ?? null });
+    });
+  }
+
+  return rows
+    .map((r) => ({ ...r, bin_id: binByProduct.get(r.product_id ?? "")?.bin_id ?? null, location_code: binByProduct.get(r.product_id ?? "")?.location_code ?? null }))
+    .sort((a, b) => {
+      // Products with no resolved bin sort last — nothing to walk to.
+      if (a.location_code === b.location_code) return 0;
+      if (a.location_code === null) return 1;
+      if (b.location_code === null) return -1;
+      return a.location_code.localeCompare(b.location_code);
+    });
 }
 
 export interface CreatePickingListInput {
@@ -83,7 +114,7 @@ export interface CreatePickingListInput {
   partyId: string | null;
   partyName: string | null;
   notes?: string | null;
-  items: { order_item_id: string; part_number: string; description: string; rack: string | null; qty_to_pick: number }[];
+  items: { order_item_id: string; part_number: string; description: string; rack: string | null; bin_id?: string | null; qty_to_pick: number }[];
 }
 
 export async function createPickingList(input: CreatePickingListInput): Promise<PickingList> {
@@ -116,6 +147,7 @@ export async function createPickingList(input: CreatePickingListInput): Promise<
     part_number: it.part_number,
     description: it.description,
     rack: it.rack,
+    bin_id: it.bin_id ?? null,
     qty_to_pick: it.qty_to_pick,
     qty_picked: 0,
     position: idx,

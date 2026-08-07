@@ -5,6 +5,7 @@ export interface ProductBatch {
   business_id: string;
   product_id: string;
   warehouse_id: string | null;
+  bin_id: string | null;
   batch_number: string;
   mfg_date: string | null;
   expiry_date: string | null;
@@ -16,6 +17,7 @@ export interface ProductBatch {
   product_name?: string;
   product_part_number?: string;
   warehouse_name?: string | null;
+  bin?: { location_code: string | null } | null;
 }
 
 export async function fetchProductBatches(businessId: string): Promise<ProductBatch[]> {
@@ -36,6 +38,7 @@ export async function fetchProductBatches(businessId: string): Promise<ProductBa
 export interface SaveProductBatchInput {
   product_id: string;
   warehouse_id: string | null;
+  bin_id?: string | null;
   batch_number: string;
   mfg_date: string | null;
   expiry_date: string | null;
@@ -80,7 +83,7 @@ export async function fetchBatchesForProduct(businessId: string, productId: stri
 export async function fetchAvailableBatches(businessId: string, productId: string, warehouseId?: string | null): Promise<ProductBatch[]> {
   let q = supabase
     .from("product_batches" as never)
-    .select("*")
+    .select("*, bin:warehouse_bins(location_code)")
     .eq("business_id", businessId)
     .eq("product_id", productId)
     .gt("qty", 0)
@@ -107,6 +110,7 @@ export async function receiveProductBatch(businessId: string, input: SaveProduct
       .update({
         qty: Number(row.qty) + Number(input.qty),
         warehouse_id: input.warehouse_id,
+        bin_id: input.bin_id ?? null,
         mfg_date: input.mfg_date,
         expiry_date: input.expiry_date,
       } as never)
