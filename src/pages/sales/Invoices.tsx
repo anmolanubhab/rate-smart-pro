@@ -53,7 +53,7 @@ function invoiceRowActions(
   return [
     { key: "view", label: "View Invoice", icon: Eye, onClick: () => onView(i) },
     { key: "post", label: "Post Invoice", icon: CheckCircle, onClick: () => onPost(i), className: "text-emerald-600 focus:text-emerald-600", hidden: i.status !== "draft" },
-    { key: "edit", label: "Edit Invoice", icon: Pencil, onClick: () => onEdit(i), disabled: isCancelled || i.status === "posted" },
+    { key: "edit", label: "Edit Invoice", icon: Pencil, onClick: () => onEdit(i), disabled: isCancelled },
     { key: "duplicate", label: "Duplicate", icon: Copy, onClick: () => onDuplicate(i) },
     { key: "return", label: "Create Return", icon: Undo2, onClick: () => navigate(`/sales/returns/new?invoiceId=${i.id}`), className: "text-teal-600 focus:text-teal-600", hidden: i.status !== "posted" },
     { key: "compliance", label: "e-Invoice / e-Way Bill", icon: FileText, onClick: () => setComplianceTarget(i), hidden: i.status !== "posted" },
@@ -85,12 +85,14 @@ export default function InvoicesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [complianceTarget, setComplianceTarget] = useState<SalesInvoice | null>(null);
 
-  // Edit (draft-only — posted invoices already have a voucher/ledger
-  // entry, so free-editing them would desync accounting; cancel + issue
-  // a fresh invoice instead for those).
+  // Edit. Discount/notes stay draft-only — posted invoices already have a
+  // voucher/ledger entry, so free-editing amounts would desync accounting;
+  // cancel + issue a fresh invoice instead for those. Due Date carries no
+  // GL weight, so it's editable on posted invoices too (not cancelled ones).
   const [editTarget, setEditTarget] = useState<SalesInvoice | null>(null);
   const [editNotes, setEditNotes] = useState("");
   const [editDiscount, setEditDiscount] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => { document.title = "Sales Invoices — RD Pro"; }, []);
@@ -149,24 +151,32 @@ export default function InvoicesPage() {
   };
 
   const onEdit = (inv: SalesInvoice) => {
-    if (inv.status === "posted") {
-      toast.info("Posted invoices can't be freely edited (they already have a ledger entry). Cancel and issue a new invoice instead.");
-      return;
-    }
+    if (inv.status === "cancelled") return;
     setEditTarget(inv);
     setEditNotes(inv.notes ?? "");
     setEditDiscount(String(inv.discount_total ?? 0));
+    setEditDueDate(inv.due_date ?? "");
   };
 
   const onSaveEdit = async () => {
     if (!editTarget) return;
+    if (!editDueDate) { toast.error("Due date is required"); return; }
     setSavingEdit(true);
     try {
-      const discount = Number(editDiscount) || 0;
-      const newGrandTotal = Number(editTarget.subtotal) - discount + Number(editTarget.gst_total) + Number(editTarget.shipping_charges ?? 0);
+      // Discount/notes/grand_total stay draft-only (posted invoices already
+      // have a GL voucher — changing amounts here would desync it); due_date
+      // is safe to update regardless since it carries no GL weight.
+      const updates: Record<string, unknown> = { due_date: editDueDate };
+      if (editTarget.status === "draft") {
+        const discount = Number(editDiscount) || 0;
+        const newGrandTotal = Number(editTarget.subtotal) - discount + Number(editTarget.gst_total) + Number(editTarget.shipping_charges ?? 0);
+        updates.notes = editNotes || null;
+        updates.discount_total = discount;
+        updates.grand_total = newGrandTotal;
+      }
       const { error } = await supabase
         .from("sales_invoices")
-        .update({ notes: editNotes || null, discount_total: discount, grand_total: newGrandTotal })
+        .update(updates)
         .eq("id", editTarget.id);
       if (error) throw error;
       toast.success(`Invoice ${editTarget.invoice_number} updated`);
@@ -369,7 +379,7 @@ export default function InvoicesPage() {
                               <Button
                                 size="icon" variant="ghost"
                                 className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
-                                disabled={isCancelled || i.status === "posted"}
+                                disabled={isCancelled}
                                 onClick={() => onEdit(i)}
                               >
                                 <Pencil className="h-4 w-4" />
@@ -509,7 +519,7 @@ export default function InvoicesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Edit Invoice (draft only) ── */}
+      {/* ── Edit Invoice ── */}
       <AlertDialog open={!!editTarget} onOpenChange={(o) => !o && setEditTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -517,17 +527,31 @@ export default function InvoicesPage() {
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-left mt-2">
                 <div>
-                  <label className="text-xs text-muted-foreground">Discount</label>
-                  <Input type="number" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} />
+                  <label className="text-xs text-muted-foreground">Due Date</label>
+                  <Input type="date" value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} />
                 </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Notes</label>
-                  <Input value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Line items can't be changed here — cancel this invoice and generate a new one from
-                  the order/dispatch if quantities or prices need to change.
-                </p>
+                {editTarget?.status === "draft" ? (
+                  <>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Discount</label>
+                      <Input type="number" value={editDiscount} onChange={(e) => setEditDiscount(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Notes</label>
+                      <Input value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Line items can't be changed here — cancel this invoice and generate a new one from
+                      the order/dispatch if quantities or prices need to change.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    This invoice is posted — only the due date can be changed here. Discount, notes and
+                    line items are locked since a ledger entry already exists; cancel and issue a new
+                    invoice if those need to change.
+                  </p>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -106,6 +106,7 @@ export type Database = {
           permission_mode: string
           pricing_policy: string
           require_hsn_on_invoice: boolean
+          share_link_expiry: string
           updated_at: string
         }
         Insert: {
@@ -127,6 +128,7 @@ export type Database = {
           permission_mode?: string
           pricing_policy?: string
           require_hsn_on_invoice?: boolean
+          share_link_expiry?: string
           updated_at?: string
         }
         Update: {
@@ -148,6 +150,7 @@ export type Database = {
           permission_mode?: string
           pricing_policy?: string
           require_hsn_on_invoice?: boolean
+          share_link_expiry?: string
           updated_at?: string
         }
         Relationships: [
@@ -2126,6 +2129,41 @@ export type Database = {
             columns: ["warehouse_id"]
             isOneToOne: false
             referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      document_share_links: {
+        Row: {
+          business_id: string
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          id: string
+          storage_path: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          id?: string
+          storage_path: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          id?: string
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_share_links_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
@@ -5104,6 +5142,59 @@ export type Database = {
           },
         ]
       }
+      output_profiles: {
+        Row: {
+          business_id: string
+          copy_labels: string[]
+          created_at: string
+          destination: string
+          destination_target: string | null
+          document_type_id: string
+          id: string
+          is_default: boolean
+          name: string
+          sort_order: number
+          template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          copy_labels?: string[]
+          created_at?: string
+          destination?: string
+          destination_target?: string | null
+          document_type_id: string
+          id?: string
+          is_default?: boolean
+          name: string
+          sort_order?: number
+          template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          copy_labels?: string[]
+          created_at?: string
+          destination?: string
+          destination_target?: string | null
+          document_type_id?: string
+          id?: string
+          is_default?: boolean
+          name?: string
+          sort_order?: number
+          template_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "output_profiles_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       packaging_hierarchy: {
         Row: {
           business_id: string | null
@@ -5474,6 +5565,122 @@ export type Database = {
           party_id?: string
         }
         Relationships: []
+      }
+      party_advance_allocations: {
+        Row: {
+          adjusted_amount: number
+          adjusted_at: string
+          advance_id: string
+          created_by: string | null
+          id: string
+          invoice_id: string
+          payment_voucher_id: string | null
+        }
+        Insert: {
+          adjusted_amount: number
+          adjusted_at?: string
+          advance_id: string
+          created_by?: string | null
+          id?: string
+          invoice_id: string
+          payment_voucher_id?: string | null
+        }
+        Update: {
+          adjusted_amount?: number
+          adjusted_at?: string
+          advance_id?: string
+          created_by?: string | null
+          id?: string
+          invoice_id?: string
+          payment_voucher_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "party_advance_allocations_advance_id_fkey"
+            columns: ["advance_id"]
+            isOneToOne: false
+            referencedRelation: "party_advances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_advance_allocations_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "sales_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_advance_allocations_payment_voucher_id_fkey"
+            columns: ["payment_voucher_id"]
+            isOneToOne: false
+            referencedRelation: "payment_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      party_advances: {
+        Row: {
+          available_amount: number
+          business_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          original_amount: number
+          party_id: string
+          source_type: string
+          status: string
+          used_amount: number
+          voucher_id: string | null
+        }
+        Insert: {
+          available_amount: number
+          business_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          original_amount: number
+          party_id: string
+          source_type?: string
+          status?: string
+          used_amount?: number
+          voucher_id?: string | null
+        }
+        Update: {
+          available_amount?: number
+          business_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          original_amount?: number
+          party_id?: string
+          source_type?: string
+          status?: string
+          used_amount?: number
+          voucher_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "party_advances_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_advances_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "party_advances_voucher_id_fkey"
+            columns: ["voucher_id"]
+            isOneToOne: false
+            referencedRelation: "payment_entries"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       party_balance_summary: {
         Row: {
@@ -6783,6 +6990,53 @@ export type Database = {
           },
         ]
       }
+      print_audit_log: {
+        Row: {
+          action: string
+          business_id: string
+          copy_labels: string[] | null
+          created_at: string
+          document_id: string | null
+          document_number: string | null
+          document_type_id: string
+          id: string
+          template_id: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          business_id: string
+          copy_labels?: string[] | null
+          created_at?: string
+          document_id?: string | null
+          document_number?: string | null
+          document_type_id: string
+          id?: string
+          template_id?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          business_id?: string
+          copy_labels?: string[] | null
+          created_at?: string
+          document_id?: string | null
+          document_number?: string | null
+          document_type_id?: string
+          id?: string
+          template_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "print_audit_log_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       print_copy_types: {
         Row: {
           business_id: string
@@ -6863,6 +7117,7 @@ export type Database = {
           show_warehouse: boolean
           show_watermark: boolean
           show_weight: boolean
+          template_id: string
           terms: Json
           updated_at: string
           watermark_text: string | null
@@ -6905,6 +7160,7 @@ export type Database = {
           show_warehouse?: boolean
           show_watermark?: boolean
           show_weight?: boolean
+          template_id?: string
           terms?: Json
           updated_at?: string
           watermark_text?: string | null
@@ -6947,6 +7203,7 @@ export type Database = {
           show_warehouse?: boolean
           show_watermark?: boolean
           show_weight?: boolean
+          template_id?: string
           terms?: Json
           updated_at?: string
           watermark_text?: string | null
@@ -8384,7 +8641,7 @@ export type Database = {
           reference_no?: string | null
           remarks?: string | null
           revision_number?: number
-          root_quotation_id?: string
+          root_quotation_id: string
           salesman?: string | null
           shipping_address?: string | null
           shipping_charges?: number | null
@@ -8449,6 +8706,13 @@ export type Database = {
             columns: ["party_id"]
             isOneToOne: false
             referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotations_root_fk"
+            columns: ["root_quotation_id"]
+            isOneToOne: false
+            referencedRelation: "quotations"
             referencedColumns: ["id"]
           },
         ]
@@ -8851,12 +9115,14 @@ export type Database = {
           cancelled_reason: string | null
           created_at: string | null
           created_by: string | null
+          credit_days_snapshot: number | null
           customer_type: string | null
           delete_reason: string | null
           deleted_at: string | null
           deleted_by: string | null
           discount_total: number | null
           dispatch_id: string | null
+          due_date: string
           e_invoice_status: string | null
           eway_bill_no: string | null
           grand_total: number | null
@@ -8901,12 +9167,14 @@ export type Database = {
           cancelled_reason?: string | null
           created_at?: string | null
           created_by?: string | null
+          credit_days_snapshot?: number | null
           customer_type?: string | null
           delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           discount_total?: number | null
           dispatch_id?: string | null
+          due_date: string
           e_invoice_status?: string | null
           eway_bill_no?: string | null
           grand_total?: number | null
@@ -8951,12 +9219,14 @@ export type Database = {
           cancelled_reason?: string | null
           created_at?: string | null
           created_by?: string | null
+          credit_days_snapshot?: number | null
           customer_type?: string | null
           delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           discount_total?: number | null
           dispatch_id?: string | null
+          due_date?: string
           e_invoice_status?: string | null
           eway_bill_no?: string | null
           grand_total?: number | null
@@ -10072,6 +10342,24 @@ export type Database = {
           },
         ]
       }
+      user_print_preferences: {
+        Row: {
+          default_print_action: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          default_print_action?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          default_print_action?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       voucher_item_gst_detail: {
         Row: {
           cess_amount: number
@@ -10700,6 +10988,10 @@ export type Database = {
       approve_dealer_application: {
         Args: { _application_id: string }
         Returns: string
+      }
+      archive_business: {
+        Args: { _business_id: string; _reason?: string }
+        Returns: undefined
       }
       audited_update_business: {
         Args: {
@@ -11589,6 +11881,7 @@ export type Database = {
           }
         | {
             Args: {
+              _advance_use_amount?: number
               _allocations: Json
               _amount: number
               _bank_account_id?: string
@@ -11627,6 +11920,10 @@ export type Database = {
         Returns: undefined
       }
       restore_business: { Args: { _business_id: string }; Returns: undefined }
+      reverse_invoice_advance_allocations: {
+        Args: { _invoice_id: string }
+        Returns: undefined
+      }
       reverse_sales_payment: {
         Args: { _payment_entry_id: string; _reason?: string }
         Returns: string
@@ -11677,6 +11974,7 @@ export type Database = {
           updated_count: number
         }[]
       }
+      unarchive_business: { Args: { _business_id: string }; Returns: undefined }
     }
     Enums: {
       approval_action: "edit" | "delete" | "cancel" | "unlock" | "reopen"
