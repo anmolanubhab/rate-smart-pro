@@ -456,9 +456,9 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
   }
 
   // Stock (available + on-hold), inventory_movements logging, QC status,
-  // and PO status/qty rollup are all handled server-side by DB triggers the
-  // moment each row lands (grn_item_apply_hold_stock,
-  // trg_recalc_po_from_grn_items) -- unchanged, not duplicated here.
+  // and PO status/qty rollup are all handled server-side by the
+  // grn_item_apply_hold_stock trigger the moment each row lands --
+  // unchanged, not duplicated here.
   // Inserted one row at a time (not a single bulk insert) so each item's
   // returned id can be matched back to it exactly -- a bulk insert's
   // RETURNING order isn't guaranteed to match input order, and ordering by
