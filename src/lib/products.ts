@@ -26,6 +26,8 @@ tracking_type: ProductTrackingType;
 status: string;
 measurement_category_id: string | null;
 base_unit_id: string | null;
+/** Default put-away/pick bin — warehouse is derived from this (rack → zone → warehouse), never stored separately. */
+default_bin_id?: string | null;
 created_at: string;
 updated_at: string;
 }

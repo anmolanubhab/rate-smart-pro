@@ -9,6 +9,7 @@ import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchUnits, fetchProductUnits, stockUnitOf, toStockQty, type Unit as MeasureUnit, type ProductUnit } from "@/lib/units";
 import WarehouseFormDialog, { type WarehouseRow } from "@/components/inventory/WarehouseFormDialog";
 import GRNBatchSerialDialog, { type GRNBatchSerialResult } from "@/components/inventory/GRNBatchSerialDialog";
+import BinLocationPicker from "@/components/inventory/BinLocationPicker";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +53,7 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "remarks", header: "Quality Remarks", widthClass: "min-w-[140px]" },
   { key: "reason", header: "Reason", widthClass: "w-40" },
   { key: "tracking", header: "Batch/Serial", widthClass: "w-32" },
+  { key: "bin", header: "Put-away Bin", widthClass: "w-36" },
 ];
 
 const fmt = (n: number) => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -150,6 +152,7 @@ export default function PurchaseGRN() {
               qc_reason_category: it.qc_reason_category,
               unit_id: it.unit_id,
               stock_accepted_qty: it.stock_accepted_qty,
+              bin_id: it.bin_id ?? null,
             })),
           );
           fetchGRNActivityLogs(grn.id).then(setActivityLogs).catch(() => {});
@@ -220,6 +223,8 @@ export default function PurchaseGRN() {
     setItems((rows) => rows.map((r, i) => (i === index ? { ...r, quality_remarks: value } : r)));
   const handleReasonChange = (index: number, value: string) =>
     setItems((rows) => rows.map((r, i) => (i === index ? { ...r, qc_reason_category: value } : r)));
+  const handleBinChange = (index: number, binId: string | null) =>
+    setItems((rows) => rows.map((r, i) => (i === index ? { ...r, bin_id: binId } : r)));
 
   const handleSave = async (targetStatus: "draft" | "received") => {
     if (!user || !businessId || loading || readOnly) return;
@@ -492,6 +497,16 @@ export default function PurchaseGRN() {
                       : `Add ${item.tracking_type}`}
                   </Button>
                 )}
+              </td>
+              <td className="px-1 py-0.5">
+                <BinLocationPicker
+                  warehouseId={selectedWarehouse || null}
+                  value={item.bin_id}
+                  onChange={(binId) => handleBinChange(idx, binId)}
+                  disabled={readOnly}
+                  placeholder="Auto"
+                  className="h-6 text-[11px] px-1.5 rounded-none border-0 border-b border-dotted border-border bg-transparent focus:ring-0"
+                />
               </td>
             </>
           )}

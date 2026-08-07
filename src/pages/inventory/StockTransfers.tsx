@@ -18,12 +18,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useFormatDate } from "@/lib/dateFormat";
 import type { WarehouseRow } from "@/components/inventory/WarehouseFormDialog";
+import BinLocationPicker from "@/components/inventory/BinLocationPicker";
 import {
   fetchStockTransfers, createStockTransfer, dispatchStockTransfer,
   receiveStockTransfer, cancelStockTransfer, type StockTransfer, type StockTransferStatus,
 } from "@/lib/stockTransfers";
 
-type LineDraft = { product_id: string; part_number: string; name: string; qty: string };
+type LineDraft = { product_id: string; part_number: string; name: string; qty: string; from_bin_id: string | null; to_bin_id: string | null };
 
 const STATUS_STYLE: Record<StockTransferStatus, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "border-amber-400/50 text-amber-600 bg-amber-50" },
@@ -114,7 +115,7 @@ export default function StockTransfers() {
 
   const addLine = (p: { id: string; part_number: string; name: string }) => {
     if (lines.some((l) => l.product_id === p.id)) return;
-    setLines((prev) => [...prev, { product_id: p.id, part_number: p.part_number, name: p.name, qty: "1" }]);
+    setLines((prev) => [...prev, { product_id: p.id, part_number: p.part_number, name: p.name, qty: "1", from_bin_id: null, to_bin_id: null }]);
     setSearch("");
     setSearchResults([]);
   };
@@ -122,12 +123,19 @@ export default function StockTransfers() {
   const removeLine = (productId: string) => setLines((prev) => prev.filter((l) => l.product_id !== productId));
   const setLineQty = (productId: string, qty: string) =>
     setLines((prev) => prev.map((l) => (l.product_id === productId ? { ...l, qty } : l)));
+  const setLineBin = (productId: string, field: "from_bin_id" | "to_bin_id", binId: string | null) =>
+    setLines((prev) => prev.map((l) => (l.product_id === productId ? { ...l, [field]: binId } : l)));
+
+  const sameWarehouse = !!fromWarehouseId && fromWarehouseId === toWarehouseId;
 
   const submit = async () => {
     if (!business || !user) return;
     if (!fromWarehouseId || !toWarehouseId) { toast.error("Select From and To warehouse"); return; }
-    if (fromWarehouseId === toWarehouseId) { toast.error("From and To warehouse must be different"); return; }
     if (!lines.length) { toast.error("Add at least one product"); return; }
+    if (sameWarehouse && lines.some((l) => !l.from_bin_id || !l.to_bin_id)) {
+      toast.error("Same-warehouse transfers need a From Bin and To Bin on every line");
+      return;
+    }
     setSaving(true);
     try {
       await createStockTransfer({
@@ -137,7 +145,7 @@ export default function StockTransfers() {
         toWarehouseId,
         transferDate,
         notes: notes || null,
-        items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty) })),
+        items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), from_bin_id: l.from_bin_id, to_bin_id: l.to_bin_id })),
       });
       toast.success("Stock transfer created as Draft");
       setOpen(false);
@@ -200,12 +208,12 @@ export default function StockTransfers() {
           <h1 className="text-2xl font-bold mt-1">Stock Transfers</h1>
           <p className="text-sm text-muted-foreground mt-1">Move stock between warehouses.</p>
         </div>
-        <Button onClick={openNew} disabled={warehouses.length < 2}><Plus className="h-4 w-4 mr-2" />New Transfer</Button>
+        <Button onClick={openNew} disabled={warehouses.length < 1}><Plus className="h-4 w-4 mr-2" />New Transfer</Button>
       </div>
 
-      {warehouses.length < 2 && (
+      {warehouses.length < 1 && (
         <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-          You need at least 2 active warehouses to create a transfer. Add one from Inventory → Warehouses.
+          You need at least 1 active warehouse to create a transfer. Add one from Inventory → Warehouses.
         </div>
       )}
 
@@ -286,7 +294,7 @@ export default function StockTransfers() {
                 <Select value={toWarehouseId} onValueChange={setToWarehouseId}>
                   <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
                   <SelectContent>
-                    {warehouses.filter((w) => w.id !== fromWarehouseId).map((w) => (
+                    {warehouses.map((w) => (
                       <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -297,6 +305,12 @@ export default function StockTransfers() {
                 <Input type="date" value={transferDate} onChange={(e) => setTransferDate(e.target.value)} />
               </div>
             </div>
+
+            {sameWarehouse && (
+              <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+                Same warehouse on both sides — this is a bin-to-bin move (rack reorganization). Pick a From Bin and To Bin on every line below.
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Add Product</Label>
@@ -320,13 +334,15 @@ export default function StockTransfers() {
             </div>
 
             {lines.length > 0 && (
-              <div className="rounded-lg border">
+              <div className="rounded-lg border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Part #</TableHead>
                       <TableHead>Name</TableHead>
-                      <TableHead className="w-28 text-right">Qty</TableHead>
+                      <TableHead className="w-24 text-right">Qty</TableHead>
+                      <TableHead className="w-44">From Bin{sameWarehouse && " *"}</TableHead>
+                      <TableHead className="w-44">To Bin{sameWarehouse && " *"}</TableHead>
                       <TableHead className="w-10" />
                     </TableRow>
                   </TableHeader>
@@ -338,6 +354,25 @@ export default function StockTransfers() {
                         <TableCell>
                           <Input type="number" min="0" className="text-right" value={l.qty}
                             onChange={(e) => setLineQty(l.product_id, e.target.value)} />
+                        </TableCell>
+                        <TableCell>
+                          <BinLocationPicker
+                            warehouseId={fromWarehouseId || null}
+                            value={l.from_bin_id}
+                            onChange={(binId) => setLineBin(l.product_id, "from_bin_id", binId)}
+                            placeholder="Auto"
+                            className="h-8 text-xs"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <BinLocationPicker
+                            warehouseId={toWarehouseId || null}
+                            value={l.to_bin_id}
+                            onChange={(binId) => setLineBin(l.product_id, "to_bin_id", binId)}
+                            excludeBinId={sameWarehouse ? l.from_bin_id : null}
+                            placeholder="Auto"
+                            className="h-8 text-xs"
+                          />
                         </TableCell>
                         <TableCell>
                           <Button size="sm" variant="ghost" onClick={() => removeLine(l.product_id)}>
