@@ -145,16 +145,17 @@ export default function PurchaseOrders() {
         onRowClick={(row) => navigate(`/purchase/orders/edit/${row._id}`)}
         rowActions={(row) => {
           const isDraft = row._status === "draft";
-          const isFinal = row._status === "cancelled" || row._status === "closed";
+          const isCancelled = row._status === "cancelled";
+          const isFinal = isCancelled || row._status === "closed";
+          // Delete is allowed for draft (never sent) and cancelled (voided,
+          // nothing to keep an audit trail of) -- "closed" is the only
+          // truly final, undeletable state.
+          const canDelete = isDraft || isCancelled;
           const actions: DocumentRowAction[] = [
             { key: "view", label: "View / Edit", icon: Eye, onClick: () => navigate(`/purchase/orders/edit/${row._id}`) },
             { key: "duplicate", label: "Duplicate", icon: Copy, onClick: () => handleDuplicate(row._id) },
             { key: "cancel", label: "Cancel PO", icon: Ban, onClick: () => setCancelTarget({ id: row._id, po_number: row.po_number }), className: "text-orange-600 focus:text-orange-600", hidden: isFinal, separatorBefore: true },
-            // Delete only ever applies to a draft, and a draft is never
-            // "final" -- so whenever Delete is visible, Cancel is too,
-            // already providing the divider above; Delete itself needs no
-            // separator of its own.
-            { key: "delete", label: "Delete", icon: Trash2, onClick: () => setDeleteTarget({ id: row._id, po_number: row.po_number }), destructive: true, hidden: !isDraft },
+            { key: "delete", label: "Delete", icon: Trash2, onClick: () => setDeleteTarget({ id: row._id, po_number: row.po_number }), destructive: true, hidden: !canDelete, separatorBefore: !isDraft },
           ];
           return <DocumentActionMenu actions={actions} loading={busyId === row._id} triggerDisabled={busyId === row._id} />;
         }}
@@ -182,7 +183,7 @@ export default function PurchaseOrders() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Purchase Order?</AlertDialogTitle>
             <AlertDialogDescription>
-              Purchase Order <strong>{deleteTarget?.po_number}</strong> is a draft and will be permanently deleted. This cannot be undone.
+              Purchase Order <strong>{deleteTarget?.po_number}</strong> will be permanently deleted. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
