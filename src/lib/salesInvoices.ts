@@ -10,6 +10,8 @@ export interface SalesInvoice {
   business_id: string | null;
   invoice_number: string;
   invoice_date: string;
+  due_date: string;
+  credit_days_snapshot: number | null;
   order_id: string | null;
   dispatch_id: string | null;
   party_id: string | null;
@@ -507,6 +509,11 @@ async function assertInvoicePaymentReversed(invoiceId: string): Promise<void> {
 }
 
 export async function cancelInvoice(invoiceId: string, userId?: string) {
+  // Release any advance funding first -- a pure sub-ledger reallocation with
+  // no cash/GL movement, safe to auto-reverse. Real cash payments still
+  // require an explicit reversal via assertInvoicePaymentReversed below.
+  const { error: advErr } = await supabase.rpc("reverse_invoice_advance_allocations" as never, { _invoice_id: invoiceId } as never);
+  if (advErr) throw advErr;
   await assertInvoicePaymentReversed(invoiceId);
 
   // Load invoice to check if dispatch-linked

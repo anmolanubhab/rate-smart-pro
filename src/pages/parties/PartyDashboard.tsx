@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchPartyLedger, fmtInr } from "@/lib/accounting";
+import { fetchAvailableAdvance } from "@/lib/receivePayment";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ export default function PartyDashboard() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [ledgerLines, setLedgerLines] = useState<Awaited<ReturnType<typeof fetchPartyLedger>>["lines"]>([]);
   const [closingBalance, setClosingBalance] = useState(0);
+  const [availableAdvance, setAvailableAdvance] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { document.title = party ? `${party.name} — RD Pro` : "Party — RD Pro"; }, [party]);
@@ -56,11 +58,12 @@ export default function PartyDashboard() {
     if (!partyId || !user || !business) return;
     (async () => {
       setLoading(true);
-      const [{ data: p }, { data: ord }, { data: inv }, ledgerRes] = await Promise.all([
+      const [{ data: p }, { data: ord }, { data: inv }, ledgerRes, advanceRes] = await Promise.all([
         supabase.from("parties").select("id, name, phone, gst, address, credit_limit, outstanding_balance, agreed_discount, discount_type, party_group_id").eq("id", partyId).maybeSingle(),
         supabase.from("orders").select("id, order_number, status, grand_total, created_at").eq("party_id", partyId).order("created_at", { ascending: false }).limit(10),
         supabase.from("sales_invoices").select("id, invoice_number, grand_total, invoice_date, status").eq("party_id", partyId).order("invoice_date", { ascending: false }).limit(10),
         fetchPartyLedger(user.id, partyId).catch(() => ({ ledger: null, lines: [], closingBalance: 0 })),
+        business ? fetchAvailableAdvance(business.id, partyId).catch(() => ({ total: 0, advances: [] })) : Promise.resolve({ total: 0, advances: [] }),
       ]);
 
       setParty((p as PartyRow) ?? null);
@@ -68,6 +71,7 @@ export default function PartyDashboard() {
       setInvoices((inv as InvoiceRow[]) ?? []);
       setLedgerLines(ledgerRes.lines.slice(0, 8));
       setClosingBalance(ledgerRes.closingBalance);
+      setAvailableAdvance(advanceRes.total);
 
       if (p?.party_group_id) {
         const { data: g } = await supabase.from("party_groups").select("id, name").eq("id", p.party_group_id).maybeSingle();
@@ -112,13 +116,15 @@ export default function PartyDashboard() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <Card><CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground">Outstanding</CardTitle></CardHeader>
           <CardContent><div className="text-lg font-semibold text-amber-600">{fmtInr(outstanding)}</div></CardContent></Card>
         <Card><CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground">Available Credit</CardTitle></CardHeader>
           <CardContent><div className="text-lg font-semibold text-emerald-600">{availableCredit === null ? "No limit" : fmtInr(availableCredit)}</div></CardContent></Card>
         <Card><CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground">Overdue</CardTitle></CardHeader>
           <CardContent><div className="text-lg font-semibold text-destructive">{fmtInr(overdueTotal)}</div></CardContent></Card>
+        <Card><CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground">Available Advance</CardTitle></CardHeader>
+          <CardContent><div className="text-lg font-semibold text-emerald-600">{fmtInr(availableAdvance)}</div></CardContent></Card>
         <Card><CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground">RD / CD</CardTitle></CardHeader>
           <CardContent><div className="text-lg font-semibold">{party.agreed_discount ?? 0}% <span className="text-xs text-muted-foreground">{party.discount_type ?? "RD"}</span></div></CardContent></Card>
         <Card><CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground">Ledger Balance</CardTitle></CardHeader>
