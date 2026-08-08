@@ -61,6 +61,9 @@ const typeTone: Record<string, string> = {
 
 const PAGE_SIZE = 25;
 
+const drLedgers = (v: Voucher) => (v.items ?? []).filter((i) => i.debit > 0).map((i) => i.ledger_name).filter(Boolean).join(", ") || "—";
+const crLedgers = (v: Voucher) => (v.items ?? []).filter((i) => i.credit > 0).map((i) => i.ledger_name).filter(Boolean).join(", ") || "—";
+
 // ── component ────────────────────────────────────────────────────────────────
 
 export default function VoucherList() {
@@ -295,6 +298,8 @@ export default function VoucherList() {
                   <th className="px-4 py-3 text-left">Voucher No</th>
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-left">Debited To</th>
+                  <th className="px-4 py-3 text-left">Credited To</th>
                   <th className="px-4 py-3 text-left">Narration</th>
                   <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-right">Amount</th>
@@ -304,13 +309,13 @@ export default function VoucherList() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                    <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">
                       Loading…
                     </td>
                   </tr>
                 ) : vouchers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-16 text-center">
+                    <td colSpan={9} className="px-4 py-16 text-center">
                       <div className="flex flex-col items-center gap-3 text-muted-foreground">
                         <FileDown className="h-10 w-10 opacity-30" />
                         <p className="font-medium">No vouchers found</p>
@@ -338,6 +343,12 @@ export default function VoucherList() {
                         <Badge variant="outline" className={typeTone[v.voucher_type] ?? ""}>
                           {v.voucher_type}
                         </Badge>
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground max-w-[180px] truncate">
+                        {drLedgers(v)}
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground max-w-[180px] truncate">
+                        {crLedgers(v)}
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground max-w-[220px] truncate">
                         {v.narration || "—"}

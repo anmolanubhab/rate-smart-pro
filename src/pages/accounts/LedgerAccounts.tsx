@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { DocumentActionMenu, type DocumentRowAction } from "@/components/documentEngine/DocumentActionMenu";
 import { useAuth } from "@/hooks/useAuth";
@@ -27,6 +28,7 @@ export default function LedgerAccounts() {
   const [open, setOpen] = useState(false);
   const [editingLedger, setEditingLedger] = useState<LedgerRow | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   // Party-linked ledgers (customer/supplier) are edited on the Party Master,
   // never here -- keeps a single editable source per entity. See
   // src/hooks/useLedgerEditRouter.ts.
@@ -55,7 +57,17 @@ export default function LedgerAccounts() {
     }
   };
 
-  const rows = useMemo(() => ledgers.map((l) => {
+  const filteredLedgers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return ledgers;
+    return ledgers.filter((l) =>
+      l.name.toLowerCase().includes(q) ||
+      (l.group?.name ?? "").toLowerCase().includes(q) ||
+      (l.ledger_type ?? "").toLowerCase().includes(q)
+    );
+  }, [ledgers, search]);
+
+  const rows = useMemo(() => filteredLedgers.map((l) => {
     const bal = l.balance ?? 0;
     return {
       name: `${kindIcon(l)} ${l.name}`,
@@ -69,7 +81,7 @@ export default function LedgerAccounts() {
       _party_id: l.party_id,   // NEW
       _ledger: l,
     };
-  }), [ledgers]);
+  }), [filteredLedgers]);
 
   const receivables = ledgers.filter(l => l.ledger_type === "customer").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
   const payables = ledgers.filter(l => l.ledger_type === "supplier").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
@@ -82,9 +94,20 @@ export default function LedgerAccounts() {
       title="Ledger Accounts"
       description={isLoading ? "Loading…" : "Chart of accounts with running balances computed from posted vouchers."}
       actions={
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> New Ledger
-        </Button>
+        <>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search ledger, group, or type…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 w-64"
+            />
+          </div>
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> New Ledger
+          </Button>
+        </>
       }
       kpis={[
         { label: "Total Ledgers", value: ledgers.length },
@@ -104,6 +127,7 @@ export default function LedgerAccounts() {
       rows={rows}
       onRowClick={(row) => {                                 // NEW
         if (row._party_id) navigate(`/accounts/party/${row._party_id}`);
+        else navigate(`/accounts/ledger/${(row._ledger as LedgerRow).id}`);
       }}
       rowActions={(row) => {
         const ledger = row._ledger as LedgerRow;

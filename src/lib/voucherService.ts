@@ -542,12 +542,14 @@ export async function postVoucher(
 // ─── 5b. cancelVoucher ────────────────────────────────────────────────────────
 
 /**
- * Cancels a posted voucher — the reversal path deleteVoucher() has always
- * pointed users to ("Cancel it first") without this function existing.
- * Never deletes: flips status to "cancelled" so the original entry stays
- * visible for audit. fetchLedgersWithBalance/fetchPartyLedger (accounting.ts)
- * only count "posted" vouchers, so a cancelled voucher's financial effect
- * is fully excluded from balances without altering history.
+ * Cancels a posted voucher — a two-step reversal, distinct from Delete.
+ * Cancel only flips status to "cancelled": the voucher stays in the table,
+ * visible in Voucher Center's "Cancelled" tab (hidden from the default
+ * "Posted" view, see VoucherCenter.tsx's STATUS_FILTERS), and its ledger
+ * effect is excluded from balances since fetchLedgersWithBalance/
+ * fetchPartyLedger (accounting.ts) only count "posted" vouchers. It is
+ * NOT removed from the database — that only happens if the user explicitly
+ * runs Delete afterward (deleteVoucher(), which hard-deletes any status).
  */
 export async function cancelVoucher(
   userId: string,
@@ -746,7 +748,10 @@ export async function listVouchers(
 
   let q = supabase
     .from("vouchers")
-    .select("*", { count: "exact" })
+    .select(`
+      *,
+      voucher_items ( id, ledger_account_id, dr_amount, cr_amount, position, narration, ledger_accounts ( name ) )
+    `, { count: "exact" })
     .eq("business_id", businessId)
     .eq("is_deleted", false)
     .order("voucher_date", { ascending: false })
@@ -773,7 +778,20 @@ export async function listVouchers(
   if (error) throw new Error(`listVouchers: ${error.message}`);
 
   return {
-    data: (data ?? []).map((row: any) => _mapVoucher(row, [])),
+    data: (data ?? []).map((row: any) => {
+      const items: VoucherItem[] = ((row.voucher_items ?? []) as any[])
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map((it) => ({
+          id: it.id,
+          ledger_account_id: it.ledger_account_id,
+          ledger_name: it.ledger_accounts?.name ?? "",
+          debit: Number(it.dr_amount) || 0,
+          credit: Number(it.cr_amount) || 0,
+          remarks: it.narration ?? "",
+        }));
+      return _mapVoucher(row, items);
+    }),
     total: count ?? 0,
   };
 }

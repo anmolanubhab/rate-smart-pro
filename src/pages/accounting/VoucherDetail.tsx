@@ -475,7 +475,8 @@ export default function VoucherDetail() {
             <AlertDialogTitle>Cancel Voucher?</AlertDialogTitle>
             <AlertDialogDescription>
               Voucher <strong>{voucher.voucher_no}</strong> will be marked cancelled and excluded from
-              ledger balances. The entry stays visible for audit — this does not delete it.
+              ledger balances. It stays in Voucher Center's Cancelled tab — this does not delete it;
+              use Delete separately if you want to remove it for good.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-1.5">

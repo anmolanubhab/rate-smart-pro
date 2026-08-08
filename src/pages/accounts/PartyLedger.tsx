@@ -11,12 +11,13 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   ArrowLeft, User, RefreshCw,
-  Search, Calendar,
+  Search, Calendar, BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import {
   fetchPartyLedger,
+  fetchLedgerStatement,
   fmtInr,
   type PartyLedgerLine,
 } from "@/lib/accounting";
@@ -91,7 +92,11 @@ const LEDGER_REPORT_COLUMNS: UdmColumn[] = [
 // ── component ────────────────────────────────────────────────────────────────
 
 export default function PartyLedger() {
-  const { partyId } = useParams<{ partyId: string }>();
+  // Mounted on both /accounts/party/:partyId (customer/supplier ledgers,
+  // looked up via their party) and /accounts/ledger/:ledgerId (system/
+  // non-party ledgers like "Advertisement Expense" that have no party to
+  // key off of) -- exactly one of these two params is set per route.
+  const { partyId, ledgerId } = useParams<{ partyId?: string; ledgerId?: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { business } = useBusiness();
@@ -118,9 +123,11 @@ export default function PartyLedger() {
 
   // ledger data
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["party-ledger", user?.id, partyId, from, to],
-    enabled: !!user?.id && !!partyId,
-    queryFn: () => fetchPartyLedger(user!.id, partyId!, { from, to }),
+    queryKey: ["party-ledger", user?.id, partyId, ledgerId, from, to],
+    enabled: !!user?.id && !!(partyId || ledgerId),
+    queryFn: () => partyId
+      ? fetchPartyLedger(user!.id, partyId, { from, to })
+      : fetchLedgerStatement(user!.id, ledgerId!, { from, to }),
   });
 
   const { ledger, lines = [], closingBalance = 0 } = data ?? {};
@@ -264,10 +271,14 @@ export default function PartyLedger() {
 
         {/* ── Header ── */}
         <header ref={printRef}>
-          <p className="text-sm text-muted-foreground font-medium">Accounts · Party Statement</p>
+          <p className="text-sm text-muted-foreground font-medium">
+            Accounts · {partyId ? "Party Statement" : "Ledger Statement"}
+          </p>
           <h1 className="font-display text-3xl md:text-4xl font-bold mt-1 flex items-center gap-3">
-            <User className="h-7 w-7 text-muted-foreground" />
-            {party?.name ?? ledger?.name ?? "Party Ledger"}
+            {partyId
+              ? <User className="h-7 w-7 text-muted-foreground" />
+              : <BookOpen className="h-7 w-7 text-muted-foreground" />}
+            {party?.name ?? ledger?.name ?? "Ledger"}
           </h1>
           {party?.phone && (
             <p className="text-muted-foreground mt-1">{party.phone}</p>
@@ -316,10 +327,14 @@ export default function PartyLedger() {
         {/* ── No ledger found ── */}
         {!isLoading && !ledger && (
           <div className="rounded-2xl border border-border bg-card p-10 text-center text-muted-foreground">
-            <p className="font-medium">No ledger found for this party.</p>
-            <p className="text-sm mt-1">
-              "Sync from existing data" button use karein Ledger Accounts page pe.
+            <p className="font-medium">
+              {partyId ? "No ledger found for this party." : "Ledger not found."}
             </p>
+            {partyId && (
+              <p className="text-sm mt-1">
+                "Sync from existing data" button use karein Ledger Accounts page pe.
+              </p>
+            )}
             <Button variant="outline" className="mt-4" onClick={() => navigate("/accounts/ledgers")}>
               Go to Ledger Accounts
             </Button>

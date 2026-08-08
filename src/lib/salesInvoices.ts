@@ -285,7 +285,18 @@ export async function generateInvoiceFromOrder(opts: {
   const order = await fetchOrder(opts.orderId);
   if (!order) throw new Error("Order not found");
   if (order.status === "cancelled") throw new Error("Cannot invoice a cancelled order");
-  if ((order as any).invoice_id) throw new Error("Order already invoiced");
+  // orders has no invoice_id/invoiced_at column — the old check here
+  // (`order.invoice_id`) always read undefined and never blocked anything,
+  // which is how the same order kept generating fresh duplicate invoices on
+  // every click. sales_invoices.order_id is the real source of truth.
+  const { data: existingInvoice } = await supabase
+    .from("sales_invoices")
+    .select("id")
+    .eq("order_id", opts.orderId)
+    .neq("status", "cancelled")
+    .limit(1)
+    .maybeSingle();
+  if (existingInvoice) throw new Error("Order already invoiced");
   if (opts.requireApproval && order.status !== "approved" && order.status !== "completed") {
     throw new Error("Order must be approved before invoicing");
   }
@@ -382,15 +393,14 @@ export async function generateInvoiceFromOrder(opts: {
     throw e2;
   }
 
-  // Link invoice on order + mark invoiced
-  await supabase
+  // Mark the order invoiced — orders has no invoice_id/invoiced_at column,
+  // just status. This must not fail silently: it's what keeps "Generate
+  // Invoice" from staying clickable on the Orders page after this succeeds.
+  const { error: orderUpdateErr } = await supabase
     .from("orders")
-    .update({
-      invoice_id: inv.id,
-      invoiced_at: new Date().toISOString(),
-      status: "invoiced",
-    } as any)
+    .update({ status: "invoiced" } as any)
     .eq("id", opts.orderId);
+  if (orderUpdateErr) throw orderUpdateErr;
 
   return inv as SalesInvoice;
 }

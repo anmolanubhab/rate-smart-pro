@@ -56,6 +56,8 @@ export default function DayBook() {
       date: v.voucher_date,
       number: v.voucher_number,
       type: labels[v.voucher_type] ?? v.voucher_type,
+      debited_to: v.dr_ledgers?.length ? v.dr_ledgers.join(", ") : "—",
+      credited_to: v.cr_ledgers?.length ? v.cr_ledgers.join(", ") : "—",
       narration: v.narration ?? "—",
       amount: v.total_amount,
       _party_id: partyId,
@@ -80,6 +82,8 @@ export default function DayBook() {
         { key: "date", label: "Date" },
         { key: "number", label: "Voucher #" },
         { key: "type", label: "Type" },
+        { key: "debited_to", label: "Debited To" },
+        { key: "credited_to", label: "Credited To" },
         { key: "narration", label: "Narration" },
         { key: "amount", label: "Amount", align: "right", format: "currency" },
       ]}

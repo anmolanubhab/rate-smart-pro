@@ -28,6 +28,11 @@ export type VoucherRow = {
   status: string;
   reference_id: string | null;
   reference_type: string | null;
+  /** Ledger names on the debit/credit side, in line-item order — e.g. a
+   *  sales voucher's dr_ledgers is the customer, cr_ledgers is Sales
+   *  Account (+ GST ledgers). Populated by fetchVouchers only. */
+  dr_ledgers?: string[];
+  cr_ledgers?: string[];
 };
 
 export type VoucherItemRow = {
@@ -176,7 +181,10 @@ export async function fetchVouchers(userId: string, opts: { type?: string; from?
   const biz = getActiveBusinessIdSync();
   let q = supabase
     .from("vouchers")
-    .select("id, voucher_number, voucher_type, voucher_date, narration, total_amount, status, reference_id, reference_type")
+    .select(`
+      id, voucher_number, voucher_type, voucher_date, narration, total_amount, status, reference_id, reference_type,
+      voucher_items ( dr_amount, cr_amount, position, ledger_accounts ( name ) )
+    `)
     .eq("user_id", userId)
     .eq("is_deleted", false)
     .order("voucher_date", { ascending: false })
@@ -188,7 +196,14 @@ export async function fetchVouchers(userId: string, opts: { type?: string; from?
   if (opts.to) q = q.lte("voucher_date", opts.to);
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as VoucherRow[];
+
+  return (data ?? []).map((v: any) => {
+    const items = ((v.voucher_items ?? []) as any[]).slice().sort((a, b) => a.position - b.position);
+    const dr_ledgers = items.filter((i) => Number(i.dr_amount) > 0).map((i) => i.ledger_accounts?.name).filter(Boolean);
+    const cr_ledgers = items.filter((i) => Number(i.cr_amount) > 0).map((i) => i.ledger_accounts?.name).filter(Boolean);
+    const { voucher_items, ...rest } = v;
+    return { ...rest, dr_ledgers, cr_ledgers };
+  }) as VoucherRow[];
 }
 
 export async function fetchVoucherItems(userId: string, voucherIds: string[]) {
@@ -375,6 +390,54 @@ export async function fetchPartyLedger(
     return { ledger: null, lines: [], closingBalance: 0 };
   }
 
+  return buildLedgerStatement(userId, businessId, ledger as LedgerRow, opts);
+}
+
+/**
+ * Same statement view as fetchPartyLedger, but for any ledger looked up
+ * directly by its own id — covers system/non-party ledgers (e.g. expense,
+ * income, cash/bank accounts) that have no party_id to key off of, so
+ * "Advertisement Expense" etc. can be opened and drilled into like a party
+ * ledger can.
+ */
+export async function fetchLedgerStatement(
+  userId: string,
+  ledgerId: string,
+  opts?: { from?: string; to?: string }
+): Promise<{
+  ledger: LedgerRow | null;
+  lines: PartyLedgerLine[];
+  closingBalance: number;
+}> {
+  const businessId = getActiveBusinessIdSync();
+  if (!businessId) throw new Error("No active business");
+
+  const { data: ledger, error: ledgerError } = await supabase
+    .from("ledger_accounts")
+    .select("*")
+    .eq("id", ledgerId)
+    .eq("business_id", businessId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (ledgerError) throw new Error(`fetchLedgerStatement ledger: ${ledgerError.message}`);
+  if (!ledger) {
+    return { ledger: null, lines: [], closingBalance: 0 };
+  }
+
+  return buildLedgerStatement(userId, businessId, ledger as LedgerRow, opts);
+}
+
+async function buildLedgerStatement(
+  userId: string,
+  businessId: string,
+  ledger: LedgerRow,
+  opts?: { from?: string; to?: string }
+): Promise<{
+  ledger: LedgerRow | null;
+  lines: PartyLedgerLine[];
+  closingBalance: number;
+}> {
   // 2. Fetch voucher items for this ledger with related vouchers
   let query = supabase
     .from("voucher_items")

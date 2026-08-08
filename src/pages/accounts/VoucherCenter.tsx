@@ -26,6 +26,18 @@ const labels: Record<string, string> = {
   journal: "Journal", contra: "Contra", credit_note: "Credit Note", debit_note: "Debit Note",
 };
 
+// Cancelling a voucher only flips its status (cancelVoucher() in
+// voucherService.ts) — it still exists until someone explicitly Deletes it
+// (the row-level Trash icon below, which works regardless of status). So
+// cancelled vouchers stay findable under their own tab; they're just not
+// in the default view, which is Posted only.
+const STATUS_FILTERS: { key: string; label: string }[] = [
+  { key: "posted", label: "Posted" },
+  { key: "draft", label: "Draft" },
+  { key: "cancelled", label: "Cancelled" },
+  { key: "all", label: "All" },
+];
+
 export default function VoucherCenter() {
   useEffect(() => { document.title = "Voucher Center — RD Pro"; }, []);
   const { user } = useAuth();
@@ -33,6 +45,7 @@ export default function VoucherCenter() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [filter, setFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("posted");
   const [deleteTarget, setDeleteTarget] = useState<VoucherRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -93,17 +106,21 @@ export default function VoucherCenter() {
     }
   };
 
-  const rows = useMemo(() => data.map((v) => ({
-    id: v.id,
-    date: v.voucher_date,
-    number: v.voucher_number,
-    type: labels[v.voucher_type] ?? v.voucher_type,
-    narration: v.narration ?? "—",
-    amount: v.total_amount,
-    status: v.status === "posted" ? "Posted" : v.status === "draft" ? "Draft" : "Cancelled",
-    status_tone: v.status === "posted" ? "success" : v.status === "draft" ? "warning" : "danger",
-    _voucher: v,
-  })), [data]);
+  const rows = useMemo(() => data
+    .filter((v) => statusFilter === "all" || v.status === statusFilter)
+    .map((v) => ({
+      id: v.id,
+      date: v.voucher_date,
+      number: v.voucher_number,
+      type: labels[v.voucher_type] ?? v.voucher_type,
+      debited_to: v.dr_ledgers?.length ? v.dr_ledgers.join(", ") : "—",
+      credited_to: v.cr_ledgers?.length ? v.cr_ledgers.join(", ") : "—",
+      narration: v.narration ?? "—",
+      amount: v.total_amount,
+      status: v.status === "posted" ? "Posted" : v.status === "draft" ? "Draft" : "Cancelled",
+      status_tone: v.status === "posted" ? "success" : v.status === "draft" ? "warning" : "danger",
+      _voucher: v,
+    })), [data, statusFilter]);
 
   return (
     <div className="max-w-7xl mx-auto space-y-4">
@@ -125,20 +142,30 @@ export default function VoucherCenter() {
           </Badge>
         ))}
       </div>
+      <div className="flex flex-wrap gap-2">
+        {STATUS_FILTERS.map((s) => (
+          <Badge key={s.key} variant="outline" onClick={() => setStatusFilter(s.key)}
+            className={`cursor-pointer transition ${statusFilter === s.key ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}>
+            {s.label}
+          </Badge>
+        ))}
+      </div>
       <MockTablePage
         eyebrow="Accounts"
         title="Voucher Center"
-        description={isLoading ? "Loading…" : "All posted vouchers. Sales vouchers are auto-posted when an order is completed."}
+        description={isLoading ? "Loading…" : "Cancelled vouchers are hidden by default — switch the status tab above to see them, and Delete to remove one for good."}
         kpis={[
-          { label: "Total Vouchers", value: data.length },
+          { label: "Shown", value: rows.length },
           { label: "Posted", value: data.filter(v => v.status === "posted").length, tone: "success" },
           { label: "Draft", value: data.filter(v => v.status === "draft").length, tone: "warning" },
-          { label: "Filter", value: filter === "All" ? "All" : labels[filter] },
+          { label: "Cancelled", value: data.filter(v => v.status === "cancelled").length, tone: "danger" },
         ]}
         columns={[
           { key: "date", label: "Date" },
           { key: "number", label: "Voucher #" },
           { key: "type", label: "Type" },
+          { key: "debited_to", label: "Debited To" },
+          { key: "credited_to", label: "Credited To" },
           { key: "narration", label: "Narration" },
           { key: "amount", label: "Amount", align: "right", format: "currency" },
           { key: "status", label: "Status", format: "badge" },
