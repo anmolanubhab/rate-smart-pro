@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchVouchers, fmtInr } from "@/lib/accounting";
@@ -18,11 +19,13 @@ export default function DayBook() {
   const { user } = useAuth();
   const { business } = useBusiness();
   const navigate = useNavigate();
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const { data = [], isLoading } = useQuery({
-    queryKey: ["daybook", user?.id, business?.id],
+    queryKey: ["daybook", user?.id, business?.id, fromDate, toDate],
     enabled: !!user?.id,
-    queryFn: () => fetchVouchers(user!.id, { limit: 500 }),
+    queryFn: () => fetchVouchers(user!.id, { from: fromDate || undefined, to: toDate || undefined, limit: 500 }),
   });
 
   // Fetch party_id for vouchers that reference orders
@@ -72,6 +75,13 @@ export default function DayBook() {
       eyebrow="Accounts · Books"
       title="Day Book"
       description={isLoading ? "Loading…" : "Chronological list of all posted vouchers."}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-auto" />
+          <span className="text-muted-foreground text-sm">to</span>
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-auto" />
+        </div>
+      }
       kpis={[
         { label: "Vouchers", value: data.length },
         { label: "Total Value", value: `₹ ${fmtInr(total)}`, tone: "success" },

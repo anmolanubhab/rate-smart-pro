@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Eye, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -48,15 +49,17 @@ export default function VoucherCenter() {
   const [statusFilter, setStatusFilter] = useState("posted");
   const [deleteTarget, setDeleteTarget] = useState<VoucherRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   // F4/F5/F6/F7/Ctrl+F8/Ctrl+F9 jump straight into a new voucher of that
   // type from the listing page too, not just from inside an entry screen.
   useVoucherShortcuts({ onSwitchType: (t) => navigate(VOUCHER_TYPE_CONFIGS[t].path) }, [navigate]);
 
   const { data = [], isLoading } = useQuery({
-    queryKey: ["vouchers", user?.id, filter],
+    queryKey: ["vouchers", user?.id, filter, fromDate, toDate],
     enabled: !!user?.id,
-    queryFn: () => fetchVouchers(user!.id, { type: filter, limit: 500 }),
+    queryFn: () => fetchVouchers(user!.id, { type: filter, from: fromDate || undefined, to: toDate || undefined, limit: 500 }),
   });
 
   // Fetched once per business rather than per row -- isDateLocked() below is
@@ -154,6 +157,13 @@ export default function VoucherCenter() {
         eyebrow="Accounts"
         title="Voucher Center"
         description={isLoading ? "Loading…" : "Cancelled vouchers are hidden by default — switch the status tab above to see them, and Delete to remove one for good."}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-auto" />
+            <span className="text-muted-foreground text-sm">to</span>
+            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-auto" />
+          </div>
+        }
         kpis={[
           { label: "Shown", value: rows.length },
           { label: "Posted", value: data.filter(v => v.status === "posted").length, tone: "success" },

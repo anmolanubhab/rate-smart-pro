@@ -1,11 +1,14 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchLedgersWithBalance, fetchVouchers, fetchVoucherItems, fmtInr, type VoucherItemRow } from "@/lib/accounting";
 
 function BookPage({ kind, title, eyebrow }: { kind: "cash" | "bank"; title: string; eyebrow: string }) {
   const { user } = useAuth();
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const { data, isLoading } = useQuery({
     queryKey: [`${kind}-book`, user?.id],
     enabled: !!user?.id,
@@ -63,16 +66,46 @@ function BookPage({ kind, title, eyebrow }: { kind: "cash" | "bank"; title: stri
     },
   });
 
+  // Recompute opening/closing/receipts/payments for the selected range: the
+  // ledger's true opening balance rolls forward through every voucher up to
+  // the day before "from", not just resetting to the ledger's static
+  // opening_balance -- otherwise picking a range would show a wrong opening.
+  const view = useMemo(() => {
+    const allRows = data?.rows ?? [];
+    if (!fromDate && !toDate) {
+      return { rows: allRows, opening: data?.opening ?? 0, receipts: data?.receipts ?? 0, payments: data?.payments ?? 0, closing: data?.closing ?? 0 };
+    }
+    let opening = data?.opening ?? 0;
+    const rows: typeof allRows = [];
+    let receipts = 0, payments = 0;
+    for (const r of allRows) {
+      if (fromDate && r.date < fromDate) { opening = r.balance; continue; }
+      if (toDate && r.date > toDate) continue;
+      rows.push(r);
+      receipts += r.dr;
+      payments += r.cr;
+    }
+    const closing = rows.length ? rows[rows.length - 1].balance : opening;
+    return { rows, opening, receipts, payments, closing };
+  }, [data, fromDate, toDate]);
+
   return (
     <MockTablePage
       eyebrow={eyebrow}
       title={title}
       description={isLoading ? "Loading…" : `${data?.ledgerCount ?? 0} ${kind} ledger(s) · receipts and payments with running balance.`}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-auto" />
+          <span className="text-muted-foreground text-sm">to</span>
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-auto" />
+        </div>
+      }
       kpis={[
-        { label: "Opening", value: `₹ ${fmtInr(data?.opening ?? 0)}` },
-        { label: "Receipts", value: `₹ ${fmtInr(data?.receipts ?? 0)}`, tone: "success" },
-        { label: "Payments", value: `₹ ${fmtInr(data?.payments ?? 0)}`, tone: "warning" },
-        { label: "Closing", value: `₹ ${fmtInr(data?.closing ?? 0)}`, tone: (data?.closing ?? 0) >= 0 ? "success" : "danger" },
+        { label: "Opening", value: `₹ ${fmtInr(view.opening)}` },
+        { label: "Receipts", value: `₹ ${fmtInr(view.receipts)}`, tone: "success" },
+        { label: "Payments", value: `₹ ${fmtInr(view.payments)}`, tone: "warning" },
+        { label: "Closing", value: `₹ ${fmtInr(view.closing)}`, tone: view.closing >= 0 ? "success" : "danger" },
       ]}
       columns={[
         { key: "date", label: "Date" },
@@ -83,7 +116,7 @@ function BookPage({ kind, title, eyebrow }: { kind: "cash" | "bank"; title: stri
         { key: "cr", label: "Payment (Cr)", align: "right", format: "currency" },
         { key: "balance", label: "Balance", align: "right", format: "currency" },
       ]}
-      rows={data?.rows ?? []}
+      rows={view.rows}
     />
   );
 }
