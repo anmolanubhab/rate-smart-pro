@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -41,6 +42,8 @@ export default function VendorClaimRegister() {
   useEffect(() => { document.title = "Vendor Claim Register — RD Pro"; }, []);
   const { business } = useBusiness();
   const businessId = business?.id;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const invoiceFilter = searchParams.get("invoice");
   const [rows, setRows] = useState<ClaimRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<ClaimRow | null>(null);
@@ -93,9 +96,14 @@ export default function VendorClaimRegister() {
     }
   };
 
+  const visibleRows = useMemo(
+    () => (invoiceFilter ? rows.filter((r) => r.invoice_number === invoiceFilter) : rows),
+    [rows, invoiceFilter]
+  );
+
   const bySupplier = useMemo(() => {
     const m = new Map<string, { name: string; total: number; count: number }>();
-    for (const r of rows) {
+    for (const r of visibleRows) {
       const cur = m.get(r.supplier_name) ?? { name: r.supplier_name, total: 0, count: 0 };
       cur.total += r.total_amount;
       cur.count += 1;
@@ -104,11 +112,11 @@ export default function VendorClaimRegister() {
     return [...m.values()].sort((a, b) => b.total - a.total);
   }, [rows]);
 
-  const totalClaims = rows.reduce((s, r) => s + r.total_amount, 0);
-  const qcClaims = rows.filter((r) => r.source === "qc").reduce((s, r) => s + r.total_amount, 0);
+  const totalClaims = visibleRows.reduce((s, r) => s + r.total_amount, 0);
+  const qcClaims = visibleRows.filter((r) => r.source === "qc").reduce((s, r) => s + r.total_amount, 0);
   const manualClaims = totalClaims - qcClaims;
 
-  const tableRows = rows.map((r) => ({
+  const tableRows = visibleRows.map((r) => ({
     id: r.id,
     return_no: r.return_number,
     date: r.return_date,
@@ -123,7 +131,7 @@ export default function VendorClaimRegister() {
 
   const doExport = () =>
     exportSheet(
-      rows.map((r) => ({
+      visibleRows.map((r) => ({
         "Return #": r.return_number,
         Date: r.return_date,
         Supplier: r.supplier_name,
@@ -145,12 +153,21 @@ export default function VendorClaimRegister() {
         description={
           loading
             ? "Loading…"
+            : invoiceFilter
+            ? `Showing Debit Notes against invoice ${invoiceFilter} only.`
             : "All Purchase Debit Notes (manual returns + QC-driven rejections) across suppliers. Original purchase invoices are never modified — every claim here is a separate, auditable document."
         }
         actions={
-          <Button variant="outline" onClick={doExport} disabled={rows.length === 0}>
-            <Download className="h-4 w-4 mr-2" />Export
-          </Button>
+          <div className="flex items-center gap-2">
+            {invoiceFilter && (
+              <Button variant="ghost" onClick={() => setSearchParams({})}>
+                Clear filter
+              </Button>
+            )}
+            <Button variant="outline" onClick={doExport} disabled={visibleRows.length === 0}>
+              <Download className="h-4 w-4 mr-2" />Export
+            </Button>
+          </div>
         }
         kpis={[
           { label: "Total Claims", value: `₹ ${totalClaims.toLocaleString("en-IN")}` },

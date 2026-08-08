@@ -35,6 +35,7 @@ export interface GoodsReceiptItem {
   ordered_qty: number;
   received_qty: number;
   damaged_qty: number;
+  shortage_qty: number;
   accepted_qty: number;
   pending_qty: number;
   short_qty: number;
@@ -44,6 +45,8 @@ export interface GoodsReceiptItem {
   qc_reason_category: string | null;
   unit_id: string | null;
   stock_accepted_qty: number | null;
+  stock_shortage_qty: number | null;
+  stock_received_qty: number | null;
   bin_id: string | null;
   // joined, read-only
   product_name?: string;
@@ -121,7 +124,7 @@ export async function cancelGRN(grnId: string): Promise<void> {
   const { data: rawItems, error: itemsErr } = await supabase
     .from("goods_receipt_items")
     .select(`
-      product_id, accepted_qty,
+      product_id, accepted_qty, damaged_qty, shortage_qty,
       goods_receipt_item_batches(batch_id, qty),
       goods_receipt_item_serials(serial_id)
     `)
@@ -129,11 +132,20 @@ export async function cancelGRN(grnId: string): Promise<void> {
   if (itemsErr) throw itemsErr;
 
   for (const item of (rawItems ?? []) as any[]) {
-    if (item.product_id && Number(item.accepted_qty) > 0) {
-      const { data: product } = await supabase.from("products").select("stock").eq("id", item.product_id).single();
-      const before = Number(product?.stock) || 0;
-      const after = Math.max(0, before - Number(item.accepted_qty));
-      await supabase.from("products").update({ stock: after }).eq("id", item.product_id);
+    if (item.product_id) {
+      const heldQty = Number(item.damaged_qty ?? 0) + Number(item.shortage_qty ?? 0);
+      if (Number(item.accepted_qty) > 0 || heldQty > 0) {
+        const { data: product } = await supabase.from("products").select("stock, stock_on_hold").eq("id", item.product_id).single();
+        const stockBefore = Number(product?.stock) || 0;
+        const holdBefore = Number((product as any)?.stock_on_hold) || 0;
+        // Mirrors the rest of this function: a plain balance update, no
+        // inventory_movements row (this GRN-cancel path has never logged
+        // movements even for the accepted-qty reversal above it).
+        await supabase.from("products").update({
+          stock: Math.max(0, stockBefore - Number(item.accepted_qty)),
+          stock_on_hold: Math.max(0, holdBefore - heldQty),
+        } as any).eq("id", item.product_id);
+      }
     }
     for (const b of item.goods_receipt_item_batches ?? []) {
       await adjustProductBatchQty(b.batch_id, -Number(b.qty));
@@ -214,6 +226,8 @@ export interface GRNLine {
   ordered_qty: number;
   received_qty: number;
   damaged_qty: number;
+  /** Physical-verification shortage within received_qty — distinct from short_qty (ordered vs received PO gap). */
+  shortage_qty: number;
   accepted_qty: number;
   pending_qty: number;
   short_qty: number;
@@ -222,6 +236,8 @@ export interface GRNLine {
   qc_reason_category: string | null;
   unit_id: string | null;
   stock_accepted_qty: number | null;
+  stock_shortage_qty: number | null;
+  stock_received_qty: number | null;
   /** Put-away bin. Null = auto (product's default bin, else the warehouse's Unassigned bin). */
   bin_id: string | null;
   tracking?: GRNBatchSerialResult;
@@ -275,6 +291,7 @@ export async function fetchPendingPOItemsForGRN(poId: string): Promise<GRNLine[]
         ordered_qty: remaining,
         received_qty: remaining,
         damaged_qty: 0,
+        shortage_qty: 0,
         accepted_qty: remaining,
         pending_qty: 0,
         short_qty: 0,
@@ -283,6 +300,8 @@ export async function fetchPendingPOItemsForGRN(poId: string): Promise<GRNLine[]
         qc_reason_category: null,
         unit_id: item.unit_id ?? null,
         stock_accepted_qty: pu.length ? toStockQty(remaining, item.unit_id, pu) : null,
+        stock_shortage_qty: null,
+        stock_received_qty: pu.length ? toStockQty(remaining, item.unit_id, pu) : null,
         bin_id: null,
       };
     })
@@ -473,6 +492,7 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
         ordered_qty: item.ordered_qty,
         received_qty: item.received_qty,
         damaged_qty: item.damaged_qty,
+        shortage_qty: item.shortage_qty,
         accepted_qty: item.accepted_qty,
         pending_qty: item.pending_qty,
         short_qty: item.short_qty,
@@ -481,6 +501,8 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
         qc_reason_category: item.qc_reason_category || null,
         unit_id: item.unit_id,
         stock_accepted_qty: item.stock_accepted_qty,
+        stock_shortage_qty: item.stock_shortage_qty,
+        stock_received_qty: item.stock_received_qty,
         bin_id: item.bin_id ?? null,
       })
       .select("id, product_id")
@@ -609,6 +631,7 @@ export async function duplicateGRN(id: string, userId: string): Promise<GoodsRec
       ordered_qty: it.ordered_qty,
       received_qty: it.received_qty,
       damaged_qty: it.damaged_qty,
+      shortage_qty: it.shortage_qty,
       accepted_qty: it.accepted_qty,
       pending_qty: it.pending_qty,
       short_qty: it.short_qty,
@@ -617,6 +640,8 @@ export async function duplicateGRN(id: string, userId: string): Promise<GoodsRec
       qc_reason_category: it.qc_reason_category,
       unit_id: it.unit_id,
       stock_accepted_qty: it.stock_accepted_qty,
+      stock_shortage_qty: it.stock_shortage_qty,
+      stock_received_qty: it.stock_received_qty,
     }));
     const { error: itemsErr } = await supabase.from("goods_receipt_items").insert(rows);
     if (itemsErr) throw itemsErr;

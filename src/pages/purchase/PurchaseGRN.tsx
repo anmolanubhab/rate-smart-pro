@@ -47,8 +47,9 @@ const BASE_GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "ordered", header: "Ordered", align: "right", widthClass: "w-16" },
   { key: "received", header: "Total Received", align: "right", widthClass: "w-24" },
   { key: "damaged", header: "Damaged Qty", align: "right", widthClass: "w-24" },
+  { key: "shortage", header: "Shortage", align: "right", widthClass: "w-24" },
   { key: "accepted", header: "Good Stock", align: "right", widthClass: "w-20" },
-  { key: "short", header: "Short", align: "right", widthClass: "w-14" },
+  { key: "short", header: "PO Gap", align: "right", widthClass: "w-14" },
   { key: "excess", header: "Excess", align: "right", widthClass: "w-14" },
   { key: "reason", header: "Reason", widthClass: "w-40" },
   { key: "remarks", header: "Quality Remarks", widthClass: "min-w-[140px]" },
@@ -149,6 +150,7 @@ export default function PurchaseGRN() {
               ordered_qty: Number(it.ordered_qty),
               received_qty: Number(it.received_qty),
               damaged_qty: Number(it.damaged_qty),
+              shortage_qty: Number(it.shortage_qty ?? 0),
               accepted_qty: Number(it.accepted_qty),
               pending_qty: Number(it.pending_qty),
               short_qty: Number(it.short_qty),
@@ -157,6 +159,8 @@ export default function PurchaseGRN() {
               qc_reason_category: it.qc_reason_category,
               unit_id: it.unit_id,
               stock_accepted_qty: it.stock_accepted_qty,
+              stock_shortage_qty: it.stock_shortage_qty ?? null,
+              stock_received_qty: it.stock_received_qty ?? null,
               bin_id: it.bin_id ?? null,
             })),
           );
@@ -205,22 +209,27 @@ export default function PurchaseGRN() {
     }
   };
 
-  const handleQtyChange = (index: number, field: "received_qty" | "damaged_qty", value: number) => {
+  const handleQtyChange = (index: number, field: "received_qty" | "damaged_qty" | "shortage_qty", value: number) => {
     setItems((rows) => rows.map((row, i) => {
       if (i !== index) return row;
       const item = { ...row };
       if (field === "received_qty") item.received_qty = Math.max(0, value);
       if (field === "damaged_qty") item.damaged_qty = Math.max(0, value);
-      // Damaged qty can never exceed what was actually received -- without this,
-      // a stray large number in Damaged (with Received left at its default) produces
-      // a nonsensical state (e.g. "0 received, 700 damaged").
+      if (field === "shortage_qty") item.shortage_qty = Math.max(0, value);
+      // Damaged + physical shortage can never exceed what was actually
+      // received -- without this, a stray large number in either field
+      // (with Received left at its default) produces a nonsensical state
+      // (e.g. "0 received, 700 damaged").
       item.damaged_qty = Math.min(item.damaged_qty, item.received_qty);
-      item.accepted_qty = Math.max(0, item.received_qty - item.damaged_qty);
+      item.shortage_qty = Math.min(item.shortage_qty, Math.max(0, item.received_qty - item.damaged_qty));
+      item.accepted_qty = Math.max(0, item.received_qty - item.damaged_qty - item.shortage_qty);
       item.pending_qty = Math.max(0, item.ordered_qty - item.received_qty);
       item.short_qty = Math.max(0, item.ordered_qty - item.received_qty);
       item.excess_qty = Math.max(0, item.received_qty - item.ordered_qty);
       const pu = unitsByProduct[item.product_id];
       item.stock_accepted_qty = pu?.length ? toStockQty(item.accepted_qty, item.unit_id, pu) : null;
+      item.stock_shortage_qty = pu?.length ? toStockQty(item.shortage_qty, item.unit_id, pu) : null;
+      item.stock_received_qty = pu?.length ? toStockQty(item.received_qty, item.unit_id, pu) : null;
       item.tracking = undefined; // qty changed — any prior batch/serial entry no longer matches
       return item;
     }));
@@ -324,8 +333,9 @@ export default function PurchaseGRN() {
     ordered: acc.ordered + it.ordered_qty,
     received: acc.received + it.received_qty,
     damaged: acc.damaged + it.damaged_qty,
+    shortage: acc.shortage + it.shortage_qty,
     accepted: acc.accepted + it.accepted_qty,
-  }), { ordered: 0, received: 0, damaged: 0, accepted: 0 }), [items]);
+  }), { ordered: 0, received: 0, damaged: 0, shortage: 0, accepted: 0 }), [items]);
 
   const toolbarActions: DocumentToolbarAction[] = [
     { key: "save", label: "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: () => handleSave("draft"), disabled: loading || readOnly },
@@ -437,7 +447,7 @@ export default function PurchaseGRN() {
 
         {items.length > 0 && !readOnly && (
           <p className="px-3 py-1.5 text-[10px] text-muted-foreground border-b border-border bg-muted/30 print:hidden">
-            Enter the <strong className="text-foreground">total</strong> qty the supplier delivered under <strong className="text-foreground">Total Received</strong>, then how much of that was bad under <strong className="text-foreground">Damaged Qty</strong> — Good Stock (what actually enters inventory) is calculated for you.
+            Enter the <strong className="text-foreground">total</strong> qty the supplier delivered under <strong className="text-foreground">Total Received</strong>, then how much of that was bad under <strong className="text-foreground">Damaged Qty</strong> and how much was physically missing under <strong className="text-foreground">Shortage</strong> — Good Stock (what actually enters inventory) is calculated for you.
           </p>
         )}
 
@@ -479,11 +489,19 @@ export default function PurchaseGRN() {
                   className="h-6 w-full text-[12px] font-mono px-1 text-right text-destructive rounded border border-input bg-background focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60 disabled:bg-transparent disabled:border-0"
                 />
               </td>
+              <td className="px-0.5 py-0.5">
+                <input
+                  type="number" disabled={readOnly} value={item.shortage_qty}
+                  onChange={(e) => handleQtyChange(idx, "shortage_qty", Number(e.target.value))}
+                  title="Editable: how much of the received qty was physically missing at verification (distinct from Damaged)"
+                  className="h-6 w-full text-[12px] font-mono px-1 text-right text-destructive rounded border border-input bg-background focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60 disabled:bg-transparent disabled:border-0"
+                />
+              </td>
               <td className="px-1.5 py-1 text-right font-bold text-emerald-600 tabular-nums">{fmt(item.accepted_qty)}</td>
               <td className="px-1.5 py-1 text-right font-semibold text-destructive tabular-nums">{item.short_qty || "—"}</td>
               <td className="px-1.5 py-1 text-right font-semibold text-orange-500 tabular-nums">{item.excess_qty || "—"}</td>
               <td className="px-0.5 py-0.5">
-                {item.damaged_qty > 0 || item.short_qty > 0 ? (
+                {item.damaged_qty > 0 || item.shortage_qty > 0 || item.short_qty > 0 ? (
                   <select
                     value={item.qc_reason_category ?? ""} disabled={readOnly}
                     onChange={(e) => handleReasonChange(idx, e.target.value)}
@@ -536,6 +554,7 @@ export default function PurchaseGRN() {
             <div><span className="text-muted-foreground">Total Ordered: </span><strong>{fmt(totals.ordered)}</strong></div>
             <div><span className="text-muted-foreground">Total Received: </span><strong>{fmt(totals.received)}</strong></div>
             <div><span className="text-destructive">Total Damaged: </span><strong>{fmt(totals.damaged)}</strong></div>
+            <div><span className="text-destructive">Total Shortage: </span><strong>{fmt(totals.shortage)}</strong></div>
             <div><span className="text-emerald-600">Total Good Stock: </span><strong>{fmt(totals.accepted)}</strong></div>
           </div>
         )}
