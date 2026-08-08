@@ -295,6 +295,7 @@ const App = () => (
               <Route path="/accounts/profit-loss" element={L(<ProfitLoss />)} />
               <Route path="/accounts/balance-sheet" element={L(<BalanceSheet />)} />
               <Route path="/accounts/party/:partyId" element={L(<PartyLedger />)} /> {/* NEW */}
+              <Route path="/accounts/ledger/:ledgerId" element={L(<PartyLedger />)} />
               <Route path="/accounts/receivables" element={L(<Receivables />)} />
               <Route path="/accounts/payables" element={L(<Payables />)} />
               {/* Voucher Engine — new routes */}
