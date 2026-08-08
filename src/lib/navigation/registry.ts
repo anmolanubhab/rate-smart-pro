@@ -137,6 +137,26 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["outstanding", "ageing", "aging", "overdue", "receivables"],
     showInSidebar: false,
   },
+  {
+    id: "reports-sales-performance",
+    title: "Sales Performance Report",
+    description: "Group → Salesman → Party drill-down with bills, sales, GST, returns and net revenue",
+    route: "/reports/sales-performance",
+    icon: FileText,
+    module: "Reports",
+    keywords: ["salesman", "sales team", "performance", "commission", "target", "drill down"],
+    showInSidebar: false,
+  },
+  {
+    id: "reports-party-part-sales",
+    title: "Party Part-wise Sales Report",
+    description: "Per-party part/item sales with rate, discount, and invoice-wise drill-down",
+    route: "/reports/party-part-sales",
+    icon: FileText,
+    module: "Reports",
+    keywords: ["party", "part number", "item", "rate history", "customer", "drill down"],
+    showInSidebar: false,
+  },
 
   // ==========================================================================
   // SALES
@@ -259,6 +279,24 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Users,
     module: "Sales",
     keywords: ["masters", "grouping"],
+  },
+  {
+    id: "salesman-groups",
+    title: "Salesman Groups",
+    description: "Group salesmen by team/region for the Sales Performance Report",
+    route: "/masters/salesman-groups",
+    icon: Users,
+    module: "Sales",
+    keywords: ["masters", "salesman", "team", "territory"],
+  },
+  {
+    id: "salesmen",
+    title: "Salesmen",
+    description: "Salesman master — assign to a group, then to parties",
+    route: "/masters/salesmen",
+    icon: Users,
+    module: "Sales",
+    keywords: ["masters", "salesman", "sales rep"],
   },
   {
     id: "sales-config",

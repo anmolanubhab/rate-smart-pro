@@ -11,6 +11,23 @@ import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings
  * unchanged when the feature or the Sales Invoice module toggle is off, or
  * when there's no business to look settings up against.
  */
+/**
+ * Snapshots the salesman's CURRENT group onto the invoice at creation time.
+ * Deliberately a one-time copy, not a live join to salesmen.salesman_group_id
+ * -- the whole point of the snapshot is that moving this salesman to a
+ * different group later never rewrites this invoice's reported group in the
+ * Sales Performance Report.
+ */
+async function resolveSalesmanGroupSnapshot(salesmanId: string | null | undefined): Promise<string | null> {
+  if (!salesmanId) return null;
+  const { data } = await supabase
+    .from("salesmen" as never)
+    .select("salesman_group_id")
+    .eq("id", salesmanId)
+    .maybeSingle();
+  return (data as unknown as { salesman_group_id: string | null } | null)?.salesman_group_id ?? null;
+}
+
 async function applySalesInvoiceRoundOff(businessId: string | null, rawTotal: number): Promise<{ round_off_amount: number; grand_total: number }> {
   if (!businessId) return { round_off_amount: 0, grand_total: rawTotal };
   const settings = await fetchRoundOffSettings(businessId);
@@ -35,6 +52,8 @@ export interface SalesInvoice {
   billing_address: string | null;
   shipping_address: string | null;
   salesman: string | null;
+  salesman_id: string | null;
+  salesman_group_id: string | null;
   notes: string | null;
   remarks: string | null;
   subtotal: number;
@@ -193,6 +212,7 @@ export async function generateInvoiceFromDispatch(opts: {
 
   // 4. Create invoice
   const invoice_number = await nextInvoiceNumber(opts.userId);
+  const salesmanGroupId = await resolveSalesmanGroupSnapshot(order.salesman_id);
   const { data: inv, error: ie } = await supabase
     .from("sales_invoices")
     .insert({
@@ -208,6 +228,8 @@ export async function generateInvoiceFromDispatch(opts: {
       billing_address: order.billing_address,
       shipping_address: order.shipping_address,
       salesman: order.salesman,
+      salesman_id: order.salesman_id ?? null,
+      salesman_group_id: salesmanGroupId,
       notes: order.notes,
       remarks: `Auto-generated from Dispatch ${(dispatch as any).dispatch_number}`,
       subtotal,
@@ -351,6 +373,7 @@ export async function generateInvoiceFromOrder(opts: {
 
   const invoice_number = await nextInvoiceNumber(opts.userId);
   const status = opts.requireApproval ? "draft" : "posted";
+  const salesmanGroupId = await resolveSalesmanGroupSnapshot(order.salesman_id);
 
   const { data: inv, error } = await supabase
     .from("sales_invoices")
@@ -367,6 +390,8 @@ export async function generateInvoiceFromOrder(opts: {
       billing_address: order.billing_address,
       shipping_address: order.shipping_address,
       salesman: order.salesman,
+      salesman_id: order.salesman_id ?? null,
+      salesman_group_id: salesmanGroupId,
       notes: order.notes,
       remarks: `Generated from ${order.order_number}`,
       subtotal: totals.subtotal,
@@ -459,6 +484,8 @@ export async function duplicateInvoice(id: string, userId: string): Promise<Sale
       billing_address: original.billing_address,
       shipping_address: original.shipping_address,
       salesman: original.salesman,
+      salesman_id: original.salesman_id,
+      salesman_group_id: original.salesman_group_id,
       notes: original.notes,
       remarks: `Duplicated from ${original.invoice_number}`,
       subtotal: original.subtotal,

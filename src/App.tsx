@@ -22,6 +22,10 @@ const Profile = lazy(() => import("./pages/Profile"));
 const Products = lazy(() => import("./pages/Products"));
 const PartyDashboard = lazy(() => import("./pages/parties/PartyDashboard"));
 const PartyGroups = lazy(() => import("./pages/masters/PartyGroups"));
+const SalesmanGroups = lazy(() => import("./pages/masters/SalesmanGroups"));
+const Salesmen = lazy(() => import("./pages/masters/Salesmen"));
+const SalesPerformanceReport = lazy(() => import("./pages/reports/SalesPerformanceReport"));
+const PartyPartSalesReport = lazy(() => import("./pages/reports/PartyPartSalesReport"));
 const BulkGstAssign = lazy(() => import("./pages/inventory/BulkGstAssign"));
 const Orders = lazy(() => import("./pages/Orders"));
 const CreateOrder = lazy(() => import("./pages/CreateOrder"));
@@ -264,6 +268,10 @@ const App = () => (
               <Route path="/products" element={L(<Products />)} />
               <Route path="/parties/:partyId" element={L(<PartyDashboard />)} />
               <Route path="/masters/party-groups" element={L(<PartyGroups />)} />
+              <Route path="/masters/salesman-groups" element={L(<SalesmanGroups />)} />
+              <Route path="/masters/salesmen" element={L(<Salesmen />)} />
+              <Route path="/reports/sales-performance" element={L(<SalesPerformanceReport />)} />
+              <Route path="/reports/party-part-sales" element={L(<PartyPartSalesReport />)} />
               <Route path="/products/bulk-gst" element={L(<BulkGstAssign />)} />
               <Route path="/orders" element={L(<Orders />)} />
               <Route path="/orders/new" element={L(<CreateOrder />)} />

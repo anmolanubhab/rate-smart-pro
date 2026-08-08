@@ -49,7 +49,7 @@ const PARTY_COLS = `
   id, name, phone, gst, address, billing_address, shipping_address,
   beat, credit_limit, outstanding_balance, agreed_discount,
   default_discount, discount_type, notes, created_at,
-  party_group_id, use_group_defaults, credit_days
+  party_group_id, use_group_defaults, credit_days, salesman_id
 `.trim();
 
 // ─── Empty form ───────────────────────────────────────────────────────────────
@@ -78,6 +78,8 @@ const emptyForm = {
   address: "", beat: "", notes: "",
   // Group / inheritance
   party_group_id: "" as string, use_group_defaults: true,
+  // Salesman assignment — pre-fills the Salesman dropdown on new invoices for this party.
+  salesman_id: "" as string,
 };
 
 // ─── Server fetch ─────────────────────────────────────────────────────────────
@@ -224,6 +226,23 @@ const Parties = () => {
     })();
   }, [businessId]);
 
+  // Salesman assignment
+  type SalesmanLite = { id: string; name: string };
+  const [salesmenOptions, setSalesmenOptions] = useState<SalesmanLite[]>([]);
+
+  useEffect(() => {
+    if (!businessId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("salesmen" as never)
+        .select("id, name")
+        .eq("business_id", businessId)
+        .eq("is_active", true)
+        .order("name");
+      setSalesmenOptions((data as unknown as SalesmanLite[]) ?? []);
+    })();
+  }, [businessId]);
+
   const resolveGroupDefaults = useCallback((groupId: string | null) => {
     if (!groupId) return null;
     const group = groups.find(g => g.id === groupId);
@@ -310,6 +329,7 @@ const Parties = () => {
       ledger_name: p.name,
       party_group_id: p.party_group_id || "",
       use_group_defaults: p.use_group_defaults ?? true,
+      salesman_id: p.salesman_id || "",
     });
     setActiveTab("general");
     setOpen(true);
@@ -358,6 +378,7 @@ const Parties = () => {
         notes: form.notes.trim() || null,
         party_group_id: form.party_group_id || null,
         use_group_defaults: form.use_group_defaults,
+        salesman_id: form.salesman_id || null,
       };
       if (editing) {
         const { error } = await supabase.from("parties").update(payload).eq("id", editing.id);
@@ -674,6 +695,19 @@ const Parties = () => {
                 <div className="space-y-1.5">
                   <Label>Party Name *</Label>
                   <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Ram Traders" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Salesman</Label>
+                  <Select
+                    value={form.salesman_id || "none"}
+                    onValueChange={v => setForm(f => ({ ...f, salesman_id: v === "none" ? "" : v }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Unassigned</SelectItem>
+                      {salesmenOptions.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Firm Name</Label>

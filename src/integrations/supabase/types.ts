@@ -92,8 +92,16 @@ export type Database = {
           business_id: string
           date_format: string
           default_place_of_supply: string | null
+          enable_batch_tracking: boolean
+          enable_bin_management: boolean
+          enable_cycle_counting: boolean
           enable_einvoice: boolean
           enable_ewaybill: boolean
+          enable_multi_warehouse: boolean
+          enable_putaway_workflow: boolean
+          enable_quality_inspection: boolean
+          enable_serial_tracking: boolean
+          enable_zone_rack_bin_hierarchy: boolean
           financial_note_gst_mode: string
           financial_note_ledger_mode: string
           gst_integration_mode: string
@@ -106,6 +114,14 @@ export type Database = {
           permission_mode: string
           pricing_policy: string
           require_hsn_on_invoice: boolean
+          round_off_credit_note: boolean
+          round_off_debit_note: boolean
+          round_off_enabled: boolean
+          round_off_method: string
+          round_off_purchase_invoice: boolean
+          round_off_purchase_order: boolean
+          round_off_sales_invoice: boolean
+          round_off_sales_order: boolean
           share_link_expiry: string
           updated_at: string
         }
@@ -114,8 +130,16 @@ export type Database = {
           business_id: string
           date_format?: string
           default_place_of_supply?: string | null
+          enable_batch_tracking?: boolean
+          enable_bin_management?: boolean
+          enable_cycle_counting?: boolean
           enable_einvoice?: boolean
           enable_ewaybill?: boolean
+          enable_multi_warehouse?: boolean
+          enable_putaway_workflow?: boolean
+          enable_quality_inspection?: boolean
+          enable_serial_tracking?: boolean
+          enable_zone_rack_bin_hierarchy?: boolean
           financial_note_gst_mode?: string
           financial_note_ledger_mode?: string
           gst_integration_mode?: string
@@ -128,6 +152,14 @@ export type Database = {
           permission_mode?: string
           pricing_policy?: string
           require_hsn_on_invoice?: boolean
+          round_off_credit_note?: boolean
+          round_off_debit_note?: boolean
+          round_off_enabled?: boolean
+          round_off_method?: string
+          round_off_purchase_invoice?: boolean
+          round_off_purchase_order?: boolean
+          round_off_sales_invoice?: boolean
+          round_off_sales_order?: boolean
           share_link_expiry?: string
           updated_at?: string
         }
@@ -136,8 +168,16 @@ export type Database = {
           business_id?: string
           date_format?: string
           default_place_of_supply?: string | null
+          enable_batch_tracking?: boolean
+          enable_bin_management?: boolean
+          enable_cycle_counting?: boolean
           enable_einvoice?: boolean
           enable_ewaybill?: boolean
+          enable_multi_warehouse?: boolean
+          enable_putaway_workflow?: boolean
+          enable_quality_inspection?: boolean
+          enable_serial_tracking?: boolean
+          enable_zone_rack_bin_hierarchy?: boolean
           financial_note_gst_mode?: string
           financial_note_ledger_mode?: string
           gst_integration_mode?: string
@@ -150,6 +190,14 @@ export type Database = {
           permission_mode?: string
           pricing_policy?: string
           require_hsn_on_invoice?: boolean
+          round_off_credit_note?: boolean
+          round_off_debit_note?: boolean
+          round_off_enabled?: boolean
+          round_off_method?: string
+          round_off_purchase_invoice?: boolean
+          round_off_purchase_order?: boolean
+          round_off_sales_invoice?: boolean
+          round_off_sales_order?: boolean
           share_link_expiry?: string
           updated_at?: string
         }
@@ -2723,7 +2771,10 @@ export type Database = {
           quality_remarks: string | null
           received_qty: number
           short_qty: number
+          shortage_qty: number
           stock_accepted_qty: number | null
+          stock_received_qty: number | null
+          stock_shortage_qty: number | null
           unit_id: string | null
         }
         Insert: {
@@ -2744,7 +2795,10 @@ export type Database = {
           quality_remarks?: string | null
           received_qty?: number
           short_qty?: number
+          shortage_qty?: number
           stock_accepted_qty?: number | null
+          stock_received_qty?: number | null
+          stock_shortage_qty?: number | null
           unit_id?: string | null
         }
         Update: {
@@ -2765,7 +2819,10 @@ export type Database = {
           quality_remarks?: string | null
           received_qty?: number
           short_qty?: number
+          shortage_qty?: number
           stock_accepted_qty?: number | null
+          stock_received_qty?: number | null
+          stock_shortage_qty?: number | null
           unit_id?: string | null
         }
         Relationships: [
@@ -5469,6 +5526,7 @@ export type Database = {
           rd_extra: number | null
           rd_percent: number | null
           registration_type: string | null
+          salesman_id: string | null
           segment_id: string | null
           shipping_address: string | null
           special_discount: number | null
@@ -5557,6 +5615,7 @@ export type Database = {
           rd_extra?: number | null
           rd_percent?: number | null
           registration_type?: string | null
+          salesman_id?: string | null
           segment_id?: string | null
           shipping_address?: string | null
           special_discount?: number | null
@@ -5645,6 +5704,7 @@ export type Database = {
           rd_extra?: number | null
           rd_percent?: number | null
           registration_type?: string | null
+          salesman_id?: string | null
           segment_id?: string | null
           shipping_address?: string | null
           special_discount?: number | null
@@ -5670,6 +5730,13 @@ export type Database = {
             columns: ["party_group_id"]
             isOneToOne: false
             referencedRelation: "party_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "parties_salesman_id_fkey"
+            columns: ["salesman_id"]
+            isOneToOne: false
+            referencedRelation: "salesmen"
             referencedColumns: ["id"]
           },
         ]
@@ -9515,7 +9582,10 @@ export type Database = {
           retail_customer_name: string | null
           retail_mobile: string | null
           reverse_charge: boolean
+          round_off_amount: number
           salesman: string | null
+          salesman_group_id: string | null
+          salesman_id: string | null
           shipping_address: string | null
           shipping_charges: number | null
           status: string | null
@@ -9567,7 +9637,10 @@ export type Database = {
           retail_customer_name?: string | null
           retail_mobile?: string | null
           reverse_charge?: boolean
+          round_off_amount?: number
           salesman?: string | null
+          salesman_group_id?: string | null
+          salesman_id?: string | null
           shipping_address?: string | null
           shipping_charges?: number | null
           status?: string | null
@@ -9619,7 +9692,10 @@ export type Database = {
           retail_customer_name?: string | null
           retail_mobile?: string | null
           reverse_charge?: boolean
+          round_off_amount?: number
           salesman?: string | null
+          salesman_group_id?: string | null
+          salesman_id?: string | null
           shipping_address?: string | null
           shipping_charges?: number | null
           status?: string | null
@@ -9649,6 +9725,20 @@ export type Database = {
             columns: ["party_id"]
             isOneToOne: false
             referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_invoices_salesman_group_id_fkey"
+            columns: ["salesman_group_id"]
+            isOneToOne: false
+            referencedRelation: "salesman_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_invoices_salesman_id_fkey"
+            columns: ["salesman_id"]
+            isOneToOne: false
+            referencedRelation: "salesmen"
             referencedColumns: ["id"]
           },
         ]
@@ -9940,24 +10030,102 @@ export type Database = {
           },
         ]
       }
-      salesmen: {
+      salesman_groups: {
         Row: {
-          business_id: string | null
-          employee_id: string | null
+          business_id: string
+          created_at: string
+          created_by: string | null
+          group_code: string | null
           id: string
-          territory: string | null
+          is_active: boolean
+          name: string
+          parent_id: string | null
+          updated_at: string
+          updated_by: string | null
         }
         Insert: {
-          business_id?: string | null
-          employee_id?: string | null
+          business_id: string
+          created_at?: string
+          created_by?: string | null
+          group_code?: string | null
           id?: string
-          territory?: string | null
+          is_active?: boolean
+          name: string
+          parent_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
         }
         Update: {
-          business_id?: string | null
-          employee_id?: string | null
+          business_id?: string
+          created_at?: string
+          created_by?: string | null
+          group_code?: string | null
           id?: string
-          territory?: string | null
+          is_active?: boolean
+          name?: string
+          parent_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "salesman_groups_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "salesman_groups_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "salesman_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      salesmen: {
+        Row: {
+          business_id: string
+          created_at: string
+          created_by: string | null
+          email: string | null
+          employee_code: string | null
+          id: string
+          is_active: boolean
+          name: string
+          phone: string | null
+          salesman_group_id: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          employee_code?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          phone?: string | null
+          salesman_group_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          employee_code?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          phone?: string | null
+          salesman_group_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
@@ -9968,10 +10136,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "salesmen_employee_id_fkey"
-            columns: ["employee_id"]
+            foreignKeyName: "salesmen_salesman_group_id_fkey"
+            columns: ["salesman_group_id"]
             isOneToOne: false
-            referencedRelation: "employees"
+            referencedRelation: "salesman_groups"
             referencedColumns: ["id"]
           },
         ]
@@ -11953,6 +12121,54 @@ export type Database = {
           used_in: string[]
         }[]
       }
+      get_party_part_sales_invoices: {
+        Args: {
+          p_business_id: string
+          p_from_date?: string
+          p_invoice_status?: string
+          p_part_number: string
+          p_party_id?: string
+          p_salesman_id?: string
+          p_to_date?: string
+        }
+        Returns: {
+          amount: number
+          discount_pct: number
+          invoice_date: string
+          invoice_id: string
+          invoice_number: string
+          mrp: number
+          net_rate: number
+          qty: number
+          rate: number
+        }[]
+      }
+      get_party_part_sales_summary: {
+        Args: {
+          p_business_id: string
+          p_from_date?: string
+          p_invoice_status?: string
+          p_party_id?: string
+          p_product_id?: string
+          p_salesman_id?: string
+          p_segment_id?: string
+          p_to_date?: string
+        }
+        Returns: {
+          avg_discount_pct: number
+          avg_mrp: number
+          avg_net_rate: number
+          avg_rate: number
+          description: string
+          distinct_rate_count: number
+          gst: number
+          part_number: string
+          product_id: string
+          qty: number
+          taxable_value: number
+          total: number
+        }[]
+      }
       get_products_in_use: {
         Args: { _product_ids: string[] }
         Returns: {
@@ -11963,6 +12179,60 @@ export type Database = {
       get_role_template: {
         Args: { _business_id: string; _role: string }
         Returns: Json
+      }
+      get_sales_performance_invoices: {
+        Args: {
+          p_business_id: string
+          p_from_date?: string
+          p_party_id?: string
+          p_salesman_group_id?: string
+          p_salesman_id?: string
+          p_to_date?: string
+        }
+        Returns: {
+          gst: number
+          invoice_date: string
+          invoice_id: string
+          invoice_number: string
+          net_revenue: number
+          net_sales: number
+          payment_status: string
+          qty: number
+          returns: number
+          status: string
+          taxable_value: number
+        }[]
+      }
+      get_sales_performance_report: {
+        Args: {
+          p_business_id: string
+          p_from_date?: string
+          p_invoice_status?: string
+          p_party_id?: string
+          p_payment_status?: string
+          p_product_id?: string
+          p_salesman_group_id?: string
+          p_salesman_id?: string
+          p_segment_id?: string
+          p_to_date?: string
+        }
+        Returns: {
+          bills: number
+          discount: number
+          gross_sales: number
+          gst: number
+          net_revenue: number
+          net_sales: number
+          party_id: string
+          party_name: string
+          returns: number
+          salesman_group_id: string
+          salesman_group_name: string
+          salesman_id: string
+          salesman_name: string
+          taxable_value: number
+          total_qty: number
+        }[]
       }
       get_stock_ageing: {
         Args: {

@@ -4,6 +4,7 @@ import { Save, FileCheck2, Plus, Trash2, Upload, FileSpreadsheet, X } from "luci
 import OrderExcelUpload from "@/components/OrderExcelUpload";
 import { downloadOrderTemplate } from "@/lib/excelTemplates";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +92,8 @@ const CreateOrder = () => {
   const [refNo, setRefNo] = useState("");
   const [voucherType] = useState("TVS Tax Invoice");
   const [salesman, setSalesman] = useState("");
+  const [salesmanId, setSalesmanId] = useState<string | null>(null);
+  const [salesmenOptions, setSalesmenOptions] = useState<{ id: string; name: string }[]>([]);
   const [narration, setNarration] = useState("");
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
@@ -207,6 +210,20 @@ const CreateOrder = () => {
 
   useEffect(() => {
     if (!user) return;
+    const biz = getActiveBusinessIdSync();
+    if (!biz) return;
+    supabase
+      .from("salesmen" as never)
+      .select("id, name")
+      .eq("business_id", biz)
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data }) => setSalesmenOptions((data as unknown as { id: string; name: string }[]) ?? []))
+      .catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
     fetchParties(user.id, "customer")
       .then((data) => {
         setParties(data);
@@ -226,6 +243,7 @@ const CreateOrder = () => {
           setOrderDate(o.order_date);
           setPartyId(o.party_id || "");
           setSalesman(o.salesman || "");
+          setSalesmanId(o.salesman_id ?? null);
           setWarehouseId(o.warehouse_id ?? null);
           setNarration(o.notes || "");
           setRefNo((o.remarks || "").replace(/^Ref:\s*/i, ""));
@@ -254,7 +272,18 @@ const CreateOrder = () => {
       rows.map((r) => (r.discount_pct === 0 && !r.part_number ? { ...r, discount_pct: def } : r)),
     );
     setPartyQuery(party.name);
-  }, [partyId]);
+    // Pre-fill the assigned salesman from the party — only when nothing's
+    // been picked yet this session, so it never overrides an explicit
+    // in-progress choice (same "don't clobber a manual edit" rule the
+    // discount default above follows).
+    if (!salesmanId && party.salesman_id) {
+      const sid = party.salesman_id;
+      setSalesmanId(sid);
+      const match = salesmenOptions.find((s) => s.id === sid);
+      if (match) setSalesman(match.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partyId, salesmenOptions]);
 
   // product search
   useEffect(() => {
@@ -407,6 +436,7 @@ const CreateOrder = () => {
         billing_address: party?.billing_address ?? party?.address ?? null,
         shipping_address: party?.shipping_address ?? party?.address ?? null,
         salesman,
+        salesman_id: salesmanId,
         warehouse_id: warehouseId,
         notes: narration,
         remarks: refNo ? `Ref: ${refNo}` : null,
@@ -547,7 +577,21 @@ const CreateOrder = () => {
           <DocumentHeaderInputField label="Date" labelAlign="right" type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
 
           <DocumentHeaderInputField label="Order Received By" value={refNo} onChange={(e) => setRefNo(e.target.value)} placeholder="11299/vishal" />
-          <DocumentHeaderInputField label="Salesman" labelAlign="right" value={salesman} onChange={(e) => setSalesman(e.target.value)} />
+          <DocumentHeaderLabel align="right">Salesman</DocumentHeaderLabel>
+          <DocumentHeaderValue>
+            <select
+              value={salesmanId ?? ""}
+              onChange={(e) => {
+                const id = e.target.value || null;
+                setSalesmanId(id);
+                setSalesman(salesmenOptions.find((s) => s.id === id)?.name ?? "");
+              }}
+              className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+            >
+              <option value="">{salesman ? `${salesman} (legacy)` : "Unassigned"}</option>
+              {salesmenOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </DocumentHeaderValue>
 
           {warehouses.length > 1 && (
             <>
