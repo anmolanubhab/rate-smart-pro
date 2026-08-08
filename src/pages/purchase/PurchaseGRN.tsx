@@ -10,6 +10,7 @@ import { fetchUnits, fetchProductUnits, stockUnitOf, toStockQty, type Unit as Me
 import WarehouseFormDialog, { type WarehouseRow } from "@/components/inventory/WarehouseFormDialog";
 import GRNBatchSerialDialog, { type GRNBatchSerialResult } from "@/components/inventory/GRNBatchSerialDialog";
 import BinLocationPicker from "@/components/inventory/BinLocationPicker";
+import { useInventorySettings } from "@/lib/inventorySettings";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +40,7 @@ const QC_REASON_OPTIONS: { value: string; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
-const GRID_COLUMNS: DocumentGridColumn[] = [
+const BASE_GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "product", header: "Product", widthClass: "min-w-[160px]" },
   { key: "part", header: "Part No.", widthClass: "min-w-[100px]" },
   { key: "unit", header: "Unit", widthClass: "w-16" },
@@ -63,6 +64,11 @@ export default function PurchaseGRN() {
   const { user } = useAuth();
   const { business } = useBusiness();
   const businessId = business?.id ?? getActiveBusinessIdSync();
+  const { enableBinManagement } = useInventorySettings();
+  const GRID_COLUMNS = useMemo(
+    () => (enableBinManagement ? BASE_GRID_COLUMNS : BASE_GRID_COLUMNS.filter((c) => c.key !== "bin")),
+    [enableBinManagement],
+  );
 
   const [grnNumber, setGrnNumber] = useState("");
   const [grnDate, setGrnDate] = useState(new Date().toISOString().slice(0, 10));
@@ -509,16 +515,18 @@ export default function PurchaseGRN() {
                   </Button>
                 )}
               </td>
-              <td className="px-1 py-0.5">
-                <BinLocationPicker
-                  warehouseId={selectedWarehouse || null}
-                  value={item.bin_id}
-                  onChange={(binId) => handleBinChange(idx, binId)}
-                  disabled={readOnly}
-                  placeholder="Auto"
-                  className="h-6 text-[11px] px-1.5 rounded-none border-0 border-b border-dotted border-border bg-transparent focus:ring-0"
-                />
-              </td>
+              {enableBinManagement && (
+                <td className="px-1 py-0.5">
+                  <BinLocationPicker
+                    warehouseId={selectedWarehouse || null}
+                    value={item.bin_id}
+                    onChange={(binId) => handleBinChange(idx, binId)}
+                    disabled={readOnly}
+                    placeholder="Auto"
+                    className="h-6 text-[11px] px-1.5 rounded-none border-0 border-b border-dotted border-border bg-transparent focus:ring-0"
+                  />
+                </td>
+              )}
             </>
           )}
         />

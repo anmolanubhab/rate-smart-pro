@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useFormatDate } from "@/lib/dateFormat";
 import BinLocationPicker from "@/components/inventory/BinLocationPicker";
+import { useInventorySettings } from "@/lib/inventorySettings";
 import {
   fetchStockTakeSheet, fetchStockTakeItems, addStockTakeItem, loadAllProducts, loadBinProducts,
   setCountedQty, removeStockTakeItem, postStockTake, cancelStockTake,
@@ -33,6 +34,7 @@ export default function StockTakeDetail() {
   const navigate = useNavigate();
   const { business } = useBusiness();
   const fd = useFormatDate();
+  const { enableBinManagement } = useInventorySettings();
 
   const [sheet, setSheet] = useState<StockTakeSheet | null>(null);
   const [items, setItems] = useState<StockTakeItem[]>([]);
@@ -218,25 +220,29 @@ export default function StockTakeDetail() {
             </Button>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-2 rounded-lg border bg-muted/30 p-3">
-            <div className="flex-1 space-y-1">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Count by Bin (optional)</p>
-              <BinLocationPicker
-                warehouseId={sheet.warehouse_id}
-                value={countBinId}
-                onChange={setCountBinId}
-                includeUnassigned
-                placeholder="Select a bin to count…"
-              />
-            </div>
-            <Button size="sm" variant="outline" onClick={doLoadBin} disabled={busy || !countBinId}>
-              <ListPlus className="h-3.5 w-3.5 mr-1.5" />Load This Bin's Products
-            </Button>
-          </div>
-          {countBinId && (
-            <p className="text-xs text-muted-foreground">
-              Products you search and add below will also be counted against this bin. Clear the bin to go back to warehouse-level counting.
-            </p>
+          {enableBinManagement && (
+            <>
+              <div className="flex flex-col sm:flex-row sm:items-end gap-2 rounded-lg border bg-muted/30 p-3">
+                <div className="flex-1 space-y-1">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Count by Bin (optional)</p>
+                  <BinLocationPicker
+                    warehouseId={sheet.warehouse_id}
+                    value={countBinId}
+                    onChange={setCountBinId}
+                    includeUnassigned
+                    placeholder="Select a bin to count…"
+                  />
+                </div>
+                <Button size="sm" variant="outline" onClick={doLoadBin} disabled={busy || !countBinId}>
+                  <ListPlus className="h-3.5 w-3.5 mr-1.5" />Load This Bin's Products
+                </Button>
+              </div>
+              {countBinId && (
+                <p className="text-xs text-muted-foreground">
+                  Products you search and add below will also be counted against this bin. Clear the bin to go back to warehouse-level counting.
+                </p>
+              )}
+            </>
           )}
 
           <div className="relative max-w-md">

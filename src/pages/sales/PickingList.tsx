@@ -18,6 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useFormatDate } from "@/lib/dateFormat";
+import { useInventorySettings } from "@/lib/inventorySettings";
 import {
   fetchPickingLists, fetchPickingListItems, fetchPendingItemsForOrder, createPickingList,
   markItemPicked, completePickingList, cancelPickingList, deletePickingList,
@@ -41,6 +42,7 @@ export default function PickingListPage() {
   const canManage = hasRole(role, ["owner", "admin", "manager", "accountant", "salesman", "store_manager"]);
   const businessId = business?.id ?? getActiveBusinessIdSync();
   const fd = useFormatDate();
+  const { enableBinManagement } = useInventorySettings();
   const qc = useQueryClient();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -255,7 +257,7 @@ export default function PickingListPage() {
                     <TableRow>
                       <TableHead>Part #</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead>Bin</TableHead>
+                      {enableBinManagement && <TableHead>Bin</TableHead>}
                       <TableHead className="text-right">Pending</TableHead>
                       <TableHead className="text-right w-28">Pick Qty</TableHead>
                     </TableRow>
@@ -265,7 +267,9 @@ export default function PickingListPage() {
                       <TableRow key={it.order_item_id}>
                         <TableCell className="font-mono text-sm">{it.part_number}</TableCell>
                         <TableCell>{it.description}</TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{it.location_code ?? it.rack ?? "—"}</TableCell>
+                        {enableBinManagement && (
+                          <TableCell className="font-mono text-xs text-muted-foreground">{it.location_code ?? it.rack ?? "—"}</TableCell>
+                        )}
                         <TableCell className="text-right">{it.pending_qty}</TableCell>
                         <TableCell className="text-right">
                           <Input type="number" className="text-right" value={pickQty[it.order_item_id] ?? ""}
@@ -294,7 +298,7 @@ export default function PickingListPage() {
               <TableRow>
                 <TableHead>Part #</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead>Bin</TableHead>
+                {enableBinManagement && <TableHead>Bin</TableHead>}
                 <TableHead className="text-right">To Pick</TableHead>
                 <TableHead className="text-right w-28">Picked</TableHead>
               </TableRow>
@@ -304,7 +308,9 @@ export default function PickingListPage() {
                 <TableRow key={it.id}>
                   <TableCell className="font-mono text-sm">{it.part_number}</TableCell>
                   <TableCell>{it.description}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{it.bin?.location_code ?? it.rack ?? "—"}</TableCell>
+                  {enableBinManagement && (
+                    <TableCell className="font-mono text-xs text-muted-foreground">{it.bin?.location_code ?? it.rack ?? "—"}</TableCell>
+                  )}
                   <TableCell className="text-right">{it.qty_to_pick}</TableCell>
                   <TableCell className="text-right">
                     <Input type="number" className="text-right" disabled={viewTarget?.status !== "pending"}

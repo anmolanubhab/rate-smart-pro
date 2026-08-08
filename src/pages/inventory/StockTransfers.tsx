@@ -19,6 +19,7 @@ import {
 import { useFormatDate } from "@/lib/dateFormat";
 import type { WarehouseRow } from "@/components/inventory/WarehouseFormDialog";
 import BinLocationPicker from "@/components/inventory/BinLocationPicker";
+import { useInventorySettings } from "@/lib/inventorySettings";
 import {
   fetchStockTransfers, createStockTransfer, dispatchStockTransfer,
   receiveStockTransfer, cancelStockTransfer, type StockTransfer, type StockTransferStatus,
@@ -37,6 +38,7 @@ export default function StockTransfers() {
   const { user } = useAuth();
   const { business } = useBusiness();
   const fd = useFormatDate();
+  const { enableBinManagement } = useInventorySettings();
 
   const [rows, setRows] = useState<StockTransfer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -341,8 +343,12 @@ export default function StockTransfers() {
                       <TableHead>Part #</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead className="w-24 text-right">Qty</TableHead>
-                      <TableHead className="w-44">From Bin{sameWarehouse && " *"}</TableHead>
-                      <TableHead className="w-44">To Bin{sameWarehouse && " *"}</TableHead>
+                      {enableBinManagement && (
+                        <>
+                          <TableHead className="w-44">From Bin{sameWarehouse && " *"}</TableHead>
+                          <TableHead className="w-44">To Bin{sameWarehouse && " *"}</TableHead>
+                        </>
+                      )}
                       <TableHead className="w-10" />
                     </TableRow>
                   </TableHeader>
@@ -355,25 +361,29 @@ export default function StockTransfers() {
                           <Input type="number" min="0" className="text-right" value={l.qty}
                             onChange={(e) => setLineQty(l.product_id, e.target.value)} />
                         </TableCell>
-                        <TableCell>
-                          <BinLocationPicker
-                            warehouseId={fromWarehouseId || null}
-                            value={l.from_bin_id}
-                            onChange={(binId) => setLineBin(l.product_id, "from_bin_id", binId)}
-                            placeholder="Auto"
-                            className="h-8 text-xs"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <BinLocationPicker
-                            warehouseId={toWarehouseId || null}
-                            value={l.to_bin_id}
-                            onChange={(binId) => setLineBin(l.product_id, "to_bin_id", binId)}
-                            excludeBinId={sameWarehouse ? l.from_bin_id : null}
-                            placeholder="Auto"
-                            className="h-8 text-xs"
-                          />
-                        </TableCell>
+                        {enableBinManagement && (
+                          <>
+                            <TableCell>
+                              <BinLocationPicker
+                                warehouseId={fromWarehouseId || null}
+                                value={l.from_bin_id}
+                                onChange={(binId) => setLineBin(l.product_id, "from_bin_id", binId)}
+                                placeholder="Auto"
+                                className="h-8 text-xs"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <BinLocationPicker
+                                warehouseId={toWarehouseId || null}
+                                value={l.to_bin_id}
+                                onChange={(binId) => setLineBin(l.product_id, "to_bin_id", binId)}
+                                excludeBinId={sameWarehouse ? l.from_bin_id : null}
+                                placeholder="Auto"
+                                className="h-8 text-xs"
+                              />
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell>
                           <Button size="sm" variant="ghost" onClick={() => removeLine(l.product_id)}>
                             <Trash2 className="h-3.5 w-3.5 text-destructive" />

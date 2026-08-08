@@ -32,6 +32,7 @@ import {
 import { fetchHsnDetail, searchHsnByDescription, type HsnMasterListItem } from "@/lib/hsnMaster";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
 import BinLocationPicker from "@/components/inventory/BinLocationPicker";
+import { useInventorySettings } from "@/lib/inventorySettings";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -188,6 +189,7 @@ const SkeletonRow = ({ index }: { index: number }) => (
 const Products = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
+  const { enableBinManagement } = useInventorySettings();
   const [syncingCost, setSyncingCost] = useState(false);
   const syncCostFromPurchases = async () => {
     if (!business) return;
@@ -1019,29 +1021,33 @@ const Products = () => {
               </Select>
             </div>
 
-            <div className="md:col-span-2 border-t pt-3 mt-1">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Storage Location (optional)
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Warehouse</Label>
-              <Select value={defaultBinWarehouseId} onValueChange={(v) => { setDefaultBinWarehouseId(v); setForm({ ...form, default_bin_id: null }); }}>
-                <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
-                <SelectContent>
-                  {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Default Rack / Bin</Label>
-              <BinLocationPicker
-                warehouseId={defaultBinWarehouseId || null}
-                value={form.default_bin_id}
-                onChange={(binId) => setForm({ ...form, default_bin_id: binId })}
-                placeholder="Auto (put-away bin picked at GRN time)"
-              />
-            </div>
+            {enableBinManagement && (
+              <>
+                <div className="md:col-span-2 border-t pt-3 mt-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Storage Location (optional)
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Warehouse</Label>
+                  <Select value={defaultBinWarehouseId} onValueChange={(v) => { setDefaultBinWarehouseId(v); setForm({ ...form, default_bin_id: null }); }}>
+                    <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
+                    <SelectContent>
+                      {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Default Rack / Bin</Label>
+                  <BinLocationPicker
+                    warehouseId={defaultBinWarehouseId || null}
+                    value={form.default_bin_id}
+                    onChange={(binId) => setForm({ ...form, default_bin_id: binId })}
+                    placeholder="Auto (put-away bin picked at GRN time)"
+                  />
+                </div>
+              </>
+            )}
 
             <div className="md:col-span-2 border-t pt-3 mt-1">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">

@@ -1202,6 +1202,15 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "security-group",
     perm: "team.manage",
   },
+  {
+    id: "inventory-settings",
+    title: "Inventory Settings",
+    description: "Bin management and warehouse feature toggles used by GRN, Dispatch, Stock Transfer, Stock Take, and Picking List",
+    route: "/settings/inventory",
+    icon: SettingsIcon,
+    module: "Configuration",
+    keywords: ["bin", "warehouse", "put-away", "zone", "rack", "batch", "serial", "cycle count"],
+  },
 
   // ==========================================================================
   // SETTINGS (personal account)
