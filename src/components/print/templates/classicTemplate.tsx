@@ -43,6 +43,7 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
   const t = totals ?? {};
   const isInterstate = (t.igst ?? 0) > 0;
   const hasGstSplit = showGst && (t.cgst != null || t.sgst != null || t.igst != null);
+  const roundOff = t.roundOff ?? 0;
   const fmt = (n?: number | null) =>
     Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -234,6 +235,12 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
                       </>
                     )}
                     <TaxSummaryRows />
+                    {roundOff !== 0 && (
+                      <>
+                        <div className="col-span-6">{L.roundOff}</div>
+                        <div className="col-span-6 text-right tabular-nums">{roundOff > 0 ? "+ " : "− "}{fmt(Math.abs(roundOff))}</div>
+                      </>
+                    )}
                     <div className="col-span-12 border-t border-black mt-1 pt-1 flex items-center justify-between">
                       <div className="font-bold uppercase">{L.grandTotal}</div>
                       <div className="font-extrabold text-[14px] tabular-nums">{fmt(t.grandTotal)}</div>
@@ -363,6 +370,12 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
                   </>
                 )}
                 <TaxSummaryRows />
+                {!!t.roundOff && (
+                  <>
+                    <div className="col-span-6">{L.roundOff}</div>
+                    <div className="col-span-6 text-right tabular-nums">{t.roundOff > 0 ? "+ " : "− "}{fmt(Math.abs(t.roundOff))}</div>
+                  </>
+                )}
                 <div className="col-span-12 border-t border-black mt-1 pt-1 flex items-center justify-between">
                   <div className="font-bold">{L.grandTotal}</div>
                   <div className="font-extrabold text-[14px] tabular-nums">{fmt(t.grandTotal)}</div>

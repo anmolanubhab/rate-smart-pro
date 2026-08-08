@@ -3,7 +3,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { isOwner as isOwnerRole, canAccessMaintenance } from "@/lib/permissions";
 import {
   Building2, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags, Wrench,
+  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags, Wrench, Calculator,
 } from "lucide-react";
 
 const items = [
@@ -42,6 +42,12 @@ const items = [
     icon: ShieldAlert,
     title: "Accounting Lock",
     desc: "Lock a date to prevent edits before it, and configure Financial Adjustment note defaults",
+  },
+  {
+    to: "/settings/round-off",
+    icon: Calculator,
+    title: "Round Off",
+    desc: "Enable rounding on invoice totals, choose the rounding method, and pick which vouchers apply it",
   },
   {
     to: "/settings/company-users",

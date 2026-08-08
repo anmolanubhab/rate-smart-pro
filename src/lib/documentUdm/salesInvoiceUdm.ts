@@ -74,6 +74,7 @@ export async function buildSalesInvoiceUdm(inv: SalesInvoice): Promise<DocumentU
       sgst: items.reduce((s, it) => s + (Number(it.sgst_amount) || 0), 0),
       igst: items.reduce((s, it) => s + (Number(it.igst_amount) || 0), 0),
       tax: Number(inv.gst_total) || 0,
+      roundOff: Number(inv.round_off_amount) || 0,
       grandTotal: Number(inv.grand_total) || 0,
     },
     sections,
