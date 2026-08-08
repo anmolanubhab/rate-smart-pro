@@ -9,6 +9,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchInvoices, postInvoice, cancelInvoice, deleteInvoice, duplicateInvoice, SalesInvoice } from "@/lib/salesInvoices";
+import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
 import { fetchReturnedQtyByInvoice, type InvoiceReturnStatus } from "@/lib/salesReturns";
 import { createApprovalRequest } from "@/lib/approvals";
 import { canDeleteDirectly } from "@/lib/permissions";
@@ -169,10 +170,24 @@ export default function InvoicesPage() {
       const updates: Record<string, unknown> = { due_date: editDueDate };
       if (editTarget.status === "draft") {
         const discount = Number(editDiscount) || 0;
-        const newGrandTotal = Number(editTarget.subtotal) - discount + Number(editTarget.gst_total) + Number(editTarget.shipping_charges ?? 0);
+        const rawGrandTotal = Number(editTarget.subtotal) - discount + Number(editTarget.gst_total) + Number(editTarget.shipping_charges ?? 0);
+        // Re-apply Round Off on top of the recomputed total — otherwise
+        // editing the discount on a draft would silently wipe out whatever
+        // rounding was applied when the invoice was first generated.
+        let roundOffAmount = 0;
+        let newGrandTotal = rawGrandTotal;
+        if (business?.id) {
+          const settings = await fetchRoundOffSettings(business.id);
+          if (settings.enabled && settings.applySalesInvoice) {
+            const rounded = calculateRoundOff(rawGrandTotal, settings.method);
+            roundOffAmount = rounded.roundOffAmount;
+            newGrandTotal = rounded.finalTotal;
+          }
+        }
         updates.notes = editNotes || null;
         updates.discount_total = discount;
         updates.grand_total = newGrandTotal;
+        updates.round_off_amount = roundOffAmount;
       }
       const { error } = await supabase
         .from("sales_invoices")
@@ -449,6 +464,9 @@ export default function InvoicesPage() {
                   <div className="flex justify-between"><span className="text-muted-foreground">Party</span><span>{viewTarget.party_name ?? "—"}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Status</span><Badge variant="outline" className={statusTone[viewTarget.status]}>{viewTarget.status}</Badge></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span className="tabular-nums">₹{Number(viewTarget.gst_total).toFixed(2)}</span></div>
+                  {Number(viewTarget.round_off_amount) !== 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">Round Off</span><span className="tabular-nums">{Number(viewTarget.round_off_amount) > 0 ? "+ " : "− "}₹{Math.abs(Number(viewTarget.round_off_amount)).toFixed(2)}</span></div>
+                  )}
                   <div className="flex justify-between font-semibold"><span>Grand Total</span><span className="tabular-nums">₹{Number(viewTarget.grand_total).toFixed(2)}</span></div>
                   {viewTarget.notes && <div className="pt-1 text-muted-foreground text-xs">{viewTarget.notes}</div>}
                 </div>

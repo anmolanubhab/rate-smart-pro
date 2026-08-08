@@ -1211,6 +1211,15 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Configuration",
     keywords: ["bin", "warehouse", "put-away", "zone", "rack", "batch", "serial", "cycle count"],
   },
+  {
+    id: "round-off-settings",
+    title: "Round Off Settings",
+    description: "Enable rounding on invoice totals, choose the rounding method, and pick which vouchers apply it",
+    route: "/settings/round-off",
+    icon: Calculator,
+    module: "Configuration",
+    keywords: ["round off", "rounding", "nearest", "precision", "ledger"],
+  },
 
   // ==========================================================================
   // SETTINGS (personal account)

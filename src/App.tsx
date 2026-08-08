@@ -77,6 +77,7 @@ const BusinessProfile = lazy(() => import("./pages/settings/BusinessProfile"));
 const CompanyUsers = lazy(() => import("./pages/settings/CompanyUsers"));
 const PermissionSystem = lazy(() => import("./pages/settings/PermissionSystem"));
 const InventorySettings = lazy(() => import("./pages/settings/InventorySettings"));
+const RoundOffSettings = lazy(() => import("./pages/settings/RoundOffSettings"));
 const VoucherNumbering = lazy(() => import("./pages/settings/VoucherNumbering"));
 const PrintCopyConfiguration = lazy(() => import("./pages/settings/PrintCopyConfiguration"));
 const PrintProfiles = lazy(() => import("./pages/settings/PrintProfiles"));
@@ -342,6 +343,7 @@ const App = () => (
               <Route path="/settings/company-users" element={L(<CompanyUsers />)} />
               <Route path="/settings/permission-system" element={L(<PermissionSystem />)} />
               <Route path="/settings/inventory" element={L(<InventorySettings />)} />
+              <Route path="/settings/round-off" element={L(<RoundOffSettings />)} />
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
               <Route path="/settings/print-copies" element={L(<PrintCopyConfiguration />)} />
               <Route path="/settings/print-profiles" element={L(<PrintProfiles />)} />

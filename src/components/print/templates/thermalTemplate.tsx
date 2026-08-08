@@ -32,6 +32,7 @@ const ThermalTemplate: DocumentTemplateRenderer = ({ udm }) => {
   const t = totals ?? {};
   const isInterstate = (t.igst ?? 0) > 0;
   const hasGstSplit = showGst && (t.cgst != null || t.sgst != null || t.igst != null);
+  const roundOff = t.roundOff ?? 0;
   const fmt = (n?: number | null) =>
     Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -125,6 +126,9 @@ const ThermalTemplate: DocumentTemplateRenderer = ({ udm }) => {
           ) : showGst ? (
             <div className="flex justify-between"><span>{L.tax}</span><span className="tabular-nums">{fmt(t.tax)}</span></div>
           ) : null}
+          {roundOff !== 0 && (
+            <div className="flex justify-between"><span>{L.roundOff}</span><span className="tabular-nums">{roundOff > 0 ? "+ " : "− "}{fmt(Math.abs(roundOff))}</span></div>
+          )}
           <div className="flex justify-between font-extrabold text-[11px] border-t border-dashed border-black mt-1 pt-1">
             <span>{L.grandTotal}</span><span className="tabular-nums">{fmt(t.grandTotal)}</span>
           </div>

@@ -3,6 +3,21 @@ import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchOrder, fetchOrderItems, computeTotals } from "@/lib/orders";
 import { cancelVoucher } from "@/lib/voucherService";
 import { assertHsnCompliance } from "@/lib/accountingLock";
+import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
+
+/**
+ * Rounds a raw invoice total per the business's Round Off settings (Settings
+ * → Accounting → Round Off). Returns round_off_amount = 0 / final = raw
+ * unchanged when the feature or the Sales Invoice module toggle is off, or
+ * when there's no business to look settings up against.
+ */
+async function applySalesInvoiceRoundOff(businessId: string | null, rawTotal: number): Promise<{ round_off_amount: number; grand_total: number }> {
+  if (!businessId) return { round_off_amount: 0, grand_total: rawTotal };
+  const settings = await fetchRoundOffSettings(businessId);
+  if (!settings.enabled || !settings.applySalesInvoice) return { round_off_amount: 0, grand_total: rawTotal };
+  const { roundOffAmount, finalTotal } = calculateRoundOff(rawTotal, settings.method);
+  return { round_off_amount: roundOffAmount, grand_total: finalTotal };
+}
 
 export interface SalesInvoice {
   id: string;
@@ -27,6 +42,7 @@ export interface SalesInvoice {
   gst_total: number;
   shipping_charges: number;
   grand_total: number;
+  round_off_amount: number;
   status: "draft" | "posted" | "cancelled";
   voucher_id: string | null;
   created_at: string;
@@ -163,7 +179,8 @@ export async function generateInvoiceFromDispatch(opts: {
   const discount_total = +lineItems.reduce((s, i) => s + (Number(i.mrp) - i.net_rate) * Number(i.qty), 0).toFixed(2);
   const gst_total = +lineItems.reduce((s, i) => s + i._gst, 0).toFixed(2);
   const taxable = +lineItems.reduce((s, i) => s + i._lineNet, 0).toFixed(2);
-  const grand_total = +(taxable + gst_total + (order.shipping_charges || 0)).toFixed(2);
+  const rawGrandTotal = +(taxable + gst_total + (order.shipping_charges || 0)).toFixed(2);
+  const { round_off_amount, grand_total } = await applySalesInvoiceRoundOff(opts.businessId, rawGrandTotal);
 
   // lineItems already carries each line's resolved hsn (from products.hsn_code
   // via the dispatch_items(order_items(products(hsn_code))) select above), so
@@ -198,8 +215,9 @@ export async function generateInvoiceFromDispatch(opts: {
       gst_total,
       shipping_charges: order.shipping_charges || 0,
       grand_total,
+      round_off_amount,
       status: invoiceStatus,
-    })
+    } as any)
     .select()
     .single();
   if (ie) throw ie;
@@ -306,6 +324,7 @@ export async function generateInvoiceFromOrder(opts: {
   const items = await fetchOrderItems(opts.orderId);
   if (!items.length) throw new Error("Order has no items");
   const totals = computeTotals(items as any, order.shipping_charges || 0);
+  const { round_off_amount, grand_total } = await applySalesInvoiceRoundOff(opts.businessId, totals.grand_total);
 
   // Same fix as generateInvoiceFromDispatch — resolved once per invoice via
   // the GST Engine, not left at the column default of 0.
@@ -354,9 +373,10 @@ export async function generateInvoiceFromOrder(opts: {
       discount_total: totals.discount_total,
       gst_total: totals.gst_total,
       shipping_charges: order.shipping_charges || 0,
-      grand_total: totals.grand_total,
+      grand_total,
+      round_off_amount,
       status,
-    })
+    } as any)
     .select()
     .single();
   if (error) throw error;

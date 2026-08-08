@@ -62,6 +62,8 @@ export type PrintTotals = {
   sgst?: number;
   igst?: number;
   tax?: number;
+  /** Signed Round Off adjustment (final - raw); omitted or 0 hides the line. */
+  roundOff?: number;
   grandTotal?: number;
 };
 
