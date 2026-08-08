@@ -241,12 +241,18 @@ export async function postPurchaseInvoiceToLedger(
 
 /**
  * For a GRN-linked purchase invoice, auto-raises a Purchase Debit Note for
- * any qty the GRN's QC step rejected (received_qty - accepted_qty), grouped
- * by rejection reason. The original invoice is never touched — this only
- * calls the create_qc_debit_note RPC, which posts its own reversing voucher
+ * each of the GRN's two independent rejection buckets: damaged_qty (tagged
+ * with whatever qc_reason_category the user picked, defaulting "damaged")
+ * and shortage_qty (always tagged "short_supply" — that's definitionally
+ * what it is). A single GRN line can raise up to two separate debit notes
+ * this way, so Shortage and Damage stay separately identifiable per the
+ * Issue #37 spec, instead of one combined "rejected" debit note. The
+ * original invoice is never touched — this only calls the
+ * create_qc_debit_note RPC, which posts its own reversing voucher
  * (Dr Supplier / Cr Purchase / Cr GST Input) and reduces products.stock_on_hold
  * (never products.stock, since rejected qty was never made available).
- * Idempotent: skips any GRN line that already has a QC-sourced debit note.
+ * Idempotent per (GRN item, bucket): skips any bucket that already has a
+ * QC-sourced debit note under that reason category.
  */
 export async function autoCreateQcDebitNotesForGrn(
   businessId: string,
@@ -255,21 +261,24 @@ export async function autoCreateQcDebitNotesForGrn(
 ): Promise<void> {
   const { data: grnItems, error: grnErr } = await supabase
     .from("goods_receipt_items")
-    .select("id, product_id, received_qty, accepted_qty, qc_reason_category")
+    .select("id, product_id, damaged_qty, shortage_qty, qc_reason_category")
     .eq("goods_receipt_id", grnId);
   if (grnErr || !grnItems?.length) return;
 
-  const rejected = grnItems.filter((r: any) => Number(r.received_qty) - Number(r.accepted_qty) > 0.0001);
+  const rejected = grnItems.filter((r: any) => Number(r.damaged_qty) + Number(r.shortage_qty) > 0.0001);
   if (!rejected.length) return;
 
   const { data: existing } = await supabase
     .from("purchase_returns")
-    .select("goods_receipt_item_id")
+    .select("goods_receipt_item_id, reason_category")
     .eq("source", "qc")
     .in("goods_receipt_item_id", rejected.map((r: any) => r.id));
-  const already = new Set((existing ?? []).map((r: any) => r.goods_receipt_item_id));
-  const pending = rejected.filter((r: any) => !already.has(r.id));
-  if (!pending.length) return;
+  const alreadyByReason = new Map<string, Set<string>>();
+  for (const row of (existing ?? []) as any[]) {
+    const set = alreadyByReason.get(row.reason_category) ?? new Set<string>();
+    set.add(row.goods_receipt_item_id);
+    alreadyByReason.set(row.reason_category, set);
+  }
 
   const { data: invItems, error: invErr } = await supabase
     .from("purchase_invoice_items")
@@ -280,15 +289,23 @@ export async function autoCreateQcDebitNotesForGrn(
   invItems.forEach((it: any) => { if (it.product_id) invItemByProduct.set(it.product_id, it.id); });
 
   const byReason = new Map<string, { purchase_invoice_item_id: string; goods_receipt_item_id: string; qty: number }[]>();
-  for (const r of pending) {
+  const addToGroup = (reason: string, invItemId: string, grnItemId: string, qty: number) => {
+    if (alreadyByReason.get(reason)?.has(grnItemId)) return;
+    const list = byReason.get(reason) ?? [];
+    list.push({ purchase_invoice_item_id: invItemId, goods_receipt_item_id: grnItemId, qty });
+    byReason.set(reason, list);
+  };
+  for (const r of rejected) {
     const invItemId = invItemByProduct.get(r.product_id);
     if (!invItemId) continue;
-    const qty = Number(r.received_qty) - Number(r.accepted_qty);
-    const reason = r.qc_reason_category || "other";
-    const list = byReason.get(reason) ?? [];
-    list.push({ purchase_invoice_item_id: invItemId, goods_receipt_item_id: r.id, qty });
-    byReason.set(reason, list);
+
+    const damagedQty = Number(r.damaged_qty);
+    if (damagedQty > 0.0001) addToGroup(r.qc_reason_category || "damaged", invItemId, r.id, damagedQty);
+
+    const shortageQty = Number(r.shortage_qty);
+    if (shortageQty > 0.0001) addToGroup("short_supply", invItemId, r.id, shortageQty);
   }
+  if (!byReason.size) return;
 
   for (const [reason, items] of byReason.entries()) {
     const { error } = await supabase.rpc("create_qc_debit_note" as never, {
@@ -776,14 +793,37 @@ export async function fetchOpenPOsForInvoice(businessId: string): Promise<{ id: 
   return (data ?? []) as any[];
 }
 
+/** Debit Notes (purchase_returns, manual or QC-sourced) raised against this
+ *  invoice — used to pre-check before delete so the user gets a friendly
+ *  message instead of the raw `purchase_return_items_purchase_invoice_item_id_fkey`
+ *  FK violation Postgres would otherwise throw. */
+export async function getRelatedDebitNotesForInvoice(
+  invoiceId: string
+): Promise<{ id: string; return_number: string }[]> {
+  const { data, error } = await supabase
+    .from("purchase_returns")
+    .select("id, return_number")
+    .eq("purchase_invoice_id", invoiceId);
+  if (error) throw error;
+  return (data ?? []) as { id: string; return_number: string }[];
+}
+
 /** Hard delete — only reachable once `prevent_purchase_invoice_delete` lets
  *  it through: the invoice must already be 'cancelled' (booking a purchase
  *  invoice posts real ledger/stock effects immediately, so unlike PO/GRN
  *  there's no separate 'draft' state to hard-delete from -- cancel first,
  *  same as the trigger requires), and no supplier_payments row may
- *  reference it. Not duplicated client-side; the trigger's own exception
- *  surfaces as the error message. */
+ *  reference it. Also pre-checks for related Debit Notes (purchase_returns,
+ *  manual or QC-sourced) before ever touching purchase_invoice_items --
+ *  without this, deleting the items would hit a raw, untranslated FK
+ *  violation the moment a Debit Note references one of them. Any other
+ *  block (status/supplier_payments) is not duplicated client-side; the
+ *  trigger's own exception surfaces as the error message. */
 export async function deletePurchaseInvoice(invoiceId: string): Promise<void> {
+  const relatedDebitNotes = await getRelatedDebitNotesForInvoice(invoiceId);
+  if (relatedDebitNotes.length) {
+    throw new Error("This Purchase Invoice has related Debit Notes. Please delete the related Debit Notes before deleting this Purchase Invoice.");
+  }
   const { error: itemsErr } = await supabase.from("purchase_invoice_items").delete().eq("purchase_invoice_id", invoiceId);
   if (itemsErr) throw itemsErr;
   const { error } = await supabase.from("purchase_invoices").delete().eq("id", invoiceId);

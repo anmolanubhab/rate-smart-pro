@@ -67,7 +67,7 @@ export async function buildGRNUdm(input: GRNPrintInput): Promise<DocumentUdm> {
     },
     items: items.map((it) => ({
       partNumber: it.part_number ?? "",
-      description: `${it.product_name}  (Ordered ${it.ordered_qty} · Received ${it.received_qty} · Damaged ${it.damaged_qty})`,
+      description: `${it.product_name}  (Ordered ${it.ordered_qty} · Received ${it.received_qty} · Damaged ${it.damaged_qty} · Shortage ${it.shortage_qty})`,
       qty: Number(it.accepted_qty) || 0,
       unit: unitLabel?.(it.unit_id) ?? undefined,
     })),

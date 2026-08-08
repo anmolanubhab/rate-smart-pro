@@ -69,14 +69,25 @@ async function cancelReturn(
   // (-qty). Cancelling applies the opposite sign of whichever this is.
   const sign = kind === "sales" ? -1 : 1;
 
+  // purchase_returns has a `source` column ('manual' | 'qc'); sales_returns
+  // does not, so it's only selected for the purchase side.
   const { data: ret, error: le } = await supabase
     .from(table as any)
-    .select("status, voucher_id, return_number")
+    .select(kind === "sales" ? "status, voucher_id, return_number" : "status, voucher_id, return_number, source")
     .eq("id", returnId)
     .single();
   if (le) throw le;
   if (!ret) throw new Error("Return not found.");
   if ((ret as any).status === "cancelled") throw new Error("Return already cancelled.");
+
+  // A QC-sourced Purchase Return (auto-raised for GRN shortage/damage) never
+  // touched products.stock when it was created -- create_qc_debit_note()
+  // decrements products.stock_on_hold instead, since that qty was held, not
+  // available, in the first place (see grn_item_apply_hold_stock()). Cancel
+  // must reverse the same bucket it originally moved, or this would silently
+  // credit stock that was never actually available.
+  const isQcSourced = kind === "purchase" && (ret as any).source === "qc";
+  const balanceColumn = isQcSourced ? "stock_on_hold" : "stock";
 
   // Flip status to cancelled first, before touching stock — and verify a
   // row actually changed. .update() with no matching RLS policy returns
@@ -109,12 +120,12 @@ async function cancelReturn(
   for (const item of (items ?? []) as any[]) {
     if (!item.product_id || !(Number(item.qty) > 0)) continue;
     const { data: product, error: prodErr } = await supabase
-      .from("products").select("stock").eq("id", item.product_id).single();
+      .from("products").select(balanceColumn).eq("id", item.product_id).single();
     if (prodErr) continue;
 
-    const before = Number(product?.stock) || 0;
+    const before = Number((product as any)?.[balanceColumn]) || 0;
     const after = Math.max(0, before + sign * Number(item.qty));
-    await supabase.from("products").update({ stock: after }).eq("id", item.product_id);
+    await supabase.from("products").update({ [balanceColumn]: after } as any).eq("id", item.product_id);
 
     // Sales-return cancel reverses the stock this line's post added back
     // in -- if it was posted against a specific batch, that batch's own
@@ -134,13 +145,16 @@ async function cancelReturn(
         user_id: userId ?? null,
         business_id: businessId,
         product_id: item.product_id,
-        movement_type: movementType,
+        movement_type: isQcSourced ? "qc_rejection_cancel" : movementType,
+        movement_reason: isQcSourced ? "stock_on_hold_reversal" : null,
         qty: sign * Number(item.qty),
         stock_before: before,
         stock_after: after,
         reference_id: returnId,
         reference_type: kind === "sales" ? "sales_return" : "purchase_return",
-        notes: `${kind === "sales" ? "Sales" : "Purchase"} Return ${(ret as any).return_number} cancelled`,
+        notes: isQcSourced
+          ? `QC Debit Note ${(ret as any).return_number} cancelled — held qty reversed`
+          : `${kind === "sales" ? "Sales" : "Purchase"} Return ${(ret as any).return_number} cancelled`,
       });
     }
   }

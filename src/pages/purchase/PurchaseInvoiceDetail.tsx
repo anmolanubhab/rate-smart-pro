@@ -89,7 +89,16 @@ export default function PurchaseInvoiceDetail() {
       toast.success(`Invoice ${invoice.invoice_number} deleted`);
       navigate("/purchase/invoices");
     } catch (e: any) {
-      toast.error(e.message ?? "Could not delete invoice");
+      if (e.message?.includes("related Debit Notes")) {
+        toast.error(e.message, {
+          action: {
+            label: "View Related Debit Notes",
+            onClick: () => navigate(`/purchase/vendor-claims?invoice=${encodeURIComponent(invoice.invoice_number)}`),
+          },
+        });
+      } else {
+        toast.error(e.message ?? "Could not delete invoice");
+      }
     } finally {
       setDeleting(false);
       setDeleteConfirmOpen(false);

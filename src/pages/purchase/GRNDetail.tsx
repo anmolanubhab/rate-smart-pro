@@ -110,9 +110,10 @@ export default function GRNDetail() {
       ordered: acc.ordered + Number(it.ordered_qty || 0),
       received: acc.received + Number(it.received_qty || 0),
       damaged: acc.damaged + Number(it.damaged_qty || 0),
+      shortage: acc.shortage + Number(it.shortage_qty || 0),
       accepted: acc.accepted + Number(it.accepted_qty || 0),
     }),
-    { ordered: 0, received: 0, damaged: 0, accepted: 0 }
+    { ordered: 0, received: 0, damaged: 0, shortage: 0, accepted: 0 }
   );
 
   return (
@@ -196,8 +197,9 @@ export default function GRNDetail() {
                 <th className="px-4 py-3 text-right">Ordered</th>
                 <th className="px-4 py-3 text-right">Received</th>
                 <th className="px-4 py-3 text-right">Damaged</th>
+                <th className="px-4 py-3 text-right">Shortage</th>
                 <th className="px-4 py-3 text-right">Accepted</th>
-                <th className="px-4 py-3 text-right">Short</th>
+                <th className="px-4 py-3 text-right">PO Gap</th>
                 <th className="px-4 py-3 text-right">Excess</th>
                 <th className="px-4 py-3 text-left">Remarks</th>
                 <th className="px-4 py-3 text-left">Batch/Serial</th>
@@ -205,9 +207,9 @@ export default function GRNDetail() {
             </thead>
             <tbody>
               {loadingItems ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">Loading…</td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">No items on this receipt.</td></tr>
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">No items on this receipt.</td></tr>
               ) : (
                 items.map((it) => (
                   <tr key={it.id} className="border-t border-border">
@@ -216,6 +218,7 @@ export default function GRNDetail() {
                     <td className="px-4 py-2.5 text-right tabular-nums">{Number(it.ordered_qty).toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{Number(it.received_qty).toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-destructive">{Number(it.damaged_qty) || "—"}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-destructive">{Number(it.shortage_qty) || "—"}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-600">{Number(it.accepted_qty).toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{Number(it.short_qty) || "—"}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">{Number(it.excess_qty) || "—"}</td>
@@ -236,6 +239,7 @@ export default function GRNDetail() {
                   <td className="px-4 py-3 text-right tabular-nums font-bold">{totals.ordered.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right tabular-nums font-bold">{totals.received.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right tabular-nums font-bold text-destructive">{totals.damaged.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-bold text-destructive">{totals.shortage.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right tabular-nums font-bold text-emerald-600">{totals.accepted.toFixed(2)}</td>
                   <td colSpan={3}></td>
                 </tr>
