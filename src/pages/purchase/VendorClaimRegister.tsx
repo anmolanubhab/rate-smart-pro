@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ type ClaimRow = {
 
 export default function VendorClaimRegister() {
   useEffect(() => { document.title = "Vendor Claim Register — RD Pro"; }, []);
+  const { user } = useAuth();
   const { business } = useBusiness();
   const businessId = business?.id;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -85,7 +87,7 @@ export default function VendorClaimRegister() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await deletePurchaseReturn(deleteTarget.id);
+      await deletePurchaseReturn(deleteTarget.id, user?.id);
       toast.success(`Claim ${deleteTarget.return_number} deleted`);
       setDeleteTarget(null);
       await load();
