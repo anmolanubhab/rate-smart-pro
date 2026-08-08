@@ -28,6 +28,7 @@ import { generateInvoiceFromDispatch } from "@/lib/salesInvoices";
 import { normalizePart, Product } from "@/lib/products";
 import DispatchBatchSerialDialog, { type DispatchBatchSerialResult } from "@/components/inventory/DispatchBatchSerialDialog";
 import BinLocationPicker from "@/components/inventory/BinLocationPicker";
+import { useInventorySettings } from "@/lib/inventorySettings";
 import { fetchSalesConfig, SalesConfig, DEFAULT_SALES_CONFIG } from "@/lib/salesConfig";
 import { supabase } from "@/integrations/supabase/client";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
@@ -50,6 +51,7 @@ const Dispatch = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
   const fd = useFormatDate();
+  const { enableBinManagement } = useInventorySettings();
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderId, setOrderId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
@@ -485,12 +487,12 @@ const Dispatch = () => {
                   <th className="text-right px-3 py-2">Pending</th>
                   <th className="text-right px-3 py-2">Rate</th>
                   <th className="text-right px-3 py-2 w-32">Dispatch Now</th>
-                  <th className="text-left px-3 py-2 w-40">Pick Bin</th>
+                  {enableBinManagement && <th className="text-left px-3 py-2 w-40">Pick Bin</th>}
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
-                  <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">No pending items in this order.</td></tr>
+                  <tr><td colSpan={enableBinManagement ? 9 : 8} className="px-3 py-6 text-center text-muted-foreground">No pending items in this order.</td></tr>
                 ) : items.map((it) => {
                   const stock = stockOf(it);
                   const entered = Number(qtys[it.id!] || 0);
@@ -516,15 +518,17 @@ const Dispatch = () => {
                           onChange={(e) => setQtys((m) => ({ ...m, [it.id!]: +e.target.value }))}
                           className={`h-8 text-right ${overStock ? "border-destructive focus-visible:ring-destructive" : ""}`} />
                       </td>
-                      <td className="px-2 py-1.5">
-                        <BinLocationPicker
-                          warehouseId={warehouseId || null}
-                          value={bins[it.id!] ?? null}
-                          onChange={(binId) => setBins((m) => ({ ...m, [it.id!]: binId }))}
-                          placeholder="Auto"
-                          className="h-8 text-xs"
-                        />
-                      </td>
+                      {enableBinManagement && (
+                        <td className="px-2 py-1.5">
+                          <BinLocationPicker
+                            warehouseId={warehouseId || null}
+                            value={bins[it.id!] ?? null}
+                            onChange={(binId) => setBins((m) => ({ ...m, [it.id!]: binId }))}
+                            placeholder="Auto"
+                            className="h-8 text-xs"
+                          />
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
