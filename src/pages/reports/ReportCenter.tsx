@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 // — rather than hidden, so the Report Center stays the single place to
 // discover every report, live or not. Never silently fake real data.
 const CATALOG: { category: string; ids: string[] }[] = [
-  { category: "Sales", ids: ["reports-sales-register", "reports"] },
+  { category: "Sales", ids: ["reports-sales-register", "reports-sales-performance", "reports-party-part-sales", "reports"] },
   { category: "Purchase", ids: ["reports-purchase-register", "purchase-reports"] },
   { category: "Party & Outstanding", ids: ["reports-outstanding-ageing", "accounts-receivables", "accounts-payables"] },
   { category: "Accounting", ids: ["accounts-trial-balance", "accounts-profit-loss", "accounts-balance-sheet"] },

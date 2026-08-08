@@ -41,6 +41,7 @@ export interface Order {
   billing_address: string | null;
   shipping_address: string | null;
   salesman: string | null;
+  salesman_id: string | null;
   notes: string | null;
   remarks: string | null;
   warehouse_id: string | null;
@@ -175,6 +176,7 @@ export interface SaveOrderInput {
   billing_address?: string | null;
   shipping_address?: string | null;
   salesman?: string | null;
+  salesman_id?: string | null;
   notes?: string | null;
   remarks?: string | null;
   warehouse_id?: string | null;
@@ -206,6 +208,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
       billing_address: input.billing_address ?? null,
       shipping_address: input.shipping_address ?? null,
       salesman: input.salesman ?? null,
+      salesman_id: input.salesman_id ?? null,
       notes: input.notes ?? null,
       remarks: input.remarks ?? null,
       warehouse_id: input.warehouse_id ?? null,
@@ -231,6 +234,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
       billing_address: input.billing_address ?? null,
       shipping_address: input.shipping_address ?? null,
       salesman: input.salesman ?? null,
+      salesman_id: input.salesman_id ?? null,
       notes: input.notes ?? null,
       remarks: input.remarks ?? null,
       warehouse_id: input.warehouse_id ?? null,

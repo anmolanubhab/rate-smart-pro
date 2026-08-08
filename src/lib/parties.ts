@@ -22,6 +22,7 @@ outstanding_balance?: number;
 notes?: string | null;
 party_group_id?: string | null;
 use_group_defaults?: boolean;
+salesman_id?: string | null;
 preferred_customer?: boolean;
 preferred_supplier?: boolean;
 }

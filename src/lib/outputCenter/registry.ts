@@ -58,6 +58,8 @@ export const TemplateRegistry: Record<string, OutputCenterConfig> = {
   purchase_register: { id: "purchase_register", category: "report", label: "Purchase Register", enabledActions: REPORT_ACTIONS },
   stock_register: { id: "stock_register", category: "report", label: "Stock Movement Register", enabledActions: ["preview", "direct_print", "pdf", "excel", "search"] },
   outstanding_ageing: { id: "outstanding_ageing", category: "report", label: "Outstanding Ageing", enabledActions: REPORT_ACTIONS },
+  sales_performance_report: { id: "sales_performance_report", category: "report", label: "Sales Performance Report", enabledActions: ["preview", "direct_print", "pdf", "excel"] },
+  party_part_sales_report: { id: "party_part_sales_report", category: "report", label: "Party Part-wise Sales Report", enabledActions: ["preview", "direct_print", "pdf", "excel"] },
 
   // ── Inventory Reports ────────────────────────────────────────────────────
   stock_summary: { id: "stock_summary", category: "report", label: "Stock Summary", enabledActions: ["preview", "direct_print", "pdf", "excel"] },
