@@ -275,6 +275,7 @@ export default function CreatePurchaseInvoice() {
           }
           renderRow={(item, idx) => (
             <>
+              <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{idx + 1}</td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput value={item.part_number} onChange={(e) => updateRow(idx, { part_number: e.target.value })} />
               </td>
