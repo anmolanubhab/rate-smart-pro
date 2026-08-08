@@ -8,7 +8,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
-import { cancelVoucher } from "@/lib/voucherService";
+import { cancelVoucher, deleteVoucher } from "@/lib/voucherService";
 import { adjustProductBatchQty } from "@/lib/productBatches";
 
 export type ReturnQtyByItem = Record<string, number>;
@@ -176,13 +176,30 @@ export async function cancelPurchaseReturn(returnId: string, userId?: string): P
   return cancelReturn("purchase", returnId, userId);
 }
 
-/** Cancelled: delete directly (audit trail already captured the cancel). Posted: blocked — must Cancel first, which reverses stock. */
-export async function deletePurchaseReturn(id: string): Promise<void> {
-  const { data: ret, error: le } = await supabase.from("purchase_returns" as never).select("status").eq("id", id).single();
+/**
+ * Cancelled: delete directly (audit trail already captured the cancel).
+ * Posted: blocked — must Cancel first, which reverses stock.
+ * create_purchase_return()/post_purchase_return() creates a linked Debit
+ * Note voucher alongside the purchase_returns row -- deleting only the
+ * return row left that voucher (status='cancelled') orphaned forever in
+ * Voucher Center / Voucher List, so the linked voucher is deleted first.
+ */
+export async function deletePurchaseReturn(id: string, userId?: string): Promise<void> {
+  const { data: ret, error: le } = await supabase.from("purchase_returns" as never).select("status, voucher_id").eq("id", id).single();
   if (le) throw le;
   if ((ret as any).status === "posted") {
     throw new Error("This claim is posted. Cancel it first, then delete.");
   }
-  const { error } = await supabase.from("purchase_returns" as never).delete().eq("id", id);
+  if ((ret as any).voucher_id && userId) {
+    try {
+      await deleteVoucher(userId, (ret as any).voucher_id);
+    } catch (e: any) {
+      console.error("deletePurchaseReturn: could not delete linked voucher:", e.message);
+    }
+  }
+  const { data: deleted, error } = await supabase.from("purchase_returns" as never).delete().eq("id", id).select("id");
   if (error) throw error;
+  if (!deleted || deleted.length === 0) {
+    throw new Error("Could not delete claim — no permission or it no longer exists.");
+  }
 }

@@ -90,7 +90,7 @@ export default function SalesReturnsList() {
     if (!deleteTarget) return;
     setBusy(true);
     try {
-      await deleteSalesReturn(deleteTarget.id);
+      await deleteSalesReturn(deleteTarget.id, user?.id);
       toast.success(`Return ${deleteTarget.return_number} deleted`);
       invalidate();
       setDeleteTarget(null);

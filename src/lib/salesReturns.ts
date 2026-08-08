@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { computeItem, computeTotals, type OrderItem } from "@/lib/orders";
 import { cancelSalesReturn as cancelSalesReturnBase } from "@/lib/returns";
+import { deleteVoucher } from "@/lib/voucherService";
 
 export type SalesReturnStatus = "draft" | "posted" | "cancelled";
 
@@ -348,15 +349,32 @@ export async function cancelSalesReturn(returnId: string, userId?: string): Prom
   }
 }
 
-/** Draft: delete directly. Cancelled: also delete directly (audit trail already captured the cancel). Posted: blocked — must Cancel first. */
-export async function deleteSalesReturn(id: string): Promise<void> {
-  const { data: ret, error: le } = await supabase.from("sales_returns" as never).select("status").eq("id", id).single();
+/**
+ * Draft: delete directly. Cancelled: also delete directly (audit trail
+ * already captured the cancel). Posted: blocked — must Cancel first.
+ * post_sales_return() creates a linked Credit Note voucher alongside the
+ * sales_returns row -- deleting only the return row left that voucher
+ * (status='cancelled') orphaned forever in Voucher Center / Voucher List /
+ * the Financial Adjustment tab, so the linked voucher is deleted first.
+ */
+export async function deleteSalesReturn(id: string, userId?: string): Promise<void> {
+  const { data: ret, error: le } = await supabase.from("sales_returns" as never).select("status, voucher_id").eq("id", id).single();
   if (le) throw le;
   if ((ret as any).status === "posted") {
     throw new Error("This return is posted. Cancel it first, then delete.");
   }
-  const { error } = await supabase.from("sales_returns" as never).delete().eq("id", id);
+  if ((ret as any).voucher_id && userId) {
+    try {
+      await deleteVoucher(userId, (ret as any).voucher_id);
+    } catch (e: any) {
+      console.error("deleteSalesReturn: could not delete linked voucher:", e.message);
+    }
+  }
+  const { data: deleted, error } = await supabase.from("sales_returns" as never).delete().eq("id", id).select("id");
   if (error) throw error;
+  if (!deleted || deleted.length === 0) {
+    throw new Error("Could not delete return — no permission or it no longer exists.");
+  }
 }
 
 /** Mirrors duplicateOrder()/duplicateQuotation() — clones as a new draft, never straight to posted. */
