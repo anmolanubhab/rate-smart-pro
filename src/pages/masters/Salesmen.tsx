@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, KeyRound, Copy, Ban } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,10 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  fetchSalesmanPortalAccess, inviteSalesmanToPortal, revokeSalesmanInvitation,
+  salesmanInvitationLink, type SalesmanPortalAccess,
+} from "@/lib/salesmanPortalAccess";
 
 type SalesmanGroupLite = { id: string; name: string };
 
@@ -74,7 +78,58 @@ export default function Salesmen() {
     },
   });
 
+  const { data: portalAccess = {}, isLoading: portalLoading } = useQuery({
+    queryKey: ["salesman-portal-access", business?.id],
+    enabled: !!business,
+    queryFn: () => fetchSalesmanPortalAccess(business!.id),
+  });
+
   const groupName = (id: string | null) => groups.find((g) => g.id === id)?.name ?? "—";
+
+  const [accessDialog, setAccessDialog] = useState<Salesman | null>(null);
+  const [accessEmail, setAccessEmail] = useState("");
+  const [accessSubmitting, setAccessSubmitting] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+
+  const openGrantAccess = (s: Salesman) => {
+    setAccessDialog(s);
+    setAccessEmail(s.email ?? "");
+    setInviteLink(null);
+  };
+
+  const submitGrantAccess = async () => {
+    if (!accessDialog || !accessEmail.trim()) {
+      toast.error("Email is required");
+      return;
+    }
+    setAccessSubmitting(true);
+    try {
+      const result = await inviteSalesmanToPortal(accessDialog.id, accessEmail);
+      if (result.outcome === "access_granted") {
+        toast.success(`${accessDialog.name} now has portal access`);
+        setAccessDialog(null);
+      } else if (result.token) {
+        setInviteLink(salesmanInvitationLink(result.token));
+        toast.success("Invitation created — share the link below");
+      }
+      qc.invalidateQueries({ queryKey: ["salesman-portal-access", business!.id] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not grant portal access");
+    } finally {
+      setAccessSubmitting(false);
+    }
+  };
+
+  const handleRevoke = async (access: SalesmanPortalAccess) => {
+    if (!access.invitation_id) return;
+    try {
+      await revokeSalesmanInvitation(access.invitation_id);
+      toast.success("Invitation revoked");
+      qc.invalidateQueries({ queryKey: ["salesman-portal-access", business!.id] });
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not revoke invitation");
+    }
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -150,32 +205,54 @@ export default function Salesmen() {
               <TableHead>Email</TableHead>
               <TableHead>Employee Code</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Portal Access</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-sm text-muted-foreground">Loading…</TableCell></TableRow>
             ) : salesmen.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">No salesmen yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-sm text-muted-foreground">No salesmen yet.</TableCell></TableRow>
             ) : (
-              salesmen.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell>{groupName(s.salesman_group_id)}</TableCell>
-                  <TableCell>{s.phone ?? "—"}</TableCell>
-                  <TableCell>{s.email ?? "—"}</TableCell>
-                  <TableCell>{s.employee_code ?? "—"}</TableCell>
-                  <TableCell>
-                    {s.is_active ? <Badge>Active</Badge> : <Badge variant="secondary">Inactive</Badge>}
-                  </TableCell>
-                  <TableCell>
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
+              salesmen.map((s) => {
+                const access = portalAccess[s.id];
+                return (
+                  <TableRow key={s.id}>
+                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell>{groupName(s.salesman_group_id)}</TableCell>
+                    <TableCell>{s.phone ?? "—"}</TableCell>
+                    <TableCell>{s.email ?? "—"}</TableCell>
+                    <TableCell>{s.employee_code ?? "—"}</TableCell>
+                    <TableCell>
+                      {s.is_active ? <Badge>Active</Badge> : <Badge variant="secondary">Inactive</Badge>}
+                    </TableCell>
+                    <TableCell>
+                      {portalLoading ? (
+                        <span className="text-xs text-muted-foreground">…</span>
+                      ) : access?.status === "active" ? (
+                        <Badge className="bg-emerald-600 hover:bg-emerald-600">Active</Badge>
+                      ) : access?.status === "invited" ? (
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="secondary">Invited</Badge>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" title="Revoke invitation" onClick={() => handleRevoke(access)}>
+                            <Ban className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => openGrantAccess(s)}>
+                          <KeyRound className="h-3.5 w-3.5 mr-1" /> Grant Access
+                        </Button>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -225,6 +302,52 @@ export default function Salesmen() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Salesman"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!accessDialog} onOpenChange={(open) => { if (!open) setAccessDialog(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Grant Portal Access — {accessDialog?.name}</DialogTitle>
+          </DialogHeader>
+          {inviteLink ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Share this link with {accessDialog?.name} so they can create their Salesman Portal login.
+                It expires in 7 days.
+              </p>
+              <div className="flex gap-2">
+                <Input readOnly value={inviteLink} className="text-xs" />
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={() => { navigator.clipboard.writeText(inviteLink); toast.success("Copied"); }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                This creates a Salesman Portal login scoped to exactly this salesman — separate from any ERP account.
+              </p>
+              <div className="space-y-1.5">
+                <Label>Email *</Label>
+                <Input type="email" value={accessEmail} onChange={(e) => setAccessEmail(e.target.value)} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAccessDialog(null)}>
+              {inviteLink ? "Done" : "Cancel"}
+            </Button>
+            {!inviteLink && (
+              <Button onClick={submitGrantAccess} disabled={accessSubmitting}>
+                {accessSubmitting ? "Sending…" : "Grant Access"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

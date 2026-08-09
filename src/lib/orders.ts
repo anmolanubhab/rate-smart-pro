@@ -63,8 +63,8 @@ export interface Order {
   updated_at: string;
 }
 
-export async function nextOrderNumber(userId: string): Promise<string> {
-  const { data, error } = await supabase.rpc("next_order_number", { _user_id: userId, _business_id: getActiveBusinessIdSync() } as any);
+export async function nextOrderNumber(userId: string, businessId?: string): Promise<string> {
+  const { data, error } = await supabase.rpc("next_order_number", { _user_id: userId, _business_id: businessId ?? getActiveBusinessIdSync() } as any);
   if (error) throw error;
   return data as string;
 }
@@ -167,6 +167,13 @@ export function computeTotals(items: OrderItem[], shipping = 0): OrderTotals {
 
 export interface SaveOrderInput {
   userId: string;
+  /** Overrides the active-business lookup (getActiveBusinessIdSync) — needed
+   * by callers that aren't ERP business_users members, e.g. the Salesman
+   * Portal, which resolves its own business_id from the portal identity. */
+  businessId?: string;
+  /** Tags where the order was created from; left unset preserves the
+   * DB default ('internal_erp') for every existing ERP caller. */
+  source_channel?: string;
   id?: string;
   order_number?: string;
   order_date: string;
@@ -194,8 +201,8 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
   let orderNumber = input.order_number;
 
   if (!orderId) {
-    if (!orderNumber) orderNumber = await nextOrderNumber(input.userId);
-    const biz = getActiveBusinessIdSync();
+    const biz = input.businessId ?? getActiveBusinessIdSync();
+    if (!orderNumber) orderNumber = await nextOrderNumber(input.userId, biz);
     const { data, error } = await supabase.from("orders").insert({
       user_id: input.userId,
       created_by: input.userId,
@@ -214,6 +221,7 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
       warehouse_id: input.warehouse_id ?? null,
       mode: input.mode,
       source_type: input.source_type ?? "manual",
+      source_channel: input.source_channel,
       parent_order_ids: input.parent_order_ids ?? [],
       status: input.status,
       shipping_charges: input.shipping_charges ?? 0,

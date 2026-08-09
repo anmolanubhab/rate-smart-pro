@@ -12,6 +12,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import DealerGuard from "@/components/dealer/DealerGuard";
+import SalesmanGuard from "@/components/salesman/SalesmanGuard";
 
 
 const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
@@ -177,6 +178,21 @@ const DealerOutstanding = lazy(() => import("./pages/dealer/DealerOutstanding"))
 const DealerLedger = lazy(() => import("./pages/dealer/DealerLedger"));
 const DealerApplications = lazy(() => import("./pages/settings/DealerApplications"));
 
+// Salesman Portal (separate namespace from Dealer Portal — internal-employee
+// self-service login, identity via portal_users.role='salesman', not AppLayout)
+const SalesmanLogin = lazy(() => import("./pages/salesman/SalesmanLogin"));
+const SalesmanAcceptInvite = lazy(() => import("./pages/salesman/SalesmanAcceptInvite"));
+const SalesmanLayout = lazy(() => import("./pages/salesman/SalesmanLayout"));
+const SalesmanDashboard = lazy(() => import("./pages/salesman/SalesmanDashboard"));
+const SalesmanParties = lazy(() => import("./pages/salesman/SalesmanParties"));
+const SalesmanPartyDetail = lazy(() => import("./pages/salesman/SalesmanPartyDetail"));
+const SalesmanNewOrder = lazy(() => import("./pages/salesman/SalesmanNewOrder"));
+const SalesmanOrders = lazy(() => import("./pages/salesman/SalesmanOrders"));
+const SalesmanSales = lazy(() => import("./pages/salesman/SalesmanSales"));
+const SalesmanPartyProductSales = lazy(() => import("./pages/salesman/SalesmanPartyProductSales"));
+const SalesmanOutstanding = lazy(() => import("./pages/salesman/SalesmanOutstanding"));
+const SalesmanProfile = lazy(() => import("./pages/salesman/SalesmanProfile"));
+
 const queryClient = new QueryClient();
 
 // Preserves query string when redirecting legacy /dealer/* URLs to /portal/*
@@ -245,6 +261,15 @@ const L = (el: React.ReactNode) => (
 // Bare route (no AppLayout) — for pre-company screens
 const B = (el: React.ReactNode) => (
   <Suspense fallback={<RouteFallback />}>{el}</Suspense>
+);
+
+// Salesman Portal route (guard + its own layout, no AppLayout)
+const S = (el: React.ReactNode) => (
+  <SalesmanGuard>
+    <SalesmanLayout>
+      <Suspense fallback={<RouteFallback />}>{el}</Suspense>
+    </SalesmanLayout>
+  </SalesmanGuard>
 );
 
 const App = () => (
@@ -427,6 +452,20 @@ const App = () => (
               <Route path="/dealer/ledger"       element={<DealerRedirect to="/portal/ledger" />} />
               {/* Internal admin — review dealer applications */}
               <Route path="/settings/dealer-applications" element={L(<DealerApplications />)} />
+
+              {/* Salesman Portal — internal-employee self-service, separate from /portal/* (dealers) */}
+              <Route path="/salesman/login" element={B(<SalesmanLogin />)} />
+              <Route path="/salesman/accept-invite" element={B(<SalesmanAcceptInvite />)} />
+              <Route path="/salesman/dashboard" element={S(<SalesmanDashboard />)} />
+              <Route path="/salesman/parties" element={S(<SalesmanParties />)} />
+              <Route path="/salesman/parties/:id" element={S(<SalesmanPartyDetail />)} />
+              <Route path="/salesman/orders" element={S(<SalesmanOrders />)} />
+              <Route path="/salesman/orders/new" element={S(<SalesmanNewOrder />)} />
+              <Route path="/salesman/orders/edit/:id" element={S(<SalesmanNewOrder />)} />
+              <Route path="/salesman/sales" element={S(<SalesmanSales />)} />
+              <Route path="/salesman/party-sales" element={S(<SalesmanPartyProductSales />)} />
+              <Route path="/salesman/outstanding" element={S(<SalesmanOutstanding />)} />
+              <Route path="/salesman/profile" element={S(<SalesmanProfile />)} />
 
               {/* ── Inventory Reports ── */}
               <Route path="/reports/inventory"                   element={L(<InventoryDashboard />)} />
