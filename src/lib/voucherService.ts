@@ -643,13 +643,22 @@ export async function deleteVoucher(
 
   const { data: existing, error: fetchError } = await supabase
     .from("vouchers")
-    .select("voucher_number, status, voucher_date")
+    .select("voucher_number, status, voucher_date, reference_type")
     .eq("id", voucherId)
     .eq("business_id", businessId)
     .single();
 
   if (fetchError) throw new Error(`deleteVoucher: ${fetchError.message}`);
   if (!existing) throw new Error("Voucher not found.");
+
+  // DB-level guard (trg_prevent_posted_voucher_delete) is the authoritative
+  // enforcement -- this early check just avoids partially nulling out
+  // backref tables below before that guard rejects the final DELETE.
+  if (existing.status === "posted" && existing.reference_type) {
+    throw new Error(
+      `Cannot delete this voucher -- it was auto-generated from a ${existing.reference_type.replace(/_/g, " ")} and is still posted. Cancel or unlink the source document first.`
+    );
+  }
 
   await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
 
