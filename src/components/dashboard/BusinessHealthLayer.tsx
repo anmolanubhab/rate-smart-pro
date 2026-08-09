@@ -164,7 +164,7 @@ export default function BusinessHealthLayer() {
         .select("order_date, grand_total, dispatched_total_qty, pending_total_qty, status")
         .eq("user_id", user!.id)
         .in("status", ["pending", "partial"])
-        .is("deleted_at", null);
+        .eq("is_deleted", false);
       if (error) throw error;
       return (data ?? []) as any[];
     },

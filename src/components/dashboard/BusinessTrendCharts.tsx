@@ -76,7 +76,7 @@ export default function BusinessTrendCharts() {
         .in("status", ["pending", "partial"])
         .gte("order_date", from)
         .lte("order_date", to)
-        .is("deleted_at", null);
+        .eq("is_deleted", false);
       if (error) throw error;
       return (data ?? []) as any[];
     },

@@ -40,7 +40,7 @@ export default function Receivables() {
         .select("id, order_number, order_date, party_name, party_id, grand_total, dispatched_total_qty, pending_total_qty, status")
         .eq("business_id", businessId!)
         .in("status", ["pending", "partial"])
-        .is("deleted_at", null)
+        .eq("is_deleted", false)
         .order("order_date", { ascending: false })
         .range(page * PAGE, page * PAGE + PAGE - 1);
       if (error) throw error;
