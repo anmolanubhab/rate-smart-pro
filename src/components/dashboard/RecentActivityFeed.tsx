@@ -70,7 +70,7 @@ export default function RecentActivityFeed() {
         .from("orders")
         .select("id, order_number, order_date, party_name, grand_total, status, created_at")
         .eq("business_id", business?.id)
-        .is("deleted_at", null)
+        .eq("is_deleted", false)
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;

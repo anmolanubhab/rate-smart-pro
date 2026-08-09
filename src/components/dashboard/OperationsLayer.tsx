@@ -85,7 +85,7 @@ export default function OperationsLayer() {
         .eq("user_id", user!.id)
         .gte("order_date", monthStart)
         .in("status", ["completed", "pending", "partial"])
-        .is("deleted_at", null)
+        .eq("is_deleted", false)
         .order("order_date", { ascending: false })
         .limit(1000);
       if (error) throw error;
@@ -102,7 +102,7 @@ export default function OperationsLayer() {
         .select("order_date, party_name, grand_total, dispatched_total_qty, pending_total_qty, status")
         .eq("user_id", user!.id)
         .in("status", ["pending", "partial"])
-        .is("deleted_at", null)
+        .eq("is_deleted", false)
         .order("order_date", { ascending: true })
         .limit(1000);
       if (error) throw error;
