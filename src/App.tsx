@@ -30,10 +30,16 @@ const PartyPartSalesReport = lazy(() => import("./pages/reports/PartyPartSalesRe
 const BulkGstAssign = lazy(() => import("./pages/inventory/BulkGstAssign"));
 const Orders = lazy(() => import("./pages/Orders"));
 const CreateOrder = lazy(() => import("./pages/CreateOrder"));
-// Dev-only Document Engine gallery (Phase 1A) — intentionally not in navigation/registry.ts.
-const DocumentEngineGallery = lazy(() => import("./pages/dev/DocumentEngineGallery"));
+// Dev-only Document Engine gallery (Phase 1A) — intentionally not in navigation/registry.ts,
+// and the import itself is dev-only so it (and its route below) are fully excluded from
+// the production bundle, not just unreachable at runtime.
+const DocumentEngineGallery = import.meta.env.DEV
+  ? lazy(() => import("./pages/dev/DocumentEngineGallery"))
+  : null;
 // Dev-only Universal Document Output Center gallery (Output Center Phase 1) — intentionally not in navigation/registry.ts.
-const OutputCenterGallery = lazy(() => import("./pages/dev/OutputCenterGallery"));
+const OutputCenterGallery = import.meta.env.DEV
+  ? lazy(() => import("./pages/dev/OutputCenterGallery"))
+  : null;
 const ExcelImport = lazy(() => import("./pages/ExcelImport"));
 const Inventory = lazy(() => import("./pages/Inventory"));
 const Reports = lazy(() => import("./pages/Reports"));
@@ -480,8 +486,12 @@ const App = () => (
               <Route path="/reports/inventory/abc-analysis"      element={L(<AbcAnalysis />)} />
               <Route path="/reports/inventory/fsn-analysis"      element={L(<FsnAnalysis />)} />
 
-              <Route path="/dev/document-engine" element={B(<DocumentEngineGallery />)} />
-              <Route path="/dev/output-center" element={B(<OutputCenterGallery />)} />
+              {import.meta.env.DEV && (
+                <>
+                  <Route path="/dev/document-engine" element={B(<DocumentEngineGallery />)} />
+                  <Route path="/dev/output-center" element={B(<OutputCenterGallery />)} />
+                </>
+              )}
 
               <Route path="*" element={<NotFound />} />
             </Routes>
