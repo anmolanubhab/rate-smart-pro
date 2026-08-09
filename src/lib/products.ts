@@ -125,11 +125,12 @@ export async function bulkDeleteProducts(
 export async function searchProducts(
 userId: string,
 q: string,
-limit = 12
+limit = 12,
+businessId?: string
 ) {
 if (!q.trim()) return [] as Product[];
 
-const biz = getActiveBusinessIdSync();
+const biz = businessId ?? getActiveBusinessIdSync();
 
 if (!biz) return [];
 
