@@ -130,22 +130,14 @@ export async function approveRequest(
   let applyError: string | null = null;
 
   try {
-    if (req.action_type === "delete") {
-      const { error } = await (supabase as any).from(table).update({
-        is_deleted: true,
-        deleted_at: new Date().toISOString(),
-        deleted_by: user.id,
-        delete_reason: req.reason,
-      }).eq("id", req.record_id);
-      if (error) throw error;
-    } else if (req.action_type === "cancel") {
-      const update: Record<string, unknown> = {
-        status: "cancelled",
-        cancelled_at: new Date().toISOString(),
-        cancelled_by: user.id,
-        cancelled_reason: req.reason,
-      };
-      const { error } = await (supabase as any).from(table).update(update).eq("id", req.record_id);
+    if (req.action_type === "delete" || req.action_type === "cancel" || req.action_type === "unlock" || req.action_type === "reopen") {
+      // DB-enforced: apply_approval_action() re-checks approver role and
+      // request status itself, then performs the same field mutation this
+      // branch used to do directly -- routing through it (instead of a
+      // plain .update()) is what lets the new trg_approval_gate trigger on
+      // the target table tell "this is the approved application" apart
+      // from a direct bypass attempt.
+      const { error } = await supabase.rpc("apply_approval_action" as never, { _request_id: req.id } as never);
       if (error) throw error;
     } else if (req.action_type === "edit") {
       const patch = (req.after_snapshot ?? {}) as Record<string, unknown>;
@@ -155,22 +147,6 @@ export async function approveRequest(
       delete patch.user_id;
       delete patch.created_at;
       const { error } = await (supabase as any).from(table).update(patch).eq("id", req.record_id);
-      if (error) throw error;
-    } else if (req.action_type === "unlock") {
-      const { error } = await (supabase as any).from(table).update({
-        is_locked: false,
-        locked_at: null,
-        locked_by: null,
-      }).eq("id", req.record_id);
-      if (error) throw error;
-    } else if (req.action_type === "reopen") {
-      // Reopen a cancelled document.
-      const { error } = await (supabase as any).from(table).update({
-        status: "active",
-        cancelled_at: null,
-        cancelled_by: null,
-        cancelled_reason: null,
-      }).eq("id", req.record_id);
       if (error) throw error;
     }
   } catch (e) {
