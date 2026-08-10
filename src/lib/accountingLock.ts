@@ -56,6 +56,40 @@ export function isDateLocked(voucherDate: string, lock: AccountingLock | null): 
   return voucherDate <= lock.lock_date;
 }
 
+/**
+ * The business's "normal backdating window" in days
+ * (accounting_settings.normal_backdate_window_days) -- entries dated within
+ * this many days of today never need the "Can Backdate Voucher" financial
+ * right; only entries older than that do. Defaults to 30 both here and at
+ * the DB trigger (enforce_voucher_backdate_window) if the column is null on
+ * an older row, so the two layers always agree.
+ */
+export async function fetchBackdateWindowDays(businessId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("accounting_settings" as any)
+    .select("normal_backdate_window_days")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return 30;
+    throw error;
+  }
+  return (data as { normal_backdate_window_days: number | null } | null)?.normal_backdate_window_days ?? 30;
+}
+
+export async function setBackdateWindowDays(businessId: string, days: number): Promise<void> {
+  const { error } = await supabase.from("accounting_settings" as any).upsert({
+    business_id: businessId,
+    normal_backdate_window_days: days,
+  });
+  if (error) {
+    if (isMissingTable(error)) {
+      throw new Error("Backdating window setting isn't set up on this database yet — apply the latest migration.");
+    }
+    throw error;
+  }
+}
+
 // ── Financial Adjustment note settings ──────────────────────────────────────
 // Same accounting_settings row as the lock date above (one row per business),
 // so these share the isMissingTable guard and upsert shape rather than

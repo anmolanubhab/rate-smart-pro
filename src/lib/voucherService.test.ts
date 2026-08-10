@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateTotals, validateVoucher, validateContraLegs, validateContraInstrument, type VoucherItem } from "./voucherService";
+import { calculateTotals, validateVoucher, validateContraLegs, validateContraInstrument, isBeyondBackdateWindow, type VoucherItem } from "./voucherService";
 
 const item = (debit: number, credit: number, ledger = "l1"): VoucherItem => ({
   ledger_account_id: ledger,
@@ -109,5 +109,46 @@ describe("validateContraInstrument", () => {
   it("Cash needs no reference details", () => {
     const r = validateContraInstrument("Cash", null, null);
     expect(r.valid).toBe(true);
+  });
+});
+
+// can_backdate_voucher rule: lock_date (checked separately by assertNotLocked,
+// not part of this pure function) remains the absolute boundary; this only
+// classifies whether a date falls inside the business's normal backdating
+// window (default 30 days) -- entries within the window need no special
+// permission at all, matching ordinary day-to-day bill/payment entry.
+describe("isBeyondBackdateWindow — normal backdating window classification", () => {
+  const today = "2026-08-10";
+
+  it("today's date is never beyond the window", () => {
+    expect(isBeyondBackdateWindow(today, 30, today)).toBe(false);
+  });
+
+  it("a future date is never beyond the window", () => {
+    expect(isBeyondBackdateWindow("2026-09-01", 30, today)).toBe(false);
+  });
+
+  it("ordinary backdated entry within the window (10 days back, 30-day window) is allowed", () => {
+    expect(isBeyondBackdateWindow("2026-07-31", 30, today)).toBe(false);
+  });
+
+  it("exactly on the window boundary (30 days back, 30-day window) is still allowed", () => {
+    expect(isBeyondBackdateWindow("2026-07-11", 30, today)).toBe(false);
+  });
+
+  it("one day older than the boundary requires the right", () => {
+    expect(isBeyondBackdateWindow("2026-07-10", 30, today)).toBe(true);
+  });
+
+  it("well beyond the window (45 days back, 30-day window) requires the right", () => {
+    expect(isBeyondBackdateWindow("2026-06-26", 30, today)).toBe(true);
+  });
+
+  it("respects a smaller configured window (10 days back, 7-day window) requires the right", () => {
+    expect(isBeyondBackdateWindow("2026-07-31", 7, today)).toBe(true);
+  });
+
+  it("respects a larger configured window (45 days back, 60-day window) is allowed", () => {
+    expect(isBeyondBackdateWindow("2026-06-26", 60, today)).toBe(false);
   });
 });

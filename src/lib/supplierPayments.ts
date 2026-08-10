@@ -1,7 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
-import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
-import { createVoucher, postVoucher, cancelVoucher, type VoucherItem } from "@/lib/voucherService";
+import { cancelVoucher } from "@/lib/voucherService";
 
 export type PaymentMode = "cash" | "bank_transfer" | "cheque" | "upi" | "card" | "other";
 
@@ -24,134 +23,58 @@ export async function nextPaymentRef(businessId: string): Promise<string> {
   return data as string;
 }
 
+export interface SupplierPaymentAllocation {
+  invoiceId: string;
+  amount: number;
+}
+
 export interface RecordPaymentInput {
   supplier_id: string;
-  purchase_invoice_id: string | null;
   payment_date: string;
   mode: PaymentMode;
   amount: number;
   reference_note?: string | null;
-  createdBy?: string | null;
-}
-
-export async function recordSupplierPayment(input: RecordPaymentInput): Promise<SupplierPayment> {
-  const businessId = getActiveBusinessIdSync();
-  if (!businessId) throw new Error("No active business selected");
-
-  const paymentRef = await nextPaymentRef(businessId);
-
-  const { data, error } = await supabase
-    .from("supplier_payments")
-    .insert({
-      business_id: businessId,
-      payment_ref: paymentRef,
-      supplier_id: input.supplier_id,
-      purchase_invoice_id: input.purchase_invoice_id,
-      payment_date: input.payment_date,
-      mode: input.mode,
-      amount: input.amount,
-      reference_note: input.reference_note ?? null,
-      created_by: input.createdBy ?? null,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  const payment = data as SupplierPayment;
-
-  // Apply payment against the linked invoice's outstanding balance.
-  if (input.purchase_invoice_id) {
-    const { data: inv } = await supabase
-      .from("purchase_invoices")
-      .select("paid_amount, grand_total")
-      .eq("id", input.purchase_invoice_id)
-      .single();
-    if (inv) {
-      const newPaid = Number(inv.paid_amount ?? 0) + Number(input.amount);
-      const newStatus = newPaid >= Number(inv.grand_total) ? "paid" : "partially_paid";
-      await supabase
-        .from("purchase_invoices")
-        .update({ paid_amount: newPaid, status: newStatus })
-        .eq("id", input.purchase_invoice_id);
-    }
-  }
-
-  // Best-effort ledger posting: Dr Supplier Ledger / Cr Cash or Bank Account.
-  if (input.createdBy) {
-    postSupplierPaymentToLedger(input.createdBy, payment).catch((e) =>
-      console.error("Auto-post payment to ledger failed:", e.message)
-    );
-  }
-
-  return payment;
+  /** Which outstanding invoices this payment applies to, and how much of each.
+   *  Sum can be less than `amount` (the remainder is recorded as an on-account
+   *  payment, same as leaving "Against Invoice" blank in the old single-invoice form). */
+  allocations: SupplierPaymentAllocation[];
 }
 
 /**
- * Posts a recorded supplier payment to the accounting ledger as a balanced
- * "Payment" voucher: Dr Supplier ledger / Cr Cash (or first Bank ledger for
- * non-cash modes). Best-effort — never blocks the payment record itself.
+ * Records a supplier payment against zero, one, or many outstanding
+ * invoices in a single atomic transaction (pay_supplier_bills RPC):
+ * creates the supplier_payments header, applies every allocation line via
+ * supplier_payment_allocations (each insert atomically bumps that
+ * invoice's paid_amount/status through apply_purchase_invoice_payment_delta
+ * -- no more read-then-write race), and posts the Dr Supplier / Cr
+ * Cash-Bank voucher, all server-side. Replaces the old one-payment-one-invoice
+ * model, unifying with the same atomic delta primitive the Universal
+ * Voucher Engine's Bill Allocation panel (src/lib/billAllocation.ts) uses.
  */
-async function postSupplierPaymentToLedger(userId: string, payment: SupplierPayment): Promise<void> {
+export async function recordSupplierPayment(input: RecordPaymentInput): Promise<string> {
   const businessId = getActiveBusinessIdSync();
-  if (!businessId || !payment.supplier_id) return;
+  if (!businessId) throw new Error("No active business selected");
 
-  await seedAccounts(userId);
-  await ensurePartyLedgers(userId);
-
-  const { data: ledgers, error } = await supabase
-    .from("ledger_accounts")
-    .select("id, name, ledger_type, party_id")
-    .eq("user_id", userId)
-    .eq("business_id", businessId);
-  if (error || !ledgers) {
-    console.error("postSupplierPaymentToLedger: ledger lookup failed", error?.message);
-    return;
-  }
-
-  const supplierLedger = ledgers.find((l: any) => l.party_id === payment.supplier_id);
-  const cashLedger = ledgers.find((l: any) => l.ledger_type === "cash");
-  const bankLedger = ledgers.find((l: any) => l.ledger_type === "bank");
-  const payLedger = payment.mode === "cash" ? cashLedger ?? bankLedger : bankLedger ?? cashLedger;
-
-  if (!supplierLedger || !payLedger) {
-    console.error("postSupplierPaymentToLedger: required ledgers not found (supplier / cash-bank)");
-    return;
-  }
-
-  const items: VoucherItem[] = [
-    {
-      ledger_account_id: supplierLedger.id,
-      debit: payment.amount,
-      credit: 0,
-      remarks: `Payment ${payment.payment_ref}`,
-    },
-    {
-      ledger_account_id: payLedger.id,
-      debit: 0,
-      credit: payment.amount,
-      remarks: `Payment ${payment.payment_ref}`,
-    },
-  ];
-
-  try {
-    const voucher = await createVoucher(userId, {
-      voucher_type: "Payment",
-      voucher_date: payment.payment_date,
-      narration: `Auto-posted from Supplier Payment ${payment.payment_ref}`,
-      reference_type: "supplier_payment",
-      reference_id: payment.id,
-      items,
-    });
-    await postVoucher(userId, voucher.id);
-  } catch (e: any) {
-    console.error("postSupplierPaymentToLedger: voucher posting failed", e.message);
-  }
+  const { data, error } = await supabase.rpc("pay_supplier_bills" as never, {
+    _business_id: businessId,
+    _supplier_id: input.supplier_id,
+    _amount: input.amount,
+    _mode: input.mode,
+    _payment_date: input.payment_date,
+    _reference_note: input.reference_note ?? null,
+    _allocations: input.allocations.map((a) => ({ invoice_id: a.invoiceId, amount: a.amount })),
+  } as never);
+  if (error) throw error;
+  return data as string;
 }
 
 /**
  * Delete a supplier payment record. There's no soft-cancel status column on
  * supplier_payments (unlike invoices/returns/GRN), so this fully reverses
  * its effects and removes the row:
- * - Reverses the linked invoice's paid_amount and recomputes its status.
+ * - Deletes every supplier_payment_allocations row for this payment
+ *   (ON DELETE CASCADE via the FK), which fires the delta trigger per row
+ *   and unwinds paid_amount/status on every invoice this payment touched.
  * - Cancels the auto-posted "Payment" voucher (found via reference_type =
  *   'supplier_payment', since supplier_payments never stored a voucher_id).
  * - Deletes the payment row itself.
@@ -159,27 +82,11 @@ async function postSupplierPaymentToLedger(userId: string, payment: SupplierPaym
 export async function deleteSupplierPayment(paymentId: string, userId?: string): Promise<void> {
   const { data: payment, error: le } = await supabase
     .from("supplier_payments")
-    .select("purchase_invoice_id, amount, payment_ref")
+    .select("payment_ref")
     .eq("id", paymentId)
     .single();
   if (le) throw le;
   if (!payment) throw new Error("Payment not found.");
-
-  if (payment.purchase_invoice_id) {
-    const { data: inv } = await supabase
-      .from("purchase_invoices")
-      .select("paid_amount, grand_total")
-      .eq("id", payment.purchase_invoice_id)
-      .single();
-    if (inv) {
-      const newPaid = Math.max(0, Number(inv.paid_amount ?? 0) - Number(payment.amount));
-      const newStatus = newPaid <= 0 ? "unpaid" : newPaid >= Number(inv.grand_total) ? "paid" : "partially_paid";
-      await supabase
-        .from("purchase_invoices")
-        .update({ paid_amount: newPaid, status: newStatus })
-        .eq("id", payment.purchase_invoice_id);
-    }
-  }
 
   if (userId) {
     const { data: voucher } = await supabase
@@ -198,6 +105,8 @@ export async function deleteSupplierPayment(paymentId: string, userId?: string):
     }
   }
 
+  // Row delete cascades to supplier_payment_allocations, which reverses
+  // paid_amount/status per invoice via the delta trigger.
   const { error } = await supabase.from("supplier_payments").delete().eq("id", paymentId);
   if (error) throw error;
 }

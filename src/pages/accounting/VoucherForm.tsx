@@ -36,7 +36,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts, fmtInr } from "@/lib/accounting";
 import { getLedgerAccountOptions, type LedgerOption } from "@/lib/ledgerFiltering";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
-import { canOverrideAdjustmentLedger, canUnlockVouchers } from "@/lib/permissions";
+import { canOverrideAdjustmentLedger, canUnlockVouchers, canBackdateVoucher } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import {
   VOUCHER_TYPES,
@@ -108,7 +108,10 @@ export default function VoucherForm() {
   const { user } = useAuth();
   const { business, role, financialRights } = useBusiness();
   const qc = useQueryClient();
-  const voucherLockOpts = { canEditLockedVoucher: canUnlockVouchers(role, financialRights) };
+  const voucherLockOpts = {
+    canEditLockedVoucher: canUnlockVouchers(role, financialRights),
+    canBackdateVoucher: canBackdateVoucher(role, financialRights),
+  };
 
   useEffect(() => {
     document.title = isEdit ? "Edit Voucher — RD Pro" : "New Voucher — RD Pro";

@@ -848,7 +848,7 @@ export default function CompanyUsers() {
             <ToggleRow icon={Clock} label="Can Backdate Voucher"
               checked={!!memberForm.financial_rights.can_backdate_voucher}
               onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_backdate_voucher: v } })}
-              note="Enforcement lands in a later phase — flag is stored now." />
+              note="Only needed beyond the normal backdating window (Settings → Accounting Lock) — owner/admin always have it; ordinary backdated entry within the window never needs this." />
             <ToggleRow icon={Banknote} label="Can Change GST"
               checked={!!memberForm.financial_rights.can_change_gst}
               onChange={(v) => setMemberForm({ ...memberForm, financial_rights: { ...memberForm.financial_rights, can_change_gst: v } })}

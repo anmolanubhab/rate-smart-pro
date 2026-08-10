@@ -5,9 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { recordSupplierPayment, fetchOutstandingInvoices, PaymentMode } from "@/lib/supplierPayments";
+import { recordSupplierPayment, PaymentMode } from "@/lib/supplierPayments";
+import { fetchOutstandingBills, autoAllocateBills, type OutstandingBill } from "@/lib/billAllocation";
 import { fetchParties } from "@/lib/parties";
 
 interface Props {
@@ -27,11 +28,22 @@ const MODES: { value: PaymentMode; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+/**
+ * Records a supplier payment against one or many outstanding invoices,
+ * splitting one amount across several bills the same way the Universal
+ * Voucher Engine's Bill Allocation panel (src/components/vouchers/
+ * BillAllocationPanel.tsx) already does for Payment/Receipt vouchers --
+ * fetchOutstandingBills/autoAllocateBills from src/lib/billAllocation.ts
+ * are shared with that panel, so both entry points list and auto-allocate
+ * bills identically. The actual save goes through pay_supplier_bills(),
+ * which applies every allocation atomically server-side.
+ */
 export default function RecordSupplierPaymentDialog({ open, onOpenChange, businessId, userId, onSaved }: Props) {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [supplierId, setSupplierId] = useState("");
-  const [outstandingInvoices, setOutstandingInvoices] = useState<any[]>([]);
-  const [invoiceId, setInvoiceId] = useState("");
+  const [bills, setBills] = useState<OutstandingBill[]>([]);
+  const [billsLoading, setBillsLoading] = useState(false);
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [mode, setMode] = useState<PaymentMode>("bank_transfer");
   const [amount, setAmount] = useState("");
@@ -48,41 +60,50 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
 
   useEffect(() => {
     if (open) {
-      setSupplierId(""); setInvoiceId(""); setOutstandingInvoices([]);
+      setSupplierId(""); setBills([]); setAmounts({});
       setPaymentDate(new Date().toISOString().slice(0, 10));
       setMode("bank_transfer"); setAmount(""); setNote("");
     }
   }, [open]);
 
   useEffect(() => {
-    if (!businessId || !supplierId) { setOutstandingInvoices([]); return; }
-    fetchOutstandingInvoices(businessId, supplierId).then(setOutstandingInvoices).catch(() => setOutstandingInvoices([]));
+    if (!businessId || !supplierId) { setBills([]); setAmounts({}); return; }
+    setBillsLoading(true);
+    fetchOutstandingBills(businessId, "supplier", supplierId)
+      .then(setBills)
+      .catch(() => setBills([]))
+      .finally(() => setBillsLoading(false));
   }, [businessId, supplierId]);
 
-  const handleInvoiceChange = (id: string) => {
-    setInvoiceId(id);
-    const inv = outstandingInvoices.find((i) => i.id === id);
-    if (inv) {
-      const balance = Number(inv.grand_total) - Number(inv.paid_amount);
-      setAmount(String(balance > 0 ? balance : ""));
-    }
+  const totalAllocated = Object.values(amounts).reduce((s, v) => s + (Number(v) || 0), 0);
+  const unallocated = (Number(amount) || 0) - totalAllocated;
+
+  const autoAllocate = () => {
+    const lines = autoAllocateBills(bills, Number(amount) || 0);
+    const next: Record<string, string> = {};
+    for (const l of lines) next[l.invoiceId] = l.amount.toFixed(2);
+    setAmounts(next);
   };
 
   const handleSave = async () => {
     if (!supplierId) { toast.error("Select a supplier"); return; }
     const amt = Number(amount);
     if (!amt || amt <= 0) { toast.error("Enter a valid amount"); return; }
+    if (totalAllocated > amt + 0.01) { toast.error("Allocated more than the payment amount"); return; }
+
+    const allocations = bills
+      .filter((b) => Number(amounts[b.id]) > 0)
+      .map((b) => ({ invoiceId: b.id, amount: Number(amounts[b.id]) }));
 
     try {
       setSaving(true);
       await recordSupplierPayment({
         supplier_id: supplierId,
-        purchase_invoice_id: invoiceId || null,
         payment_date: paymentDate,
         mode,
         amount: amt,
         reference_note: note || null,
-        createdBy: userId,
+        allocations,
       });
       toast.success("Payment recorded");
       onSaved();
@@ -110,20 +131,6 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
             </Select>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Against Invoice (optional)</Label>
-            <Select value={invoiceId} onValueChange={handleInvoiceChange} disabled={!supplierId}>
-              <SelectTrigger><SelectValue placeholder={supplierId ? "On account (no specific invoice)" : "Select supplier first"} /></SelectTrigger>
-              <SelectContent>
-                {outstandingInvoices.map((inv) => (
-                  <SelectItem key={inv.id} value={inv.id}>
-                    {inv.invoice_number} — Balance ₹{(Number(inv.grand_total) - Number(inv.paid_amount)).toLocaleString("en-IN")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Payment Date</Label>
@@ -143,6 +150,54 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
           <div className="space-y-1.5">
             <Label>Amount (₹)</Label>
             <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Allocate against outstanding bills (optional)</Label>
+              <Button
+                type="button" variant="outline" size="sm"
+                onClick={autoAllocate}
+                disabled={!supplierId || !Number(amount) || bills.length === 0}
+              >
+                Auto-Allocate (Oldest First)
+              </Button>
+            </div>
+            <div className="max-h-56 overflow-auto rounded-lg border border-border divide-y divide-border">
+              {!supplierId ? (
+                <div className="p-3 text-xs text-muted-foreground text-center">Select a supplier first.</div>
+              ) : billsLoading ? (
+                <div className="p-3 text-xs text-muted-foreground text-center">Loading outstanding bills…</div>
+              ) : bills.length === 0 ? (
+                <div className="p-3 text-xs text-muted-foreground text-center">No outstanding bills for this supplier.</div>
+              ) : (
+                bills.map((b) => (
+                  <div key={b.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{b.invoiceNumber}</div>
+                      <div className="text-[11px] text-muted-foreground">Due ₹{b.due.toLocaleString("en-IN")}</div>
+                    </div>
+                    <Input
+                      type="number" min="0" step="0.01"
+                      className="w-28 h-8 text-right tabular-nums"
+                      placeholder="0.00"
+                      value={amounts[b.id] ?? ""}
+                      onChange={(e) => setAmounts({ ...amounts, [b.id]: e.target.value })}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+            {Number(amount) > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <Badge variant="outline">
+                  {Object.values(amounts).filter((v) => Number(v) > 0).length} bill(s) — ₹{totalAllocated.toLocaleString("en-IN")}
+                </Badge>
+                <span className={unallocated < -0.01 ? "text-destructive" : "text-muted-foreground"}>
+                  On account: ₹{unallocated.toLocaleString("en-IN")}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">

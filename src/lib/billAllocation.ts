@@ -90,18 +90,13 @@ export async function applyBillAllocations(kind: BillAllocationKind, lines: Bill
   for (const line of lines) {
     if (line.amount <= 0) continue;
     if (kind === "supplier") {
-      const { data: inv, error: fetchErr } = await supabase
-        .from("purchase_invoices")
-        .select("paid_amount, grand_total")
-        .eq("id", line.invoiceId)
-        .single();
-      if (fetchErr) throw fetchErr;
-      const newPaid = Number(inv.paid_amount ?? 0) + line.amount;
-      const newStatus = newPaid >= Number(inv.grand_total) ? "paid" : "partially_paid";
-      const { error } = await supabase
-        .from("purchase_invoices")
-        .update({ paid_amount: newPaid, status: newStatus })
-        .eq("id", line.invoiceId);
+      // Same atomic RPC src/lib/supplierPayments.ts uses -- both supplier
+      // payment paths must adjust paid_amount through the one race-free
+      // operation instead of each doing its own read-then-write.
+      const { error } = await supabase.rpc("apply_purchase_invoice_payment_delta" as never, {
+        _invoice_id: line.invoiceId,
+        _delta: line.amount,
+      } as never);
       if (error) throw error;
     } else {
       const { data: inv, error: fetchErr } = await supabase

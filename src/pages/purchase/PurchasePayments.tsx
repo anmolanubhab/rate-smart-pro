@@ -36,7 +36,9 @@ export default function PurchasePayments() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("supplier_payments")
-        .select("id, payment_ref, payment_date, mode, amount, reference_note, supplier:parties(name), invoice:purchase_invoices(invoice_number)")
+        .select(
+          "id, payment_ref, payment_date, mode, amount, reference_note, supplier:parties(name), invoice:purchase_invoices(invoice_number), allocations:supplier_payment_allocations(amount, invoice:purchase_invoices(invoice_number))"
+        )
         .eq("business_id", businessId!)
         .order("payment_date", { ascending: false })
         .limit(200);
@@ -45,18 +47,26 @@ export default function PurchasePayments() {
     },
   });
 
-  const rows = useMemo(() => (data ?? []).map((p) => ({
-    _id: p.id,
-    payment_ref: p.payment_ref,
-    supplier: p.supplier?.name ?? "—",
-    payment_date: p.payment_date,
-    mode: p.mode.replace(/_/g, " "),
-    amount: Number(p.amount ?? 0),
-    invoice_ref: p.invoice?.invoice_number ?? "—",
-    reference_note: p.reference_note,
-    status: "Recorded",
-    status_tone: "success",
-  })), [data]);
+  const rows = useMemo(() => (data ?? []).map((p) => {
+    const allocations: { invoice?: { invoice_number: string } | null }[] = p.allocations ?? [];
+    let invoiceRef = "On account";
+    if (allocations.length === 1) invoiceRef = allocations[0].invoice?.invoice_number ?? "—";
+    else if (allocations.length > 1) invoiceRef = `${allocations.length} invoices`;
+    else if (p.invoice?.invoice_number) invoiceRef = p.invoice.invoice_number;
+
+    return {
+      _id: p.id,
+      payment_ref: p.payment_ref,
+      supplier: p.supplier?.name ?? "—",
+      payment_date: p.payment_date,
+      mode: p.mode.replace(/_/g, " "),
+      amount: Number(p.amount ?? 0),
+      invoice_ref: invoiceRef,
+      reference_note: p.reference_note,
+      status: "Recorded",
+      status_tone: "success",
+    };
+  }), [data]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;

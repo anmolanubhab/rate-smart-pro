@@ -20,6 +20,7 @@ export interface InventorySettings {
   enableQualityInspection: boolean;
   enablePutawayWorkflow: boolean;
   enableCycleCounting: boolean;
+  allowNegativeStock: boolean;
 }
 
 // Everything with live, working UI today defaults to enabled so a missing
@@ -35,6 +36,7 @@ const DEFAULT_SETTINGS: InventorySettings = {
   enableQualityInspection: false,
   enablePutawayWorkflow: true,
   enableCycleCounting: true,
+  allowNegativeStock: false,
 };
 
 // Mirrors the isMissingTable guard in accountingLock.ts / permissionMode.ts --
@@ -46,7 +48,7 @@ function isMissingTable(error: any) {
 }
 
 const COLUMNS =
-  "enable_multi_warehouse, enable_bin_management, enable_zone_rack_bin_hierarchy, enable_batch_tracking, enable_serial_tracking, enable_quality_inspection, enable_putaway_workflow, enable_cycle_counting";
+  "enable_multi_warehouse, enable_bin_management, enable_zone_rack_bin_hierarchy, enable_batch_tracking, enable_serial_tracking, enable_quality_inspection, enable_putaway_workflow, enable_cycle_counting, allow_negative_stock";
 
 export async function fetchInventorySettings(businessId: string): Promise<InventorySettings> {
   const { data, error } = await supabase
@@ -69,6 +71,7 @@ export async function fetchInventorySettings(businessId: string): Promise<Invent
     enableQualityInspection: row.enable_quality_inspection ?? DEFAULT_SETTINGS.enableQualityInspection,
     enablePutawayWorkflow: row.enable_putaway_workflow ?? DEFAULT_SETTINGS.enablePutawayWorkflow,
     enableCycleCounting: row.enable_cycle_counting ?? DEFAULT_SETTINGS.enableCycleCounting,
+    allowNegativeStock: row.allow_negative_stock ?? DEFAULT_SETTINGS.allowNegativeStock,
   };
 }
 
@@ -82,6 +85,7 @@ export async function setInventorySettings(businessId: string, patch: Partial<In
   if (patch.enableQualityInspection !== undefined) row.enable_quality_inspection = patch.enableQualityInspection;
   if (patch.enablePutawayWorkflow !== undefined) row.enable_putaway_workflow = patch.enablePutawayWorkflow;
   if (patch.enableCycleCounting !== undefined) row.enable_cycle_counting = patch.enableCycleCounting;
+  if (patch.allowNegativeStock !== undefined) row.allow_negative_stock = patch.allowNegativeStock;
 
   const { error } = await supabase.from("accounting_settings" as any).upsert({
     business_id: businessId,

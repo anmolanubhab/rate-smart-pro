@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   fetchLockDate, setLockDate, fetchFinancialNoteSettings, setFinancialNoteSettings,
+  fetchBackdateWindowDays, setBackdateWindowDays,
   type FinancialNoteGstMode, type FinancialNoteLedgerMode,
 } from "@/lib/accountingLock";
 import { logAudit } from "@/lib/audit";
@@ -37,6 +38,24 @@ export default function AccountingLock() {
   }, [lock?.lock_date]);
 
   const tableMissing = error && /Could not find the table|PGRST205/i.test((error as any).message ?? "");
+
+  const { data: backdateWindowDays } = useQuery({
+    queryKey: ["backdate-window", business?.id],
+    enabled: !!business?.id,
+    queryFn: () => fetchBackdateWindowDays(business!.id),
+  });
+
+  const updateBackdateWindow = async (days: number) => {
+    if (!business?.id) return;
+    try {
+      await setBackdateWindowDays(business.id, days);
+      await logAudit({ business_id: business.id, action: "BACKDATE_WINDOW_UPDATE", entity_type: "accounting_settings", new_value: { normal_backdate_window_days: days } });
+      toast.success(`Normal backdating window set to ${days} days`);
+      qc.invalidateQueries({ queryKey: ["backdate-window", business.id] });
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
 
   const { data: noteSettings } = useQuery({
     queryKey: ["financial-note-settings", business?.id],
@@ -155,6 +174,38 @@ export default function AccountingLock() {
               You don't have permission to change the accounting lock. Contact an admin.
             </p>
           )}
+        </section>
+      )}
+
+      {!tableMissing && (
+        <section className="rounded-2xl bg-card border p-6 space-y-5">
+          <div>
+            <h2 className="font-semibold text-sm">Normal Backdating Window</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Ordinary backdated entry — a bill or payment recorded a few days or weeks late —
+              never needs special permission as long as it falls within this many days of today.
+              Anything older (but still after the Accounting Lock date above) requires the
+              "Can Backdate Voucher" financial right — grant it per user in Settings → Company Users.
+              This never overrides the Accounting Lock date, which always wins.
+            </p>
+          </div>
+
+          <div className="space-y-1.5 max-w-xs">
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Window (days)</Label>
+            <Select
+              disabled={!editable}
+              value={String(backdateWindowDays ?? 30)}
+              onValueChange={(v) => updateBackdateWindow(Number(v))}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">7 days</SelectItem>
+                <SelectItem value="15">15 days</SelectItem>
+                <SelectItem value="30">30 days (default)</SelectItem>
+                <SelectItem value="60">60 days</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </section>
       )}
 
