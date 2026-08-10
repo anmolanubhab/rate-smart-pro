@@ -5,7 +5,7 @@ import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canViewProfit } from "@/lib/permissions";
-import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { fetchLedgersWithBalance, computeProfitLoss, fmtInr } from "@/lib/accounting";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import type { ReportUdm } from "@/lib/documentUdm/types";
 
@@ -26,17 +26,8 @@ export default function ProfitLoss() {
   });
 
   const data = useMemo(() => {
-    const nature = (l: any) => l.group?.nature;
-    const income = ledgers.filter(l => nature(l) === "income").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
-    const expense = ledgers.filter(l => nature(l) === "expense").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
-    const rows: any[] = [];
-    ledgers.filter(l => nature(l) === "expense" && (l.balance ?? 0) !== 0).forEach(l => {
-      rows.push({ side: "Expense", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "warning" });
-    });
-    ledgers.filter(l => nature(l) === "income" && (l.balance ?? 0) !== 0).forEach(l => {
-      rows.push({ side: "Income", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "success" });
-    });
-    return { rows, income, expense, profit: income - expense };
+    const { income, expense, profit, rows } = computeProfitLoss(ledgers);
+    return { rows, income, expense, profit };
   }, [ledgers]);
 
   if (!canViewProfit(role, financialRights)) {

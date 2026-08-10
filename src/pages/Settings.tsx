@@ -3,7 +3,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { isOwner as isOwnerRole, canAccessMaintenance } from "@/lib/permissions";
 import {
   Building2, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags, Wrench, Calculator,
+  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags, Wrench, Calculator, CalendarClock,
 } from "lucide-react";
 
 const items = [
@@ -42,6 +42,12 @@ const items = [
     icon: ShieldAlert,
     title: "Accounting Lock",
     desc: "Lock a date to prevent edits before it, and configure Financial Adjustment note defaults",
+  },
+  {
+    to: "/settings/financial-years",
+    icon: CalendarClock,
+    title: "Financial Years",
+    desc: "Open/close financial years — a closed year blocks new posting and posted-voucher deletion inside it",
   },
   {
     to: "/settings/round-off",

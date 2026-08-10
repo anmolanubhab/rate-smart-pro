@@ -151,6 +151,22 @@ export async function postPurchaseInvoiceToLedger(
   const businessId = getActiveBusinessIdSync();
   if (!businessId || !invoice.supplier_id) return;
 
+  // Idempotency guard: re-check the invoice's own voucher_id from the DB
+  // (not the possibly-stale `invoice` param) before creating a voucher.
+  // Without this, any future retry/reconciliation call for an invoice that
+  // already posted successfully would create a second balanced Purchase
+  // voucher and double the supplier's ledger balance for the same invoice.
+  const { data: current, error: currentErr } = await supabase
+    .from("purchase_invoices")
+    .select("voucher_id")
+    .eq("id", invoice.id)
+    .maybeSingle();
+  if (currentErr) {
+    console.error("postPurchaseInvoiceToLedger: pre-post check failed", currentErr.message);
+    return;
+  }
+  if (current?.voucher_id) return;
+
   await seedAccounts(userId);
   await ensurePartyLedgers(userId);
 

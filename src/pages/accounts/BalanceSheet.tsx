@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { fetchLedgersWithBalance, computeProfitLoss, fmtInr } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import type { ReportUdm } from "@/lib/documentUdm/types";
@@ -30,9 +30,7 @@ export default function BalanceSheet() {
 
   const data = useMemo(() => {
     const nature = (l: any) => l.group?.nature;
-    const income = ledgers.filter(l => nature(l) === "income").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
-    const expense = ledgers.filter(l => nature(l) === "expense").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
-    const profit = income - expense;
+    const { profit } = computeProfitLoss(ledgers);
 
     const rows: any[] = [];
     let asset = 0, liab = 0;

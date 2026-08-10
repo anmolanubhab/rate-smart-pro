@@ -94,6 +94,7 @@ const PrintCopyConfiguration = lazy(() => import("./pages/settings/PrintCopyConf
 const PrintProfiles = lazy(() => import("./pages/settings/PrintProfiles"));
 const MeasurementUnits = lazy(() => import("./pages/settings/MeasurementUnits"));
 const AccountingLock = lazy(() => import("./pages/settings/AccountingLock"));
+const FinancialYears = lazy(() => import("./pages/settings/FinancialYears"));
 const FinancialNoteCategories = lazy(() => import("./pages/settings/FinancialNoteCategories"));
 const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
 const Maintenance = lazy(() => import("./pages/settings/Maintenance"));
@@ -384,6 +385,7 @@ const App = () => (
               <Route path="/settings/inventory" element={L(<InventorySettings />)} />
               <Route path="/settings/round-off" element={L(<RoundOffSettings />)} />
               <Route path="/settings/voucher-numbering" element={L(<VoucherNumbering />)} />
+              <Route path="/settings/financial-years" element={L(<FinancialYears />)} />
               <Route path="/settings/print-copies" element={L(<PrintCopyConfiguration />)} />
               <Route path="/settings/print-profiles" element={L(<PrintProfiles />)} />
               <Route path="/settings/measurement-units" element={L(<MeasurementUnits />)} />
