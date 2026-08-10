@@ -3,6 +3,7 @@ import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
 import { createVoucher, postVoucher, cancelVoucher, type VoucherItem } from "@/lib/voucherService";
 import { assertHsnCompliance } from "@/lib/accountingLock";
+import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
 
 export type PurchaseInvoiceStatus = "unpaid" | "partially_paid" | "paid" | "cancelled";
 
@@ -40,6 +41,7 @@ export interface PurchaseInvoice {
   discount_total: number;
   tax_total: number;
   grand_total: number;
+  round_off_amount: number;
   paid_amount: number;
   created_at: string;
 }
@@ -101,6 +103,21 @@ export function computeInvoiceTotals(items: PurchaseInvoiceItem[]): InvoiceTotal
   };
 }
 
+/**
+ * Rounds a raw invoice total per the business's Round Off settings (Settings
+ * → Accounting → Round Off). Returns round_off_amount = 0 / final = raw
+ * unchanged when the feature or the Purchase Invoice module toggle is off, or
+ * when there's no business to look settings up against. Mirrors
+ * applySalesInvoiceRoundOff() in salesInvoices.ts.
+ */
+async function applyPurchaseInvoiceRoundOff(businessId: string | null, rawTotal: number): Promise<{ round_off_amount: number; grand_total: number }> {
+  if (!businessId) return { round_off_amount: 0, grand_total: rawTotal };
+  const settings = await fetchRoundOffSettings(businessId);
+  if (!settings.enabled || !settings.applyPurchaseInvoice) return { round_off_amount: 0, grand_total: rawTotal };
+  const { roundOffAmount, finalTotal } = calculateRoundOff(rawTotal, settings.method);
+  return { round_off_amount: roundOffAmount, grand_total: finalTotal };
+}
+
 export async function nextInvoiceNumber(businessId: string): Promise<string> {
   const { data, error } = await supabase.rpc("next_purchase_invoice_number", { _business_id: businessId } as any);
   if (error || !data) return `PINV-${Date.now().toString().slice(-6)}`;
@@ -153,6 +170,7 @@ export async function postPurchaseInvoiceToLedger(
   const sgstInLedger = ledgers.find((l: any) => l.name === "SGST Input");
   const igstInLedger = ledgers.find((l: any) => l.name === "IGST Input");
   const gstLedgerLegacy = ledgers.find((l: any) => l.name === "GST Input");
+  const roundOffLedger = ledgers.find((l: any) => l.name === "Round Off");
   const supplierLedger = ledgers.find((l: any) => l.party_id === invoice.supplier_id);
 
   if (!purchaseLedger || !supplierLedger) {
@@ -222,6 +240,29 @@ export async function postPurchaseInvoiceToLedger(
     credit: invoice.grand_total,
     remarks: `Purchase Invoice ${invoice.invoice_number}`,
   });
+
+  // Dr(Purchase+GST, raw taxable/tax) must equal Cr(Supplier, ROUNDED
+  // grand_total) -- opposite sign convention from the Sales Invoice side
+  // since this is a payable, not a receivable. Verified algebraically:
+  // rounded up (round_off_amount > 0, owe more) -> Dr Round Off; rounded
+  // down (< 0, owe less) -> Cr Round Off.
+  if (roundOffLedger && invoice.round_off_amount) {
+    if (invoice.round_off_amount > 0) {
+      items.push({
+        ledger_account_id: roundOffLedger.id,
+        debit: invoice.round_off_amount,
+        credit: 0,
+        remarks: `Round off on ${invoice.invoice_number}`,
+      });
+    } else {
+      items.push({
+        ledger_account_id: roundOffLedger.id,
+        debit: 0,
+        credit: -invoice.round_off_amount,
+        remarks: `Round off on ${invoice.invoice_number}`,
+      });
+    }
+  }
 
   try {
     const voucher = await createVoucher(userId, {
@@ -361,6 +402,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
   }
 
   const totals = computeInvoiceTotals(input.items);
+  const { round_off_amount, grand_total } = await applyPurchaseInvoiceRoundOff(businessId, totals.grand_total);
   let invId = input.id;
   const isNew = !invId;
 
@@ -382,7 +424,8 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         subtotal: totals.subtotal,
         discount_total: totals.discount_total,
         gst_total: totals.tax_total,
-        grand_total: totals.grand_total,
+        grand_total,
+        round_off_amount,
         created_by: input.createdBy ?? null,
       })
       .select()
@@ -403,7 +446,8 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         subtotal: totals.subtotal,
         discount_total: totals.discount_total,
         gst_total: totals.tax_total,
-        grand_total: totals.grand_total,
+        grand_total,
+        round_off_amount,
       })
       .eq("id", invId);
     if (error) throw error;
@@ -481,6 +525,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     discount_total: Number(row.discount_total) || 0,
     tax_total: Number(row.gst_total) || 0,
     grand_total: Number(row.grand_total) || 0,
+    round_off_amount: Number(row.round_off_amount) || 0,
     paid_amount: Number(row.paid_amount) || 0,
     created_at: row.created_at,
   };
@@ -724,6 +769,7 @@ export async function fetchPurchaseInvoice(id: string): Promise<PurchaseInvoice 
     discount_total: Number(r.discount_total) || 0,
     tax_total: Number(r.gst_total) || 0,
     grand_total: Number(r.grand_total) || 0,
+    round_off_amount: Number(r.round_off_amount) || 0,
     paid_amount: Number(r.paid_amount) || 0,
     created_at: r.created_at,
     po_number: r.purchase_orders?.po_number ?? null,
