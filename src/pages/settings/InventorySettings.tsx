@@ -67,6 +67,12 @@ const TOGGLES: {
     label: "Enable Cycle Counting",
     description: "Recorded for future phases — not yet enforced.",
   },
+  {
+    key: "allowNegativeStock",
+    label: "Allow Negative Stock",
+    description: "Off by default: Sales Invoices, Dispatches, Stock Adjustments and Purchase Returns are blocked from taking a product's stock below zero. Turn on only if this business intentionally sells or issues stock it hasn't received yet.",
+    wired: true,
+  },
 ];
 
 export default function InventorySettingsPage() {

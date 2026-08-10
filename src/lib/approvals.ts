@@ -2,7 +2,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
 import {
   type ApprovalModule,
-  MODULE_TABLE,
   canApproveRequestFrom,
 } from "@/lib/permissions";
 import type { BusinessRole } from "@/hooks/useBusiness";
@@ -126,29 +125,20 @@ export async function approveRequest(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  const table = MODULE_TABLE[req.module];
   let applyError: string | null = null;
 
   try {
-    if (req.action_type === "delete" || req.action_type === "cancel" || req.action_type === "unlock" || req.action_type === "reopen") {
-      // DB-enforced: apply_approval_action() re-checks approver role and
-      // request status itself, then performs the same field mutation this
-      // branch used to do directly -- routing through it (instead of a
-      // plain .update()) is what lets the new trg_approval_gate trigger on
-      // the target table tell "this is the approved application" apart
-      // from a direct bypass attempt.
-      const { error } = await supabase.rpc("apply_approval_action" as never, { _request_id: req.id } as never);
-      if (error) throw error;
-    } else if (req.action_type === "edit") {
-      const patch = (req.after_snapshot ?? {}) as Record<string, unknown>;
-      // Defensive: never let an approval payload touch identity / audit fields.
-      delete patch.id;
-      delete patch.business_id;
-      delete patch.user_id;
-      delete patch.created_at;
-      const { error } = await (supabase as any).from(table).update(patch).eq("id", req.record_id);
-      if (error) throw error;
-    }
+    // DB-enforced for every action type, including edit: apply_approval_action()
+    // re-checks approver role and request status itself, then performs the
+    // field mutation (or, for edit, the jsonb patch) server-side -- routing
+    // through it (instead of a plain .update()) is what lets the
+    // trg_approval_gate trigger on the target table tell "this is the
+    // approved application" apart from a direct bypass attempt. Previously
+    // 'edit' applied via a plain client-side .update(), which the trigger
+    // didn't gate at all -- any user with ordinary table UPDATE rights
+    // could edit the record while the approval was still pending.
+    const { error } = await supabase.rpc("apply_approval_action" as never, { _request_id: req.id } as never);
+    if (error) throw error;
   } catch (e) {
     applyError = e instanceof Error ? e.message : String(e);
   }

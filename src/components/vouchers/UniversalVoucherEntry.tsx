@@ -25,7 +25,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts } from "@/lib/accounting";
 import { getLedgerAccountOptions, getAllActiveLedgerOptions, NON_CASH_BANK_LEDGER_TYPES, type LedgerOption } from "@/lib/ledgerFiltering";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
-import { canOverrideAdjustmentLedger, canUnlockVouchers } from "@/lib/permissions";
+import { canOverrideAdjustmentLedger, canUnlockVouchers, canBackdateVoucher } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import {
   calculateTotals, validateVoucher, validateContraLegs, validateContraInstrument,
@@ -55,7 +55,10 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   const { user } = useAuth();
   const { business, role, financialRights } = useBusiness();
   const qc = useQueryClient();
-  const voucherLockOpts = { canEditLockedVoucher: canUnlockVouchers(role, financialRights) };
+  const voucherLockOpts = {
+    canEditLockedVoucher: canUnlockVouchers(role, financialRights),
+    canBackdateVoucher: canBackdateVoucher(role, financialRights),
+  };
 
   useEffect(() => {
     document.title = `${config.label} Voucher — RD Pro`;

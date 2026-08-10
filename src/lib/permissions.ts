@@ -132,6 +132,23 @@ export function canUnlockVouchers(
   return hasRole(role, VOUCHER_UNLOCK_ROLES) || !!financialRights?.can_edit_locked_voucher;
 }
 
+/**
+ * Can this role/user post a voucher dated further back than the business's
+ * normal backdating window (accounting_settings.normal_backdate_window_days,
+ * default 30 days)? Same role-plus-override convention as canUnlockVouchers,
+ * reusing the same role set deliberately -- owner/admin bypass every
+ * accounting-period-adjacent restriction by role; everyone else needs the
+ * explicit per-user financial right. Ordinary backdated entry WITHIN the
+ * window (the common case -- entering a bill or payment a few days/weeks
+ * late) never calls this: see isBeyondBackdateWindow() in voucherService.ts.
+ */
+export function canBackdateVoucher(
+  role: BusinessRole | null,
+  financialRights?: FinancialRights | null,
+): boolean {
+  return hasRole(role, VOUCHER_UNLOCK_ROLES) || !!financialRights?.can_backdate_voucher;
+}
+
 /** Can this role reach Settings → Maintenance (data-rebuild actions like Recalculate Balances)? */
 export function canAccessMaintenance(role: BusinessRole | null): boolean {
   return hasRole(role, MAINTENANCE_ROLES);

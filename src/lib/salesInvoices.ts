@@ -600,6 +600,18 @@ export async function cancelInvoice(invoiceId: string, userId?: string) {
     }
   }
 
+  // Restore whatever stock was deducted for this invoice -- at invoice-post
+  // time (stock_reduction_point='invoice') or at dispatch time
+  // (stock_reduction_point='dispatch'), mirrored back from the original
+  // inventory_movements rows by reverse_sales_invoice_stock(). Best-effort,
+  // same as the voucher cancel above: a stock-side hiccup must never block
+  // the invoice cancel itself.
+  try {
+    await supabase.rpc("reverse_sales_invoice_stock" as never, { _invoice_id: invoiceId } as never);
+  } catch (e: any) {
+    console.error("cancelInvoice: could not reverse stock:", e.message);
+  }
+
   // If linked to a dispatch: revert dispatch to draft, clear its invoice_id
   if ((inv as any)?.dispatch_id) {
     await supabase

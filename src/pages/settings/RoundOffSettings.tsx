@@ -2,11 +2,13 @@
 // Route: /settings/round-off
 //
 // Business-wide Round Off configuration: a global on/off + rounding method,
-// plus a per-voucher-type enforcement flag. Only "Sales Invoice" is wired
-// today (generateInvoiceFromDispatch/generateInvoiceFromOrder in
-// salesInvoices.ts, posted to the ledger by sales_invoice_autopost()) -- the
-// rest are recorded so the business can express intent now, mirroring
-// InventorySettings.tsx's "Not yet enforced" pattern.
+// plus a per-voucher-type enforcement flag. Sales Invoice (posted by
+// sales_invoice_autopost()), Purchase Invoice (postPurchaseInvoiceToLedger()
+// in purchaseInvoices.ts) and Credit Note (create_sales_return() /
+// post_sales_return()) are all wired end to end -- Debit Note, Sales Order
+// and Purchase Order are recorded so the business can express intent now,
+// mirroring InventorySettings.tsx's "Not yet enforced" pattern, but nothing
+// reads them yet.
 
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -40,7 +42,8 @@ const MODULE_TOGGLES: {
   {
     key: "applyPurchaseInvoice",
     label: "Purchase Invoice",
-    description: "Recorded for a future phase — not yet enforced.",
+    description: "Rounds the invoice's grand total and posts the difference to the Round Off ledger.",
+    wired: true,
   },
   {
     key: "applyDebitNote",
@@ -50,7 +53,8 @@ const MODULE_TOGGLES: {
   {
     key: "applyCreditNote",
     label: "Credit Note",
-    description: "Recorded for a future phase — not yet enforced.",
+    description: "Rounds the credit note's total and posts the difference to the Round Off ledger.",
+    wired: true,
   },
   {
     key: "applySalesOrder",

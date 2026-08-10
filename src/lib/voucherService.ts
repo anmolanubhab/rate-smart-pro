@@ -9,7 +9,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
-import { fetchLockDate, isDateLocked } from "@/lib/accountingLock";
+import { fetchLockDate, isDateLocked, fetchBackdateWindowDays } from "@/lib/accountingLock";
 import { logAudit } from "@/lib/audit";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -145,9 +145,11 @@ function requireBusiness(): string {
   return biz;
 }
 
-/** Passed by callers that already resolved the current user's "Can Edit Locked Voucher" right. */
+/** Passed by callers that already resolved the current user's "Can Edit Locked Voucher"
+ *  and "Can Backdate Voucher" rights. */
 export interface VoucherLockOptions {
   canEditLockedVoucher?: boolean;
+  canBackdateVoucher?: boolean;
 }
 
 /** Throws if the given voucher date falls on/before the business's accounting lock date,
@@ -158,6 +160,39 @@ async function assertNotLocked(businessId: string, voucherDate: string, canOverr
   if (isDateLocked(voucherDate, lock)) {
     throw new Error(
       `This accounting period is locked (up to ${lock!.lock_date}). Unlock it in Settings → Accounting Lock to make changes before that date.`
+    );
+  }
+}
+
+/**
+ * Pure zone check for the backdating rule -- mirrors the DB trigger
+ * (enforce_voucher_backdate_window) exactly, so the app-level pre-check and
+ * the DB stay in lockstep: true only when `voucherDate` is strictly older
+ * than `windowDays` days before `today`. Does NOT consider lock_date --
+ * that's assertNotLocked's job, and the two are independent gates (a date
+ * can be inside the normal window yet still be locked, or vice versa).
+ * `today` is a parameter (not read internally) purely so this stays a pure,
+ * deterministic function for unit testing.
+ */
+export function isBeyondBackdateWindow(voucherDate: string, windowDays: number, today: string): boolean {
+  const cutoff = new Date(`${today}T00:00:00Z`);
+  cutoff.setUTCDate(cutoff.getUTCDate() - windowDays);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return voucherDate < cutoffStr;
+}
+
+/** Throws if the given voucher date is older than the business's normal backdating
+ *  window (default 30 days), unless the caller has the "Can Backdate Voucher"
+ *  financial right (owner/admin always do — see canBackdateVoucher() in permissions.ts).
+ *  Dates within the window, including today and any future date, are always allowed —
+ *  this never touches ordinary day-to-day backdated bill/payment entry. */
+async function assertNotBackdatedBeyondWindow(businessId: string, voucherDate: string, canOverride = false): Promise<void> {
+  if (canOverride) return;
+  const windowDays = await fetchBackdateWindowDays(businessId);
+  const today = new Date().toISOString().slice(0, 10);
+  if (isBeyondBackdateWindow(voucherDate, windowDays, today)) {
+    throw new Error(
+      `Voucher date ${voucherDate} is more than ${windowDays} days in the past, beyond the normal backdating window. This requires the "Can Backdate Voucher" financial right (Settings → Company Users).`
     );
   }
 }
@@ -369,6 +404,7 @@ export async function createVoucher(
   if (!check.valid) throw new Error(check.errors.join(" | "));
 
   await assertNotLocked(businessId, input.voucher_date, opts.canEditLockedVoucher);
+  await assertNotBackdatedBeyondWindow(businessId, input.voucher_date, opts.canBackdateVoucher);
 
   // Generate voucher number via existing RPC
   const dbType = typeToDb(input.voucher_type);
@@ -444,6 +480,7 @@ export async function updateVoucher(
 
   await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
   if (input.voucher_date) await assertNotLocked(businessId, input.voucher_date, opts.canEditLockedVoucher);
+  if (input.voucher_date) await assertNotBackdatedBeyondWindow(businessId, input.voucher_date, opts.canBackdateVoucher);
 
   const patch: Record<string, any> = {
     updated_at: new Date().toISOString(),
