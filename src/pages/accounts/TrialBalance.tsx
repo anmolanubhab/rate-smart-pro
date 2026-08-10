@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchLedgersWithBalance, fmtInr } from "@/lib/accounting";
+import { fetchLedgersWithBalance, computeTrialBalance, fmtInr } from "@/lib/accounting";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import type { ReportUdm } from "@/lib/documentUdm/types";
 
@@ -26,19 +26,7 @@ export default function TrialBalance() {
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
 
-  const { rows, totDr, totCr } = useMemo(() => {
-    let totDr = 0, totCr = 0;
-    const rows = ledgers
-      .filter(l => (l.balance ?? 0) !== 0)
-      .map(l => {
-        const bal = l.balance ?? 0;
-        const dr = bal > 0 ? bal : 0;
-        const cr = bal < 0 ? -bal : 0;
-        totDr += dr; totCr += cr;
-        return { ledger: l.name, group: l.group?.name ?? "—", dr, cr, _party_id: l.party_id };
-      });
-    return { rows, totDr, totCr };
-  }, [ledgers]);
+  const { rows, totDr, totCr } = useMemo(() => computeTrialBalance(ledgers), [ledgers]);
 
   return (
     <MockTablePage

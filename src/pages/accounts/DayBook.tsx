@@ -25,7 +25,7 @@ export default function DayBook() {
   const { data = [], isLoading } = useQuery({
     queryKey: ["daybook", user?.id, business?.id, fromDate, toDate],
     enabled: !!user?.id,
-    queryFn: () => fetchVouchers(user!.id, { from: fromDate || undefined, to: toDate || undefined, limit: 500 }),
+    queryFn: () => fetchVouchers(user!.id, { from: fromDate || undefined, to: toDate || undefined, limit: 500, status: "posted" }),
   });
 
   // Fetch party_id for vouchers that reference orders

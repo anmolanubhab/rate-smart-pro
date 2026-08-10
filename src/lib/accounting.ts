@@ -177,7 +177,7 @@ export async function deleteLedger(ledger: { id: string; name: string; is_system
   throw error;
 }
 
-export async function fetchVouchers(userId: string, opts: { type?: string; from?: string; to?: string; limit?: number } = {}) {
+export async function fetchVouchers(userId: string, opts: { type?: string; from?: string; to?: string; limit?: number; status?: string } = {}) {
   const biz = getActiveBusinessIdSync();
   let q = supabase
     .from("vouchers")
@@ -194,6 +194,13 @@ export async function fetchVouchers(userId: string, opts: { type?: string; from?
   if (opts.type && opts.type !== "All") q = q.eq("voucher_type", opts.type as any);
   if (opts.from) q = q.gte("voucher_date", opts.from);
   if (opts.to) q = q.lte("voucher_date", opts.to);
+  // Callers that render a formal accounting book/report (Day Book, Cash
+  // Book, Bank Book) must pass status: "posted" -- draft and cancelled
+  // vouchers are not real accounting transactions and must never appear
+  // in a book or count toward its totals. VoucherCenter (voucher
+  // management, not a book) intentionally omits this to keep showing
+  // every status, filtered client-side by its own status tabs.
+  if (opts.status) q = q.eq("status", opts.status);
   const { data, error } = await q;
   if (error) throw error;
 
@@ -246,6 +253,63 @@ export async function backfillAccounting(userId: string) {
   }
 
   return { parties: parties?.length ?? 0, recalculated };
+}
+
+export interface TrialBalanceRow {
+  ledger: string;
+  group: string;
+  dr: number;
+  cr: number;
+  _party_id: string | null;
+}
+
+/**
+ * Pure Trial Balance aggregation from already-fetched ledger balances
+ * (fetchLedgersWithBalance). Single source of truth for the Dr=Cr split so
+ * TrialBalance.tsx and close_financial_year()'s own DB-side check (which
+ * uses the identical opening + current_balance formula) can never drift
+ * apart in how a ledger's balance is read -- only in where the math runs.
+ */
+export function computeTrialBalance(ledgers: LedgerRow[]): { rows: TrialBalanceRow[]; totDr: number; totCr: number } {
+  let totDr = 0, totCr = 0;
+  const rows = ledgers
+    .filter((l) => (l.balance ?? 0) !== 0)
+    .map((l) => {
+      const bal = l.balance ?? 0;
+      const dr = bal > 0 ? bal : 0;
+      const cr = bal < 0 ? -bal : 0;
+      totDr += dr; totCr += cr;
+      return { ledger: l.name, group: l.group?.name ?? "—", dr, cr, _party_id: l.party_id };
+    });
+  return { rows, totDr, totCr };
+}
+
+export interface ProfitLossLine {
+  side: "Expense" | "Income";
+  item: string;
+  amount: number;
+  side_tone: "warning" | "success";
+}
+
+/**
+ * Pure Income - Expense aggregation from already-fetched ledger balances.
+ * Shared by ProfitLoss.tsx (direct P&L report) and BalanceSheet.tsx (needs
+ * the same Net Profit/Loss figure as its Capital plug) so the two reports
+ * can never disagree with each other about profit -- previously each page
+ * recomputed this independently with duplicated logic.
+ */
+export function computeProfitLoss(ledgers: LedgerRow[]): { income: number; expense: number; profit: number; rows: ProfitLossLine[] } {
+  const nature = (l: LedgerRow) => l.group?.nature;
+  const income = ledgers.filter((l) => nature(l) === "income").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
+  const expense = ledgers.filter((l) => nature(l) === "expense").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
+  const rows: ProfitLossLine[] = [];
+  ledgers.filter((l) => nature(l) === "expense" && (l.balance ?? 0) !== 0).forEach((l) => {
+    rows.push({ side: "Expense", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "warning" });
+  });
+  ledgers.filter((l) => nature(l) === "income" && (l.balance ?? 0) !== 0).forEach((l) => {
+    rows.push({ side: "Income", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "success" });
+  });
+  return { income, expense, profit: income - expense, rows };
 }
 
 export const fmtInr = (n: number) =>

@@ -21,7 +21,7 @@ export default function BankBook() {
       // the OTHER leg of the entry (who was paid / who paid in), which for a
       // receipt/payment is a party ledger, not another bank ledger.
       const nameById = new Map(allLedgers.map(l => [l.id, l.name]));
-      const vouchers = await fetchVouchers(user!.id, { limit: 500 });
+      const vouchers = await fetchVouchers(user!.id, { limit: 2000, status: "posted" });
       const items = await fetchVoucherItems(user!.id, vouchers.map(v => v.id));
       const vMap = new Map(vouchers.map(v => [v.id, v]));
       const itemsByVoucher = new Map<string, VoucherItemRow[]>();
