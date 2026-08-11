@@ -131,6 +131,11 @@ export default function StockTakeDetail() {
   };
 
   const saveCounted = async (item: StockTakeItem) => {
+    if (item.counted_qty !== null && item.counted_qty < 0) {
+      toast.error("Counted quantity cannot be negative");
+      load();
+      return;
+    }
     try {
       await setCountedQty(item.id, item.counted_qty);
     } catch (e: any) {
@@ -291,6 +296,7 @@ export default function StockTakeDetail() {
                     {isDraft ? (
                       <Input
                         type="number"
+                        min="0"
                         className="text-right h-8"
                         value={it.counted_qty ?? ""}
                         onChange={(e) => onCountedChange(it.id, e.target.value)}
