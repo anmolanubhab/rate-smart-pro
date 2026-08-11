@@ -134,7 +134,7 @@ export default function SalesConfigPage() {
         <p className="text-sm text-muted-foreground font-medium">Settings</p>
         <h1 className="font-display text-3xl font-bold mt-1">Sales Configuration</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Toggle sales workflow features. Disabled features hide their related fields throughout the app.
+          Toggle sales workflow features. Disabled document features (packing slip, box packing, etc.) hide their related fields throughout the app.
         </p>
       </header>
 
@@ -144,6 +144,10 @@ export default function SalesConfigPage() {
           <p className="text-xs text-muted-foreground mt-0.5">
             Choose which sales stages this company uses. Not every business needs every stage —
             pick a preset or customize individually.
+          </p>
+          <p className="text-xs text-amber-600 dark:text-amber-500 mt-1.5">
+            Reference/planning only for now — these stage toggles and Invoice Timing update the
+            diagram below but don't yet hide fields or change screen behavior elsewhere in the app.
           </p>
         </div>
 

@@ -642,6 +642,28 @@ async function postDirectInvoiceStock(
  * - Cancels the linked ledger voucher too (best-effort, same pattern as
  *   cancelInvoice() on the sales side).
  */
+/**
+ * A purchase invoice can't be cancelled while a supplier payment is still
+ * allocated against it -- mirrors assertInvoicePaymentReversed on the sales
+ * side (src/lib/salesInvoices.ts). Without this, cancelling silently left
+ * supplier_payment_allocations/paid_amount referencing a cancelled invoice.
+ * The fix path is the existing "Delete Payment" action on the Supplier
+ * Payments screen (deleteSupplierPayment), which already fully reverses a
+ * payment's allocations and cancels its voucher.
+ */
+async function assertPurchaseInvoicePaymentReversed(invoiceId: string): Promise<void> {
+  const { data: alloc } = await supabase
+    .from("supplier_payment_allocations" as never)
+    .select("id")
+    .eq("purchase_invoice_id", invoiceId)
+    .gt("amount", 0)
+    .limit(1)
+    .maybeSingle();
+  if (alloc) {
+    throw new Error("This Invoice has a Payment recorded against it. Delete the payment first (Supplier Payments screen).");
+  }
+}
+
 export async function cancelPurchaseInvoice(invoiceId: string, userId?: string): Promise<void> {
   const businessId = getActiveBusinessIdSync();
 
@@ -653,6 +675,7 @@ export async function cancelPurchaseInvoice(invoiceId: string, userId?: string):
   if (le) throw le;
   if (!inv) throw new Error("Purchase invoice not found.");
   if (inv.status === "cancelled") throw new Error("Invoice already cancelled.");
+  await assertPurchaseInvoicePaymentReversed(invoiceId);
 
   if (!inv.goods_receipt_id) {
     const items = await fetchInvoiceItems(invoiceId);
@@ -737,7 +760,8 @@ export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseIn
     .from("goods_receipt_items")
     .select(`
       product_id, received_qty, unit_id,
-      product:products(part_number, name, dealer_rate, gst_pct)
+      product:products(part_number, name, dealer_rate, gst_pct),
+      purchase_order_item:purchase_order_items(rate, gst_percent)
     `)
     .eq("goods_receipt_id", grnId);
   if (error) throw error;
@@ -749,8 +773,12 @@ export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseIn
         part_number: r.product?.part_number ?? "",
         description: r.product?.name ?? "",
         qty: Number(r.received_qty),
-        rate: Number(r.product?.dealer_rate ?? 0),
-        gst_percent: Number(r.product?.gst_pct ?? 18),
+        // The rate actually negotiated on the PO — not the product master's
+        // generic dealer_rate, which drifts from what was agreed per-PO and
+        // silently produced ₹0 invoices when unset (see fetchPendingPOItemsForInvoice,
+        // the direct-PO path, which already used purchase_order_items.rate correctly).
+        rate: Number(r.purchase_order_item?.rate ?? r.product?.dealer_rate ?? 0),
+        gst_percent: Number(r.purchase_order_item?.gst_percent ?? r.product?.gst_pct ?? 18),
         unit_id: r.unit_id ?? null,
         stock_qty: null,
       })

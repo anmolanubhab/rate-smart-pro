@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Undo2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,8 +14,18 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { DocumentActionMenu, type DocumentRowAction } from "@/components/documentEngine/DocumentActionMenu";
 import { useFormatDate } from "@/lib/dateFormat";
-import { fetchOutstandingInvoices, fetchAvailableAdvance, submitReceivePayment, type OutstandingInvoice, type AvailableAdvance } from "@/lib/receivePayment";
+import {
+  fetchOutstandingInvoices, fetchAvailableAdvance, submitReceivePayment,
+  fetchPaymentEntries, reverseSalesPayment,
+  type OutstandingInvoice, type AvailableAdvance, type PaymentEntry,
+} from "@/lib/receivePayment";
+import { cancelVoucher } from "@/lib/voucherService";
 
 type Party = { id: string; name: string };
 type BankAccount = { id: string; account_name: string; bank_name: string };
@@ -25,6 +37,7 @@ const RECENT_DAYS = 7;
 
 export default function ReceivePayment() {
   const { business } = useBusiness();
+  const { user } = useAuth();
   const fd = useFormatDate();
   useEffect(() => { document.title = "Receive Payment — RD Pro"; }, []);
 
@@ -46,6 +59,9 @@ export default function ReceivePayment() {
   const [saving, setSaving] = useState(false);
   const [availableAdvance, setAvailableAdvance] = useState<AvailableAdvance>({ total: 0, advances: [] });
   const [advanceUseInput, setAdvanceUseInput] = useState("");
+  const [payments, setPayments] = useState<PaymentEntry[]>([]);
+  const [reverseTarget, setReverseTarget] = useState<PaymentEntry | null>(null);
+  const [reversing, setReversing] = useState(false);
   // Clamped to what's actually available -- the pool/summary math already
   // treats this as advance-aware (see Phase 6), so wiring it up here is
   // purely additive.
@@ -73,9 +89,41 @@ export default function ReceivePayment() {
       .catch((e: any) => toast.error(e.message ?? "Could not load available advance"));
   };
 
+  const loadPayments = () => {
+    if (!business || !partyId) { setPayments([]); return; }
+    fetchPaymentEntries(business.id, partyId)
+      .then(setPayments)
+      .catch((e: any) => toast.error(e.message ?? "Could not load payment history"));
+  };
+
   useEffect(loadInvoices, [business, partyId]);
   useEffect(loadAdvance, [business, partyId]);
+  useEffect(loadPayments, [business, partyId]);
   useEffect(() => { setAdvanceUseInput(""); }, [partyId]);
+
+  const handleReverseConfirm = async () => {
+    if (!reverseTarget) return;
+    setReversing(true);
+    try {
+      const voucherId = await reverseSalesPayment(reverseTarget.id, "Reversed from Receive Payment screen");
+      if (voucherId && user) {
+        try {
+          await cancelVoucher(user.id, voucherId, `Payment reversed`);
+        } catch (e: any) {
+          console.error("Could not cancel linked voucher:", e.message);
+        }
+      }
+      toast.success("Payment reversed");
+      loadPayments();
+      loadInvoices();
+      loadAdvance();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not reverse payment");
+    } finally {
+      setReversing(false);
+      setReverseTarget(null);
+    }
+  };
 
   const filterCounts = useMemo(() => {
     const today = todayStr();
@@ -412,6 +460,79 @@ export default function ReceivePayment() {
           </CardContent>
         </Card>
       )}
+
+      {partyId && payments.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Payment History</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {payments.map((p) => {
+                  const actions: DocumentRowAction[] = [
+                    {
+                      key: "reverse", label: "Reverse Payment", icon: Undo2,
+                      onClick: () => setReverseTarget(p),
+                      destructive: true,
+                      hidden: p.is_reversed,
+                    },
+                  ];
+                  return (
+                    <TableRow key={p.id}>
+                      <TableCell>{fd(p.payment_date)}</TableCell>
+                      <TableCell className="capitalize">{p.payment_mode ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{p.reference_number || "—"}</TableCell>
+                      <TableCell className="text-right">{inr(p.amount)}</TableCell>
+                      <TableCell>
+                        {p.is_reversed ? (
+                          <Badge variant="destructive" className="text-[10px]">Reversed</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-600 bg-emerald-500/10">Active</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <DocumentActionMenu actions={actions} />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <AlertDialog open={!!reverseTarget} onOpenChange={(o) => !o && setReverseTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reverse this payment of {reverseTarget ? inr(reverseTarget.amount) : ""}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This frees up every invoice this payment was allocated against (their paid amount and status update
+              immediately) and cancels the linked ledger voucher. The payment record stays, marked as reversed. This
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reversing}>Keep Payment</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleReverseConfirm}
+              disabled={reversing}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {reversing ? "Reversing…" : "Reverse Payment"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 p-4">
         <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-4">
