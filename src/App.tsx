@@ -13,6 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import DealerGuard from "@/components/dealer/DealerGuard";
 import SalesmanGuard from "@/components/salesman/SalesmanGuard";
+import PlatformGuard from "@/components/platform/PlatformGuard";
 
 
 const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
@@ -200,6 +201,25 @@ const SalesmanPartyProductSales = lazy(() => import("./pages/salesman/SalesmanPa
 const SalesmanOutstanding = lazy(() => import("./pages/salesman/SalesmanOutstanding"));
 const SalesmanProfile = lazy(() => import("./pages/salesman/SalesmanProfile"));
 
+// RD-Pro Platform Control Center — internal RD-Pro staff, separate identity/
+// security boundary from businesses/business_users (platform_staff, not
+// business_role). P1 scaffold: login + a minimal identity/roles/permissions
+// dashboard. Later phases add business/support/billing modules here.
+const PlatformLogin = lazy(() => import("./pages/platform/PlatformLogin"));
+const PlatformLayout = lazy(() => import("@/components/platform/PlatformLayout"));
+const PlatformDashboard = lazy(() => import("./pages/platform/PlatformDashboard"));
+const PlatformAcceptInvite = lazy(() => import("./pages/platform/PlatformAcceptInvite"));
+const PlatformStaffDirectory = lazy(() => import("./pages/platform/PlatformStaffDirectory"));
+const PlatformStaffDetail = lazy(() => import("./pages/platform/PlatformStaffDetail"));
+const PlatformRoles = lazy(() => import("./pages/platform/PlatformRoles"));
+const PlatformOrganization = lazy(() => import("./pages/platform/PlatformOrganization"));
+const PlatformApprovalCenter = lazy(() => import("./pages/platform/PlatformApprovalCenter"));
+const PlatformApprovalDetail = lazy(() => import("./pages/platform/PlatformApprovalDetail"));
+const PlatformMyRequests = lazy(() => import("./pages/platform/PlatformMyRequests"));
+const PlatformApprovalRules = lazy(() => import("./pages/platform/PlatformApprovalRules"));
+const PlatformBusinesses = lazy(() => import("./pages/platform/PlatformBusinesses"));
+const PlatformBusinessDetail = lazy(() => import("./pages/platform/PlatformBusinessDetail"));
+
 const queryClient = new QueryClient();
 
 // Preserves query string when redirecting legacy /dealer/* URLs to /portal/*
@@ -277,6 +297,15 @@ const S = (el: React.ReactNode) => (
       <Suspense fallback={<RouteFallback />}>{el}</Suspense>
     </SalesmanLayout>
   </SalesmanGuard>
+);
+
+// RD-Pro Platform Control Center route (guard + its own layout, no AppLayout)
+const P = (el: React.ReactNode) => (
+  <PlatformGuard>
+    <PlatformLayout>
+      <Suspense fallback={<RouteFallback />}>{el}</Suspense>
+    </PlatformLayout>
+  </PlatformGuard>
 );
 
 const App = () => (
@@ -474,6 +503,23 @@ const App = () => (
               <Route path="/salesman/party-sales" element={S(<SalesmanPartyProductSales />)} />
               <Route path="/salesman/outstanding" element={S(<SalesmanOutstanding />)} />
               <Route path="/salesman/profile" element={S(<SalesmanProfile />)} />
+
+              {/* RD-Pro Platform Control Center — internal RD-Pro staff, separate
+                  security boundary from businesses/business_users */}
+              <Route path="/platform/login" element={B(<PlatformLogin />)} />
+              <Route path="/platform/accept-invite" element={B(<PlatformAcceptInvite />)} />
+              <Route path="/platform" element={P(<PlatformDashboard />)} />
+              <Route path="/platform/dashboard" element={P(<PlatformDashboard />)} />
+              <Route path="/platform/staff" element={P(<PlatformStaffDirectory />)} />
+              <Route path="/platform/staff/:id" element={P(<PlatformStaffDetail />)} />
+              <Route path="/platform/roles" element={P(<PlatformRoles />)} />
+              <Route path="/platform/organization" element={P(<PlatformOrganization />)} />
+              <Route path="/platform/approvals" element={P(<PlatformApprovalCenter />)} />
+              <Route path="/platform/approvals/:id" element={P(<PlatformApprovalDetail />)} />
+              <Route path="/platform/my-requests" element={P(<PlatformMyRequests />)} />
+              <Route path="/platform/approval-rules" element={P(<PlatformApprovalRules />)} />
+              <Route path="/platform/businesses" element={P(<PlatformBusinesses />)} />
+              <Route path="/platform/businesses/:id" element={P(<PlatformBusinessDetail />)} />
 
               {/* ── Inventory Reports ── */}
               <Route path="/reports/inventory"                   element={L(<InventoryDashboard />)} />

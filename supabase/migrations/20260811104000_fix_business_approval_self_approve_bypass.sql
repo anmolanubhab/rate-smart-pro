@@ -1,0 +1,27 @@
+-- Found during RD-Pro Platform Control Center P2 verification (2026-08-11),
+-- unrelated to that work: this table has two overlapping generations of RLS
+-- policies -- ar_select/ar_insert/ar_update/ar_delete (in migration
+-- 20260701075547_78208168-0a81-4506-a8e8-04aa77b96bda.sql) and a newer
+-- apr_select_member/apr_insert_member/apr_update_approver_or_owner set that
+-- exists live but has no corresponding migration file in this repo (applied
+-- directly against the project, consistent with the untracked-migration
+-- pattern noted in SECURITY_AUDIT_REPORT_2026-08-10.md).
+--
+-- ar_update has no explicit WITH CHECK (Postgres reuses its USING clause for
+-- both), and USING never constrains the new row's `status` -- only that the
+-- caller is a business member who either holds a privileged role OR is the
+-- request's own requester. That means a requester could UPDATE their own
+-- pending request straight to status='approved', bypassing the entire
+-- approver-role requirement. RLS ORs all matching permissive policies
+-- together, so even though the newer apr_update_approver_or_owner policy
+-- has the correct WITH CHECK (requester branch restricted to
+-- status IN ('pending','cancelled')), its fix was silently neutralized by
+-- ar_update remaining active on the same table.
+--
+-- Verified via impersonated-role testing (in a rolled-back transaction)
+-- before applying: after dropping ar_update, self-approval by a non-
+-- privileged requester is rejected, while a requester's own cancel and a
+-- privileged approver's (manager) approval both continue to work exactly
+-- as before -- apr_update_approver_or_owner alone already covers every
+-- legitimate access pattern ar_update provided.
+DROP POLICY IF EXISTS ar_update ON public.approval_requests;
