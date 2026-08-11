@@ -639,7 +639,11 @@ const Products = () => {
       setOpen(false);
       load();
     } catch (e: any) {
-      toast.error(e.message);
+      if (e.code === "23505") {
+        toast.error(`Part number "${form.part_number.trim()}" is already in use — choose a different one.`);
+      } else {
+        toast.error(e.message ?? "Failed to save product");
+      }
     } finally {
       setSaving(false);
     }

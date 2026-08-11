@@ -27,7 +27,7 @@ function InventoryStockImportTrigger({ onDone }: { onDone: () => void }) {
   );
 }
 
-const INVENTORY_COLUMNS = "id, part_number, description, stock, reserved_qty, low_stock_threshold, mrp, hsn_code, gst_pct, unit";
+const INVENTORY_COLUMNS = "id, part_number, name, stock, reserved_qty, low_stock_threshold, mrp, hsn_code, gst_pct, unit";
 
 export default function Inventory() {
   const { user } = useAuth();
@@ -57,7 +57,7 @@ export default function Inventory() {
         .range(from, to);
       if (search.trim()) {
         const q = `%${search.trim()}%`;
-        query = query.or(`part_number.ilike.${q},description.ilike.${q}`);
+        query = query.or(`part_number.ilike.${q},name.ilike.${q}`);
       }
       const { data, error, count } = await query;
       if (error) throw error;
@@ -114,7 +114,7 @@ export default function Inventory() {
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search part number or description…"
+          placeholder="Search part number or name…"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(0); }}
         />
@@ -125,7 +125,7 @@ export default function Inventory() {
           <TableHeader>
             <TableRow>
               <TableHead>Part Number</TableHead>
-              <TableHead>Description</TableHead>
+              <TableHead>Name</TableHead>
               <TableHead className="text-right">MRP</TableHead>
               <TableHead className="text-right">Stock</TableHead>
               <TableHead className="text-right">Min Stock</TableHead>
@@ -141,7 +141,7 @@ export default function Inventory() {
             ) : items.map((p) => (
               <TableRow key={p.id}>
                 <TableCell className="font-mono text-sm">{p.part_number}</TableCell>
-                <TableCell className="max-w-[200px] truncate">{p.description}</TableCell>
+                <TableCell className="max-w-[200px] truncate">{p.name}</TableCell>
                 <TableCell className="text-right">₹{Number(p.mrp ?? 0).toFixed(2)}</TableCell>
                 <TableCell className="text-right font-semibold">
                   {p.stock ?? 0}

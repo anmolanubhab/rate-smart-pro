@@ -96,6 +96,10 @@ export default function Batches() {
       toast.error("Product and batch number are required");
       return;
     }
+    if (Number(form.qty) < 0) {
+      toast.error("Quantity cannot be negative");
+      return;
+    }
     setSaving(true);
     try {
       const input = {
@@ -261,7 +265,7 @@ export default function Batches() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Qty</Label>
-                <Input type="number" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
+                <Input type="number" min="0" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
               </div>
             </div>
             <div className="space-y-1.5">

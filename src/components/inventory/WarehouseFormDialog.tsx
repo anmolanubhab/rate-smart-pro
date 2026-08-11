@@ -70,6 +70,19 @@ export default function WarehouseFormDialog({ open, onOpenChange, businessId, us
         toast.success("Warehouse updated");
         onSaved(data as unknown as WarehouseRow);
       } else {
+        // warehouse_bins.location_code (used once bin management is on) is
+        // computed from warehouses.code — without one, the auto-seeded
+        // "Unassigned" bin trigger fails and blocks creation entirely.
+        const { data: existing } = await supabase
+          .from("warehouses")
+          .select("code")
+          .eq("business_id", businessId);
+        const maxN = ((existing ?? []) as { code: string | null }[]).reduce((max, w) => {
+          const n = parseInt(w.code?.match(/^WH(\d+)$/)?.[1] ?? "", 10);
+          return Number.isFinite(n) && n > max ? n : max;
+        }, 0);
+        const nextCode = `WH${String(maxN + 1).padStart(3, "0")}`;
+
         const { data, error } = await supabase
           .from("warehouses")
           .insert([{
@@ -78,6 +91,7 @@ export default function WarehouseFormDialog({ open, onOpenChange, businessId, us
             address: address.trim() || null,
             is_default: isDefault,
             created_by: userId ?? null,
+            code: nextCode,
           }] as any)
           .select()
           .single();

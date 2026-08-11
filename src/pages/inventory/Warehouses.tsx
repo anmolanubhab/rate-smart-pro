@@ -10,7 +10,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, MoreVertical, Pencil, Trash2, Star, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, Star, Search, Warehouse as WarehouseIcon, Power, PowerOff } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -58,6 +58,18 @@ export default function Warehouses() {
     const { error } = await supabase.from("warehouses").update({ is_default: true } as any).eq("id", w.id);
     if (error) { toast.error(error.message); return; }
     toast.success(`${w.warehouse_name} set as default`);
+    load();
+  };
+
+  const handleToggleStatus = async (w: WarehouseRow) => {
+    if (w.is_default && w.status === "active") {
+      toast.error("Set another warehouse as default before deactivating this one.");
+      return;
+    }
+    const nextStatus = w.status === "active" ? "inactive" : "active";
+    const { error } = await supabase.from("warehouses").update({ status: nextStatus } as any).eq("id", w.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`${w.warehouse_name} marked ${nextStatus}`);
     load();
   };
 
@@ -140,7 +152,11 @@ export default function Warehouses() {
                   </TableCell>
                   <TableCell className="text-muted-foreground">{w.address || "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={w.is_default ? "default" : "outline"}>{w.is_default ? "Default" : "Active"}</Badge>
+                    {w.status !== "active" ? (
+                      <Badge variant="outline" className="text-muted-foreground">Inactive</Badge>
+                    ) : (
+                      <Badge variant={w.is_default ? "default" : "outline"}>{w.is_default ? "Default" : "Active"}</Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -151,11 +167,18 @@ export default function Warehouses() {
                         <DropdownMenuItem onClick={() => openEdit(w)}>
                           <Pencil className="h-4 w-4 mr-2" /> Edit
                         </DropdownMenuItem>
-                        {!w.is_default && (
+                        {!w.is_default && w.status === "active" && (
                           <DropdownMenuItem onClick={() => handleSetDefault(w)}>
                             <Star className="h-4 w-4 mr-2" /> Set as Default
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem onClick={() => handleToggleStatus(w)}>
+                          {w.status === "active" ? (
+                            <><PowerOff className="h-4 w-4 mr-2" /> Deactivate</>
+                          ) : (
+                            <><Power className="h-4 w-4 mr-2" /> Activate</>
+                          )}
+                        </DropdownMenuItem>
                         <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteTarget(w)}>
                           <Trash2 className="h-4 w-4 mr-2" /> Delete
                         </DropdownMenuItem>
