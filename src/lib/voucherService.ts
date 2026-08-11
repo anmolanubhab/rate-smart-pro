@@ -604,6 +604,22 @@ export async function cancelVoucher(
 
   await assertNotLocked(businessId, voucher.voucher_date, opts.canEditLockedVoucher);
 
+  // Reverse this voucher's contribution to ledger_accounts.current_balance /
+  // parties.outstanding_balance BEFORE flipping status. Those are cached
+  // running totals (separate from the Ledger Statement, which is computed
+  // live by filtering status='posted' and is unaffected either way) that
+  // apply_ledger_balance_delta maintains on post but nothing previously
+  // reversed on cancel — every cancelled voucher silently left its party's
+  // outstanding_balance permanently overstated/understated by its amount.
+  for (const item of voucher.items ?? []) {
+    const { error: revErr } = await supabase.rpc("apply_ledger_balance_delta" as never, {
+      _ledger_account_id: item.ledger_account_id,
+      _dr_delta: -(item.debit ?? 0),
+      _cr_delta: -(item.credit ?? 0),
+    } as never);
+    if (revErr) throw new Error(`cancelVoucher: could not reverse ledger balance: ${revErr.message}`);
+  }
+
   const { data: vRow, error } = await supabase
     .from("vouchers")
     .update({

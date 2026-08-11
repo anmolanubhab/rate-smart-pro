@@ -81,7 +81,7 @@ const CreateOrder = () => {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editStatus, setEditStatus] = useState<OrderStatus>("draft");
-  const baseTitle = printOnLoad ? "Order" : "Invoice Entry — Spare Parts OMS";
+  const baseTitle = printOnLoad ? "Order" : "Order Entry — Spare Parts OMS";
 
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
@@ -90,7 +90,7 @@ const CreateOrder = () => {
   const [orderNumber, setOrderNumber] = useState("");
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
   const [refNo, setRefNo] = useState("");
-  const [voucherType] = useState("TVS Tax Invoice");
+  const [voucherType] = useState("Sales Order");
   const [salesman, setSalesman] = useState("");
   const [salesmanId, setSalesmanId] = useState<string | null>(null);
   const [salesmenOptions, setSalesmenOptions] = useState<{ id: string; name: string }[]>([]);
@@ -454,7 +454,7 @@ const CreateOrder = () => {
       setEditStatus(statusToSave);
 
       if (status === "pending") {
-        toast.success("Invoice confirmed");
+        toast.success("Order confirmed");
         navigate(`/orders?highlight=${saved.id}`);
       } else {
         toast.success(statusToSave === "draft" ? "Draft saved" : "Saved", { duration: 1500 });
@@ -512,7 +512,7 @@ const CreateOrder = () => {
 
   const toolbarActions: DocumentToolbarAction[] = [
     { key: "save", label: editMode && editStatus === "draft" ? "Update Draft" : "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: () => handleSave("draft"), disabled: saving },
-    { key: "submit", label: "Confirm Invoice", icon: FileCheck2, shortcut: "Ctrl+✍", onClick: () => handleSave("pending"), disabled: saving, variant: "primary" },
+    { key: "submit", label: "Confirm Order", icon: FileCheck2, shortcut: "Ctrl+✍", onClick: () => handleSave("pending"), disabled: saving, variant: "primary" },
     { key: "close", label: "Close", icon: X, shortcut: "Esc", onClick: () => navigate("/orders"), variant: "ghost", className: "text-muted-foreground" },
   ];
   const businessIdForPrint = getActiveBusinessIdSync();
@@ -523,7 +523,7 @@ const CreateOrder = () => {
         statusSlot={
           <>
             <span className="text-xs uppercase tracking-wider text-muted-foreground font-sans">
-              {editMode ? (editStatus === "draft" ? "Editing Draft Invoice" : `Editing Invoice (${editStatus})`) : "New Invoice"}
+              {editMode ? (editStatus === "draft" ? "Editing Draft Order" : `Editing Order (${editStatus})`) : "New Order"}
             </span>
             {draftId && <Badge variant="outline" className="text-[10px]">#{orderNumber || draftId.slice(0, 8)}</Badge>}
             {editMode && editStatus === "draft" && <DocumentStatusBadge status="draft" />}
@@ -888,12 +888,11 @@ const CreateOrder = () => {
                 </div>
               </div>
             )}
-            <div className="text-[11px] text-muted-foreground pt-2">Provide e-Invoice details: No</div>
           </div>
 
           <div className="col-span-12 md:col-span-5 print:col-span-12">
             <DocumentTotals
-              title="Invoice Totals"
+              title="Order Totals"
               lines={[
                 { label: "Subtotal (MRP)", value: fmt(totals.subtotal) },
                 { label: "Discount", value: `− ${fmt(totals.discount_total)}` },

@@ -165,6 +165,7 @@ export default function CreatePurchaseOrder() {
 
   const poIdRef = useRef<string | null>(editId || null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
+  const didAutoFocusSupplier = useRef(false);
   const { focusCell, handleKey: handleGridKey } = useDocumentGridNavigation(COLS);
 
   // ─── Derived ────────────────────────────────────────────────────────────────
@@ -232,7 +233,10 @@ export default function CreatePurchaseOrder() {
     if (!editId) {
       setPONumber(localPONumber());
       nextPONumber(businessId).then((n) => setPONumber(n)).catch(() => {});
-      setTimeout(() => supplierInputRef.current?.focus(), 100);
+      if (!didAutoFocusSupplier.current) {
+        didAutoFocusSupplier.current = true;
+        setTimeout(() => supplierInputRef.current?.focus(), 100);
+      }
     } else {
       (async () => {
         try {

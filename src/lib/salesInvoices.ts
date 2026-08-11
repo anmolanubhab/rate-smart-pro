@@ -565,6 +565,26 @@ async function assertInvoicePaymentReversed(invoiceId: string): Promise<void> {
   }
 }
 
+/**
+ * A Sales Return (even cancelled) keeps sales_return_items rows pointing at
+ * sales_invoice_items via a RESTRICT FK, so deleting the invoice's line items
+ * fails with a raw DB error unless every return against it is gone first.
+ * Returns are permanent audit records in this app (no "Delete Return" action
+ * exists, only Cancel), so this must block with guidance rather than try to
+ * delete the return itself.
+ */
+async function assertInvoiceHasNoReturns(invoiceId: string): Promise<void> {
+  const { data: ret } = await supabase
+    .from("sales_returns" as never)
+    .select("return_number")
+    .eq("sales_invoice_id", invoiceId)
+    .limit(1)
+    .maybeSingle();
+  if (ret) {
+    throw new Error(`This Invoice has Sales Return ${(ret as any).return_number} against it and cannot be deleted.`);
+  }
+}
+
 export async function cancelInvoice(invoiceId: string, userId?: string) {
   // Release any advance funding first -- a pure sub-ledger reallocation with
   // no cash/GL movement, safe to auto-reverse. Real cash payments still
@@ -635,6 +655,7 @@ export async function cancelInvoice(invoiceId: string, userId?: string) {
  */
 export async function deleteInvoice(invoiceId: string) {
   await assertInvoicePaymentReversed(invoiceId);
+  await assertInvoiceHasNoReturns(invoiceId);
 
   // Load invoice
   const { data: inv } = await supabase
