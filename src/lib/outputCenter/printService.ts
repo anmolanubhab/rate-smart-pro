@@ -4,7 +4,7 @@
 // statements) instances. Never reads Supabase rows directly — everything
 // here is a pure function of the UDM instance the caller already built.
 
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -77,6 +77,62 @@ async function renderDocumentUdmToCanvas(udm: DocumentUdm): Promise<HTMLCanvasEl
     root.unmount();
     document.body.removeChild(container);
   }
+}
+
+/** Renders an arbitrary React element off-screen at the given content width
+ *  and captures it with html2canvas -- the same real-DOM/real-CSS technique
+ *  renderDocumentUdmToCanvas already uses for document/voucher PDFs,
+ *  generalized so a report's OWN on-screen component (e.g.
+ *  TFormatBalanceSheetView) can be captured pixel-for-pixel instead of a
+ *  report-generation function re-drawing text with jsPDF. */
+async function renderReactElementToCanvas(element: ReactElement, widthMm: number): Promise<HTMLCanvasElement> {
+  const PX_PER_MM = 3.78; // ~96dpi / 25.4mm
+  const container = document.createElement("div");
+  container.style.position = "fixed";
+  container.style.left = "-99999px";
+  container.style.top = "0";
+  container.style.width = `${widthMm * PX_PER_MM}px`;
+  container.style.background = "#ffffff";
+  document.body.appendChild(container);
+
+  const root = createRoot(container);
+  await new Promise<void>((resolve) => {
+    root.render(element);
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+
+  try {
+    return await html2canvas(container, { scale: 2, backgroundColor: "#ffffff" });
+  } finally {
+    root.unmount();
+    document.body.removeChild(container);
+  }
+}
+
+/** Downloads a real PDF built from a report's own React component instead of
+ *  a jsPDF-redrawn table -- for reports whose on-screen layout (grouping,
+ *  indentation hierarchy, a two-column T-Format, etc.) can't be faithfully
+ *  reproduced by the generic flat tabular renderer below. The SAME component
+ *  instance/props the dashboard renders is what gets captured here, so
+ *  Print/PDF can never drift from what's actually on screen -- there is no
+ *  second, ledger-wise or otherwise re-derived data path. */
+export async function generateReportComponentPdf(element: ReactElement, pageProfile: UdmPageProfile, filename: string): Promise<void> {
+  const legacyProfile = udmPageProfileToLegacy(pageProfile);
+  const widthMm = contentWidthMm(legacyProfile);
+  const canvas = await renderReactElementToCanvas(element, widthMm);
+  const dims = PAGE_DIMENSIONS_MM[pageProfile.pageSize] ?? PAGE_DIMENSIONS_MM.A4;
+  const landscape = pageProfile.orientation === "landscape" && dims.height != null;
+  const pageWidthMm = landscape ? dims.height! : dims.width;
+  const pageHeightMm = dims.height ? (landscape ? dims.width : dims.height) : undefined;
+  const imgHeightMm = (canvas.height * widthMm) / canvas.width;
+
+  const doc = new jsPDF({
+    unit: "mm",
+    orientation: pageProfile.orientation,
+    format: pageHeightMm ? [pageWidthMm, pageHeightMm] : [pageWidthMm, imgHeightMm + pageProfile.marginTopMm + pageProfile.marginBottomMm],
+  });
+  doc.addImage(canvas.toDataURL("image/png"), "PNG", pageProfile.marginLeftMm, pageProfile.marginTopMm, widthMm, imgHeightMm);
+  doc.save(filename);
 }
 
 /** Shared by generateDocumentPdf (Download PDF) and CommunicationService's
@@ -154,6 +210,9 @@ export function generateTabularPdf(udm: ReportUdm, filename: string): void {
   exportToPdf(udm.title, udm.columns, udm.rows, filename, {
     subtitle: udm.subtitle,
     orientation: udm.pageProfile?.orientation,
+    headerLines: udm.headerLines,
+    centered: udm.centered,
+    plain: udm.plain,
   });
 }
 

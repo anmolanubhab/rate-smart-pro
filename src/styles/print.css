@@ -36,18 +36,32 @@
   .invoice-print,
   .invoice-print *,
   .invoice-entry,
-  .invoice-entry * {
+  .invoice-entry *,
+  .report-print,
+  .report-print * {
     visibility: visible !important;
   }
 
   .invoice-print,
-  .invoice-entry {
+  .invoice-entry,
+  .report-print {
     position: absolute;
     left: 50%;
     top: 0;
     width: 190mm;
     max-width: 190mm;
     transform: translateX(-50%);
+  }
+
+  /* Report pages (e.g. Balance Sheet) may render at a fixed pixel min-width
+     for on-screen horizontal scrolling (see TFormatBalanceSheetView) -- that
+     min-width must not survive into print, or content gets clipped to
+     190mm instead of reflowing to fit it. */
+  .report-print .overflow-x-auto {
+    overflow: visible !important;
+  }
+  .report-print [class*="min-w-"] {
+    min-width: 0 !important;
   }
 
   .invoice-entry .overflow-x-auto {

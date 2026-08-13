@@ -89,6 +89,20 @@ export interface ReportUdm {
   documentTypeId: string;
   title: string;
   subtitle?: string;
+  /** Optional centered lines shown between the title and subtitle -- e.g. a
+   *  business's address/contact/email block on a formal statement like the
+   *  Balance Sheet. Rendered by DocumentPreview (in-app Preview) and
+   *  exportToPdf (Download PDF); ignored by callers that don't set it, so
+   *  every other report keeps its current header exactly as-is. */
+  headerLines?: string[];
+  /** Centers the title/headerLines/subtitle instead of left-aligning them.
+   *  Ignored (left-aligned) unless explicitly set. */
+  centered?: boolean;
+  /** Drops the default filled header row / cell grid in favor of a plainer,
+   *  statement-style table (used by two-column layouts like the Balance
+   *  Sheet's T-Format export, where a spreadsheet-grid look reads as noisy).
+   *  Ignored (default styled table) unless explicitly set. */
+  plain?: boolean;
   columns: UdmColumn[];
   rows: Record<string, unknown>[];
   summary?: { label: string; value: string | number }[];

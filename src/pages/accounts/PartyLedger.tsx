@@ -448,7 +448,7 @@ export default function PartyLedger() {
                           <td className="px-4 py-2.5">
                             <button
                               className="font-mono text-xs text-primary hover:underline"
-                              onClick={() => navigate(`/accounts/vouchers?id=${line.voucher_id}`)}
+                              onClick={() => navigate(`/accounting/vouchers/${line.voucher_id}`)}
                             >
                               {line.voucher_number}
                             </button>

@@ -86,13 +86,27 @@ export default function LedgerAccounts() {
   const receivables = ledgers.filter(l => l.ledger_type === "customer").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
   const payables = ledgers.filter(l => l.ledger_type === "supplier").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
   const cashBank = ledgers.filter(l => l.ledger_type === "cash" || l.ledger_type === "bank").reduce((s, l) => s + (l.balance ?? 0), 0);
+  // Sum of every ledger's opening balance, signed Dr(+)/Cr(-) the same way
+  // fetchLedgersWithBalance computes `open` -- by double-entry this must net
+  // to zero across the whole Chart of Accounts (every opening Dr needs a
+  // matching opening Cr, typically parked in Capital/Opening Balance
+  // Equity). Nothing enforces that at entry time, so surface it here rather
+  // than let it surface later as a Trial Balance that silently won't tie.
+  const openingDiff = ledgers.reduce((s, l) => s + Number(l.opening_balance ?? 0) * (l.opening_balance_type === "cr" ? -1 : 1), 0);
+  const openingBalanced = Math.abs(openingDiff) < 0.01;
 
   return (
     <>
     <MockTablePage
       eyebrow="Accounts"
       title="Ledger Accounts"
-      description={isLoading ? "Loading…" : "Chart of accounts with running balances computed from posted vouchers."}
+      description={
+        isLoading
+          ? "Loading…"
+          : openingBalanced
+          ? "Chart of accounts with running balances computed from posted vouchers."
+          : `Chart of accounts with running balances computed from posted vouchers. ⚠ Opening balances don't net to zero (₹ ${fmtInr(Math.abs(openingDiff))} ${openingDiff > 0 ? "Dr" : "Cr"} unaccounted) — an accountant should post the difference to Capital Account (or the correct offsetting ledger) so Trial Balance/P&L/Balance Sheet reconcile.`
+      }
       actions={
         <>
           <div className="relative">
@@ -114,6 +128,11 @@ export default function LedgerAccounts() {
         { label: "Receivables", value: `₹ ${fmtInr(receivables)}`, tone: "success" },
         { label: "Payables", value: `₹ ${fmtInr(payables)}`, tone: "warning" },
         { label: "Cash + Bank", value: `₹ ${fmtInr(cashBank)}`, tone: cashBank >= 0 ? "success" : "danger" },
+        {
+          label: "Opening Balance Diff",
+          value: openingBalanced ? "Balanced" : `₹ ${fmtInr(Math.abs(openingDiff))} ${openingDiff > 0 ? "Dr" : "Cr"}`,
+          tone: openingBalanced ? "success" : "danger",
+        },
       ]}
       columns={[
         { key: "name", label: "Ledger Name" },

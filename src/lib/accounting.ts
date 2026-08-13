@@ -261,6 +261,8 @@ export interface TrialBalanceRow {
   dr: number;
   cr: number;
   _party_id: string | null;
+  _group_id: string | null;
+  _ledger_id: string;
 }
 
 /**
@@ -279,7 +281,7 @@ export function computeTrialBalance(ledgers: LedgerRow[]): { rows: TrialBalanceR
       const dr = bal > 0 ? bal : 0;
       const cr = bal < 0 ? -bal : 0;
       totDr += dr; totCr += cr;
-      return { ledger: l.name, group: l.group?.name ?? "—", dr, cr, _party_id: l.party_id };
+      return { ledger: l.name, group: l.group?.name ?? "—", dr, cr, _party_id: l.party_id, _group_id: l.group_id, _ledger_id: l.id };
     });
   return { rows, totDr, totCr };
 }
@@ -289,6 +291,10 @@ export interface ProfitLossLine {
   item: string;
   amount: number;
   side_tone: "warning" | "success";
+  group: string;
+  _group_id: string | null;
+  _ledger_id: string;
+  _party_id: string | null;
 }
 
 /**
@@ -296,24 +302,262 @@ export interface ProfitLossLine {
  * Shared by ProfitLoss.tsx (direct P&L report) and BalanceSheet.tsx (needs
  * the same Net Profit/Loss figure as its Capital plug) so the two reports
  * can never disagree with each other about profit -- previously each page
- * recomputed this independently with duplicated logic.
+ * recomputed this independently with duplicated logic. income/expense/profit
+ * are unchanged from before; `rows` now also carries each line's group name
+ * + group/ledger/party ids so callers can wire drill-down without a second
+ * lookup pass.
  */
 export function computeProfitLoss(ledgers: LedgerRow[]): { income: number; expense: number; profit: number; rows: ProfitLossLine[] } {
   const nature = (l: LedgerRow) => l.group?.nature;
-  const income = ledgers.filter((l) => nature(l) === "income").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
-  const expense = ledgers.filter((l) => nature(l) === "expense").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
+  // Signed sum (income/expense's natural Cr/Dr side), not a Math.max(0, ...)
+  // floor -- a floor silently discards a ledger sitting on its non-natural
+  // side instead of netting it, which is exactly the class of bug that broke
+  // Assets = Liabilities + Capital + Profit on the Balance Sheet (see
+  // BalanceSheet.tsx). A plain signed sum is what keeps this formula an
+  // unconditional identity for any valid double-entry data.
+  const income = ledgers.filter((l) => nature(l) === "income").reduce((s, l) => s - (l.balance ?? 0), 0);
+  const expense = ledgers.filter((l) => nature(l) === "expense").reduce((s, l) => s + (l.balance ?? 0), 0);
   const rows: ProfitLossLine[] = [];
   ledgers.filter((l) => nature(l) === "expense" && (l.balance ?? 0) !== 0).forEach((l) => {
-    rows.push({ side: "Expense", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "warning" });
+    rows.push({ side: "Expense", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "warning", group: l.group?.name ?? "—", _group_id: l.group_id, _ledger_id: l.id, _party_id: l.party_id });
   });
   ledgers.filter((l) => nature(l) === "income" && (l.balance ?? 0) !== 0).forEach((l) => {
-    rows.push({ side: "Income", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "success" });
+    rows.push({ side: "Income", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "success", group: l.group?.name ?? "—", _group_id: l.group_id, _ledger_id: l.id, _party_id: l.party_id });
   });
   return { income, expense, profit: income - expense, rows };
 }
 
 export const fmtInr = (n: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
+
+/** Centered business-identity header block (name, address, contact, GSTIN)
+ *  shown above every formal financial statement (Balance Sheet, Trial
+ *  Balance, P&L) -- one composition, reused by all three reports' print/PDF
+ *  paths instead of each report building its own header lines. Loosely typed
+ *  so callers can pass the `business` object from useBusiness() (or any
+ *  subset of its fields) without an import cycle back into that hook. */
+export function buildBusinessHeaderLines(business?: {
+  business_name?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  gst_number?: string | null;
+} | null): string[] {
+  if (!business) return [];
+  return [
+    business.business_name ?? "",
+    [business.address, business.city, business.state, business.pincode].filter(Boolean).join(", "),
+    business.gst_number ? `GSTIN: ${business.gst_number}` : "",
+    [business.mobile ? `Contact: ${business.mobile}` : "", business.email ? `E-Mail: ${business.email}` : ""]
+      .filter(Boolean)
+      .join(" | "),
+  ].filter(Boolean);
+}
+
+/** Same Indian-digit-grouping format as fmtInr, but never rounds to whole
+ *  rupees -- up to 2 decimal places are preserved exactly (matching the
+ *  paise-exact convention printService.ts/gstExport.ts already use for
+ *  PDF/Excel). Used by the Balance Sheet report specifically, where paise
+ *  (e.g. CGST/SGST Output at ₹427.50) must survive unrounded on screen the
+ *  same way they already do in Print/PDF/Excel. */
+export const fmtInrPrecise = (n: number) =>
+  new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n) || 0);
+
+// ─── Account group drill-down (Balance Sheet Tally-style navigation) ──────────
+//
+// RD-Pro's account_groups table is a real (business-scoped) tree via
+// parent_id — seed_accounting_defaults creates 5 roots (Assets, Liabilities,
+// Income, Expenses, Capital) each with a handful of named leaf groups
+// (Sundry Debtors, Sundry Creditors, Bank, Cash, Fixed Assets, Duties &
+// Taxes, Loans, ...). Every ledger's group_id points at a leaf (or, for
+// Capital, sometimes the root itself, since Capital has no seeded
+// children). Nothing before this read/aggregated that tree — Balance
+// Sheet/Trial Balance/P&L all group by the leaf's flat name only.
+//
+// These helpers are pure aggregation over the SAME already-fetched
+// LedgerRow[].balance values every other report uses (fetchLedgersWithBalance)
+// — no new balance formula, no new voucher/ledger query. They exist so a
+// clicked group (at any depth) can show its real children and a total that
+// is guaranteed to reconcile with whatever parent screen linked to it,
+// because it's the identical numbers, just re-aggregated by a different key.
+
+export interface AccountGroupNode {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  nature: string | null;
+}
+
+export async function fetchAccountGroupTree(businessId: string): Promise<AccountGroupNode[]> {
+  const { data, error } = await supabase
+    .from("account_groups")
+    .select("id, name, parent_id, nature")
+    .eq("business_id", businessId);
+  if (error) throw error;
+  return (data ?? []) as AccountGroupNode[];
+}
+
+/** All descendant group ids of `groupId` (not including itself). */
+function collectDescendantGroupIds(groupId: string, groups: AccountGroupNode[]): Set<string> {
+  const result = new Set<string>();
+  const stack = [groupId];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    for (const g of groups) {
+      if (g.parent_id === cur && !result.has(g.id)) {
+        result.add(g.id);
+        stack.push(g.id);
+      }
+    }
+  }
+  return result;
+}
+
+/** A ledger's contribution to its own natural side: Dr-positive for
+ *  asset/expense, Cr-positive for liability/capital/income. Same convention
+ *  BalanceSheet.tsx's totals use — see its comment for why a signed sum
+ *  (not Math.abs per nature) is what makes group/section/grand totals
+ *  reconcile unconditionally, even when a ledger ends up on its non-natural
+ *  side (e.g. an overdrawn bank account). This is the ACCOUNTING value --
+ *  callers that display it to a user must run it through
+ *  balanceSheetPresentationSign first (see below); this function itself
+ *  must never be "corrected" with Math.abs, or the identity it exists to
+ *  guarantee breaks again. */
+export function naturalSignedValue(l: LedgerRow): number {
+  const nature = l.group?.nature;
+  const bal = l.balance ?? 0;
+  return nature === "liability" || nature === "capital" || nature === "income" ? -bal : bal;
+}
+
+/**
+ * Presentation-only sign for Balance-Sheet-family reports (Balance Sheet
+ * itself, its T-Format view, and any account-group drill-down reached from
+ * it) — separate from the accounting calculation above.
+ *
+ * Total Assets (signed) and Total Liabilities+Capital+Profit (signed) are
+ * ALWAYS the exact same number, by the identity naturalSignedValue exists to
+ * guarantee (sum of every ledger's signed balance is always zero). So if
+ * that shared number is negative -- which happens whenever the business's
+ * data has more value sitting on ledgers' non-natural sides than their
+ * natural ones (e.g. an overdrawn bank account) -- both sides of the report
+ * would display as all-negative even though the sheet is perfectly balanced.
+ *
+ * Multiplying every row/group/total by ONE shared sign (derived once, here)
+ * is a linear transform: it can't change which rows sum into which totals,
+ * so every reconciliation (ledger -> group -> section -> grand total ->
+ * drill-down) that already holds for the signed values still holds
+ * identically after the flip. It is NOT Math.abs() -- abs() applied per row
+ * would independently flip only negative rows and silently break sums
+ * whenever a section mixes rows of both signs; this instead asks a single
+ * question once ("is the whole sheet's natural orientation negative?") and
+ * answers it the same way everywhere.
+ */
+export function balanceSheetPresentationSign(ledgers: LedgerRow[]): 1 | -1 {
+  const assetsSigned = ledgers
+    .filter((l) => l.group?.nature === "asset")
+    .reduce((s, l) => s + (l.balance ?? 0), 0);
+  return assetsSigned < 0 ? -1 : 1;
+}
+
+/** Signed sum (see naturalSignedValue) for every ledger whose group is
+ *  `groupId` or any descendant of it, aggregated up the tree instead of left
+ *  flat, so a group's total always equals the sum of what its own children
+ *  show — and, for Balance-Sheet-reached drill-down, equals the same figure
+ *  the parent report itself displays for that group. */
+export function sumGroupBalance(groupId: string, groups: AccountGroupNode[], ledgers: LedgerRow[]): number {
+  const ids = collectDescendantGroupIds(groupId, groups);
+  ids.add(groupId);
+  return ledgers
+    .filter((l) => l.group_id && ids.has(l.group_id))
+    .reduce((s, l) => s + naturalSignedValue(l), 0);
+}
+
+export interface GroupDrillDownChild {
+  kind: "group" | "ledger";
+  id: string;
+  name: string;
+  amount: number;
+  party_id?: string | null;
+}
+
+/** Direct children of `groupId`: sub-groups (with their own rolled-up
+ *  total) and ledgers posted straight to this group, zero-balance ledgers
+ *  excluded (matching Balance Sheet's own filter). */
+export function getGroupChildren(groupId: string, groups: AccountGroupNode[], ledgers: LedgerRow[]): GroupDrillDownChild[] {
+  const childGroups: GroupDrillDownChild[] = groups
+    .filter((g) => g.parent_id === groupId)
+    .map((g) => ({ kind: "group" as const, id: g.id, name: g.name, amount: sumGroupBalance(g.id, groups, ledgers) }));
+  const directLedgers: GroupDrillDownChild[] = ledgers
+    .filter((l) => l.group_id === groupId && (l.balance ?? 0) !== 0)
+    .map((l) => ({ kind: "ledger" as const, id: l.id, name: l.name, amount: naturalSignedValue(l), party_id: l.party_id }));
+  return [...childGroups, ...directLedgers];
+}
+
+/** Root-to-self ancestor chain for breadcrumb rendering. */
+export function getGroupPath(groupId: string, groups: AccountGroupNode[]): AccountGroupNode[] {
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const path: AccountGroupNode[] = [];
+  let cur = byId.get(groupId);
+  while (cur) {
+    path.unshift(cur);
+    cur = cur.parent_id ? byId.get(cur.parent_id) : undefined;
+  }
+  return path;
+}
+
+export interface AccountHierarchyLedger {
+  kind: "ledger";
+  id: string;
+  name: string;
+  dr: number;
+  cr: number;
+  party_id: string | null;
+}
+export interface AccountHierarchyGroup {
+  kind: "group";
+  id: string;
+  name: string;
+  dr: number;
+  cr: number;
+  children: (AccountHierarchyGroup | AccountHierarchyLedger)[];
+}
+
+/**
+ * Builds the full recursive tree (arbitrary depth, driven purely by
+ * account_groups.parent_id) rooted at the business's top-level groups, each
+ * node carrying rolled-up Dr/Cr totals using the exact same per-ledger dr/cr
+ * split computeTrialBalance() already uses (dr = bal>0?bal:0, cr =
+ * bal<0?-bal:0) — a group's dr/cr is always the sum of its own children's
+ * dr/cr, at every level, which is what guarantees Total Debit = Total
+ * Credit holds not just for the grand total but at every node you drill
+ * into (Trial Balance's "Grouped" view). Zero-balance ledgers are excluded
+ * (same filter every other report already applies), but a group with no
+ * nonzero descendants still gets a node (dr=cr=0) instead of vanishing, so
+ * drilling into an empty group never breaks.
+ */
+export function buildAccountHierarchy(
+  groups: AccountGroupNode[],
+  ledgers: LedgerRow[],
+  rootFilter?: (g: AccountGroupNode) => boolean
+): AccountHierarchyGroup[] {
+  function buildNode(g: AccountGroupNode): AccountHierarchyGroup {
+    const childGroups = groups.filter((c) => c.parent_id === g.id).map(buildNode);
+    const directLedgers: AccountHierarchyLedger[] = ledgers
+      .filter((l) => l.group_id === g.id && (l.balance ?? 0) !== 0)
+      .map((l) => {
+        const bal = l.balance ?? 0;
+        return { kind: "ledger" as const, id: l.id, name: l.name, dr: bal > 0 ? bal : 0, cr: bal < 0 ? -bal : 0, party_id: l.party_id };
+      });
+    const children: (AccountHierarchyGroup | AccountHierarchyLedger)[] = [...childGroups, ...directLedgers];
+    const dr = children.reduce((s, c) => s + c.dr, 0);
+    const cr = children.reduce((s, c) => s + c.cr, 0);
+    return { kind: "group", id: g.id, name: g.name, dr, cr, children };
+  }
+  return groups.filter((g) => g.parent_id === null && (!rootFilter || rootFilter(g))).map(buildNode);
+}
 
 export type SupplierLedgerSummary = {
   party_id: string;

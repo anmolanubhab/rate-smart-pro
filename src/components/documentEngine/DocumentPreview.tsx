@@ -5,7 +5,7 @@
 // inside a full-screen modal with PrintToolbar's Back/Print/PDF/Excel/Email/
 // WhatsApp/Search/Zoom/Fit/Copies-as-pages controls.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { PrintToolbar } from "@/components/documentEngine/PrintToolbar";
 import { PrintSurface } from "@/components/print/printEngine/PrintSurface";
@@ -17,6 +17,11 @@ export interface DocumentPreviewProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   udm: DocumentOrReportUdm | null;
+  /** Report/statement category only, optional — the report's own on-screen
+   *  component (e.g. a T-Format two-column layout), rendered here in place
+   *  of the generic flat table when provided, so the in-app Preview matches
+   *  the dashboard pixel-for-pixel instead of a flattened re-derivation. */
+  printComponent?: ReactElement;
   /** Documents/vouchers only — one "page" of the preview per selected copy. */
   copyLabels?: string[];
   showSearch?: boolean;
@@ -34,7 +39,7 @@ const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 2;
 
 export function DocumentPreview({
-  open, onOpenChange, udm, copyLabels = [],
+  open, onOpenChange, udm, printComponent, copyLabels = [],
   showSearch, onDirectPrint, onDownloadPdf, onExportExcel, onEmail, onWhatsApp, onCopyShareLink,
   busy,
 }: DocumentPreviewProps) {
@@ -91,11 +96,21 @@ export function DocumentPreview({
             >
               <DocumentPreviewPage udm={{ ...udm, copyLabel: activeCopyLabel }} />
             </div>
+          ) : printComponent ? (
+            <div
+              className="mx-auto origin-top transition-transform bg-white text-black rounded shadow-sm p-4"
+              style={{ transform: `scale(${zoom})`, transformOrigin: "top center", width: "fit-content" }}
+            >
+              {printComponent}
+            </div>
           ) : (
             <div className="mx-auto bg-white text-black rounded shadow-sm" style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}>
-              <div className="p-4">
+              <div className={`p-4 ${udm.centered ? "text-center" : ""}`}>
                 <div className="text-lg font-bold">{udm.title}</div>
-                {udm.subtitle && <div className="text-sm text-muted-foreground">{udm.subtitle}</div>}
+                {udm.headerLines?.map((line, i) => (
+                  <div key={i} className="text-xs text-muted-foreground">{line}</div>
+                ))}
+                {udm.subtitle && <div className="text-sm text-muted-foreground mt-1">{udm.subtitle}</div>}
               </div>
               <div className="overflow-x-auto px-4 pb-4">
                 <table className="w-full text-xs border-collapse">
