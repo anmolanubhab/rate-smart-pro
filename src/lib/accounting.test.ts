@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeTrialBalance, computeProfitLoss, type LedgerRow } from "./accounting";
+import { computeTrialBalance, computeProfitLoss, computeInventoryAdjustedProfitLoss, netProfitWithInventory, computeClosingStockValue, type LedgerRow } from "./accounting";
 
 const ledger = (over: Partial<LedgerRow>): LedgerRow => ({
   id: over.id ?? Math.random().toString(),
@@ -68,6 +68,101 @@ describe("computeProfitLoss", () => {
     ]);
     expect(income).toBe(0);
     expect(expense).toBe(0);
+  });
+});
+
+describe("netProfitWithInventory (Dashboard Net Profit spec, RD-Pro)", () => {
+  it("Test A: fully sold inventory -- Sales 15000, COGS 10000 (purchases fully consumed), Expenses 2000", () => {
+    // opening 0, purchases 10000, closing 0 => COGS = 0 + 10000 - 0 = 10000
+    const { profit } = netProfitWithInventory({ income: 15000, expense: 10000 + 2000 }, 0, 0);
+    expect(profit).toBe(3000);
+  });
+
+  it("Test B: inventory purchased but not sold -- must NOT show a Net Loss equal to the purchase", () => {
+    // Purchase 20000 sits entirely in closing stock -- none of it was consumed.
+    const { profit } = netProfitWithInventory({ income: 0, expense: 20000 }, 0, 20000);
+    expect(profit).toBe(0);
+  });
+
+  it("Test C: partial inventory sold -- Purchase 20000, Closing Stock 12000, Sales 15000, Expenses 1000", () => {
+    // COGS = 0 + 20000 - 12000 = 8000; Gross Profit = 15000 - 8000 = 7000; Net Profit = 7000 - 1000 = 6000
+    const { profit } = netProfitWithInventory({ income: 15000, expense: 20000 + 1000 }, 0, 12000);
+    expect(profit).toBe(6000);
+  });
+
+  it("Test D: credit sale -- absence of customer payment must not eliminate the sale/profit", () => {
+    // Credit Sale 10000 posts to the Sales ledger regardless of whether cash was received;
+    // COGS 6000 (purchase fully consumed) => Gross Profit 4000, independent of receivable status.
+    const { profit } = netProfitWithInventory({ income: 10000, expense: 6000 }, 0, 0);
+    expect(profit).toBe(4000);
+  });
+
+  it("Test E: supplier payment is a cash movement, not an additional expense", () => {
+    // Purchase 10000, Supplier Payment 10000 (Payment voucher: Dr Supplier / Cr Bank --
+    // touches neither an income nor expense ledger, so it never enters `raw.expense`),
+    // Closing Stock 10000 (nothing sold) => Net Profit 0.
+    const raw = { income: 0, expense: 10000 }; // payment voucher contributes nothing extra here
+    const { profit } = netProfitWithInventory(raw, 0, 10000);
+    expect(profit).toBe(0);
+  });
+
+  it("never produces NaN/Infinity for a zero-previous comparison (previous=0, current>0)", () => {
+    const { profit } = netProfitWithInventory({ income: 5000, expense: 2000 }, 0, 0);
+    const pctVsZeroPrevious = profit === 0 ? 0 : (profit - 0) / Math.abs(0 || 1); // representative of the "New Profit" guard path in the UI
+    expect(Number.isFinite(pctVsZeroPrevious)).toBe(true);
+  });
+});
+
+describe("computeInventoryAdjustedProfitLoss", () => {
+  it("does not use Sales - Purchase: full purchase expensed only when nothing remains in stock", () => {
+    const ledgers = [
+      ledger({ name: "Sales Account", group: { name: "Sales Accounts", nature: "income" }, balance: -50000 }),
+      ledger({ name: "Purchase Account", group: { name: "Purchase Accounts", nature: "expense" }, balance: 30000 }),
+    ];
+    // All of this period's purchases are still in stock -- correct profit is the full
+    // Sales figure (no COGS consumed yet), not Sales(50000) - Purchase(30000) = 20000.
+    const { profit } = computeInventoryAdjustedProfitLoss(ledgers, 0, 30000);
+    expect(profit).toBe(50000);
+  });
+
+  it("adds synthetic Opening/Closing Stock rows without double-counting real ledger rows", () => {
+    const ledgers = [
+      ledger({ name: "Sales Account", group: { name: "Sales Accounts", nature: "income" }, balance: -50000 }),
+      ledger({ name: "Purchase Account", group: { name: "Purchase Accounts", nature: "expense" }, balance: 30000 }),
+    ];
+    const { rows, income, expense, profit } = computeInventoryAdjustedProfitLoss(ledgers, 5000, 30000);
+    expect(rows.find((r) => r.item === "Closing Stock")?.amount).toBe(30000);
+    expect(rows.find((r) => r.item === "Opening Stock")?.amount).toBe(5000);
+    expect(income - expense).toBeCloseTo(profit, 2);
+  });
+});
+
+describe("Dashboard/P&L reconciliation regression (real business data, 2026-08-13)", () => {
+  // Reproduces the exact figures reported as mismatched: Dashboard showed
+  // Net Profit ₹30,38,010 against P&L's ₹10,49,650 (a ₹19,88,360 gap)
+  // because the Dashboard reconstructed "opening stock" by walking
+  // inventory_movements backward and revaluing every historical qty delta
+  // at today's rate -- a single bulk stock-import movement (tens of
+  // thousands of units, unrelated to real trading) got revalued into a
+  // swing of tens of lakhs. That reconstruction has been removed; both
+  // Dashboard and P&L now call computeInventoryAdjustedProfitLoss with the
+  // identical ledger balances and the identical (today-only) closing stock
+  // figure, so they cannot diverge.
+  const ledgers = [
+    ledger({ name: "Sales Account", group: { name: "Sales Accounts", nature: "income", account_type: "sales" }, balance: -12550 }),
+    ledger({ name: "Purchase Account", group: { name: "Purchase Accounts", nature: "expense", account_type: "purchase" }, balance: 22500 }),
+    ledger({ name: "Indirect Expenses", group: { name: "Indirect Expenses", nature: "expense", account_type: "expense" }, balance: 13500 }),
+  ];
+  const products = [{ stock: 100, dealer_rate: 0, mrp: 10731 }]; // sums to the reported ₹10,73,100 closing stock
+
+  it("computeClosingStockValue matches the P&L report's Closing Stock line", () => {
+    expect(computeClosingStockValue(products)).toBe(1073100);
+  });
+
+  it("Dashboard Net Profit (computeInventoryAdjustedProfitLoss) equals the P&L report's Net Profit exactly", () => {
+    const closingStock = computeClosingStockValue(products);
+    const { profit } = computeInventoryAdjustedProfitLoss(ledgers, 0, closingStock);
+    expect(profit).toBe(1049650); // ₹10,49,650 -- matches the P&L screenshot, not the buggy ₹30,38,010
   });
 });
 

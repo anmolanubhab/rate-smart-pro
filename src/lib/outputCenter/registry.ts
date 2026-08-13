@@ -63,6 +63,7 @@ export const TemplateRegistry: Record<string, OutputCenterConfig> = {
 
   // ── Inventory Reports ────────────────────────────────────────────────────
   stock_summary: { id: "stock_summary", category: "report", label: "Stock Summary", enabledActions: ["preview", "direct_print", "pdf", "excel"] },
+  tally_stock_summary: { id: "tally_stock_summary", category: "report", label: "Stock Summary (Group Drill-down)", enabledActions: ["preview", "direct_print", "pdf", "excel"] },
   stock_ageing: { id: "stock_ageing", category: "report", label: "Stock Ageing", enabledActions: ["preview", "direct_print", "pdf", "excel"] },
   stock_category_summary: { id: "stock_category_summary", category: "report", label: "Stock Category Summary", enabledActions: ["preview", "direct_print", "pdf", "excel"] },
   stock_group_summary: { id: "stock_group_summary", category: "report", label: "Stock Group Summary", enabledActions: ["preview", "direct_print", "pdf", "excel"] },

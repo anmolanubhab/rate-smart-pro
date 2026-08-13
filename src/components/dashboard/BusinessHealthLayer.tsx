@@ -2,7 +2,6 @@ import { useMemo, type ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, Minus, TrendingUp, ShoppingCart, CreditCard, Boxes } from "lucide-react";
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canViewProfit } from "@/lib/permissions";
@@ -10,12 +9,19 @@ import { fetchProducts } from "@/lib/products";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchLedgersWithBalance } from "@/lib/accounting";
+import { fetchLedgersWithBalance, fetchPeriodIncomeExpense, netProfitWithInventory, computeInventoryAdjustedProfitLoss, computeClosingStockValue } from "@/lib/accounting";
+
+/** Earliest possible voucher_date -- used as the "from" bound of a
+ *  fetchPeriodIncomeExpense call whenever we actually want a cumulative,
+ *  life-to-date total (i.e. "no lower bound"), not a real business
+ *  inception date. */
+const EPOCH = "1970-01-01";
 
 const inr = (n: number) =>
   "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
 
-type StatusTone = "healthy" | "warning" | "critical";
+type StatusTone = "healthy" | "warning" | "critical" | "neutral";
+type DeltaTone = "up" | "down" | "flat";
 
 function pctChange(current: number, previous: number) {
   if (!isFinite(current) || !isFinite(previous)) return null;
@@ -37,16 +43,51 @@ function toneForOutstanding(v: number, anchor: number): StatusTone {
   return "critical";
 }
 
-function TrendIcon({ pct }: { pct: number | null }) {
-  if (pct === null) return <Minus className="h-4 w-4 text-muted-foreground" />;
-  if (pct >= 0) return <ArrowUpRight className="h-4 w-4 text-success" />;
+/** Net Profit > 0 -> Healthy, = 0 -> Neutral, < 0 -> Warning (per RD-Pro
+ *  dashboard spec) -- deliberately not "Critical" for a loss, since a
+ *  single unprofitable month isn't yet the same severity as, say, payables
+ *  overrunning sales. */
+function toneForProfit(profit: number): StatusTone {
+  if (profit > 0) return "healthy";
+  if (profit < 0) return "warning";
+  return "neutral";
+}
+
+/** Percentage change breaks down (Infinity/NaN) whenever the previous
+ *  period was exactly zero, which is routine for Net Profit (e.g. a
+ *  business's first profitable month). Handled as an explicit label
+ *  instead of a percentage in that case -- never rendered as "Infinity%"
+ *  or "NaN%". */
+function profitChangeLabel(current: number, previous: number): { text: string; tone: DeltaTone } {
+  if (previous === 0) {
+    if (current > 0) return { text: "New Profit", tone: "up" };
+    if (current < 0) return { text: "New Loss", tone: "down" };
+    return { text: "—", tone: "flat" };
+  }
+  const pct = ((current - previous) / Math.abs(previous)) * 100;
+  if (!isFinite(pct)) return { text: "—", tone: "flat" };
+  const fmt = `${Math.abs(pct).toFixed(1).replace(/\.0$/, "")}%`;
+  return { text: pct >= 0 ? `+${fmt}` : `-${fmt}`, tone: pct >= 0 ? "up" : "down" };
+}
+
+function TrendIcon({ tone }: { tone: DeltaTone }) {
+  if (tone === "flat") return <Minus className="h-4 w-4 text-muted-foreground" />;
+  if (tone === "up") return <ArrowUpRight className="h-4 w-4 text-success" />;
   return <ArrowDownRight className="h-4 w-4 text-destructive" />;
 }
 
 function toneClasses(tone: StatusTone) {
   if (tone === "healthy") return { badge: "border-success/30 text-success bg-success/5", dot: "bg-success" };
   if (tone === "critical") return { badge: "border-destructive/40 text-destructive bg-destructive/5", dot: "bg-destructive" };
+  if (tone === "neutral") return { badge: "border-border text-muted-foreground bg-muted/30", dot: "bg-muted-foreground" };
   return { badge: "border-warning/40 text-warning bg-warning/5", dot: "bg-warning" };
+}
+
+function statusLabel(tone: StatusTone) {
+  if (tone === "healthy") return "Healthy";
+  if (tone === "critical") return "Critical";
+  if (tone === "neutral") return "Neutral";
+  return "Warning";
 }
 
 function KpiCard(props: {
@@ -55,11 +96,21 @@ function KpiCard(props: {
   previous: number;
   status: StatusTone;
   icon: ComponentType<{ className?: string }>;
+  /** Overrides the default percentage-based delta -- needed for Net
+   *  Profit/Loss, where the previous period can legitimately be zero
+   *  (see profitChangeLabel) and the value itself can be negative (a loss,
+   *  displayed as a positive magnitude under the "Net Loss" label rather
+   *  than a signed "-₹X" under "Net Profit"). */
+  delta?: { text: string; tone: DeltaTone };
 }) {
   const pct = pctChange(props.value, props.previous);
   const fmtPct = pct === null ? "—" : `${Math.abs(pct).toFixed(1).replace(/\.0$/, "")}%`;
   const t = toneClasses(props.status);
   const Icon = props.icon;
+  const delta = props.delta ?? {
+    text: pct === null ? "—" : pct >= 0 ? `+${fmtPct}` : `-${fmtPct}`,
+    tone: (pct === null ? "flat" : pct >= 0 ? "up" : "down") as DeltaTone,
+  };
 
   return (
     <div className="group rounded-2xl bg-card border border-border shadow-card p-5 transition-smooth hover:shadow-card-hover hover:-translate-y-0.5">
@@ -69,23 +120,23 @@ function KpiCard(props: {
         </div>
         <Badge variant="outline" className={cn("text-[10px]", t.badge)}>
           <span className={cn("inline-block h-1.5 w-1.5 rounded-full mr-1.5", t.dot)} />
-          {props.status === "healthy" ? "Healthy" : props.status === "warning" ? "Warning" : "Critical"}
+          {statusLabel(props.status)}
         </Badge>
       </div>
       <div className="mt-4 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold truncate">
         {props.label}
       </div>
       <div className="mt-1 flex items-end justify-between gap-2">
-        <div className="text-2xl md:text-3xl font-bold tabular-nums text-foreground">{inr(props.value)}</div>
+        <div className="text-2xl md:text-3xl font-bold tabular-nums text-foreground">{inr(Math.abs(props.value))}</div>
         <div className="flex items-center gap-1 pb-0.5">
-          <TrendIcon pct={pct} />
-          <span className={cn("text-sm font-semibold tabular-nums", pct === null ? "text-muted-foreground" : pct >= 0 ? "text-success" : "text-destructive")}>
-            {pct === null ? "—" : pct >= 0 ? `+${fmtPct}` : `-${fmtPct}`}
+          <TrendIcon tone={delta.tone} />
+          <span className={cn("text-sm font-semibold tabular-nums", delta.tone === "flat" ? "text-muted-foreground" : delta.tone === "up" ? "text-success" : "text-destructive")}>
+            {delta.text}
           </span>
         </div>
       </div>
       <div className="mt-1.5 text-xs text-muted-foreground">
-        Prev month <span className="tabular-nums font-medium text-foreground/80">{inr(props.previous)}</span>
+        Prev month <span className="tabular-nums font-medium text-foreground/80">{inr(Math.abs(props.previous))}</span>
       </div>
     </div>
   );
@@ -118,56 +169,10 @@ export default function BusinessHealthLayer() {
   const prevEndDate = endOfMonth(subMonths(now, 1));
   const prevEnd = format(prevEndDate, "yyyy-MM-dd");
 
-  const vouchersQ = useQuery({
-    queryKey: ["dashboard-vouchers-2m", user?.id, prevStart, curEnd],
-    enabled: !!user?.id,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("vouchers")
-        .select("voucher_type, voucher_date, total_amount, status")
-        .eq("user_id", user!.id)
-        .gte("voucher_date", prevStart)
-        .lte("voucher_date", curEnd);
-      if (error) throw error;
-      return (data ?? []) as any[];
-    },
-  });
-
   const productsQ = useQuery({
     queryKey: ["dashboard-products", user?.id],
     enabled: !!user?.id,
     queryFn: () => fetchProducts(user!.id),
-  });
-
-  const movementsQ = useQuery({
-    queryKey: ["dashboard-inventory-movements", user?.id, curStart],
-    enabled: !!user?.id,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("inventory_movements" as any)
-        .select("product_id, qty, created_at")
-        .eq("user_id", user!.id)
-        .gte("created_at", `${curStart}T00:00:00.000Z`)
-        .order("created_at", { ascending: true })
-        .limit(5000);
-      if (error) throw error;
-      return (data ?? []) as any[];
-    },
-  });
-
-  const openOrdersQ = useQuery({
-    queryKey: ["dashboard-open-orders", user?.id],
-    enabled: !!user?.id,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("order_date, grand_total, dispatched_total_qty, pending_total_qty, status")
-        .eq("user_id", user!.id)
-        .in("status", ["pending", "partial"])
-        .eq("is_deleted", false);
-      if (error) throw error;
-      return (data ?? []) as any[];
-    },
   });
 
   const ledgersQ = useQuery({
@@ -176,57 +181,95 @@ export default function BusinessHealthLayer() {
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
 
+  // Sales/Purchase This Month, and Net Profit's month-over-month trend,
+  // read voucher_items by ledger account-group nature/account_type for the
+  // given date range -- NOT vouchers.total_amount grouped by voucher_type
+  // (the old calc), which was GST-inclusive and silently dropped Credit/
+  // Debit Note (return) postings against the same Sales/Purchase Account
+  // ledgers. This is the identical classification computeProfitLoss/the
+  // P&L report use, just date-scoped, so Dashboard and P&L can never
+  // define "Sales"/"Purchase" differently -- only the reporting period
+  // (this month vs. P&L's lifetime-to-date) can differ, and that's called
+  // out explicitly by each card's own label ("This Month").
+  const periodPLCurQ = useQuery({
+    queryKey: ["dashboard-period-pl", user?.id, curStart, curEnd],
+    enabled: !!user?.id,
+    queryFn: () => fetchPeriodIncomeExpense(user!.id, curStart, curEnd),
+  });
+  const periodPLPrevQ = useQuery({
+    queryKey: ["dashboard-period-pl", user?.id, prevStart, prevEnd],
+    enabled: !!user?.id,
+    queryFn: () => fetchPeriodIncomeExpense(user!.id, prevStart, prevEnd),
+  });
+  // Net Profit's "Prev month" comparison needs a life-to-date figure as it
+  // stood at the end of the previous month (not just that one month's
+  // activity), to be comparable with the life-to-date figure Net Profit
+  // itself now is (see computed.profitCur below).
+  const periodPLToDatePrevQ = useQuery({
+    queryKey: ["dashboard-period-pl-to-date", user?.id, prevEnd],
+    enabled: !!user?.id,
+    queryFn: () => fetchPeriodIncomeExpense(user!.id, EPOCH, prevEnd),
+  });
+
   const computed = useMemo(() => {
-    const vouchers = vouchersQ.data ?? [];
     const products = productsQ.data ?? [];
-    const movements = movementsQ.data ?? [];
-    const openOrders = openOrdersQ.data ?? [];
     const ledgers = ledgersQ.data ?? [];
+    const emptyTotals = { income: 0, expense: 0, netSales: 0, netPurchases: 0 };
+    const curTotals = periodPLCurQ.data ?? emptyTotals;
+    const prevTotals = periodPLPrevQ.data ?? emptyTotals;
+    const toDatePrevTotals = periodPLToDatePrevQ.data ?? emptyTotals;
 
-    const sumByType = (type: string, from: string, to: string) =>
-      vouchers
-        .filter((v) => v.status === "posted" && v.voucher_type === type && v.voucher_date >= from && v.voucher_date <= to)
-        .reduce((s, v) => s + Number(v.total_amount || 0), 0);
+    const salesCur = curTotals.netSales;
+    const salesPrev = prevTotals.netSales;
+    const purchaseCur = curTotals.netPurchases;
+    const purchasePrev = prevTotals.netPurchases;
 
-    const salesCur = sumByType("sales", curStart, curEnd);
-    const salesPrev = sumByType("sales", prevStart, prevEnd);
-    const purchaseCur = sumByType("purchase", curStart, curEnd);
-    const purchasePrev = sumByType("purchase", prevStart, prevEnd);
+    // Receivables/Payables are outstanding balances as of today, not scoped
+    // to a month — a sale from 3 months ago that's still unpaid is still
+    // receivable today. Derived from customer/supplier ledger balances
+    // (posted sales/purchase/payment vouchers), same source as AccountingLayer,
+    // not from "orders" dispatch status which reflects goods pending
+    // dispatch, not money owed.
+    const receivableCur = ledgers
+      .filter((l: any) => l.ledger_type === "customer")
+      .reduce((s: number, l: any) => s + Math.max(0, l.balance ?? 0), 0);
+    const payableCur = ledgers
+      .filter((l: any) => l.ledger_type === "supplier")
+      .reduce((s: number, l: any) => s + Math.max(0, -(l.balance ?? 0)), 0);
+    const receivablePrev = receivableCur;
+    const payablePrev = payableCur;
 
-    const monthOutstanding = (from: string, to: string) => openOrders
-      .filter((o) => (o.order_date || "") >= from && (o.order_date || "") <= to)
-      .reduce((s, o) => {
-        const total = Number(o.grand_total ?? 0);
-        const totalQty = Number(o.dispatched_total_qty ?? 0) + Number(o.pending_total_qty ?? 0);
-        const outstanding = totalQty > 0
-          ? Math.round((total * Number(o.pending_total_qty ?? 0)) / totalQty)
-          : total;
-        return s + Math.max(0, outstanding);
-      }, 0);
+    // Same closing-stock formula as ProfitLoss.tsx/BalanceSheet.tsx
+    // (computeClosingStockValue) -- a snapshot as of right now, never a
+    // reconstructed past value. An earlier version of this file tried to
+    // reconstruct past stock levels by walking inventory_movements
+    // backward and re-valuing every historical qty delta at today's rate;
+    // for products with dealer_rate = 0 (common -- see get_stock_valuation)
+    // that fell back to MRP, and a single bulk stock import/correction
+    // movement (tens of thousands of units, unrelated to real monthly
+    // trading) could get revalued into a swing of tens of lakhs, which is
+    // exactly what inflated Net Profit to ~₹30L against P&L's ₹10.5L. There
+    // is no reliable historical cost trail in this schema
+    // (inventory_movements.rate/value are unpopulated in production), so
+    // that reconstruction is never attempted again -- see EPOCH usage above
+    // for how the Prev-month comparison is derived instead.
+    const stockValue = computeClosingStockValue(products);
 
-    const receivableCur = monthOutstanding(curStart, curEnd);
-    const receivablePrev = monthOutstanding(prevStart, prevEnd);
-
-    const paymentCur = sumByType("payment", curStart, curEnd);
-    const paymentPrev = sumByType("payment", prevStart, prevEnd);
-    const payableCur = Math.max(0, purchaseCur - paymentCur);
-    const payablePrev = Math.max(0, purchasePrev - paymentPrev);
-
-    const stockValue = products.reduce((s: number, p: any) => s + Number(p.stock) * Number(p.dealer_rate || p.mrp), 0);
-
-    const priceByProduct = new Map<string, number>();
-    products.forEach((p: any) => priceByProduct.set(p.id, Number(p.dealer_rate || p.mrp) || 0));
-
-    const deltaMonth = movements.reduce((s, m: any) => s + Number(m.qty || 0) * (priceByProduct.get(m.product_id) || 0), 0);
-    const stockPrev = Math.max(0, stockValue - deltaMonth);
-
-    const incomeCur = salesCur;
-    const expenseCur = purchaseCur;
-    const profitCur = incomeCur - expenseCur;
-
-    const incomePrev = salesPrev;
-    const expensePrev = purchasePrev;
-    const profitPrev = incomePrev - expensePrev;
+    // Net Profit = the EXACT SAME function, with the EXACT SAME ledger data
+    // and closing-stock figure, that ProfitLoss.tsx/BalanceSheet.tsx use --
+    // not a re-derived approximation -- so Dashboard Net Profit and P&L Net
+    // Profit can never numerically disagree. This is necessarily a
+    // life-to-date figure (P&L has no start date either: it's headed "For
+    // the period ending <today>"), not "this month's profit" in isolation.
+    const profitCur = computeInventoryAdjustedProfitLoss(ledgers, 0, stockValue).profit;
+    // "Prev month" comparison: the same life-to-date figure as it stood at
+    // the end of the previous month (toDatePrevTotals = income/expense
+    // cumulative from the beginning through prevEnd), held against today's
+    // closing stock (the only stock figure this schema can reliably supply)
+    // so the trend isolates the change in cumulative trading income/expense
+    // rather than fabricating a stock movement.
+    const profitPrev = netProfitWithInventory(toDatePrevTotals, 0, stockValue).profit;
+    const stockPrev = stockValue;
 
     const cash = ledgers.filter((l: any) => l.ledger_type === "cash").reduce((s, l: any) => s + (l.balance ?? 0), 0);
     const bank = ledgers.filter((l: any) => l.ledger_type === "bank").reduce((s, l: any) => s + (l.balance ?? 0), 0);
@@ -248,18 +291,23 @@ export default function BusinessHealthLayer() {
       bank,
     };
   }, [
-    vouchersQ.data,
     productsQ.data,
-    movementsQ.data,
-    openOrdersQ.data,
     ledgersQ.data,
+    periodPLCurQ.data,
+    periodPLPrevQ.data,
+    periodPLToDatePrevQ.data,
     curStart,
     curEnd,
     prevStart,
     prevEnd,
   ]);
 
-  const loading = vouchersQ.isLoading || productsQ.isLoading || movementsQ.isLoading || openOrdersQ.isLoading || ledgersQ.isLoading;
+  const loading =
+    productsQ.isLoading ||
+    ledgersQ.isLoading ||
+    periodPLCurQ.isLoading ||
+    periodPLPrevQ.isLoading ||
+    periodPLToDatePrevQ.isLoading;
 
   const salesTone = toneForPct(pctChange(computed.salesCur, computed.salesPrev));
   const purchasePct = pctChange(computed.purchaseCur, computed.purchasePrev);
@@ -267,7 +315,8 @@ export default function BusinessHealthLayer() {
   const receivableTone = toneForOutstanding(computed.receivableCur, computed.salesCur);
   const payableTone = toneForOutstanding(computed.payableCur, computed.purchaseCur);
   const inventoryTone = toneForPct(pctChange(computed.stockValue, computed.stockPrev));
-  const profitTone = toneForPct(pctChange(computed.profitCur, computed.profitPrev));
+  const profitTone = toneForProfit(computed.profitCur);
+  const profitDelta = profitChangeLabel(computed.profitCur, computed.profitPrev);
 
   return (
     <section className="space-y-3">
@@ -296,7 +345,14 @@ export default function BusinessHealthLayer() {
             <KpiCard label="Payables" value={computed.payableCur} previous={computed.payablePrev} status={payableTone} icon={ArrowDownRight} />
             <KpiCard label="Inventory Value" value={computed.stockValue} previous={computed.stockPrev} status={inventoryTone} icon={Boxes} />
             {canProfit && (
-              <KpiCard label="Net Profit" value={computed.profitCur} previous={computed.profitPrev} status={profitTone} icon={TrendingUp} />
+              <KpiCard
+                label={computed.profitCur >= 0 ? "Net Profit (Life-to-Date)" : "Net Loss (Life-to-Date)"}
+                value={computed.profitCur}
+                previous={computed.profitPrev}
+                status={profitTone}
+                icon={TrendingUp}
+                delta={profitDelta}
+              />
             )}
           </>
         )}

@@ -6,7 +6,8 @@ import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canViewProfit } from "@/lib/permissions";
-import { fetchLedgersWithBalance, computeProfitLoss, fmtInr, buildBusinessHeaderLines } from "@/lib/accounting";
+import { fetchLedgersWithBalance, computeInventoryAdjustedProfitLoss, computeClosingStockValue, fmtInr, buildBusinessHeaderLines } from "@/lib/accounting";
+import { fetchProducts } from "@/lib/products";
 import { useFormatDate } from "@/lib/dateFormat";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import type { ReportUdm } from "@/lib/documentUdm/types";
@@ -26,11 +27,24 @@ export default function ProfitLoss() {
     enabled: !!user?.id,
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
+  // Closing stock (as of today, valued at dealer rate -- same basis as the
+  // Inventory Value KPI elsewhere) is what keeps unsold purchases out of
+  // this lifetime report's Net Profit. There's no reliable historical cost
+  // trail (inventory_movements.rate/value are unpopulated in this schema),
+  // so Opening Stock is taken as 0 -- this report has no start date, and
+  // products.opening_stock/opening_value are unused in practice, so 0 is
+  // the honest reading of "value of stock the business started with".
+  const { data: products = [] } = useQuery({
+    queryKey: ["pnl-products", user?.id, business?.id],
+    enabled: !!user?.id,
+    queryFn: () => fetchProducts(user!.id),
+  });
 
   const data = useMemo(() => {
-    const { income, expense, profit, rows } = computeProfitLoss(ledgers);
+    const closingStock = computeClosingStockValue(products);
+    const { income, expense, profit, rows } = computeInventoryAdjustedProfitLoss(ledgers, 0, closingStock);
     return { rows, income, expense, profit };
-  }, [ledgers]);
+  }, [ledgers, products]);
 
   const [view, setView] = useState<PLView>("standard");
   const periodLabel = `For the period ending ${fd(new Date().toISOString().slice(0, 10))}`;

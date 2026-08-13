@@ -684,16 +684,23 @@ export async function cancelPurchaseInvoice(invoiceId: string, userId?: string):
       const qtyToReverse = item.stock_qty ?? item.qty;
       if (!(qtyToReverse > 0)) continue;
 
+      // Fail closed, not silently skip-and-proceed: a stock read/write
+      // failure here must abort the whole cancel (the invoice must NOT end
+      // up marked 'cancelled' below with this item's stock un-reversed --
+      // that's exactly the class of bug that let a cancelled invoice's
+      // original stock effect stay permanently baked into Stock Summary/
+      // Stock Ledger with no way to detect it after the fact).
       const { data: product, error: prodErr } = await supabase
         .from("products").select("stock").eq("id", item.product_id).single();
-      if (prodErr) continue;
+      if (prodErr) throw prodErr;
 
       const before = Number(product?.stock) || 0;
       const after = Math.max(0, before - qtyToReverse);
-      await supabase.from("products").update({ stock: after }).eq("id", item.product_id);
+      const { error: updErr } = await supabase.from("products").update({ stock: after }).eq("id", item.product_id);
+      if (updErr) throw updErr;
 
       if (businessId) {
-        await supabase.from("inventory_movements" as any).insert({
+        const { error: insErr } = await supabase.from("inventory_movements" as any).insert({
           user_id: userId ?? null,
           business_id: businessId,
           product_id: item.product_id,
@@ -705,6 +712,7 @@ export async function cancelPurchaseInvoice(invoiceId: string, userId?: string):
           reference_type: "purchase_invoice",
           notes: `Purchase Invoice ${inv.invoice_number} cancelled`,
         });
+        if (insErr) throw insErr;
       }
     }
   }
