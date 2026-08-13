@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchLedgersWithBalance, computeProfitLoss, fmtInrPrecise, balanceSheetPresentationSign, buildBusinessHeaderLines } from "@/lib/accounting";
+import { fetchLedgersWithBalance, computeInventoryAdjustedProfitLoss, computeClosingStockValue, fmtInrPrecise, balanceSheetPresentationSign, buildBusinessHeaderLines } from "@/lib/accounting";
+import { fetchProducts } from "@/lib/products";
 import { useFormatDate } from "@/lib/dateFormat";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import type { ReportUdm } from "@/lib/documentUdm/types";
@@ -24,10 +25,23 @@ export default function BalanceSheet() {
     enabled: !!user?.id,
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
+  // Same closing-stock-as-of-today figure ProfitLoss.tsx feeds into
+  // computeInventoryAdjustedProfitLoss, so both reports' Net Profit/Loss
+  // always agree. It's added below as a synthetic Stock-in-Hand Asset row
+  // -- there's no ledger for physical stock in this double-entry system, so
+  // without that row Assets would fall short of Liabilities+Capital+Profit
+  // by exactly this amount the moment Net Profit stops being pure
+  // Sales-Purchase.
+  const { data: products = [] } = useQuery({
+    queryKey: ["balance-sheet-products", user?.id, business?.id],
+    enabled: !!user?.id,
+    queryFn: () => fetchProducts(user!.id),
+  });
 
   const data = useMemo(() => {
     const nature = (l: any) => l.group?.nature;
-    const { profit } = computeProfitLoss(ledgers);
+    const closingStock = computeClosingStockValue(products);
+    const { profit } = computeInventoryAdjustedProfitLoss(ledgers, 0, closingStock);
     // Capital has no seeded children (see fetchAccountGroupTree's doc
     // comment) -- ledgers post straight to it, so any capital-nature
     // ledger's group_id already IS the real Capital group's id. Used only
@@ -69,6 +83,10 @@ export default function BalanceSheet() {
       asset += signed;
       rows.push({ side: "Assets", group: l.group?.name ?? "—", item: l.name, amount: signed * sign, side_tone: signed >= 0 ? "success" : "danger", _party_id: l.party_id, _group_id: l.group_id, _ledger_id: l.id });
     });
+    if (closingStock !== 0) {
+      asset += closingStock;
+      rows.push({ side: "Assets", group: "Stock-in-Hand", item: "Closing Stock", amount: closingStock * sign, side_tone: "success", _party_id: null, _group_id: null, _ledger_id: "" });
+    }
     ledgers.filter(l => nature(l) === "liability" && (l.balance ?? 0) !== 0).forEach(l => {
       const signed = -(l.balance ?? 0);
       liab += signed;
@@ -87,7 +105,7 @@ export default function BalanceSheet() {
       rows.push({ side: "Liabilities", group: "Capital", item: profit >= 0 ? "Net Profit" : "Net Loss", amount: profit * sign, side_tone: profit >= 0 ? "success" : "danger", _group_id: capitalGroupId });
     }
     return { rows, asset: asset * sign, liab: liab * sign };
-  }, [ledgers]);
+  }, [ledgers, products]);
 
   // Local UI state only -- RD-Pro has no report-view preference system to
   // persist this into, and the task doesn't ask for one. Resets to Standard

@@ -159,6 +159,7 @@ const StockAdjustments = lazy(() => import("./pages/inventory/StockAdjustments")
 // ── Inventory Reports ──────────────────────────────────────────────────────
 const InventoryDashboard   = lazy(() => import("./pages/reports/inventory/InventoryDashboard"));
 const StockSummary         = lazy(() => import("./pages/reports/inventory/StockSummary"));
+const TallyStockSummary    = lazy(() => import("./pages/reports/inventory/TallyStockSummary"));
 const StockGroupSummary    = lazy(() => import("./pages/reports/inventory/StockGroupSummary"));
 const StockCategorySummary = lazy(() => import("./pages/reports/inventory/StockCategorySummary"));
 const WarehouseSummary     = lazy(() => import("./pages/reports/inventory/WarehouseSummary"));
@@ -526,6 +527,7 @@ const App = () => (
               {/* ── Inventory Reports ── */}
               <Route path="/reports/inventory"                   element={L(<InventoryDashboard />)} />
               <Route path="/reports/inventory/stock-summary"     element={L(<StockSummary />)} />
+              <Route path="/reports/inventory/stock-summary-tally" element={L(<TallyStockSummary />)} />
               <Route path="/reports/inventory/group-summary"     element={L(<StockGroupSummary />)} />
               <Route path="/reports/inventory/category-summary"  element={L(<StockCategorySummary />)} />
               <Route path="/reports/inventory/warehouse-summary" element={L(<WarehouseSummary />)} />

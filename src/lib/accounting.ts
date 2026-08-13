@@ -12,7 +12,7 @@ export type LedgerRow = {
   opening_balance_type: "dr" | "cr";
   is_system: boolean;
   status: string;
-  group?: { name: string; nature: string } | null;
+  group?: { name: string; nature: string; account_type?: string | null } | null;
   balance?: number;
   total_dr?: number;
   total_cr?: number;
@@ -325,6 +325,133 @@ export function computeProfitLoss(ledgers: LedgerRow[]): { income: number; expen
     rows.push({ side: "Income", item: l.name, amount: Math.abs(l.balance ?? 0), side_tone: "success", group: l.group?.name ?? "—", _group_id: l.group_id, _ledger_id: l.id, _party_id: l.party_id });
   });
   return { income, expense, profit: income - expense, rows };
+}
+
+/**
+ * Standard periodic-inventory Trading Account adjustment:
+ *   Net Profit = (Income + Closing Stock) − (Expense + Opening Stock)
+ *
+ * `raw.expense` (from computeProfitLoss / fetchPeriodIncomeExpense) includes
+ * the FULL Purchase Accounts ledger as an expense -- correct only if every
+ * rupee purchased was also sold in the same period. Adding Closing Stock to
+ * income and Opening Stock to expense is what removes unsold purchases from
+ * the profit figure (and puts back stock consumed from a prior period),
+ * without needing to separately classify "purchase" vs "other expense"
+ * ledgers -- the net effect on the single Net Profit number is identical
+ * either way (it's just addition), and this is exactly how a combined
+ * Trading + Profit & Loss statement is presented (Tally-style: Opening
+ * Stock + Purchases debit, Sales + Closing Stock credit).
+ *
+ * Shared by computeInventoryAdjustedProfitLoss (lifetime, ledger-balance
+ * based -- ProfitLoss.tsx/BalanceSheet.tsx) and BusinessHealthLayer's
+ * month-scoped Dashboard KPI (voucher-item based, via
+ * fetchPeriodIncomeExpense) so the two paths can never compute Net Profit
+ * with a different formula, even though they read income/expense from two
+ * different sources (cumulative ledger balance vs. a date-filtered voucher
+ * query) because ledger balances alone can't be scoped to a calendar month.
+ */
+export function netProfitWithInventory(
+  raw: { income: number; expense: number },
+  openingStock: number,
+  closingStock: number,
+): { income: number; expense: number; profit: number } {
+  const income = raw.income + closingStock;
+  const expense = raw.expense + openingStock;
+  return { income, expense, profit: income - expense };
+}
+
+/**
+ * computeProfitLoss() plus the inventory adjustment above, with synthetic
+ * "Opening Stock" / "Closing Stock" lines appended so the P&L report shows
+ * where the adjustment came from (same convention as a printed Trading
+ * Account). Purchases are NOT reclassified or removed from the Expense
+ * rows -- they stay exactly as computeProfitLoss reported them; only the
+ * two new lines change the totals.
+ */
+export function computeInventoryAdjustedProfitLoss(
+  ledgers: LedgerRow[],
+  openingStock: number,
+  closingStock: number,
+): { income: number; expense: number; profit: number; rows: ProfitLossLine[] } {
+  const base = computeProfitLoss(ledgers);
+  const rows = [...base.rows];
+  if (openingStock) {
+    rows.push({ side: "Expense", item: "Opening Stock", amount: openingStock, side_tone: "warning", group: "Stock-in-Hand", _group_id: null, _ledger_id: "", _party_id: null });
+  }
+  if (closingStock) {
+    rows.push({ side: "Income", item: "Closing Stock", amount: closingStock, side_tone: "success", group: "Stock-in-Hand", _group_id: null, _ledger_id: "", _party_id: null });
+  }
+  const { income, expense, profit } = netProfitWithInventory(base, openingStock, closingStock);
+  return { income, expense, profit, rows };
+}
+
+/**
+ * Same "as of today" closing stock valuation everywhere it's used
+ * (P&L, Balance Sheet, Dashboard) -- previously each page independently
+ * wrote `products.reduce((s,p)=>s+p.stock*(p.dealer_rate||p.mrp),0)`,
+ * which is exactly the kind of duplication that let Dashboard and P&L
+ * silently drift apart. There's no reliable historical/per-movement cost
+ * in this schema (inventory_movements.rate/value are unpopulated in
+ * production), so this is always a snapshot as of right now, never a
+ * reconstructed past value.
+ */
+export function computeClosingStockValue(products: { stock: number; dealer_rate?: number | null; mrp?: number | null }[]): number {
+  return products.reduce((s, p) => s + Number(p.stock || 0) * Number(p.dealer_rate || p.mrp || 0), 0);
+}
+
+/**
+ * Same Income/Expense (and Net Sales/Net Purchase) aggregation as
+ * computeProfitLoss, but date-scoped to posted vouchers in [from, to]
+ * instead of cumulative ledger balances -- ledger_accounts.current_balance
+ * has no date dimension, so a calendar-month Net Profit (the Dashboard KPI)
+ * can't be derived from fetchLedgersWithBalance at all. Reads voucher_items
+ * directly (not the vouchers.total_amount the old Dashboard calc used,
+ * which (a) is GST-inclusive -- Sales/Purchase Account ledgers only ever
+ * receive the taxable amount, CGST/SGST/IGST post to their own Duties &
+ * Taxes ledgers -- and (b) only ever summed voucher_type = Sales/Purchase,
+ * silently missing both Credit/Debit Note (return) postings against the
+ * same Sales/Purchase Account ledgers and every Journal/Payment-posted
+ * expense such as Rent or Salary) and classifies each line by its ledger's
+ * account-group *nature* (income/expense, matching computeProfitLoss) and
+ * *account_type* (sales/purchase specifically, matching the P&L report's
+ * own "Sales Accounts"/"Purchase Accounts" line items) -- so this is the
+ * identical formula/classification, just evaluated over a date-filtered
+ * voucher_items query instead of a cumulative ledger balance.
+ */
+export async function fetchPeriodIncomeExpense(
+  userId: string,
+  from: string,
+  to: string,
+): Promise<{ income: number; expense: number; netSales: number; netPurchases: number }> {
+  const biz = getActiveBusinessIdSync();
+  let q = supabase
+    .from("vouchers")
+    .select("status, voucher_items(dr_amount, cr_amount, ledger_accounts(account_groups(nature, account_type)))")
+    .eq("user_id", userId)
+    .eq("status", "posted")
+    .gte("voucher_date", from)
+    .lte("voucher_date", to);
+  if (biz) q = q.eq("business_id", biz);
+  const { data, error } = await q;
+  if (error) throw error;
+
+  let income = 0;
+  let expense = 0;
+  let netSales = 0;
+  let netPurchases = 0;
+  for (const v of (data ?? []) as any[]) {
+    for (const it of (v.voucher_items ?? []) as any[]) {
+      const group = it.ledger_accounts?.account_groups;
+      const nature = group?.nature;
+      const accountType = group?.account_type;
+      const contribution = Number(it.dr_amount || 0) - Number(it.cr_amount || 0);
+      if (nature === "income") income += -contribution;
+      else if (nature === "expense") expense += contribution;
+      if (accountType === "sales") netSales += -contribution;
+      else if (accountType === "purchase") netPurchases += contribution;
+    }
+  }
+  return { income, expense, netSales, netPurchases };
 }
 
 export const fmtInr = (n: number) =>

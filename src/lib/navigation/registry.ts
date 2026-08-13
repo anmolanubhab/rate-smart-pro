@@ -775,6 +775,18 @@ export const NAV_ITEMS: NavItem[] = [
     aliases: ["stock summary", "stock report", "inventory summary"],
   },
   {
+    id: "inv-tally-stock-summary",
+    title: "Stock Summary (Group Drill-down)",
+    description: "Hierarchical Stock Group → Item drill-down with a transaction-wise Stock Ledger — Tally-style",
+    route: "/reports/inventory/stock-summary-tally",
+    icon: FileSpreadsheet,
+    module: "Reports",
+    parentId: "inv-reports-group",
+    showInSidebar: false,
+    keywords: ["stock", "summary", "hierarchical", "group", "ledger", "tally", "drill-down", "expand"],
+    aliases: ["stock group drill-down", "stock ledger", "hierarchical stock summary"],
+  },
+  {
     id: "inv-group-summary",
     title: "Stock Group Summary",
     description: "Stock movement summarised by product group",
