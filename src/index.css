@@ -481,6 +481,154 @@
 .animate-pulse-border { animation: pulse-border 1.8s ease-in-out infinite; }
 
 /* ============================== */
+/* Landing page — premium hero    */
+/* ============================== */
+@layer utilities {
+  .bg-brand-gradient { background: var(--gradient-primary); }
+  .shadow-elevated { box-shadow: 0 8px 24px -8px hsl(var(--primary) / 0.25), 0 2px 8px hsl(var(--foreground) / 0.04); }
+  .hover-lift { transition: transform 300ms ease, box-shadow 300ms ease; }
+  .hover-lift:hover { transform: translateY(-3px); box-shadow: var(--shadow-elegant); }
+}
+
+@keyframes rd-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes rd-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+@keyframes rd-blink {
+  0%, 60%, 100% { opacity: 0.25; }
+  30%           { opacity: 1; }
+}
+
+.animate-fade-up { animation: rd-fade-up 0.6s ease-out both; }
+.animate-float { animation: rd-float 6s ease-in-out infinite; }
+.animate-blink { animation: rd-blink 1.2s infinite; }
+
+/* Hero background scene — extremely slow ambient drift, never distracting. */
+@keyframes rd-hero-visual-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(-8px, -5px, 0) scale(1.012); }
+}
+.hero-visual-drift { animation: rd-hero-visual-drift 24s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-visual-drift { animation: none; }
+}
+
+/* Hero headline — staggered line reveal (rd-fade-up, reused) + a slow
+   gradient shimmer on "Complete Automation." only. Each line's full
+   animation (name + delay, and for line 3 the shimmer too) is baked into
+   one shorthand declaration per class — mixing the `animation` shorthand
+   across multiple classes on one element makes later rules silently wipe
+   earlier ones instead of composing. */
+@keyframes rd-gradient-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+.hero-line-1 { animation: rd-fade-up 0.6s ease-out 80ms both; }
+.hero-line-2 { animation: rd-fade-up 0.6s ease-out 220ms both; }
+.hero-line-3 {
+  background-size: 220% auto;
+  animation: rd-fade-up 0.6s ease-out 360ms both, rd-gradient-shimmer 5s ease-in-out 900ms infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-line-1, .hero-line-2, .hero-line-3 { animation: none !important; opacity: 1; }
+}
+
+/* Hero entrance — coordinated fade-up of badge/description/CTAs/trust line,
+   plus a slightly heavier settle-in for the dashboard (fade + translateX +
+   subtle scale). Each class bakes its own full `animation` shorthand (name,
+   duration, delay) rather than composing with a shared utility class — see
+   the note above .hero-line-1: mixing shorthand `animation` across classes
+   on one element makes the later rule silently replace the earlier one. */
+.hero-badge { animation: rd-fade-up 0.6s ease-out 50ms both; }
+.hero-desc  { animation: rd-fade-up 0.6s ease-out 500ms both; }
+.hero-ctas  { animation: rd-fade-up 0.6s ease-out 650ms both; }
+.hero-trust { animation: rd-fade-up 0.6s ease-out 800ms both; }
+
+@keyframes rd-dashboard-in {
+  from { opacity: 0; transform: translateX(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+.hero-dashboard-in { animation: rd-dashboard-in 800ms ease-out 400ms both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-badge, .hero-desc, .hero-ctas, .hero-trust, .hero-dashboard-in {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* RD-PRO logo mark — subtle heartbeat: two quick beats then a rest,
+   like an actual pulse, not a continuous bounce. */
+@keyframes rd-heartbeat {
+  0%, 100%  { transform: scale(1); }
+  14%       { transform: scale(1.1); }
+  28%       { transform: scale(1); }
+  42%       { transform: scale(1.08); }
+  56%       { transform: scale(1); }
+}
+.logo-heartbeat { animation: rd-heartbeat 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .logo-heartbeat { animation: none; }
+}
+
+/* ============================== */
+/* Auth page — premium atmosphere */
+/* ============================== */
+
+/* Very light cool-white base + soft ambient gradients: violet top-left,
+   blue top-right, indigo/violet bottom-center. Kept far lower-contrast
+   than the landing hero — this is meant to be felt, not seen. */
+.auth-bg-wash {
+  background-color: #F8FAFD;
+  background-image:
+    radial-gradient(38% 32% at 10% 6%, rgba(124, 58, 237, 0.07), transparent 70%),
+    radial-gradient(38% 32% at 90% 8%, rgba(59, 130, 246, 0.06), transparent 70%),
+    radial-gradient(55% 38% at 50% 102%, rgba(79, 70, 229, 0.06), transparent 70%);
+}
+
+/* Watermark illustration — target ~4-8% overall visibility; the mask inside
+   AuthWatermark further fades it out behind the login card. */
+.auth-bg-watermark { opacity: 0.07; }
+
+@keyframes rd-auth-bg-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(-5px, -4px, 0) scale(1.008); }
+}
+.auth-bg-drift { animation: rd-auth-bg-drift 28s ease-in-out infinite; }
+
+@keyframes rd-auth-wash-drift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0.6%, -0.6%, 0); }
+}
+.auth-wash-drift { animation: rd-auth-wash-drift 30s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-bg-drift, .auth-wash-drift { animation: none; }
+}
+
+/* Barely-noticeable ambient glow behind the RD-PRO logo on the auth page. */
+.auth-logo-glow {
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.16), rgba(79, 70, 229, 0.08) 55%, transparent 75%);
+  filter: blur(14px);
+}
+
+/* Login/signup card — slightly more premium depth without heavy glassmorphism. */
+.auth-card {
+  background-color: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 24px 48px -20px rgba(79, 70, 229, 0.16), 0 8px 20px -8px rgba(15, 23, 42, 0.06);
+  border-color: rgba(226, 232, 240, 0.9);
+}
+.auth-card-glow {
+  background: radial-gradient(60% 60% at 50% 0%, rgba(124, 58, 237, 0.1), transparent 70%);
+  filter: blur(20px);
+}
+
+/* ============================== */
 /* Phase 3 – Independent Scroll   */
 /* ============================== */
 html,

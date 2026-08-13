@@ -22,6 +22,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AuthWatermark } from "@/components/auth/AuthBackground";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -175,7 +176,7 @@ export default function Auth() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="relative isolate h-screen flex items-center justify-center overflow-hidden auth-bg-wash">
         <div className="flex flex-col items-center gap-3">
           <LoadingSpinner size="lg" />
           <p className="text-slate-500 text-sm">Loading...</p>
@@ -318,10 +319,27 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 overflow-x-hidden">
-      <div className={`w-full ${isSignUp ? "max-w-[760px]" : "max-w-[420px]"}`}>
+    <div className="relative isolate h-screen overflow-y-auto overflow-x-hidden auth-bg-wash">
+      {/* Premium ambient backdrop — soft gradient wash + a faint business
+          watermark (ledger, invoice, chart, inventory, data nodes), masked
+          so it fades out right behind the card. Hidden on mobile in favor
+          of just the gradient wash, per the responsive brief. Fixed (not
+          absolute) so it stays pinned as a backdrop instead of scrolling
+          away when the signup form is taller than the viewport. */}
+      <div className="auth-wash-drift pointer-events-none fixed inset-0 -z-10" />
+      <div className="pointer-events-none fixed inset-0 -z-10 hidden sm:block">
+        <AuthWatermark className="auth-bg-drift auth-bg-watermark h-full w-full opacity-70 lg:opacity-100" />
+      </div>
+
+      {/* min-h-full (not a flex `justify-center` on the scroll container
+          itself) so tall content — the signup form — scrolls from the very
+          top instead of having its top edge clipped and unreachable, which
+          is what centering directly on an overflow:auto flex container does. */}
+      <div className="flex min-h-full flex-col items-center justify-center p-4">
+      <div className={`relative w-full ${isSignUp ? "max-w-[760px]" : "max-w-[420px]"}`}>
         <div className="flex flex-col items-center mb-8">
-          <div className="mb-4">
+          <div className="relative mb-4">
+            <div className="auth-logo-glow pointer-events-none absolute inset-0 -z-10 scale-150" />
             <img
               src="/icons/icon-128x128.png"
               alt="RD Pro"
@@ -334,7 +352,9 @@ export default function Auth() {
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 md:p-8">
+        <div className="relative isolate">
+          <div className="auth-card-glow pointer-events-none absolute inset-x-6 -inset-y-4 -z-10" />
+          <div className="auth-card rounded-2xl border p-6 md:p-8">
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1 mb-6">
             <button
               type="button"
@@ -762,11 +782,13 @@ export default function Auth() {
               </p>
             )}
           </div>
+          </div>
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-6">
           Powered by RD-PRO &copy; {new Date().getFullYear()}
         </p>
+      </div>
       </div>
     </div>
   );

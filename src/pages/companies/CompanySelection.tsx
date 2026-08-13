@@ -24,6 +24,7 @@ import { EditCompanyWizard } from "@/components/company/EditCompanyWizard";
 import { ArchiveCompanyDialog } from "@/components/company/ArchiveCompanyDialog";
 import CompanyAvatar from "@/components/company/CompanyAvatar";
 import { useFormatDate } from "@/lib/dateFormat";
+import companySelectBg from "@/assets/company-select-bg.webp";
 
 type Row = {
   business_id: string;
@@ -155,7 +156,24 @@ export default function CompanySelection() {
   if (!user || !session) return <Navigate to="/auth" replace />;
 
   return (
-    <div className="min-h-screen bg-background gradient-mesh p-4 md:p-8">
+    <div className="relative isolate min-h-screen bg-background gradient-mesh p-4 md:p-8">
+      {/* Premium background photo — fixed, behind everything, pointer-events
+          disabled so it never intercepts clicks. Opacity steps down on
+          tablet/mobile per the design brief so the company cards stay the
+          visual focus; the image's own quiet center already keeps the
+          content column clear. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10 opacity-20 sm:opacity-30 md:opacity-45 lg:opacity-60"
+        style={{
+          backgroundImage: `url(${companySelectBg})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-white/35" />
+
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
