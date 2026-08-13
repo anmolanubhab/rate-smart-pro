@@ -1,7 +1,23 @@
 import { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 
-export type MockColumn = { key: string; label: string; align?: "left" | "right" | "center"; format?: "number" | "currency" | "badge" };
+export type MockColumn = {
+  key: string;
+  label: string;
+  align?: "left" | "right" | "center";
+  format?: "number" | "currency" | "badge";
+  /** Optional per-cell click override (e.g. a group name that should drill
+   *  into a different place than the rest of the row). Stops propagation so
+   *  it doesn't also fire the row's own onRowClick. Renders the cell as a
+   *  link. Existing callers that don't set this keep today's behavior
+   *  unchanged. */
+  onCellClick?: (row: Record<string, any>) => void;
+  /** Optional full override of a cell's display content, bypassing the
+   *  format-based rendering below entirely (e.g. a paise-exact currency
+   *  string instead of this table's default whole-rupee fmtInr). Existing
+   *  callers that don't set this keep today's behavior unchanged. */
+  render?: (row: Record<string, any>) => ReactNode;
+};
 
 export type MockKpi = { label: string; value: string | number; tone?: "default" | "success" | "warning" | "danger" };
 
@@ -81,7 +97,8 @@ export default function MockTablePage({
                   {columns.map((c) => {
                     const v = r[c.key];
                     let display: ReactNode = v;
-                    if (c.format === "currency") display = `₹ ${fmtInr(v)}`;
+                    if (c.render) display = c.render(r);
+                    else if (c.format === "currency") display = `₹ ${fmtInr(v)}`;
                     else if (c.format === "number") display = fmtInr(v);
                     else if (c.format === "badge") {
                       const tone = r[`${c.key}_tone`] || "default";
@@ -95,7 +112,11 @@ export default function MockTablePage({
                       );
                     }
                     return (
-                      <td key={c.key} className={`px-4 py-2.5 text-${c.align || "left"} ${c.format === "currency" || c.format === "number" ? "tabular-nums" : ""}`}>
+                      <td
+                        key={c.key}
+                        className={`px-4 py-2.5 text-${c.align || "left"} ${c.format === "currency" || c.format === "number" ? "tabular-nums" : ""} ${c.onCellClick ? "cursor-pointer text-primary hover:underline" : ""}`}
+                        onClick={c.onCellClick ? (e) => { e.stopPropagation(); c.onCellClick!(r); } : undefined}
+                      >
                         {display ?? "—"}
                       </td>
                     );

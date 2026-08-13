@@ -61,6 +61,7 @@ const BankAccounts = lazy(() => import("./pages/accounts/BankAccounts"));
 const TrialBalance = lazy(() => import("./pages/accounts/TrialBalance"));
 const ProfitLoss = lazy(() => import("./pages/accounts/ProfitLoss"));
 const BalanceSheet = lazy(() => import("./pages/accounts/BalanceSheet"));
+const AccountGroupDrillDown = lazy(() => import("./pages/accounts/AccountGroupDrillDown"));
 const PartyLedger = lazy(() => import("./pages/accounts/PartyLedger")); // NEW
 const Receivables = lazy(() => import("./pages/accounts/Receivables"));
 const Payables = lazy(() => import("./pages/accounts/Payables"));
@@ -365,6 +366,7 @@ const App = () => (
               <Route path="/accounts/trial-balance" element={L(<TrialBalance />)} />
               <Route path="/accounts/profit-loss" element={L(<ProfitLoss />)} />
               <Route path="/accounts/balance-sheet" element={L(<BalanceSheet />)} />
+              <Route path="/accounts/group/:groupId" element={L(<AccountGroupDrillDown />)} />
               <Route path="/accounts/party/:partyId" element={L(<PartyLedger />)} /> {/* NEW */}
               <Route path="/accounts/ledger/:ledgerId" element={L(<PartyLedger />)} />
               <Route path="/accounts/receivables" element={L(<Receivables />)} />

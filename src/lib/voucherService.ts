@@ -10,7 +10,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchLockDate, isDateLocked, fetchBackdateWindowDays } from "@/lib/accountingLock";
-import { logAudit } from "@/lib/audit";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -587,6 +586,15 @@ export async function postVoucher(
  * fetchPartyLedger (accounting.ts) only count "posted" vouchers. It is
  * NOT removed from the database — that only happens if the user explicitly
  * runs Delete afterward (deleteVoucher(), which hard-deletes any status).
+ *
+ * Reversing ledger_accounts.current_balance / parties.outstanding_balance
+ * is NOT done here: trg_vouchers_sync_balance_on_status_change (DB trigger
+ * on vouchers, fires on any UPDATE OF status) already applies the exact
+ * same apply_ledger_balance_delta reversal for every item the moment this
+ * UPDATE flips status to 'cancelled'. This function used to also do it
+ * explicitly in a loop before the status UPDATE below -- confirmed live
+ * (2026-08-12 QA audit) that doing both reverses every item twice, leaving
+ * the ledger overshot by the voucher's own amount instead of neutral.
  */
 export async function cancelVoucher(
   userId: string,
@@ -603,22 +611,6 @@ export async function cancelVoucher(
   }
 
   await assertNotLocked(businessId, voucher.voucher_date, opts.canEditLockedVoucher);
-
-  // Reverse this voucher's contribution to ledger_accounts.current_balance /
-  // parties.outstanding_balance BEFORE flipping status. Those are cached
-  // running totals (separate from the Ledger Statement, which is computed
-  // live by filtering status='posted' and is unaffected either way) that
-  // apply_ledger_balance_delta maintains on post but nothing previously
-  // reversed on cancel — every cancelled voucher silently left its party's
-  // outstanding_balance permanently overstated/understated by its amount.
-  for (const item of voucher.items ?? []) {
-    const { error: revErr } = await supabase.rpc("apply_ledger_balance_delta" as never, {
-      _ledger_account_id: item.ledger_account_id,
-      _dr_delta: -(item.debit ?? 0),
-      _cr_delta: -(item.credit ?? 0),
-    } as never);
-    if (revErr) throw new Error(`cancelVoucher: could not reverse ledger balance: ${revErr.message}`);
-  }
 
   const { data: vRow, error } = await supabase
     .from("vouchers")
@@ -738,14 +730,9 @@ export async function deleteVoucher(
 
   if (error) throw new Error(`deleteVoucher: ${error.message}`);
 
-  await logAudit({
-    business_id: businessId,
-    action: "HARD_DELETE",
-    entity_type: "vouchers",
-    entity_id: voucherId,
-    old_value: { voucher_number: existing.voucher_number, status: existing.status },
-    reason: reason ?? null,
-  });
+  // Audit entry is written by trg_log_voucher_hard_delete (AFTER DELETE on
+  // vouchers) instead of here, so it also covers a hard-delete made via a
+  // direct REST/RPC call that bypasses this function entirely.
 }
 
 // ─── 7. getVoucher ───────────────────────────────────────────────────────────

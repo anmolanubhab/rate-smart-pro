@@ -15,7 +15,7 @@
 // configured print_copy_types and shows the picker itself — one shared
 // flow, not one per page.
 
-import { Fragment, forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { Fragment, forwardRef, useImperativeHandle, useRef, useState, type ReactElement } from "react";
 import { Printer, ChevronDown, Eye, FileDown, FileSpreadsheet, Mail, MessageCircle, Link2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +41,7 @@ import {
   generateDocumentExcel,
   generateTabularPdf,
   generateTabularExcel,
+  generateReportComponentPdf,
   buildDocumentPdfBlob,
   buildTabularPdfBlob,
 } from "@/lib/outputCenter/printService";
@@ -59,6 +60,15 @@ export interface DocumentOutputCenterProps {
   getUdm?: () => Promise<DocumentUdm> | DocumentUdm;
   /** Report/statement category only. */
   getReportUdm?: () => Promise<ReportUdm> | ReportUdm;
+  /** Report/statement category only, optional. When set, Preview and
+   *  Download PDF render THIS React element (the report's own on-screen
+   *  component, e.g. a T-Format two-column layout) via html2canvas instead
+   *  of the generic flat columns/rows table built from getReportUdm's
+   *  columns/rows -- for a report whose real layout (grouping hierarchy,
+   *  side-by-side columns) a flat table can't faithfully reproduce. Direct
+   *  Print and Excel are unaffected (Direct Print already captures the live
+   *  on-screen DOM; Excel has no equivalent visual concept). */
+  getReportPrintComponent?: () => ReactElement;
   /** Fixes which copies to print/PDF/share, skipping the copy picker
    *  entirely — use for a document type with no print_copy_types concept
    *  (or the dev gallery's manual "Copies" field). Omit to let this
@@ -89,7 +99,7 @@ export interface DocumentOutputCenterHandle {
 
 export const DocumentOutputCenter = forwardRef<DocumentOutputCenterHandle, DocumentOutputCenterProps>(function DocumentOutputCenter({
   documentTypeId, documentId, documentNumber,
-  getUdm, getReportUdm, copyLabels: fixedCopyLabels, onSearch, disabled, size = "sm",
+  getUdm, getReportUdm, getReportPrintComponent, copyLabels: fixedCopyLabels, onSearch, disabled, size = "sm",
 }, ref) {
   const config = getOutputCenterConfig(documentTypeId);
   const pref = usePrintPreference();
@@ -198,6 +208,7 @@ export const DocumentOutputCenter = forwardRef<DocumentOutputCenterHandle, Docum
       if (!udm) return;
       const filename = `${documentNumber ?? documentTypeId}.pdf`;
       if (udm.kind === "document") await generateDocumentPdf(udm, filename, labels);
+      else if (getReportPrintComponent) await generateReportComponentPdf(getReportPrintComponent(), udm.pageProfile ?? { pageSize: "A4", orientation: "portrait", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 }, filename);
       else generateTabularPdf(udm, filename);
     });
   }
@@ -355,6 +366,7 @@ export const DocumentOutputCenter = forwardRef<DocumentOutputCenterHandle, Docum
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         udm={previewUdm}
+        printComponent={previewUdm?.kind === "report" ? getReportPrintComponent?.() : undefined}
         copyLabels={previewCopyLabels}
         showSearch={actions.includes("search")}
         onDirectPrint={() => doDirectPrint(previewCopyLabels)}

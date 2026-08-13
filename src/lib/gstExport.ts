@@ -115,20 +115,51 @@ export function exportToPdf(
   columns: MockColumn[],
   rows: Record<string, any>[],
   filename: string,
-  opts?: { subtitle?: string; orientation?: "portrait" | "landscape" }
+  opts?: {
+    subtitle?: string;
+    orientation?: "portrait" | "landscape";
+    /** Centered lines between the title and subtitle -- e.g. a business's
+     *  address/contact/email block on a formal statement. */
+    headerLines?: string[];
+    /** Centers title/headerLines/subtitle instead of left-aligning them. */
+    centered?: boolean;
+    /** Plain statement-style table (no filled header/cell grid) instead of
+     *  the default striped/grid theme -- reads cleaner for a two-column
+     *  layout like a Balance Sheet than a spreadsheet-style grid does. */
+    plain?: boolean;
+  }
 ) {
   const doc = new jsPDF({ unit: "pt", format: "a4", orientation: opts?.orientation ?? "landscape" });
   const M = 36;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const centered = !!opts?.centered;
+  const textX = centered ? pageWidth / 2 : M;
+  const textOpts = centered ? { align: "center" as const } : undefined;
 
+  let y = 40;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(title, M, 40);
+  doc.text(title, textX, y, textOpts);
+  y += 16;
+
+  if (opts?.headerLines?.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(70, 70, 85);
+    for (const line of opts.headerLines) {
+      doc.text(line, textX, y, textOpts);
+      y += 12;
+    }
+    doc.setTextColor(20, 20, 30);
+  }
+
   if (opts?.subtitle) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(110, 110, 130);
-    doc.text(opts.subtitle, M, 58);
+    doc.text(opts.subtitle, textX, y, textOpts);
     doc.setTextColor(20, 20, 30);
+    y += 16;
   }
 
   const fmtCell = (col: MockColumn, v: any) => {
@@ -139,12 +170,15 @@ export function exportToPdf(
   };
 
   autoTable(doc, {
-    startY: opts?.subtitle ? 74 : 56,
+    startY: y + 8,
     margin: { left: M, right: M },
     head: [columns.map((c) => c.label)],
     body: rows.map((r) => columns.map((c) => fmtCell(c, r[c.key]))),
-    styles: { fontSize: 8, cellPadding: 4 },
-    headStyles: { fillColor: [99, 80, 240], textColor: 255, fontStyle: "bold" },
+    theme: opts?.plain ? "plain" : "striped",
+    styles: opts?.plain ? { fontSize: 9, cellPadding: 3 } : { fontSize: 8, cellPadding: 4 },
+    headStyles: opts?.plain
+      ? { textColor: [20, 20, 30], fontStyle: "bold", lineWidth: { bottom: 1 }, lineColor: [20, 20, 30] }
+      : { fillColor: [99, 80, 240], textColor: 255, fontStyle: "bold" },
     columnStyles: Object.fromEntries(
       columns.map((c, i) => [i, { halign: c.align === "right" ? "right" : c.align === "center" ? "center" : "left" }])
     ),

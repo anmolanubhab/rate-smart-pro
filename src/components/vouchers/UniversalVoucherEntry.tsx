@@ -535,7 +535,7 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
         </Alert>
       )}
 
-      <fieldset disabled={readOnly} className="space-y-4">
+      <fieldset disabled={readOnly} className="space-y-4 min-w-0">
         <VoucherHeaderBar
           ref={dateInputRef}
           label={config.label}
