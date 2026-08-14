@@ -101,6 +101,7 @@ const FinancialNoteCategories = lazy(() => import("./pages/settings/FinancialNot
 const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
 const Maintenance = lazy(() => import("./pages/settings/Maintenance"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
+const VerifyCompanyAccess = lazy(() => import("./pages/companies/VerifyCompanyAccess"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
 const ReceivePayment = lazy(() => import("./pages/sales/ReceivePayment"));
@@ -323,6 +324,7 @@ const App = () => (
               <Route path="/auth" element={<Auth />} />
               <Route path="/accept-invite" element={B(<AcceptInvite />)} />
               <Route path="/companies" element={B(<CompanySelection />)} />
+              <Route path="/verify-company/:token" element={B(<VerifyCompanyAccess />)} />
               <Route path="/setup/business" element={B(<BusinessWizard />)} />
               <Route path="/dashboard" element={<AppLayout><Dashboard /></AppLayout>} />
               <Route path="/calculator" element={L(<Calculator />)} />
