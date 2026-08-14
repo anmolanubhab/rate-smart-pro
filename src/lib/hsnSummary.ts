@@ -35,7 +35,8 @@ async function attachHsnMasterInfo(groups: Map<string, GroupAcc>) {
   const chunk = 500;
   for (let i = 0; i < codes.length; i += chunk) {
     const slice = codes.slice(i, i + chunk);
-    const { data } = await supabase.from("hsn_master" as any).select("hsn_code, description, default_uqc").in("hsn_code", slice);
+    const { data, error } = await supabase.from("hsn_master" as any).select("hsn_code, description, default_uqc").in("hsn_code", slice);
+    if (error) throw error;
     (data as { hsn_code: string; description: string | null; default_uqc: string | null }[] | null)?.forEach((d) =>
       infoByCode.set(d.hsn_code, { description: d.description, default_uqc: d.default_uqc })
     );
@@ -62,13 +63,14 @@ async function finalizeGroups(groups: Map<string, GroupAcc>): Promise<HsnSummary
 }
 
 export async function fetchSalesHsnSummary(businessId: string, from: string, to: string): Promise<HsnSummaryRow[]> {
-  const { data: invoices } = await supabase
+  const { data: invoices, error: invErr } = await supabase
     .from("sales_invoices")
     .select("id")
     .eq("business_id", businessId)
     .eq("status", "posted")
     .gte("invoice_date", from)
     .lte("invoice_date", to);
+  if (invErr) throw invErr;
   const invoiceIds = (invoices ?? []).map((i: any) => i.id);
   if (invoiceIds.length === 0) return [];
 
@@ -101,13 +103,14 @@ export async function fetchSalesHsnSummary(businessId: string, from: string, to:
 export async function fetchPurchaseHsnSummary(businessId: string, from: string, to: string): Promise<HsnSummaryRow[]> {
   // Purchase Invoice has no draft state (see purchaseInvoices.ts) — every
   // row except a cancelled one represents a real posted purchase.
-  const { data: invoices } = await supabase
+  const { data: invoices, error: invErr } = await supabase
     .from("purchase_invoices")
     .select("id")
     .eq("business_id", businessId)
     .neq("status", "cancelled")
     .gte("invoice_date", from)
     .lte("invoice_date", to);
+  if (invErr) throw invErr;
   const invoiceIds = (invoices ?? []).map((i: any) => i.id);
   if (invoiceIds.length === 0) return [];
 

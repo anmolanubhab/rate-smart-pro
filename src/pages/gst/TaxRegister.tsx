@@ -32,15 +32,17 @@ export default function TaxRegister() {
       .eq("business_id", business.id).eq("status", "posted")
       .gte("invoice_date", from).lte("invoice_date", to);
     if (search.trim()) sq = sq.or(`invoice_number.ilike.%${search.trim()}%`);
-    const { data: sales } = await sq;
+    const { data: sales, error: salesErr } = await sq;
+    if (salesErr) throw salesErr;
     const salesInvoices = (sales as any[]) ?? [];
     const salesIds = salesInvoices.map((i) => i.id);
     const salesSplit = new Map<string, { cgst: number; sgst: number; igst: number }>();
     if (salesIds.length) {
-      const { data: items } = await supabase
+      const { data: items, error: itemsErr } = await supabase
         .from("sales_invoice_items")
         .select("invoice_id, cgst_amount, sgst_amount, igst_amount")
         .in("invoice_id", salesIds);
+      if (itemsErr) throw itemsErr;
       for (const it of items ?? []) {
         const s = salesSplit.get(it.invoice_id) ?? { cgst: 0, sgst: 0, igst: 0 };
         s.cgst += Number(it.cgst_amount) || 0;
@@ -67,15 +69,17 @@ export default function TaxRegister() {
       .eq("business_id", business.id).neq("status", "cancelled")
       .gte("invoice_date", from).lte("invoice_date", to);
     if (search.trim()) pq = pq.or(`invoice_number.ilike.%${search.trim()}%`);
-    const { data: purchases } = await pq;
+    const { data: purchases, error: purchasesErr } = await pq;
+    if (purchasesErr) throw purchasesErr;
     const purchaseInvoices = (purchases as any[]) ?? [];
     const purchaseIds = purchaseInvoices.map((i) => i.id);
     const purchaseSplit = new Map<string, { cgst: number; sgst: number; igst: number }>();
     if (purchaseIds.length) {
-      const { data: items } = await supabase
+      const { data: items, error: itemsErr } = await supabase
         .from("purchase_invoice_items")
         .select("purchase_invoice_id, cgst_amount, sgst_amount, igst_amount")
         .in("purchase_invoice_id", purchaseIds);
+      if (itemsErr) throw itemsErr;
       for (const it of items ?? []) {
         const s = purchaseSplit.get(it.purchase_invoice_id) ?? { cgst: 0, sgst: 0, igst: 0 };
         s.cgst += Number(it.cgst_amount) || 0;

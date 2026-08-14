@@ -4,6 +4,7 @@ import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
 import { createVoucher, postVoucher, cancelVoucher, repostVoucherItems, type VoucherItem } from "@/lib/voucherService";
 import { assertHsnCompliance } from "@/lib/accountingLock";
 import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
+import { resolveIsInterstate, splitGstAmount, splitGstRate } from "@/lib/gstCalc";
 
 export type PurchaseInvoiceStatus = "unpaid" | "partially_paid" | "paid" | "cancelled";
 
@@ -522,15 +523,13 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     // gst_is_interstate(), not assumed. This used to always split CGST+SGST
     // regardless of actual state, which is wrong for any interstate supplier
     // (found while building GST Engine Milestone 4's reconciliation report).
-    const [{ data: biz }, { data: supplier }] = await Promise.all([
+    const [{ data: biz, error: bizErr }, { data: supplier, error: supplierErr }] = await Promise.all([
       supabase.from("businesses").select("gst_number").eq("id", businessId).maybeSingle(),
       supabase.from("parties").select("gst").eq("id", input.supplier_id).maybeSingle(),
     ]);
-    const { data: interstateData, error: interstateErr } = await supabase.rpc("gst_is_interstate" as never, {
-      _seller_gstin: supplier?.gst ?? null,
-      _buyer_gstin: biz?.gst_number ?? null,
-    } as never);
-    const isInterstate = interstateErr ? false : !!interstateData;
+    if (bizErr) throw bizErr;
+    if (supplierErr) throw supplierErr;
+    const isInterstate = await resolveIsInterstate(supplier?.gst, biz?.gst_number);
 
     // HSN Lock: snapshot each line's product HSN at save time (hsnByProduct
     // built above, alongside the compliance check), so a later HSN change on
@@ -538,7 +537,8 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     // previously never written — purchase_invoice_items.hsn was always null
     // despite the column existing.
     const rows = validItems.map((it, idx) => {
-      const half = +(it.tax_amount / 2).toFixed(2);
+      const gstSplit = splitGstAmount(it.tax_amount, isInterstate);
+      const rateSplit = splitGstRate(it.gst_percent, isInterstate);
       return {
         purchase_invoice_id: invId!,
         business_id: businessId,
@@ -551,12 +551,8 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         discount_percent: it.discount_percent,
         gst_percent: it.gst_percent,
         line_total: it.total_amount,
-        cgst_rate: isInterstate ? 0 : it.gst_percent / 2,
-        sgst_rate: isInterstate ? 0 : it.gst_percent / 2,
-        igst_rate: isInterstate ? it.gst_percent : 0,
-        cgst_amount: isInterstate ? 0 : half,
-        sgst_amount: isInterstate ? 0 : it.tax_amount - half,
-        igst_amount: isInterstate ? it.tax_amount : 0,
+        ...rateSplit,
+        ...gstSplit,
         cess_amount: 0,
         position: idx,
         unit_id: it.unit_id ?? null,
@@ -794,13 +790,14 @@ async function repostDirectInvoiceStock(
  * payment's allocations and cancels its voucher.
  */
 async function assertPurchaseInvoicePaymentReversed(invoiceId: string): Promise<void> {
-  const { data: alloc } = await supabase
+  const { data: alloc, error } = await supabase
     .from("supplier_payment_allocations" as never)
     .select("id")
     .eq("purchase_invoice_id", invoiceId)
     .gt("amount", 0)
     .limit(1)
     .maybeSingle();
+  if (error) throw error;
   if (alloc) {
     throw new Error("This Invoice has a Payment recorded against it. Delete the payment first (Supplier Payments screen).");
   }

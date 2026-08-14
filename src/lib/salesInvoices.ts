@@ -4,6 +4,7 @@ import { fetchOrder, fetchOrderItems, computeTotals } from "@/lib/orders";
 import { cancelVoucher } from "@/lib/voucherService";
 import { assertHsnCompliance } from "@/lib/accountingLock";
 import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
+import { resolveIsInterstate, splitGstAmount, splitGstRate, assertRegularGstScheme } from "@/lib/gstCalc";
 
 /**
  * Rounds a raw invoice total per the business's Round Off settings (Settings
@@ -120,6 +121,7 @@ export async function generateInvoiceFromDispatch(opts: {
   status?: "draft" | "posted";
 }): Promise<SalesInvoice> {
   const invoiceStatus = opts.status ?? "posted";
+  if (opts.businessId) await assertRegularGstScheme(opts.businessId, undefined, "Sales invoice generation");
 
   // 1. Load dispatch + its items
   const { data: dispatch, error: de } = await supabase
@@ -141,15 +143,13 @@ export async function generateInvoiceFromDispatch(opts: {
   // item was left with cgst_amount/sgst_amount/igst_amount at their column
   // default of 0 regardless of gst_pct, which is why GST Engine Milestone 4's
   // reports summed to zero output tax despite real invoices existing.
-  const [{ data: biz }, { data: party }] = await Promise.all([
+  const [{ data: biz, error: bizErr }, { data: party, error: partyErr }] = await Promise.all([
     supabase.from("businesses").select("gst_number").eq("id", opts.businessId ?? "").maybeSingle(),
     supabase.from("parties").select("gst").eq("id", order.party_id ?? "").maybeSingle(),
   ]);
-  const { data: interstateData, error: interstateErr } = await supabase.rpc("gst_is_interstate" as never, {
-    _seller_gstin: biz?.gst_number ?? null,
-    _buyer_gstin: party?.gst ?? null,
-  } as never);
-  const isInterstate = interstateErr ? false : !!interstateData;
+  if (bizErr) throw bizErr;
+  if (partyErr) throw partyErr;
+  const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst);
 
   // 3. Build invoice line items from dispatch_items
   const dispatchItems: any[] = (dispatch as any).dispatch_items || [];
@@ -165,7 +165,8 @@ export async function generateInvoiceFromDispatch(opts: {
     const lineNet = +(net_rate * qty).toFixed(2);
     const gstAmount = +(lineNet * gstPct / 100).toFixed(2);
     const total = +(lineNet + gstAmount).toFixed(2);
-    const half = +(gstAmount / 2).toFixed(2);
+    const gstSplit = splitGstAmount(gstAmount, isInterstate);
+    const rateSplit = splitGstRate(gstPct, isInterstate);
     return {
       product_id: oi?.product_id ?? null,
       part_number: oi?.part_number ?? "",
@@ -179,12 +180,8 @@ export async function generateInvoiceFromDispatch(opts: {
       dispatch_item_id: di.id,
       discount_pct: disc,
       gst_pct: gstPct,
-      cgst_rate: isInterstate ? 0 : gstPct / 2,
-      sgst_rate: isInterstate ? 0 : gstPct / 2,
-      igst_rate: isInterstate ? gstPct : 0,
-      cgst_amount: isInterstate ? 0 : half,
-      sgst_amount: isInterstate ? 0 : gstAmount - half,
-      igst_amount: isInterstate ? gstAmount : 0,
+      ...rateSplit,
+      ...gstSplit,
       unit_id: di.unit_id ?? null,
       stock_qty: di.stock_dispatched_qty ?? null,
       // for totals computation
@@ -324,6 +321,7 @@ export async function generateInvoiceFromOrder(opts: {
   orderId: string;
   requireApproval?: boolean;
 }): Promise<SalesInvoice> {
+  if (opts.businessId) await assertRegularGstScheme(opts.businessId, undefined, "Sales invoice generation");
   const order = await fetchOrder(opts.orderId);
   if (!order) throw new Error("Order not found");
   if (order.status === "cancelled") throw new Error("Cannot invoice a cancelled order");
@@ -350,15 +348,13 @@ export async function generateInvoiceFromOrder(opts: {
 
   // Same fix as generateInvoiceFromDispatch — resolved once per invoice via
   // the GST Engine, not left at the column default of 0.
-  const [{ data: biz }, { data: party }] = await Promise.all([
+  const [{ data: biz, error: bizErr }, { data: party, error: partyErr }] = await Promise.all([
     supabase.from("businesses").select("gst_number").eq("id", opts.businessId ?? "").maybeSingle(),
     supabase.from("parties").select("gst").eq("id", order.party_id ?? "").maybeSingle(),
   ]);
-  const { data: interstateData, error: interstateErr } = await supabase.rpc("gst_is_interstate" as never, {
-    _seller_gstin: biz?.gst_number ?? null,
-    _buyer_gstin: party?.gst ?? null,
-  } as never);
-  const isInterstate = interstateErr ? false : !!interstateData;
+  if (bizErr) throw bizErr;
+  if (partyErr) throw partyErr;
+  const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst);
 
   // HSN Lock groundwork, done before the invoice header is created so a
   // blocked invoice never gets a half-created row: resolve each line's
@@ -409,7 +405,8 @@ export async function generateInvoiceFromOrder(opts: {
   const rows = items.map((it: any, idx) => {
     const lineTaxable = (it.net_rate || 0) * (it.qty || 0);
     const lineGst = +(lineTaxable * ((it.gst_pct || 0) / 100)).toFixed(2);
-    const half = +(lineGst / 2).toFixed(2);
+    const gstSplit = splitGstAmount(lineGst, isInterstate);
+    const rateSplit = splitGstRate(it.gst_pct || 0, isInterstate);
     return {
       user_id: opts.userId,
       invoice_id: inv.id,
@@ -424,12 +421,8 @@ export async function generateInvoiceFromOrder(opts: {
       net_rate: it.net_rate,
       gst_pct: it.gst_pct,
       hsn: it.product_id ? hsnByProduct.get(it.product_id) ?? null : null,
-      cgst_rate: isInterstate ? 0 : it.gst_pct / 2,
-      sgst_rate: isInterstate ? 0 : it.gst_pct / 2,
-      igst_rate: isInterstate ? it.gst_pct : 0,
-      cgst_amount: isInterstate ? 0 : half,
-      sgst_amount: isInterstate ? 0 : lineGst - half,
-      igst_amount: isInterstate ? lineGst : 0,
+      ...rateSplit,
+      ...gstSplit,
       total: it.total,
       position: idx,
     };
@@ -553,13 +546,14 @@ export async function postInvoice(invoiceId: string) {
  */
 /** An invoice can't be reversed while a payment is still allocated against it — reverse the payment first (frees payment_allocations via reverseSalesPayment). */
 async function assertInvoicePaymentReversed(invoiceId: string): Promise<void> {
-  const { data: alloc } = await supabase
+  const { data: alloc, error } = await supabase
     .from("payment_allocations" as never)
     .select("id")
     .eq("sales_invoice_id", invoiceId)
     .gt("amount", 0)
     .limit(1)
     .maybeSingle();
+  if (error) throw error;
   if (alloc) {
     throw new Error("This Invoice has Payment already received. Reverse the payment first.");
   }

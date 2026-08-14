@@ -30,7 +30,7 @@ export default function GstSummary() {
   const { user } = useAuth();
   const { business } = useBusiness();
 
-  const { data: rows = [], isLoading } = useQuery({
+  const { data: rows = [], isLoading, isError, error } = useQuery({
     queryKey: ["gst-summary", business?.id],
     enabled: !!business?.id,
     queryFn: async (): Promise<Row[]> => {
@@ -39,12 +39,13 @@ export default function GstSummary() {
       const from = monthStart.toISOString().slice(0, 10);
 
       // Only items belonging to non-cancelled invoices this month, for this business.
-      const { data: invoices } = await supabase
+      const { data: invoices, error: invErr } = await supabase
         .from("sales_invoices")
         .select("id")
         .eq("business_id", business!.id)
         .neq("status", "cancelled")
         .gte("invoice_date", from);
+      if (invErr) throw invErr;
       const invoiceIds = (invoices ?? []).map((i) => i.id);
       if (invoiceIds.length === 0) return [];
 
@@ -92,7 +93,13 @@ export default function GstSummary() {
     <MockTablePage
       eyebrow="GST"
       title="GST Summary"
-      description={isLoading ? "Loading…" : "Slab-wise output tax for the current month, from posted sales invoices."}
+      description={
+        isLoading
+          ? "Loading…"
+          : isError
+            ? `Could not load GST Summary: ${(error as Error)?.message ?? "unknown error"}`
+            : "Slab-wise output tax for the current month, from posted sales invoices."
+      }
       kpis={[
         { label: "Taxable Value", value: `₹ ${taxableTotal.toLocaleString("en-IN")}` },
         { label: "Output Tax", value: `₹ ${out.toLocaleString("en-IN")}`, tone: "warning" },
