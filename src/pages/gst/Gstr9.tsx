@@ -33,7 +33,7 @@ export default function Gstr9() {
   const defaultFy = now.getMonth() + 1 >= 4 ? now.getFullYear() : now.getFullYear() - 1;
   const [fyStartYear, setFyStartYear] = useState(defaultFy);
 
-  const { data: annual, isLoading: loadingAnnual } = useQuery({
+  const { data: annual, isLoading: loadingAnnual, isError: annualErrored, error: annualError } = useQuery({
     queryKey: ["gstr9-annual", business?.id, fyStartYear],
     enabled: !!business?.id,
     queryFn: async () => {
@@ -45,7 +45,7 @@ export default function Gstr9() {
     },
   });
 
-  const { data: recon, isLoading: loadingRecon } = useQuery({
+  const { data: recon, isLoading: loadingRecon, isError: reconErrored, error: reconError } = useQuery({
     queryKey: ["gstr9c-recon", business?.id, fyStartYear],
     enabled: !!business?.id,
     queryFn: async () => {
@@ -91,7 +91,13 @@ export default function Gstr9() {
       <MockTablePage
         eyebrow="GSTR-9"
         title="Annual Summary"
-        description={loadingAnnual ? "Loading…" : `FY ${fyStartYear}-${fyStartYear + 1} (Apr–Mar), month-wise from posted invoices.`}
+        description={
+          loadingAnnual
+            ? "Loading…"
+            : annualErrored
+              ? `Could not load Annual Summary: ${(annualError as Error)?.message ?? "unknown error"}`
+              : `FY ${fyStartYear}-${fyStartYear + 1} (Apr–Mar), month-wise from posted invoices.`
+        }
         kpis={[
           { label: "Total Sales Taxable", value: `₹ ${annualTotalSales.toLocaleString("en-IN")}` },
           { label: "Total Purchase Taxable", value: `₹ ${annualTotalPurchase.toLocaleString("en-IN")}` },
@@ -111,7 +117,7 @@ export default function Gstr9() {
               rows: summaryRows,
               pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
             })}
-            disabled={loadingAnnual}
+            disabled={loadingAnnual || annualErrored}
           />
         }
       />
@@ -119,7 +125,13 @@ export default function Gstr9() {
       <MockTablePage
         eyebrow="GSTR-9C"
         title="Books vs Filed Returns Reconciliation"
-        description={loadingRecon ? "Loading…" : "Compares recomputed book totals against the JSON payload of every filed/revised GSTR-1 for the year."}
+        description={
+          loadingRecon
+            ? "Loading…"
+            : reconErrored
+              ? `Could not load Reconciliation: ${(reconError as Error)?.message ?? "unknown error"}`
+              : "Compares recomputed book totals against the JSON payload of every filed/revised GSTR-1 for the year."
+        }
         columns={reconColumns}
         rows={reconRows}
         actions={

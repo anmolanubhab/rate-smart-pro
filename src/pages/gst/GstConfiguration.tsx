@@ -281,6 +281,18 @@ export default function GstConfiguration() {
             ))}
           </TableBody>
         </Table>
+
+        {registrations?.some((r) => r.is_primary && r.registration_type !== "regular") && (
+          <div className="flex gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning-foreground">
+            <Info className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>
+              This business's primary registration is not "Regular" — RD-Pro's automated GST engine only computes
+              standard Regular-scheme tax. Sales Invoice generation and GSTR-3B are blocked for this registration
+              type until composition/casual/SEZ/export-only treatment is implemented. File manually or switch back
+              to Regular if this was set in error.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* HSN Settings */}

@@ -85,7 +85,7 @@ export default function GstDashboard() {
   // Six-month window (current month + 5 preceding), output tax vs ITC, from
   // the same per-line CGST/SGST/IGST split used at posting time (Gstr3B.tsx's
   // approach) — grouped by invoice month instead of a single period.
-  const { data: trend, isLoading } = useQuery({
+  const { data: trend, isLoading, isError, error: trendError } = useQuery({
     queryKey: ["gst-dashboard-trend", businessId],
     enabled: !!businessId,
     queryFn: async () => {
@@ -99,6 +99,8 @@ export default function GstDashboard() {
         supabase.from("purchase_invoices").select("id, invoice_date")
           .eq("business_id", businessId!).neq("status", "cancelled").gte("invoice_date", from),
       ]);
+      if (salesRes.error) throw salesRes.error;
+      if (purchaseRes.error) throw purchaseRes.error;
 
       const salesMonthById = new Map((salesRes.data ?? []).map((i: any) => [i.id, monthKey(new Date(i.invoice_date))]));
       const purchaseMonthById = new Map((purchaseRes.data ?? []).map((i: any) => [i.id, monthKey(new Date(i.invoice_date))]));
@@ -109,10 +111,11 @@ export default function GstDashboard() {
 
       const salesIds = Array.from(salesMonthById.keys());
       if (salesIds.length) {
-        const { data: items } = await supabase
+        const { data: items, error: itemsErr } = await supabase
           .from("sales_invoice_items")
           .select("invoice_id, cgst_amount, sgst_amount, igst_amount")
           .in("invoice_id", salesIds);
+        if (itemsErr) throw itemsErr;
         for (const it of items ?? []) {
           const m = salesMonthById.get((it as any).invoice_id);
           const bucket = m ? byMonth.get(m) : undefined;
@@ -122,10 +125,11 @@ export default function GstDashboard() {
 
       const purchaseIds = Array.from(purchaseMonthById.keys());
       if (purchaseIds.length) {
-        const { data: items } = await supabase
+        const { data: items, error: itemsErr } = await supabase
           .from("purchase_invoice_items")
           .select("purchase_invoice_id, cgst_amount, sgst_amount, igst_amount")
           .in("purchase_invoice_id", purchaseIds);
+        if (itemsErr) throw itemsErr;
         for (const it of items ?? []) {
           const m = purchaseMonthById.get((it as any).purchase_invoice_id);
           const bucket = m ? byMonth.get(m) : undefined;
@@ -203,7 +207,7 @@ export default function GstDashboard() {
               </div>
             </div>
             <p className={`font-display text-2xl font-bold tabular-nums ${toneClass(k.tone)}`}>
-              {isLoading && k.label !== "GSTIN" ? "…" : k.value}
+              {isLoading && k.label !== "GSTIN" ? "…" : isError && k.label !== "GSTIN" ? "—" : k.value}
             </p>
             <p className="text-xs text-muted-foreground mt-1">{k.sub}</p>
           </Link>
@@ -217,6 +221,10 @@ export default function GstDashboard() {
         </div>
         {isLoading ? (
           <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">Loading…</div>
+        ) : isError ? (
+          <div className="h-[260px] flex items-center justify-center text-sm text-destructive">
+            Could not load GST trend data: {(trendError as Error)?.message ?? "unknown error"}
+          </div>
         ) : trend && trend.some((m) => m.output || m.itc) ? (
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={trend} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>

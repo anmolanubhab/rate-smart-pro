@@ -13,6 +13,7 @@
 // detail; callers only ever import from here.
 
 import { supabase } from "@/integrations/supabase/client";
+import { splitGstAmount } from "@/lib/gstCalc";
 import { fetchPricingPolicy, fetchPricingThresholds } from "@/lib/accountingLock";
 import { resolveBasePrice } from "./basePriceResolver";
 import { resolveApplicableRules } from "./ruleResolver";
@@ -68,6 +69,12 @@ async function resolveGstSplit(businessId: string, partyId: string | null | unde
     supabase.from("businesses").select("gst_number").eq("id", businessId).maybeSingle(),
     partyId ? supabase.from("parties").select("gst").eq("id", partyId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
+  // Fails soft to false (intrastate) deliberately, unlike the authoritative
+  // salesInvoices.ts/purchaseInvoices.ts write paths (which throw via
+  // gstCalc.resolveIsInterstate): this is a live quotation/order pricing
+  // preview, not the final invoice, and it must not stop rendering an
+  // estimate on a transient RPC error. The real tax split is recomputed
+  // authoritatively when the invoice is actually generated.
   const { data: interstateData, error } = await supabase.rpc("gst_is_interstate" as never, {
     _seller_gstin: biz?.gst_number ?? null,
     _buyer_gstin: (partyRes.data as { gst: string | null } | null)?.gst ?? null,
@@ -185,9 +192,7 @@ async function calculateLine(
 
   const gstPct = base.gstPct;
   const gstTotal = round2((taxableValue * gstPct) / 100);
-  const cgstAmount = isInterstate ? 0 : round2(gstTotal / 2);
-  const sgstAmount = isInterstate ? 0 : round2(gstTotal - cgstAmount);
-  const igstAmount = isInterstate ? gstTotal : 0;
+  const { cgst_amount: cgstAmount, sgst_amount: sgstAmount, igst_amount: igstAmount } = splitGstAmount(gstTotal, isInterstate);
   const finalAmount = round2(taxableValue + gstTotal);
 
   const profit = calculateProfit(finalAmount, line.qty, base.cost);
