@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2, ShieldCheck, XCircle, Smartphone, ChevronDown } from "lucide-react";
 import QrCodeImage from "@/components/print/QrCodeImage";
+import { COMPANY_ACCESS_VERIFICATION_MODE } from "@/lib/companyAccessConfig";
 
 type Session = {
   id: string;
@@ -85,6 +86,24 @@ export default function CompanyAccessVerification({
     }
   };
 
+  // password_only mode: skip the number-matching challenge and rely on the
+  // same server-side membership check the challenge RPC uses internally.
+  const checkAccessOnly = async () => {
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("is_business_member", {
+        _business_id: businessId,
+      } as any);
+      if (error || !data) {
+        setStep("no_access");
+        return;
+      }
+      setStep("verified");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handlePasswordSubmit = async () => {
     if (!password) return;
     setBusy(true);
@@ -97,7 +116,11 @@ export default function CompanyAccessVerification({
         return;
       }
       setStep("creating");
-      await startChallenge();
+      if (COMPANY_ACCESS_VERIFICATION_MODE === "number_matching") {
+        await startChallenge();
+      } else {
+        await checkAccessOnly();
+      }
     } finally {
       setBusy(false);
     }
