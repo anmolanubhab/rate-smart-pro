@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { EditCompanyWizard } from "@/components/company/EditCompanyWizard";
 import { ArchiveCompanyDialog } from "@/components/company/ArchiveCompanyDialog";
 import CompanyAvatar from "@/components/company/CompanyAvatar";
+import CompanyAccessVerification from "@/components/company/CompanyAccessVerification";
 import { useFormatDate } from "@/lib/dateFormat";
 import companySelectBg from "@/assets/company-select-bg.webp";
 
@@ -89,10 +90,15 @@ export default function CompanySelection() {
   }, [q.data, search, showArchived]);
 
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState<{ id: string; name: string; role?: string } | null>(null);
 
-  const openCompany = async (id: string, name: string, role?: string) => {
+  const openCompany = (id: string, name: string, role?: string) => {
     if (switchingId) return;
     setSwitchingId(id);
+    setVerifying({ id, name, role });
+  };
+
+  const completeOpen = async (id: string, name: string, role?: string) => {
     try {
       setActiveBusinessId(id);
       await queryClient.invalidateQueries({ queryKey: ["current-business"] });
@@ -347,6 +353,19 @@ export default function CompanySelection() {
           businessId={archiving.id}
           businessName={archiving.name}
           onArchived={() => queryClient.invalidateQueries({ queryKey: ["company-list"] })}
+        />
+      )}
+      {verifying && (
+        <CompanyAccessVerification
+          open={!!verifying}
+          businessId={verifying.id}
+          businessName={verifying.name}
+          onCancel={() => { setVerifying(null); setSwitchingId(null); }}
+          onVerified={() => {
+            const v = verifying;
+            setVerifying(null);
+            if (v) completeOpen(v.id, v.name, v.role);
+          }}
         />
       )}
     </div>
