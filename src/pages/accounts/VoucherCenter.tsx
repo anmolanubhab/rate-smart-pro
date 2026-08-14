@@ -14,7 +14,8 @@ import {
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { canDeleteDirectly, canUnlockVouchers } from "@/lib/permissions";
+import { canDeleteDirectly, canHardDelete, canUnlockVouchers } from "@/lib/permissions";
+import { HardDeleteVoucherDialog } from "@/components/vouchers/HardDeleteVoucherDialog";
 import { fetchVouchers, fmtInr, type VoucherRow } from "@/lib/accounting";
 import { fetchLockDate, isDateLocked } from "@/lib/accountingLock";
 import { deleteVoucher } from "@/lib/voucherService";
@@ -42,12 +43,13 @@ const STATUS_FILTERS: { key: string; label: string }[] = [
 export default function VoucherCenter() {
   useEffect(() => { document.title = "Voucher Center — RD Pro"; }, []);
   const { user } = useAuth();
-  const { business, role, financialRights } = useBusiness();
+  const { business, role, financialRights, permissions } = useBusiness();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [filter, setFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("posted");
   const [deleteTarget, setDeleteTarget] = useState<VoucherRow | null>(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<VoucherRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -71,7 +73,14 @@ export default function VoucherCenter() {
     queryFn: () => fetchLockDate(business!.id),
   });
   const canEditLocked = canUnlockVouchers(role, financialRights);
+  // Draft/cancelled removal (soft, reversible-ish) keeps the plain
+  // canDeleteDirectly gate. A POSTED voucher's permanent removal is a
+  // materially bigger action -- it needs the stronger canHardDelete gate
+  // (owner/admin, or an explicit hard_delete permission-matrix grant) and
+  // routes through HardDeleteVoucherDialog's typed-confirmation flow instead
+  // of the plain AlertDialog below.
   const canDelete = canDeleteDirectly(role, financialRights);
+  const canDeletePosted = canHardDelete(role, permissions, "accounts");
 
   /** The only two gates left, by design: an accounting-period lock, or the
    *  page-level canDelete check below (which hides the button entirely
@@ -85,27 +94,46 @@ export default function VoucherCenter() {
     return null;
   };
 
+  const invalidateAfterVoucherDelete = () => {
+    // The voucher's ledger effect is gone too now (see deleteVoucher()'s
+    // own comment on voucher_items_balance_trigger) -- refresh every page
+    // that reads a stored balance derived from it, not just this list.
+    qc.invalidateQueries({ queryKey: ["vouchers"] });
+    qc.invalidateQueries({ queryKey: ["vouchers-list"] });
+    qc.invalidateQueries({ queryKey: ["ledgers"] });
+    qc.invalidateQueries({ queryKey: ["receivables"] });
+    qc.invalidateQueries({ queryKey: ["supplier-ledger"] });
+    qc.invalidateQueries({ queryKey: ["trial-balance"] });
+    qc.invalidateQueries({ queryKey: ["balance-sheet"] });
+  };
+
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !user) return;
     setBusyId(deleteTarget.id);
     try {
       await deleteVoucher(user.id, deleteTarget.id, undefined, { canEditLockedVoucher: canEditLocked });
       toast.success(`Voucher ${deleteTarget.voucher_number} deleted.`);
-      // The voucher's ledger effect is gone too now (see deleteVoucher()'s
-      // own comment on voucher_items_balance_trigger) -- refresh every page
-      // that reads a stored balance derived from it, not just this list.
-      qc.invalidateQueries({ queryKey: ["vouchers"] });
-      qc.invalidateQueries({ queryKey: ["vouchers-list"] });
-      qc.invalidateQueries({ queryKey: ["ledgers"] });
-      qc.invalidateQueries({ queryKey: ["receivables"] });
-      qc.invalidateQueries({ queryKey: ["supplier-ledger"] });
-      qc.invalidateQueries({ queryKey: ["trial-balance"] });
-      qc.invalidateQueries({ queryKey: ["balance-sheet"] });
+      invalidateAfterVoucherDelete();
     } catch (e: any) {
       toast.error(e.message ?? "Could not delete voucher");
     } finally {
       setBusyId(null);
       setDeleteTarget(null);
+    }
+  };
+
+  const handleHardDeleteConfirm = async (reason: string) => {
+    if (!hardDeleteTarget || !user) return;
+    try {
+      await deleteVoucher(user.id, hardDeleteTarget.id, reason, { canEditLockedVoucher: canEditLocked });
+      toast.success(`Voucher ${hardDeleteTarget.voucher_number} permanently deleted.`);
+      invalidateAfterVoucherDelete();
+    } catch (e: any) {
+      // Re-thrown so HardDeleteVoucherDialog's caller (its try/finally) knows
+      // not to close the dialog on failure -- the toast here is the only
+      // user-visible error surface.
+      toast.error(e.message ?? "Could not delete voucher");
+      throw e;
     }
   };
 
@@ -208,22 +236,39 @@ export default function VoucherCenter() {
                   <TooltipContent>Edit</TooltipContent>
                 </Tooltip>
               )}
-              {canDelete && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className={`h-8 w-8 ${blockReason ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
-                      disabled={!!blockReason || busyId === v.id}
-                      onClick={() => setDeleteTarget(v)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{blockReason ?? "Delete Voucher"}</TooltipContent>
-                </Tooltip>
-              )}
+              {v.status === "posted"
+                ? canDeletePosted && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className={`h-8 w-8 ${blockReason ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
+                          disabled={!!blockReason || busyId === v.id}
+                          onClick={() => setHardDeleteTarget(v)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{blockReason ?? "Delete Permanently"}</TooltipContent>
+                    </Tooltip>
+                  )
+                : canDelete && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className={`h-8 w-8 ${blockReason ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
+                          disabled={!!blockReason || busyId === v.id}
+                          onClick={() => setDeleteTarget(v)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{blockReason ?? "Delete Voucher"}</TooltipContent>
+                    </Tooltip>
+                  )}
             </div>
           );
         }}
@@ -254,6 +299,14 @@ export default function VoucherCenter() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <HardDeleteVoucherDialog
+        target={hardDeleteTarget}
+        open={!!hardDeleteTarget}
+        onOpenChange={(o) => !o && setHardDeleteTarget(null)}
+        onConfirm={handleHardDeleteConfirm}
+        typeLabel={hardDeleteTarget ? (labels[hardDeleteTarget.voucher_type] ?? hardDeleteTarget.voucher_type) : ""}
+      />
     </div>
   );
 }

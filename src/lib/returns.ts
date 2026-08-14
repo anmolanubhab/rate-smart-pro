@@ -159,12 +159,21 @@ async function cancelReturn(
     }
   }
 
+  // trg_sales_return_cancel_voucher / trg_purchase_return_cancel_voucher (DB
+  // triggers, fire on the status UPDATE above) already cancel the linked
+  // voucher atomically and unconditionally -- this call is now redundant in
+  // the success path, kept only so a real failure surfaces to the caller
+  // instead of being silently swallowed (previously try/catch { console.error },
+  // a confirmed ghost-ledger vector). "Only posted vouchers can be cancelled"
+  // means the trigger already did the job -- not a real failure.
   if ((ret as any).voucher_id && userId) {
-    try {
-      await cancelVoucher(userId, (ret as any).voucher_id, `${kind === "sales" ? "Sales" : "Purchase"} return cancelled`);
-    } catch (e: any) {
-      console.error("cancelReturn: could not cancel linked voucher:", e.message);
-    }
+    await cancelVoucher(
+      userId,
+      (ret as any).voucher_id,
+      `${kind === "sales" ? "Sales" : "Purchase"} return cancelled`
+    ).catch((e: any) => {
+      if (!/Only posted vouchers can be cancelled/.test(e?.message ?? "")) throw e;
+    });
   }
 }
 
