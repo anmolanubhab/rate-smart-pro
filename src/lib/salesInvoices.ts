@@ -611,26 +611,28 @@ export async function cancelInvoice(invoiceId: string, userId?: string) {
   // If this invoice was posted, it has an auto-posted ledger voucher
   // (sales_invoice_autopost trigger) that cancelling the invoice alone
   // never touched — cancel it too so it stops counting toward balances.
-  // Best-effort: never let a voucher-side hiccup block the invoice cancel.
+  // trg_sales_invoice_cancel_voucher (DB trigger, fires on the status UPDATE
+  // above) already cancels it atomically and unconditionally, so this call is
+  // now redundant in the success path -- kept only so a real failure here
+  // surfaces to the caller instead of being silently swallowed (previously
+  // wrapped in try/catch { console.error }, a confirmed ghost-ledger vector).
   if ((inv as any)?.voucher_id && userId) {
-    try {
-      await cancelVoucher(userId, (inv as any).voucher_id, "Sales invoice cancelled");
-    } catch (e: any) {
-      console.error("cancelInvoice: could not cancel linked voucher:", e.message);
-    }
+    await cancelVoucher(userId, (inv as any).voucher_id, "Sales invoice cancelled").catch((e: any) => {
+      if (!/Only posted vouchers can be cancelled/.test(e?.message ?? "")) throw e;
+    });
   }
 
   // Restore whatever stock was deducted for this invoice -- at invoice-post
   // time (stock_reduction_point='invoice') or at dispatch time
   // (stock_reduction_point='dispatch'), mirrored back from the original
-  // inventory_movements rows by reverse_sales_invoice_stock(). Best-effort,
-  // same as the voucher cancel above: a stock-side hiccup must never block
-  // the invoice cancel itself.
-  try {
-    await supabase.rpc("reverse_sales_invoice_stock" as never, { _invoice_id: invoiceId } as never);
-  } catch (e: any) {
-    console.error("cancelInvoice: could not reverse stock:", e.message);
-  }
+  // inventory_movements rows by reverse_sales_invoice_stock(). trg_sales_invoice_
+  // cancel_reversal (DB trigger, 20260813010000) already calls this same
+  // function atomically on the status UPDATE above, and it self-guards against
+  // double-reversal -- so this call is redundant-but-safe on success, and (unlike
+  // the previous try/catch { console.error }) a real failure now propagates
+  // instead of being silently swallowed, which was a confirmed ghost-stock vector.
+  const { error: stockErr } = await supabase.rpc("reverse_sales_invoice_stock" as never, { _invoice_id: invoiceId } as never);
+  if (stockErr) throw stockErr;
 
   // If linked to a dispatch: revert dispatch to draft, clear its invoice_id
   if ((inv as any)?.dispatch_id) {

@@ -228,6 +228,27 @@ export function canDeleteDirectly(
 }
 
 /**
+ * Permission to permanently HARD-delete a POSTED voucher/document -- distinct
+ * from canDeleteDirectly, which still governs ordinary draft removal.
+ * financial_rights.can_delete_voucher alone is deliberately NOT sufficient
+ * here: that right predates the Tally-style lifecycle redesign and was being
+ * used to gate the same destructive action canDeleteDirectly still gates for
+ * drafts, but a posted document's permanent removal (hard_delete_document RPC,
+ * see 20260814150000_hard_delete_document.sql) needs the stronger, explicit
+ * `hard_delete` permission-matrix grant instead -- owner/admin bypass it, any
+ * other role needs the module's hard_delete action explicitly turned on
+ * (emptyPermissionMatrix() defaults it false, so no existing user gains this
+ * right silently).
+ */
+export function canHardDelete(
+  role: BusinessRole | null,
+  matrix: PermissionMatrix | null | undefined,
+  module: string,
+): boolean {
+  return hasRole(role, ["owner", "admin"]) || hasModulePermission(matrix, module, "hard_delete");
+}
+
+/**
  * Can this role/user see profit figures (Dashboard's Current/Gross/Net
  * Profit tiles, the Profit & Loss report)? Previously ungated for every
  * role — owner/admin/manager/accountant keep seeing it by default (matches

@@ -631,52 +631,113 @@ export async function cancelVoucher(
   return _mapVoucher(vRow, voucher.items ?? []);
 }
 
-// ─── 6. deleteVoucher ────────────────────────────────────────────────────────
-
 /**
- * Tables carrying a voucher_id "back reference" to vouchers.id, besides
- * voucher_items itself. gst_return_line_items.voucher_id is excluded here --
- * its FK is already ON DELETE SET NULL, so the DB clears it on its own.
- * Every other table here either has no FK at all (purchase_invoices,
- * sales_invoices, payment_entries — confirmed via live schema query, no
- * enforced constraint) or a NO ACTION FK (inventory_adjustments,
- * purchase_returns, sales_returns, year_closing_entries) that would reject
- * the delete outright if left pointing at the voucher being removed.
+ * Alters a POSTED voucher's items in place -- Tally-style repost, not a second
+ * posting. Deletes the existing voucher_items (voucher_items_balance_trigger
+ * fires -delta per line since the header stays status='posted') and inserts
+ * the new set (fires +delta per line) -- so 100 -> 120 nets to exactly 120,
+ * never 100+120=220. The voucher header (number, date, type) is untouched;
+ * only its items and total_amount change. Writes an unconditional
+ * document_alterations row so the change survives independent of the
+ * best-effort audit_logs.
+ *
+ * Callers (e.g. repostPurchaseInvoiceToLedger in purchaseInvoices.ts) are
+ * responsible for their own source-document-level approval/permission gate --
+ * this function only enforces the same locked-period check every other
+ * voucher mutation already goes through.
  */
-const VOUCHER_BACKREF_TABLES = [
-  "purchase_invoices", "sales_invoices", "payment_entries",
-  "inventory_adjustments", "purchase_returns", "sales_returns", "year_closing_entries",
-] as const;
+export async function repostVoucherItems(
+  userId: string,
+  voucherId: string,
+  items: VoucherItem[],
+  reason: string,
+  opts: VoucherLockOptions = {}
+): Promise<Voucher> {
+  const businessId = requireBusiness();
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from("vouchers")
+    .select("*")
+    .eq("id", voucherId)
+    .eq("business_id", businessId)
+    .single();
+  if (fetchErr) throw new Error(`repostVoucherItems fetch: ${fetchErr.message}`);
+  if (!existing) throw new Error("Voucher not found.");
+  if (existing.status !== "posted") {
+    throw new Error("Only posted vouchers can be reposted -- draft vouchers should be edited directly, cancelled vouchers cannot be altered.");
+  }
+
+  await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
+
+  const { data: beforeItems } = await supabase
+    .from("voucher_items")
+    .select("ledger_account_id, dr_amount, cr_amount, narration")
+    .eq("voucher_id", voucherId);
+
+  const { error: delErr } = await supabase
+    .from("voucher_items")
+    .delete()
+    .eq("voucher_id", voucherId)
+    .eq("business_id", businessId);
+  if (delErr) throw new Error(`repostVoucherItems delete: ${delErr.message}`);
+
+  await _upsertItems(userId, businessId, voucherId, items);
+
+  const totalDebit = items.reduce((s, it) => s + (Number(it.debit) || 0), 0);
+  const { data: vRow, error: updErr } = await supabase
+    .from("vouchers")
+    .update({ total_amount: totalDebit, updated_at: new Date().toISOString(), updated_by: userId })
+    .eq("id", voucherId)
+    .eq("business_id", businessId)
+    .select("*")
+    .single();
+  if (updErr) throw new Error(`repostVoucherItems update: ${updErr.message}`);
+
+  await supabase.from("document_alterations" as any).insert({
+    business_id: businessId,
+    doc_type: "voucher",
+    doc_id: voucherId,
+    doc_number: existing.voucher_number,
+    altered_by: userId,
+    reason,
+    before_snapshot: { items: beforeItems ?? [] },
+    after_snapshot: { items },
+  });
+
+  return _mapVoucher(vRow, items);
+}
+
+// ─── 6. deleteVoucher ────────────────────────────────────────────────────────
 
 /**
  * Hard-deletes a voucher and its items — no soft-delete, nothing stays
  * recoverable in the table itself (only the audit_logs entry below
- * survives). Deliberately allows any status (including posted) and any
- * reference_type (auto-generated from an invoice/return/order/etc): per
- * product decision, the only gates left are the accounting-lock check
- * below and the caller's own canDeleteDirectly() permission check — mistakes
- * made anywhere in the flow must be fully removable, not just cancellable.
+ * survives).
  *
- * Two correctness requirements this has to satisfy itself, since nothing
- * else in the schema does:
+ * Per explicit product decision (2026-08-14, Tally-style lifecycle redesign):
+ * hard delete must BLOCK when a posted voucher is still referenced by a
+ * source document, not silently orphan that document's voucher_id. This
+ * function used to null out 7 backreference tables (purchase_invoices,
+ * sales_invoices, payment_entries, inventory_adjustments, purchase_returns,
+ * sales_returns, year_closing_entries) before deleting, specifically to
+ * defeat trg_prevent_posted_voucher_delete's own "referenced by ..." guard --
+ * that guard's block-if-referenced logic was already correct; this function
+ * was bypassing it. It no longer does: document_dependency_report() (mirrors
+ * the trigger's own check) is called first purely to surface a clear,
+ * specific error instead of a raw FK-violation message, and the trigger
+ * itself remains the authoritative enforcement either way.
  *
- * 1. No orphan back-references (VOUCHER_BACKREF_TABLES above) — cleared to
- *    null before the voucher itself is removed, or the NO ACTION FKs would
- *    reject the delete outright. This only clears the pointer; it never
- *    touches the source row's own status/stock/paid_amount, which stay the
- *    responsibility of that source's own cancel/reverse flow (e.g.
- *    reverseSalesPayment, cancelPurchaseReturn) — the voucher is purely the
- *    ledger-side record of the transaction, not the transaction itself.
+ * Ledger balances still reflect the removal correctly: voucher_items_balance_
+ * trigger (AFTER DELETE on voucher_items) reverses ledger_accounts.current_
+ * balance only when the *parent voucher row* it looks up is still
+ * status='posted' at the moment each item is deleted -- so items are deleted
+ * before the header, explicitly, in that order, not left to voucher_items'
+ * ON DELETE CASCADE off the header (which would run after the parent row,
+ * and its status, is already gone, silently skipping the reversal).
  *
- * 2. Ledger balances must reflect the removal — voucher_items_balance_trigger
- *    (AFTER DELETE on voucher_items) reverses ledger_accounts.current_balance
- *    only when the *parent voucher row* it looks up is still status='posted'
- *    at the moment each item is deleted. That means items MUST be deleted
- *    before the voucher header, explicitly, in that order -- not left to
- *    voucher_items' ON DELETE CASCADE off the header, which would delete
- *    them only after the parent row (and its status) is already gone,
- *    silently skipping the reversal and leaving current_balance /
- *    parties.outstanding_balance stale for a posted voucher.
+ * Callers gate this with canHardDelete() (src/lib/permissions.ts) for a
+ * posted voucher, or canDeleteDirectly() for a draft/cancelled one -- this
+ * function itself does not re-check role/permission-matrix state.
  */
 export async function deleteVoucher(
   userId: string,
@@ -696,24 +757,21 @@ export async function deleteVoucher(
   if (fetchError) throw new Error(`deleteVoucher: ${fetchError.message}`);
   if (!existing) throw new Error("Voucher not found.");
 
-  // DB-level guard (trg_prevent_posted_voucher_delete) is the authoritative
-  // enforcement -- this early check just avoids partially nulling out
-  // backref tables below before that guard rejects the final DELETE.
-  if (existing.status === "posted" && existing.reference_type) {
-    throw new Error(
-      `Cannot delete this voucher -- it was auto-generated from a ${existing.reference_type.replace(/_/g, " ")} and is still posted. Cancel or unlink the source document first.`
+  if (existing.status === "posted") {
+    const { data: report, error: reportErr } = await supabase.rpc(
+      "document_dependency_report" as any,
+      { _doc_type: "voucher", _doc_id: voucherId }
     );
+    if (reportErr) throw new Error(`deleteVoucher: dependency check failed: ${reportErr.message}`);
+    const blocking = (report as any)?.blocking as Array<{ message: string }> | undefined;
+    if (blocking && blocking.length > 0) {
+      throw new Error(
+        `Cannot delete this voucher permanently -- ${blocking.map((b) => b.message).join(" ")} Cancel or unlink the source document first.`
+      );
+    }
   }
 
   await assertNotLocked(businessId, existing.voucher_date, opts.canEditLockedVoucher);
-
-  for (const table of VOUCHER_BACKREF_TABLES) {
-    const { error: clearErr } = await supabase
-      .from(table as never)
-      .update({ voucher_id: null } as never)
-      .eq("voucher_id" as never, voucherId);
-    if (clearErr) throw new Error(`deleteVoucher: could not clear reference on ${table}: ${clearErr.message}`);
-  }
 
   const { error: itemsErr } = await supabase
     .from("voucher_items")

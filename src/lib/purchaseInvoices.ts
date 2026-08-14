@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
-import { createVoucher, postVoucher, cancelVoucher, type VoucherItem } from "@/lib/voucherService";
+import { createVoucher, postVoucher, cancelVoucher, repostVoucherItems, type VoucherItem } from "@/lib/voucherService";
 import { assertHsnCompliance } from "@/lib/accountingLock";
 import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
 
@@ -144,41 +144,30 @@ export interface SaveInvoiceInput {
  * (grand total). Best-effort — failures are logged but never block the invoice
  * itself from being saved (accounting sync can be retried/fixed independently).
  */
-export async function postPurchaseInvoiceToLedger(
-  userId: string,
+/**
+ * Builds the Dr/Cr voucher_items for a purchase invoice's ledger posting --
+ * shared by postPurchaseInvoiceToLedger() (first post, creates a new voucher)
+ * and repostPurchaseInvoiceToLedger() (alter, replaces an existing voucher's
+ * items) so the two paths can never drift into computing different amounts
+ * for the same invoice state.
+ */
+async function buildPurchaseInvoiceLedgerItems(
+  businessId: string,
   invoice: PurchaseInvoice
-): Promise<void> {
-  const businessId = getActiveBusinessIdSync();
-  if (!businessId || !invoice.supplier_id) return;
-
-  // Idempotency guard: re-check the invoice's own voucher_id from the DB
-  // (not the possibly-stale `invoice` param) before creating a voucher.
-  // Without this, any future retry/reconciliation call for an invoice that
-  // already posted successfully would create a second balanced Purchase
-  // voucher and double the supplier's ledger balance for the same invoice.
-  const { data: current, error: currentErr } = await supabase
-    .from("purchase_invoices")
-    .select("voucher_id")
-    .eq("id", invoice.id)
-    .maybeSingle();
-  if (currentErr) {
-    console.error("postPurchaseInvoiceToLedger: pre-post check failed", currentErr.message);
-    return;
-  }
-  if (current?.voucher_id) return;
-
-  await seedAccounts(userId);
-  await ensurePartyLedgers(userId);
-
-  let lq = supabase
+): Promise<VoucherItem[] | null> {
+  // Scoped by business only (the original first-post path also filtered by
+  // the posting user's own user_id, which is safe there because it always
+  // runs right after seedAccounts(userId) for that same user -- but a repost
+  // can legitimately be triggered by a different business member than
+  // whoever first posted the invoice, and the chart of accounts is shared
+  // across the whole business, not per-user).
+  const { data: ledgers, error } = await supabase
     .from("ledger_accounts")
     .select("id, name, party_id")
-    .eq("user_id", userId)
     .eq("business_id", businessId);
-  const { data: ledgers, error } = await lq;
   if (error || !ledgers) {
-    console.error("postPurchaseInvoiceToLedger: ledger lookup failed", error?.message);
-    return;
+    console.error("buildPurchaseInvoiceLedgerItems: ledger lookup failed", error?.message);
+    return null;
   }
 
   const purchaseLedger = ledgers.find((l: any) => l.name === "Purchase Account");
@@ -190,8 +179,8 @@ export async function postPurchaseInvoiceToLedger(
   const supplierLedger = ledgers.find((l: any) => l.party_id === invoice.supplier_id);
 
   if (!purchaseLedger || !supplierLedger) {
-    console.error("postPurchaseInvoiceToLedger: required ledgers not found (Purchase Account / supplier)");
-    return;
+    console.error("buildPurchaseInvoiceLedgerItems: required ledgers not found (Purchase Account / supplier)");
+    return null;
   }
 
   const items: VoucherItem[] = [
@@ -280,6 +269,38 @@ export async function postPurchaseInvoiceToLedger(
     }
   }
 
+  return items;
+}
+
+export async function postPurchaseInvoiceToLedger(
+  userId: string,
+  invoice: PurchaseInvoice
+): Promise<void> {
+  const businessId = getActiveBusinessIdSync();
+  if (!businessId || !invoice.supplier_id) return;
+
+  // Idempotency guard: re-check the invoice's own voucher_id from the DB
+  // (not the possibly-stale `invoice` param) before creating a voucher.
+  // Without this, any future retry/reconciliation call for an invoice that
+  // already posted successfully would create a second balanced Purchase
+  // voucher and double the supplier's ledger balance for the same invoice.
+  const { data: current, error: currentErr } = await supabase
+    .from("purchase_invoices")
+    .select("voucher_id")
+    .eq("id", invoice.id)
+    .maybeSingle();
+  if (currentErr) {
+    console.error("postPurchaseInvoiceToLedger: pre-post check failed", currentErr.message);
+    return;
+  }
+  if (current?.voucher_id) return;
+
+  await seedAccounts(userId);
+  await ensurePartyLedgers(userId);
+
+  const items = await buildPurchaseInvoiceLedgerItems(businessId, invoice);
+  if (!items) return;
+
   try {
     const voucher = await createVoucher(userId, {
       voucher_type: "Purchase",
@@ -294,6 +315,30 @@ export async function postPurchaseInvoiceToLedger(
   } catch (e: any) {
     console.error("postPurchaseInvoiceToLedger: voucher posting failed", e.message);
   }
+}
+
+/**
+ * Alters a purchase invoice's ledger posting after an edit -- Tally-style
+ * repost, replacing the linked voucher's items in place via
+ * repostVoucherItems() (voucher_items_balance_trigger nets the delta
+ * correctly: 100 -> 120 lands at 120, never 220). No-ops if the invoice has
+ * no linked voucher yet (never posted) or that voucher isn't currently
+ * posted (e.g. already cancelled) -- those states are handled by the
+ * ordinary create/cancel paths, not alteration.
+ */
+export async function repostPurchaseInvoiceToLedger(
+  userId: string,
+  invoice: PurchaseInvoice,
+  voucherId: string,
+  reason: string
+): Promise<void> {
+  const businessId = getActiveBusinessIdSync();
+  if (!businessId || !invoice.supplier_id) return;
+
+  const items = await buildPurchaseInvoiceLedgerItems(businessId, invoice);
+  if (!items) return;
+
+  await repostVoucherItems(userId, voucherId, items, reason);
 }
 
 /**
@@ -575,6 +620,34 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         console.error("QC debit-note posting failed:", e.message);
       }
     }
+  } else if (input.createdBy && row.status !== "cancelled") {
+    // Alter path: this invoice already exists and was edited above (header +
+    // items replaced). Previously this fell through to `return data` with the
+    // stale ledger/stock untouched (100 -> 120 qty edit left the original 100
+    // baked into Stock Summary and the ledger forever) -- repost both sides so
+    // the new totals are what's actually effective, using the same
+    // delete-and-reinsert-in-place mechanism proven correct for cancel/delete
+    // (voucher_items_balance_trigger nets the delta; the stock side reasons
+    // about the same "document stays posted throughout" property, see
+    // repostDirectInvoiceStock's own comment).
+    if (row.voucher_id) {
+      try {
+        await repostPurchaseInvoiceToLedger(input.createdBy, data, row.voucher_id, "Purchase invoice altered");
+      } catch (e: any) {
+        console.error("Repost to ledger failed:", e.message);
+      }
+    }
+
+    if (!data.goods_receipt_id) {
+      try {
+        await repostDirectInvoiceStock(input.createdBy, businessId, data.id, data.invoice_number, validItems);
+      } catch (e: any) {
+        console.error("Repost direct-invoice stock failed:", e.message);
+      }
+    }
+    // GRN-linked invoices never post their own stock (the GRN does) -- an
+    // edit to a GRN-linked invoice's items has no stock side to repost here,
+    // same asymmetry as the create path above.
   }
 
   return data;
@@ -629,6 +702,75 @@ async function postDirectInvoiceStock(
       notes: `Direct Purchase Invoice ${invoiceNumber} (no GRN)`,
     });
   }
+}
+
+/**
+ * Alters the stock effect of a DIRECT purchase invoice (no GRN) after an edit.
+ *
+ * Does NOT use revision stamping -- instead writes a compensating reversal for
+ * the invoice's CURRENT net effective quantity per product (mirroring exactly
+ * what cancelPurchaseInvoice's inline reversal already does), then posts the
+ * new item quantities via postDirectInvoiceStock(). All of these rows share
+ * the same source_doc_type='purchase_invoice'/source_doc_id=invoiceId and the
+ * invoice stays 'posted' throughout an edit (never 'cancelled'), so
+ * vw_effective_stock_movements (see 20260814093000_effective_views.sql) keeps
+ * every one of them effective and they net algebraically to the new total --
+ * e.g. +100 (original) -100 (reversal) +120 (new) = 120, never +220. No new
+ * schema is needed for this because the effective view's exclusion rule is
+ * "is the source document currently posted", not "is this the latest
+ * revision" -- both properties happen to coincide for an edit that never
+ * changes the invoice's own lifecycle status.
+ */
+async function repostDirectInvoiceStock(
+  userId: string,
+  businessId: string,
+  invoiceId: string,
+  invoiceNumber: string,
+  newItems: PurchaseInvoiceItem[]
+): Promise<void> {
+  const { data: priorMovements, error: priorErr } = await supabase
+    .from("inventory_movements" as any)
+    .select("product_id, qty")
+    .eq("business_id", businessId)
+    .eq("reference_type", "purchase_invoice")
+    .eq("reference_id", invoiceId)
+    .in("movement_type", ["purchase_invoice_direct", "purchase_invoice_cancel"]);
+  if (priorErr) throw priorErr;
+
+  const netByProduct = new Map<string, number>();
+  for (const m of (priorMovements ?? []) as any[]) {
+    if (!m.product_id) continue;
+    netByProduct.set(m.product_id, (netByProduct.get(m.product_id) ?? 0) + Number(m.qty));
+  }
+
+  for (const [productId, netQty] of netByProduct.entries()) {
+    if (Math.abs(netQty) < 1e-9) continue;
+
+    const { data: product, error: prodErr } = await supabase
+      .from("products").select("stock").eq("id", productId).single();
+    if (prodErr) throw prodErr;
+
+    const before = Number(product?.stock) || 0;
+    const after = before - netQty;
+    const { error: updErr } = await supabase.from("products").update({ stock: after }).eq("id", productId);
+    if (updErr) throw updErr;
+
+    const { error: insErr } = await supabase.from("inventory_movements" as any).insert({
+      user_id: userId,
+      business_id: businessId,
+      product_id: productId,
+      movement_type: "purchase_invoice_cancel",
+      qty: -netQty,
+      stock_before: before,
+      stock_after: after,
+      reference_id: invoiceId,
+      reference_type: "purchase_invoice",
+      notes: `Purchase Invoice ${invoiceNumber} altered — prior stock effect reversed`,
+    });
+    if (insErr) throw insErr;
+  }
+
+  await postDirectInvoiceStock(userId, businessId, invoiceId, invoiceNumber, newItems);
 }
 
 /**
@@ -720,12 +862,17 @@ export async function cancelPurchaseInvoice(invoiceId: string, userId?: string):
   const { error } = await supabase.from("purchase_invoices").update({ status: "cancelled" }).eq("id", invoiceId);
   if (error) throw error;
 
+  // trg_purchase_invoice_cancel_voucher (DB trigger, fires on the status
+  // UPDATE above) already cancels the linked voucher atomically and
+  // unconditionally -- this call is now redundant in the success path, kept
+  // only so a real failure surfaces to the caller instead of being silently
+  // swallowed (previously wrapped in try/catch { console.error }, a
+  // confirmed ghost-ledger vector). "Only posted vouchers can be cancelled"
+  // means the trigger already did the job -- not a real failure.
   if (inv.voucher_id && userId) {
-    try {
-      await cancelVoucher(userId, inv.voucher_id, "Purchase invoice cancelled");
-    } catch (e: any) {
-      console.error("cancelPurchaseInvoice: could not cancel linked voucher:", e.message);
-    }
+    await cancelVoucher(userId, inv.voucher_id, "Purchase invoice cancelled").catch((e: any) => {
+      if (!/Only posted vouchers can be cancelled/.test(e?.message ?? "")) throw e;
+    });
   }
 }
 

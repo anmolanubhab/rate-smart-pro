@@ -6,6 +6,13 @@ export const PERMISSION_MODULES = [
 
 export const PERMISSION_ACTIONS = [
   "view", "create", "edit", "delete", "cancel", "approve", "print", "export", "import", "restore",
+  // Distinct from "delete": "delete" covers draft-only/soft removal that every
+  // permission template already defaults per role. "hard_delete" gates
+  // permanently removing a POSTED voucher/document (hard_delete_document RPC,
+  // 20260814150000_hard_delete_document.sql) -- deny-by-default for every
+  // existing template/user (emptyPermissionMatrix() below defaults it false,
+  // so this addition changes no existing user's effective permissions).
+  "hard_delete",
 ] as const;
 
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
