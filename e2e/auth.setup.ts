@@ -24,7 +24,14 @@ setup("authenticate as QA user", async ({ page }) => {
   await page.goto("/auth");
   await page.locator("#login-email").fill(QA_EMAIL);
   await page.locator("#login-password").fill(QA_PASSWORD);
-  await page.getByRole("button", { name: /sign in/i }).click();
+  // The login form's submit button reads "Login" (idle) / "Signing in..."
+  // (loading) — not "Sign In". Auth.tsx also has a same-named "Login" tab
+  // toggle above the form (switches Login/Signup mode, type="button", not
+  // inside <form>), so a bare name match is ambiguous — scope to the
+  // <form> that actually contains #login-password to hit only the real
+  // submit button.
+  const loginForm = page.locator("form", { has: page.locator("#login-password") });
+  await loginForm.getByRole("button", { name: "Login", exact: true }).click();
 
   // Successful login redirects off /auth (to /companies or a business dashboard).
   await expect(page).not.toHaveURL(/\/auth$/, { timeout: 15_000 });
