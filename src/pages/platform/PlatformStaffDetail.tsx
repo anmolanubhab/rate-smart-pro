@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, Ban, CheckCircle2, Plus, X } from "lucide-react";
+import { ArrowLeft, Ban, CheckCircle2, Plus, Unlock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +13,9 @@ import {
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import {
   getStaffDetail, updateStaffProfile, assignRole, removeRole,
-  deactivateStaff, reactivateStaff, listStaffActivity, type PlatformStaffRow,
+  deactivateStaff, reactivateStaff, unlockStaff, listStaffActivity, type PlatformStaffRow,
 } from "@/lib/platformStaff";
+import StaffStatusBadge from "@/components/platform/StaffStatusBadge";
 import { listRoles, type PlatformRoleRow } from "@/lib/platformRoles";
 import { listDepartments, type PlatformDepartmentRow } from "@/lib/platformOrg";
 
@@ -95,6 +96,17 @@ export default function PlatformStaffDetail() {
     }
   };
 
+  const handleUnlock = async () => {
+    if (!id) return;
+    try {
+      await unlockStaff(id);
+      toast.success("Account unlocked");
+      await load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to unlock account");
+    }
+  };
+
   const assignableRoles = allRoles.filter((r) => !roles.some((rr) => rr.id === r.id));
 
   return (
@@ -109,9 +121,16 @@ export default function PlatformStaffDetail() {
           <p className="text-sm text-muted-foreground">{staff.email}</p>
         </div>
         {canManage && (
-          <Button variant={staff.status === "active" ? "destructive" : "default"} onClick={toggleStatus}>
-            {staff.status === "active" ? <><Ban className="h-4 w-4 mr-1.5" /> Deactivate</> : <><CheckCircle2 className="h-4 w-4 mr-1.5" /> Reactivate</>}
-          </Button>
+          <div className="flex items-center gap-2">
+            {staff.status === "locked" && (
+              <Button variant="outline" onClick={handleUnlock}>
+                <Unlock className="h-4 w-4 mr-1.5" /> Unlock
+              </Button>
+            )}
+            <Button variant={staff.status === "active" ? "destructive" : "default"} onClick={toggleStatus}>
+              {staff.status === "active" ? <><Ban className="h-4 w-4 mr-1.5" /> Deactivate</> : <><CheckCircle2 className="h-4 w-4 mr-1.5" /> Reactivate</>}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -140,7 +159,22 @@ export default function PlatformStaffDetail() {
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
-              <div><Badge variant={staff.status === "active" ? "default" : "destructive"}>{staff.status}</Badge></div>
+              <div><StaffStatusBadge status={staff.status} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t">
+              <div className="space-y-1 pt-3">
+                <Label className="text-xs text-muted-foreground">Last login</Label>
+                <div className="text-sm">
+                  {staff.last_login_at ? new Date(staff.last_login_at).toLocaleString() : "Never"}
+                </div>
+              </div>
+              <div className="space-y-1 pt-3">
+                <Label className="text-xs text-muted-foreground">Failed attempts</Label>
+                <div className={`text-sm ${staff.failed_login_count > 0 ? "text-destructive" : ""}`}>
+                  {staff.failed_login_count ?? 0}
+                  {staff.locked_at && ` · locked ${new Date(staff.locked_at).toLocaleString()}`}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
