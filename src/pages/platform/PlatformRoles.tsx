@@ -209,8 +209,13 @@ export default function PlatformRoles() {
               <div className="space-y-4 max-h-[60vh] overflow-y-auto">
                 {[...grouped.entries()].map(([resource, perms]) => (
                   <div key={resource} className="border rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium text-sm capitalize">{resource}</h3>
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                      <h3 className="font-medium text-sm capitalize">
+                        {resource.replace(/_/g, " ")}
+                        <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                          {perms.filter((p) => rolePermIds.has(p.id)).length}/{perms.length}
+                        </span>
+                      </h3>
                       {canManage && !selectedRole.is_system && (
                         <div className="space-x-2">
                           <button className="text-xs text-primary" onClick={() => setResourcePermissions(perms, true)}>Select all</button>
@@ -218,18 +223,28 @@ export default function PlatformRoles() {
                         </div>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {perms.map((perm) => {
                         const checked = rolePermIds.has(perm.id);
                         const delegable = myPermissions.includes(perm.key);
                         return (
-                          <label key={perm.id} className={`flex items-center gap-2 text-sm ${!delegable && !checked ? "opacity-40" : ""}`}>
+                          <label
+                            key={perm.id}
+                            title={perm.description ?? perm.key}
+                            className={`flex items-start gap-2 text-sm ${!delegable && !checked ? "opacity-40" : ""}`}
+                          >
                             <Checkbox
+                              className="mt-0.5 shrink-0"
                               checked={checked}
                               disabled={!canManage || selectedRole.is_system || (!delegable && !checked)}
                               onCheckedChange={(v) => togglePermission(perm, !!v)}
                             />
-                            {perm.key}
+                            <span className="min-w-0">
+                              <span className="block break-all">{perm.key}</span>
+                              {perm.description && (
+                                <span className="block text-xs text-muted-foreground">{perm.description}</span>
+                              )}
+                            </span>
                           </label>
                         );
                       })}

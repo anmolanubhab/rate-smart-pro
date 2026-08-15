@@ -1,6 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type PlatformStaffStatus = "active" | "suspended";
+// P5: the platform_staff_status enum carries five states. Only "active" can
+// enter the console — PlatformGuard/PlatformLogin test `status !== "active"`,
+// which stays correct for every non-active state.
+export type PlatformStaffStatus = "active" | "suspended" | "invited" | "locked" | "inactive";
+
+export const PLATFORM_STAFF_STATUSES: PlatformStaffStatus[] =
+  ["active", "invited", "suspended", "locked", "inactive"];
 export type InvitationStatus = "pending" | "accepted" | "rejected" | "expired" | "revoked";
 
 export interface PlatformStaffRow {
@@ -15,6 +21,9 @@ export interface PlatformStaffRow {
   manager_id: string | null;
   status: PlatformStaffStatus;
   last_active_at: string | null;
+  last_login_at: string | null;
+  failed_login_count: number;
+  locked_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -130,6 +139,15 @@ export async function deactivateStaff(id: string): Promise<void> {
 
 export async function reactivateStaff(id: string): Promise<void> {
   const { error } = await tbl("platform_staff").update({ status: "active" }).eq("id", id);
+  if (error) throw error;
+}
+
+// P5: clearing a lockout must also clear what caused it, otherwise the next
+// failed attempt re-locks the account immediately.
+export async function unlockStaff(id: string): Promise<void> {
+  const { error } = await tbl("platform_staff")
+    .update({ status: "active", failed_login_count: 0, locked_at: null })
+    .eq("id", id);
   if (error) throw error;
 }
 

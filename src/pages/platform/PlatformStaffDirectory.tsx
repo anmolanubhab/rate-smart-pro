@@ -18,8 +18,10 @@ import {
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import {
   listStaff, listInvitations, inviteStaff, resendInvite, revokeInvite, invitationLink,
-  type PlatformStaffRow, type PlatformStaffInvitationRow,
+  PLATFORM_STAFF_STATUSES,
+  type PlatformStaffRow, type PlatformStaffInvitationRow, type PlatformStaffStatus,
 } from "@/lib/platformStaff";
+import StaffStatusBadge from "@/components/platform/StaffStatusBadge";
 import { listRoles, type PlatformRoleRow } from "@/lib/platformRoles";
 import { listDepartments, type PlatformDepartmentRow } from "@/lib/platformOrg";
 
@@ -34,6 +36,7 @@ export default function PlatformStaffDirectory() {
   const [roles, setRoles] = useState<PlatformRoleRow[]>([]);
   const [departments, setDepartments] = useState<PlatformDepartmentRow[]>([]);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<PlatformStaffStatus | "all">("all");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -53,10 +56,18 @@ export default function PlatformStaffDirectory() {
 
   const filteredStaff = useMemo(() => {
     const s = search.trim().toLowerCase();
-    if (!s) return staff;
-    return staff.filter((row) =>
-      row.full_name?.toLowerCase().includes(s) || row.email?.toLowerCase().includes(s));
-  }, [staff, search]);
+    return staff.filter((row) => {
+      if (statusFilter !== "all" && row.status !== statusFilter) return false;
+      if (!s) return true;
+      return Boolean(row.full_name?.toLowerCase().includes(s) || row.email?.toLowerCase().includes(s));
+    });
+  }, [staff, search, statusFilter]);
+
+  const statusCounts = useMemo(() => {
+    const counts = new Map<PlatformStaffStatus, number>();
+    for (const row of staff) counts.set(row.status, (counts.get(row.status) ?? 0) + 1);
+    return counts;
+  }, [staff]);
 
   const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? "—";
   const deptName = (id: string | null) => departments.find((d) => d.id === id)?.name ?? "—";
@@ -119,9 +130,30 @@ export default function PlatformStaffDirectory() {
       {tab === "staff" && (
         <Card>
           <CardContent className="pt-6 space-y-4">
-            <div className="relative max-w-sm">
-              <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
-              <Input placeholder="Search name or email…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative w-full max-w-sm">
+                <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                <Input placeholder="Search name or email…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("all")}
+                  className={`px-2.5 py-1 rounded-full text-xs border ${statusFilter === "all" ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground hover:bg-muted"}`}
+                >
+                  All ({staff.length})
+                </button>
+                {PLATFORM_STAFF_STATUSES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatusFilter(s)}
+                    className={`px-2.5 py-1 rounded-full text-xs border capitalize ${statusFilter === s ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground hover:bg-muted"}`}
+                  >
+                    {s} ({statusCounts.get(s) ?? 0})
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <Table>
@@ -146,9 +178,7 @@ export default function PlatformStaffDirectory() {
                       </TableCell>
                       <TableCell>{row.designation ?? "—"}</TableCell>
                       <TableCell>{deptName(row.department_id)}</TableCell>
-                      <TableCell>
-                        <Badge variant={row.status === "active" ? "default" : "destructive"}>{row.status}</Badge>
-                      </TableCell>
+                      <TableCell><StaffStatusBadge status={row.status} /></TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {row.last_active_at ? new Date(row.last_active_at).toLocaleDateString() : "—"}
                       </TableCell>
