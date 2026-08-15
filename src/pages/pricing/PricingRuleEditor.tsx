@@ -38,6 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
+import { localDateISO } from "@/lib/pricing/dateUtils";
 
 const STATUS_TONE: Record<string, string> = {
   draft: "border-border text-muted-foreground",
@@ -48,7 +49,7 @@ const STATUS_TONE: Record<string, string> = {
 };
 const RULE_TYPE_LABEL: Record<string, string> = Object.fromEntries(RULE_TYPES_ENABLED.map((t) => [t.value, t.label]));
 const inr = (n: number) => `Rs.${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => localDateISO();
 
 interface Chip { id: string; name: string }
 

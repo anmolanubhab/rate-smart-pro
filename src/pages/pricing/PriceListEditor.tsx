@@ -24,6 +24,7 @@ import {
   type PriceListItemRow,
 } from "@/lib/pricing/priceLists";
 import { PRICE_LIST_TYPES, PRICE_SOURCES, PRICE_BASES, ROUNDING_POLICIES } from "@/lib/pricing/priceListConstants";
+import { localDateISO } from "@/lib/pricing/dateUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -162,7 +163,7 @@ export default function PriceListEditor() {
   const addProduct = async (p: Product) => {
     if (!id || !form) return;
     try {
-      await addProductToPriceList(id, p.id, Number(p.mrp) || 0, form.effective_from || new Date().toISOString().slice(0, 10));
+      await addProductToPriceList(id, p.id, Number(p.mrp) || 0, form.effective_from || localDateISO());
       toast.success(`${p.name} added`);
       setAddQuery("");
       setAddResults([]);
@@ -443,7 +444,7 @@ export default function PriceListEditor() {
           onOpenChange={setImportOpen}
           priceListId={id!}
           businessId={business.id}
-          effectiveFrom={form.effective_from || new Date().toISOString().slice(0, 10)}
+          effectiveFrom={form.effective_from || localDateISO()}
           onImported={() => {
             qc.invalidateQueries({ queryKey: ["price-list-items", id] });
             qc.invalidateQueries({ queryKey: ["price-lists", business?.id] });

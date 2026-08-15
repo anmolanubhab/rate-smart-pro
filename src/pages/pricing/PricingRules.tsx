@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useFormatDate } from "@/lib/dateFormat";
+import { localDateISO } from "@/lib/pricing/dateUtils";
 
 const STATUS_TONE: Record<string, string> = {
   draft: "border-border text-muted-foreground",
@@ -129,7 +130,7 @@ export default function PricingRules() {
     try {
       const id = await savePricingRule(
         business.id,
-        { name: form.name, rule_type: form.rule_type, priority: 100, stacking_mode: null, effective_from: new Date().toISOString().slice(0, 10), effective_to: null, approval_required: false },
+        { name: form.name, rule_type: form.rule_type, priority: 100, stacking_mode: null, effective_from: localDateISO(), effective_to: null, approval_required: false },
         [], [], []
       );
       toast.success("Rule created as draft");

@@ -124,7 +124,7 @@ export async function generateInvoiceFromDispatch(opts: {
   // 1. Load dispatch + its items
   const { data: dispatch, error: de } = await supabase
     .from("dispatches")
-    .select("*, dispatch_items(*, order_items(part_number, description, vehicle_model, mrp, net_rate, discount_pct, gst_pct, product_id, products(hsn_code)))")
+    .select("*, dispatch_items(*, order_items(part_number, description, vehicle_model, mrp, net_rate, discount_pct, gst_pct, product_id, price_list_id, pricing_rule_ids, price_source, is_manual_override, products(hsn_code)))")
     .eq("id", opts.dispatchId)
     .single();
   if (de) throw de;
@@ -187,6 +187,12 @@ export async function generateInvoiceFromDispatch(opts: {
       igst_amount: isInterstate ? gstAmount : 0,
       unit_id: di.unit_id ?? null,
       stock_qty: di.stock_dispatched_qty ?? null,
+      // Pricing Engine trace — copied verbatim from the order line, never
+      // re-resolved (order price is final; see generateInvoiceFromOrder).
+      price_list_id: oi?.price_list_id ?? null,
+      pricing_rule_ids: oi?.pricing_rule_ids ?? [],
+      price_source: oi?.price_source ?? null,
+      is_manual_override: oi?.is_manual_override ?? false,
       // for totals computation
       _lineNet: lineNet,
       _gst: gstAmount,
@@ -269,6 +275,10 @@ export async function generateInvoiceFromDispatch(opts: {
     position: idx,
     unit_id: it.unit_id ?? null,
     stock_qty: it.stock_qty ?? null,
+    price_list_id: it.price_list_id ?? null,
+    pricing_rule_ids: it.pricing_rule_ids ?? [],
+    price_source: it.price_source ?? null,
+    is_manual_override: it.is_manual_override ?? false,
   }));
   const { error: ie2 } = await supabase.from("sales_invoice_items").insert(invRows);
   if (ie2) {
@@ -432,6 +442,12 @@ export async function generateInvoiceFromOrder(opts: {
       igst_amount: isInterstate ? lineGst : 0,
       total: it.total,
       position: idx,
+      // Pricing Engine trace — copied verbatim, never re-resolved (order
+      // price is final; invoice generation must not re-run calculatePricing()).
+      price_list_id: it.price_list_id ?? null,
+      pricing_rule_ids: it.pricing_rule_ids ?? [],
+      price_source: it.price_source ?? null,
+      is_manual_override: it.is_manual_override ?? false,
     };
   });
   const { error: e2 } = await supabase.from("sales_invoice_items").insert(rows);
@@ -525,6 +541,10 @@ export async function duplicateInvoice(id: string, userId: string): Promise<Sale
       position: idx,
       unit_id: it.unit_id ?? null,
       stock_qty: it.stock_qty ?? null,
+      price_list_id: it.price_list_id ?? null,
+      pricing_rule_ids: it.pricing_rule_ids ?? [],
+      price_source: it.price_source ?? null,
+      is_manual_override: it.is_manual_override ?? false,
     }));
     const { error: ie2 } = await supabase.from("sales_invoice_items").insert(rows);
     if (ie2) {

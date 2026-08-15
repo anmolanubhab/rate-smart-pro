@@ -37,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
+import { localDateISO } from "@/lib/pricing/dateUtils";
 
 const inr = (n: number) => `Rs.${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -105,7 +106,7 @@ export default function PricingTestBench() {
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
   const [salesman, setSalesman] = useState("");
   const [voucherType, setVoucherType] = useState("sales_invoice");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localDateISO());
   const [manualDiscountPct, setManualDiscountPct] = useState("");
 
   const [result, setResult] = useState<PricingResult | null>(null);
@@ -163,7 +164,7 @@ export default function PricingTestBench() {
     setWarehouseId(null);
     setSalesman("");
     setVoucherType("sales_invoice");
-    setDate(new Date().toISOString().slice(0, 10));
+    setDate(localDateISO());
     setManualDiscountPct("");
     setResult(null);
     setError(null);
@@ -215,7 +216,7 @@ export default function PricingTestBench() {
       const partyMatch = inv ? parties.find((p) => p.name === inv.party_name) : null;
       setPartyId(partyMatch?.id ?? null);
       setPartyQuery(inv?.party_name ?? "");
-      setDate(inv?.invoice_date ?? new Date().toISOString().slice(0, 10));
+      setDate(inv?.invoice_date ?? localDateISO());
       setRows(
         (items as any[])
           .filter((it) => it.product_id)

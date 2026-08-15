@@ -102,12 +102,16 @@ export interface PricingEvent {
   message: string;
 }
 
+export type PricingSource = "price_list" | "pricing_rule" | "legacy_party_discount" | "product_fallback" | "manual_override";
+
 export interface PricingLineResult {
   lineId: string;
   productId: string;
   qty: number;
   basePrice: number;
   priceListId: string | null;
+  /** How this line's price was actually resolved — persisted onto order_items/sales_invoice_items.price_source for the audit trail (§6). See legacyPartyDiscount.ts for why the legacy path exists. */
+  priceSource: PricingSource;
   appliedRules: PricingRuleMatch[];
   rejectedRules: PricingRuleMatch[];
   /** Rules that never reached conflict resolution — failed a date/time/day/target/condition check, each with a reason (ruleResolver.ts). */

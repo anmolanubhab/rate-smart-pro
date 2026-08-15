@@ -26,6 +26,11 @@ export interface OrderItem {
   item_status?: "pending" | "partial" | "completed";
   unit_id?: string | null;
   stock_qty?: number | null;
+  /** Pricing Engine trace (src/lib/pricing/engine.ts) — informational only, never read by computeItem/computeTotals. See order_items.price_source migration comment. */
+  price_list_id?: string | null;
+  pricing_rule_ids?: string[];
+  price_source?: string | null;
+  is_manual_override?: boolean;
 }
 
 export interface Order {
@@ -130,7 +135,26 @@ export function computeItem(item: Partial<OrderItem>): OrderItem {
     hsn: item.hsn ?? null,
     total,
     position: item.position,
+    // Carried through as-is — computeItem only recomputes rate/net/total from
+    // mrp/discount_pct/gst_pct; it never resolves or invalidates the Pricing
+    // Engine trace those came from.
+    price_list_id: item.price_list_id ?? null,
+    pricing_rule_ids: item.pricing_rule_ids ?? [],
+    price_source: item.price_source ?? null,
+    is_manual_override: item.is_manual_override ?? false,
   };
+}
+
+/**
+ * Whether a grid-cell patch to mrp/discount_pct should be treated as the
+ * user manually overriding the Pricing Engine's result, vs. the engine's
+ * own resolved patch (CreateOrder.tsx's pickProduct()) — which always sets
+ * price_source itself. A direct edit never does, so its absence is the
+ * signal. Exported so CreateOrder.tsx and this file share one definition
+ * instead of two copies drifting apart.
+ */
+export function isManualPricePatch(patch: Partial<OrderItem>): boolean {
+  return ("mrp" in patch || "discount_pct" in patch) && !("price_source" in patch);
 }
 
 export interface OrderTotals {
@@ -305,6 +329,10 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
         position: idx,
         unit_id: it.unit_id ?? null,
         stock_qty: it.stock_qty ?? null,
+        price_list_id: it.price_list_id ?? null,
+        pricing_rule_ids: it.pricing_rule_ids ?? [],
+        price_source: it.price_source ?? null,
+        is_manual_override: it.is_manual_override ?? false,
       };
     });
     const { error } = await supabase.from("order_items").insert(rows);

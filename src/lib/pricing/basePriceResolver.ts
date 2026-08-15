@@ -29,7 +29,8 @@ async function findAssignedPriceListId(context: PricingContext): Promise<string 
     .eq("is_active", true)
     .lte("effective_from", context.date)
     .or(`effective_to.is.null,effective_to.gte.${context.date}`);
-  if (error || !data?.length) return null;
+  if (error) throw new Error(`Failed to load party price assignments: ${error.message}`);
+  if (!data?.length) return null;
 
   const rows = data as { party_id: string | null; party_group_id: string | null; price_list_id: string; priority: number }[];
   const partyRows = context.partyId ? rows.filter((r) => r.party_id === context.partyId) : [];
@@ -44,7 +45,7 @@ async function findAssignedPriceListId(context: PricingContext): Promise<string 
 }
 
 async function findDefaultPriceListId(businessId: string): Promise<string | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("price_lists" as any)
     .select("id")
     .eq("business_id", businessId)
@@ -52,6 +53,7 @@ async function findDefaultPriceListId(businessId: string): Promise<string | null
     .eq("is_default", true)
     .limit(1)
     .maybeSingle();
+  if (error) throw new Error(`Failed to load default price list: ${error.message}`);
   return (data as { id: string } | null)?.id ?? null;
 }
 
@@ -59,7 +61,7 @@ export async function resolveBasePrice(context: PricingContext, line: PricingCon
   const priceListId = (await findAssignedPriceListId(context)) ?? (await findDefaultPriceListId(context.businessId));
 
   if (priceListId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("price_list_items" as any)
       .select("price, mrp, cost, effective_from")
       .eq("price_list_id", priceListId)
@@ -69,6 +71,7 @@ export async function resolveBasePrice(context: PricingContext, line: PricingCon
       .order("effective_from", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (error) throw new Error(`Failed to load price list item: ${error.message}`);
 
     if (data) {
       const item = data as { price: number; mrp: number | null; cost: number | null };
@@ -102,10 +105,11 @@ export async function resolveBasePrice(context: PricingContext, line: PricingCon
 }
 
 async function fetchProductPricingFields(productId: string) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("products")
     .select("mrp, dealer_rate, cost_price, gst_pct")
     .eq("id", productId)
     .maybeSingle();
+  if (error) throw new Error(`Failed to load product pricing fields: ${error.message}`);
   return data as { mrp: number | null; dealer_rate: number | null; cost_price: number | null; gst_pct: number | null } | null;
 }

@@ -28,6 +28,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useFormatDate } from "@/lib/dateFormat";
+import { localDateISO } from "@/lib/pricing/dateUtils";
 
 const STATUS_TONE: Record<string, string> = {
   draft: "border-border text-muted-foreground",
@@ -36,7 +37,7 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 type CreateForm = { name: string; list_type: string; currency: string; effective_from: string; effective_to: string };
-const blankForm = (): CreateForm => ({ name: "", list_type: "Dealer", currency: "INR", effective_from: new Date().toISOString().slice(0, 10), effective_to: "" });
+const blankForm = (): CreateForm => ({ name: "", list_type: "Dealer", currency: "INR", effective_from: localDateISO(), effective_to: "" });
 
 export default function PriceLists() {
   useEffect(() => { document.title = "Price Lists — RD Pro"; }, []);

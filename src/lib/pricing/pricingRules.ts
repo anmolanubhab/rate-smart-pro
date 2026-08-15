@@ -13,6 +13,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
 import type { PricingRuleStatus, TargetDimension } from "./pricingRuleConstants";
+import { addDaysISO, localDateISO } from "./dateUtils";
 
 export interface PricingRuleRow {
   id: string;
@@ -223,11 +224,17 @@ export async function savePricingRule(
     return existing.id;
   }
 
-  // Active rule → version it instead of mutating.
-  const today = new Date().toISOString().slice(0, 10);
+  // Active rule → version it instead of mutating. The old row must stop
+  // being effective the day BEFORE the new version starts — closing it on
+  // the new version's own start date (the previous behavior) left both
+  // rows simultaneously eligible on that date, since dateEligibility()
+  // treats effective_to as inclusive. See ruleResolver.ts's dateEligibility.
+  const today = localDateISO();
+  const newEffectiveFrom = general.effective_from ?? today;
+  const dayBeforeNewVersion = addDaysISO(newEffectiveFrom, -1);
   const { error: closeErr } = await supabase
     .from("pricing_rules" as any)
-    .update({ effective_to: existing.effective_to && existing.effective_to < today ? existing.effective_to : today } as any)
+    .update({ effective_to: existing.effective_to && existing.effective_to < dayBeforeNewVersion ? existing.effective_to : dayBeforeNewVersion } as any)
     .eq("id", existing.id);
   if (closeErr) throw closeErr;
 
