@@ -23,8 +23,13 @@ test.use({ storageState: "e2e/.auth/qa-user.json" });
 2. In your own terminal, with that account's credentials only in your
    shell's environment for that one command:
    ```bash
-   E2E_QA_EMAIL=qa@example.com E2E_QA_PASSWORD=... npx playwright test --project=setup
+   E2E_QA_EMAIL=qa@example.com E2E_QA_PASSWORD=... E2E_QA_BUSINESS_NAME="Your QA Company" npx playwright test --project=setup
    ```
+   `E2E_QA_BUSINESS_NAME` must exactly (case-insensitive, substring OK)
+   match a company name the QA account can see on the Select Company
+   screen — the setup step clicks it explicitly, it never guesses/picks
+   the first company in the list. Real customer businesses must never be
+   used here.
    This runs `e2e/auth.setup.ts`, which logs in once and saves the
    resulting session to `e2e/.auth/qa-user.json`.
 3. From then on, `npm run test:e2e` reuses that file. Re-run step 2
