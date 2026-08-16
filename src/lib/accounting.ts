@@ -1,6 +1,10 @@
 // Accounting helpers — all queries are user + business scoped via RLS + business_id filter.
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { requireBusinessScope } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const LEDGER_NOT_FOUND = "Ledger not found";
 
 export type LedgerRow = {
   id: string;
@@ -138,7 +142,10 @@ export async function assertLedgerNameAvailable(businessId: string, name: string
   }
 }
 
-export async function updateLedger(ledgerId: string, patch: LedgerEditPatch) {
+export async function updateLedger(ledgerId: string, patch: LedgerEditPatch, businessId?: string | null) {
+  // Renaming a ledger or moving its opening balance is an accounting change;
+  // scoped so a raw ledger UUID can't be edited from another company.
+  const biz = requireBusinessScope(businessId, LEDGER_NOT_FOUND);
   const { error } = await supabase
     .from("ledger_accounts")
     .update({
@@ -148,7 +155,8 @@ export async function updateLedger(ledgerId: string, patch: LedgerEditPatch) {
       opening_balance: patch.opening_balance,
       opening_balance_type: patch.opening_balance_type,
     } as never)
-    .eq("id", ledgerId);
+    .eq("id", ledgerId)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -160,17 +168,25 @@ export async function updateLedger(ledgerId: string, patch: LedgerEditPatch) {
  * — the DB's RLS policy blocks those too, but this gives a clear message
  * instead of a silent no-op delete.
  */
-export async function deleteLedger(ledger: { id: string; name: string; is_system: boolean }): Promise<{ archived: boolean }> {
+export async function deleteLedger(
+  ledger: { id: string; name: string; is_system: boolean },
+  businessId?: string | null
+): Promise<{ archived: boolean }> {
   if (ledger.is_system) throw new Error(`"${ledger.name}" is a system ledger and can't be deleted.`);
+  const biz = requireBusinessScope(businessId, LEDGER_NOT_FOUND);
 
-  const { error } = await supabase.from("ledger_accounts").delete().eq("id", ledger.id);
+  const { error } = await supabase
+    .from("ledger_accounts").delete()
+    .eq("id", ledger.id)
+    .eq("business_id", biz);
   if (!error) return { archived: false };
 
   if (error.code === "23503") {
     const { error: archiveErr } = await supabase
       .from("ledger_accounts")
       .update({ status: "inactive" } as never)
-      .eq("id", ledger.id);
+      .eq("id", ledger.id)
+      .eq("business_id", biz);
     if (archiveErr) throw archiveErr;
     return { archived: true };
   }

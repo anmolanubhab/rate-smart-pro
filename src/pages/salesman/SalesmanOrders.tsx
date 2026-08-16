@@ -70,7 +70,8 @@ export default function SalesmanOrders() {
     setExpanded(orderId);
     if (!itemsByOrder[orderId]) {
       setItemsByOrder((m) => ({ ...m, [orderId]: "loading" }));
-      const rows = await fetchOrderItems(orderId);
+      // Portal identity's business — portal users have no active-business key.
+      const rows = await fetchOrderItems(orderId, businessId);
       setItemsByOrder((m) => ({ ...m, [orderId]: rows }));
     }
   };

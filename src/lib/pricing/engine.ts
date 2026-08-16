@@ -221,7 +221,7 @@ async function calculateLine(
   const { cgst_amount: cgstAmount, sgst_amount: sgstAmount, igst_amount: igstAmount } = splitGstAmount(gstTotal, isInterstate);
   const finalAmount = round2(taxableValue + gstTotal);
 
-  const profit = calculateProfit(finalAmount, line.qty, base.cost);
+  const profit = calculateProfit(taxableValue, line.qty, base.cost);
   if (base.cost == null) preCapWarnings.push("No cost recorded for this product — profit/margin is not meaningful.");
 
   const discountPct = grossLine > 0 ? round2((discountAmount / grossLine) * 100) : 0;
@@ -311,7 +311,9 @@ function sumTotals(lines: PricingLineResult[]): PricingTotals {
     }),
     { taxable: 0, gst: 0, discountTotal: 0, grandTotal: 0, estimatedProfit: 0 }
   );
-  const estimatedMarginPct = totals.grandTotal > 0 ? round2((totals.estimatedProfit / totals.grandTotal) * 100) : 0;
+  // Margin is profit over taxable value, matching calculateProfit's per-line
+  // basis — grandTotal includes GST, which is not the business's revenue.
+  const estimatedMarginPct = totals.taxable > 0 ? round2((totals.estimatedProfit / totals.taxable) * 100) : 0;
   return {
     taxable: round2(totals.taxable),
     gst: round2(totals.gst),

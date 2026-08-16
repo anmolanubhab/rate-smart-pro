@@ -3,8 +3,12 @@ import { adjustProductBatchQty, receiveProductBatch } from "@/lib/productBatches
 import { deleteProductSerial, createProductSerialsBulk } from "@/lib/productSerials";
 import { fetchProductUnits, toStockQty, type ProductUnit } from "@/lib/units";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { requireBusinessScope, assertOwnedByBusiness } from "@/lib/businessScope";
 import type { ProductTrackingType } from "@/lib/products";
 import type { GRNBatchSerialResult } from "@/components/inventory/GRNBatchSerialDialog";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const GRN_NOT_FOUND = "Goods receipt not found";
 
 export type GRNStatus = "draft" | "received" | "closed" | "cancelled";
 
@@ -72,13 +76,16 @@ export async function fetchGoodsReceipts(businessId: string): Promise<GoodsRecei
   })) as GoodsReceipt[];
 }
 
-export async function fetchGoodsReceipt(id: string): Promise<GoodsReceipt> {
+export async function fetchGoodsReceipt(id: string, businessId?: string | null): Promise<GoodsReceipt> {
+  const biz = requireBusinessScope(businessId, GRN_NOT_FOUND);
   const { data, error } = await supabase
     .from("goods_receipts")
     .select("*, purchase_orders(po_number), parties(name), warehouses(warehouse_name)")
     .eq("id", id)
-    .single();
+    .eq("business_id", biz)
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error(GRN_NOT_FOUND);
   const r = data as any;
   return {
     ...r,
@@ -100,7 +107,11 @@ export async function fetchGoodsReceipt(id: string): Promise<GoodsReceipt> {
  * cancel that first (same "block, don't cascade" stance as the delete-time
  * DB trigger, kept consistent between delete and cancel).
  */
-export async function cancelGRN(grnId: string): Promise<void> {
+export async function cancelGRN(grnId: string, businessId?: string | null): Promise<void> {
+  // Cancelling a GRN reverses received stock, so ownership is proven first —
+  // otherwise a raw GRN UUID moved another company's inventory.
+  await assertOwnedByBusiness("goods_receipts", grnId, businessId, GRN_NOT_FOUND);
+
   const { data: linkedInvoice } = await supabase
     .from("purchase_invoices")
     .select("invoice_number")
@@ -195,7 +206,9 @@ export async function cancelGRN(grnId: string): Promise<void> {
   if (updErr) throw updErr;
 }
 
-export async function fetchGoodsReceiptItems(goodsReceiptId: string): Promise<GoodsReceiptItem[]> {
+export async function fetchGoodsReceiptItems(goodsReceiptId: string, businessId?: string | null): Promise<GoodsReceiptItem[]> {
+  // goods_receipt_items ownership runs through the parent GRN.
+  await assertOwnedByBusiness("goods_receipts", goodsReceiptId, businessId, GRN_NOT_FOUND);
   const { data, error } = await supabase
     .from("goods_receipt_items")
     .select(`*, products(name, part_number, tracking_type),
@@ -571,13 +584,16 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
  * cancelGRN() at cancel-time -- redoing it here would double-decrement
  * batch qty.
  */
-export async function deleteGRN(grnId: string): Promise<void> {
+export async function deleteGRN(grnId: string, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, GRN_NOT_FOUND);
   const { data: grn, error: fetchErr } = await supabase
     .from("goods_receipts")
     .select("status")
     .eq("id", grnId)
-    .single();
+    .eq("business_id", biz)
+    .maybeSingle();
   if (fetchErr) throw fetchErr;
+  if (!grn) throw new Error(GRN_NOT_FOUND);
   if (grn.status !== "draft" && grn.status !== "cancelled") {
     throw new Error("Only a draft or cancelled GRN can be deleted directly. Cancel it first.");
   }

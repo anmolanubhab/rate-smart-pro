@@ -407,9 +407,12 @@ export async function createVoucher(
 
   // Generate voucher number via existing RPC
   const dbType = typeToDb(input.voucher_type);
+  // Explicit company. Without it the RPC fell back to
+  // _user_default_business(userId) — the user's DEFAULT company, not the one
+  // this voucher belongs to — so a multi-company user got the wrong series.
   const { data: vnoData, error: vnoErr } = await supabase.rpc(
     "next_voucher_number" as any,
-    { _user_id: userId, _voucher_type: dbType }
+    { _user_id: userId, _voucher_type: dbType, _business_id: businessId }
   );
   const voucherNo: string =
     vnoErr || !vnoData

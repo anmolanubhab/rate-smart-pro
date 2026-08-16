@@ -62,14 +62,18 @@ export default function SalesmanNewOrder() {
     let cancelled = false;
     (async () => {
       try {
-        const order = await fetchOrder(editId);
+        // Portal identity's own business, not the ERP active-business key —
+        // portal users never set rdpro.activeBusinessId. The explicit
+        // business_id check below is now redundant with fetchOrder's own
+        // scoping, but kept as defence in depth.
+        const order = await fetchOrder(editId, businessId);
         if (order.business_id && order.business_id !== businessId) throw new Error("not found");
         if (order.status !== "pending") {
           if (!cancelled) setBlocked(`This order is "${order.status}" and can no longer be edited here.`);
           return;
         }
         const [orderItems, orderParty] = await Promise.all([
-          fetchOrderItems(editId),
+          fetchOrderItems(editId, businessId),
           order.party_id ? fetchSalesmanPartyById(order.party_id) : Promise.resolve(null),
         ]);
         if (cancelled) return;

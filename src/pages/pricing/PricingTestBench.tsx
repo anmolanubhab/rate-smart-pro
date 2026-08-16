@@ -506,7 +506,9 @@ export default function PricingTestBench() {
       {/* Bottom — profit summary */}
       {result && (
         <div className="rounded-2xl bg-card border p-4 grid grid-cols-2 md:grid-cols-5 gap-4 no-print">
-          <div><p className="text-xs text-muted-foreground">Revenue</p><p className="font-semibold">{inr(result.totals.grandTotal)}</p></div>
+          {/* Taxable, not grandTotal — this row is the profit summary, and
+              cost/margin/profit are all measured excluding pass-through GST. */}
+          <div><p className="text-xs text-muted-foreground">Revenue (excl. GST)</p><p className="font-semibold">{inr(result.totals.taxable)}</p></div>
           <div><p className="text-xs text-muted-foreground">Cost</p><p className="font-semibold">{inr(totalCost)}</p></div>
           <div><p className="text-xs text-muted-foreground">Gross Margin</p><p className="font-semibold">{result.totals.estimatedMarginPct}%</p></div>
           <div><p className="text-xs text-muted-foreground">Promotion Cost</p><p className="font-semibold">{inr(result.totals.discountTotal)}</p></div>

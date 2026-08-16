@@ -128,7 +128,12 @@ export default function InvoicesPage() {
   const totals = useMemo(() => {
     return filtered.reduce((acc, i) => {
       acc.count += 1;
-      acc.amount += Number(i.grand_total) || 0;
+      // Total Value is a money figure, so a cancelled invoice must not
+      // contribute to it — it has been reversed out of the ledger (its
+      // auto-posted voucher is cancelled too) and represents no receivable.
+      // The Invoices/Posted counts still count every row, so the list's own
+      // status breakdown stays truthful.
+      if (i.status !== "cancelled") acc.amount += Number(i.grand_total) || 0;
       if (i.status === "posted") acc.posted += 1;
       return acc;
     }, { count: 0, amount: 0, posted: 0 });
@@ -428,7 +433,7 @@ export default function InvoicesPage() {
                 <tr>
                   <td colSpan={6} className="px-4 py-2 font-medium text-right">Page total:</td>
                   <td className="px-4 py-2 text-right font-semibold tabular-nums">
-                    ₹{paged.reduce((s, i) => s + Number(i.grand_total), 0).toFixed(2)}
+                    ₹{paged.reduce((s, i) => (i.status === "cancelled" ? s : s + Number(i.grand_total)), 0).toFixed(2)}
                   </td>
                   <td></td>
                 </tr>
