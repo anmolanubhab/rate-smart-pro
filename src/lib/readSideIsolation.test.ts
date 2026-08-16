@@ -77,6 +77,16 @@ const TABLES: Record<string, Record<string, unknown>[]> = {
     { id: "disp-A", business_id: BIZ_A, user_id: USER, created_at: "2026-08-10", orders: null },
     { id: "disp-B", business_id: BIZ_B, user_id: USER, created_at: "2026-08-11", orders: null },
   ],
+  // segments is tenant-owned master data, NOT platform-global: it holds no
+  // business_id IS NULL rows, nothing seeds one, and RLS now refuses to let an
+  // authenticated user create, edit or delete one. The stray global row below
+  // stands for the pollution a user could previously publish to every tenant —
+  // fetchSegments must not surface it even if one somehow exists.
+  segments: [
+    { id: "seg-A", business_id: BIZ_A, name: "Retail", is_default: true },
+    { id: "seg-B", business_id: BIZ_B, name: "Wholesale", is_default: false },
+    { id: "seg-global", business_id: null, name: "POLLUTION", is_default: false },
+  ],
 };
 
 let activeBusinessId: string | null = BIZ_A;
@@ -132,6 +142,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 import { fetchVouchers, fetchLedgersWithBalance, fetchPeriodIncomeExpense } from "./accounting";
 import { fetchDispatches } from "./dispatches";
+import { fetchSegments } from "./parties";
 
 describe("Read-side isolation — lists and aggregates", () => {
   beforeEach(() => {
@@ -167,6 +178,27 @@ describe("Read-side isolation — lists and aggregates", () => {
       activeBusinessId = BIZ_A;
       const rows = await fetchLedgersWithBalance(USER);
       expect(rows.map((l) => l.id)).toEqual(["led-A"]);
+    });
+
+    it("fetchSegments returns only the active company's segments", async () => {
+      activeBusinessId = BIZ_A;
+      const a = await fetchSegments();
+      expect(a.map((s: { id: string }) => s.id)).toEqual(["seg-A"]);
+
+      activeBusinessId = BIZ_B;
+      const b = await fetchSegments();
+      expect(b.map((s: { id: string }) => s.id)).toEqual(["seg-B"]);
+    });
+
+    it("fetchSegments never surfaces a NULL-business segment", async () => {
+      // segments is tenant-owned, not platform-global. RLS now refuses to let
+      // an authenticated user create a business_id IS NULL row; this pins the
+      // read side too, so a stray global row could not leak into a tenant's
+      // list even if one were somehow provisioned.
+      activeBusinessId = BIZ_A;
+      const rows = await fetchSegments();
+      expect(rows.some((s: { business_id: string | null }) => s.business_id === null)).toBe(false);
+      expect(rows.some((s: { name: string }) => s.name === "POLLUTION")).toBe(false);
     });
   });
 
@@ -221,6 +253,11 @@ describe("Read-side isolation — lists and aggregates", () => {
     it("fetchDispatches returns nothing rather than everything", async () => {
       activeBusinessId = null;
       await expect(fetchDispatches(USER)).resolves.toEqual([]);
+    });
+
+    it("fetchSegments returns nothing rather than every company's segments", async () => {
+      activeBusinessId = null;
+      await expect(fetchSegments()).resolves.toEqual([]);
     });
 
     it("fetchPeriodIncomeExpense reports zero rather than every company's profit", async () => {
