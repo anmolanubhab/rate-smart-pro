@@ -76,8 +76,17 @@ test.describe("Pricing SSOT: Test Bench == Sales Order == Invoice", () => {
 
     await page.goto("/orders/new");
 
+    // Unlike the Test Bench's party field, CreateOrder.tsx auto-selects on
+    // an exact name match (checkExactPartyMatch, called from onQueryChange)
+    // and deliberately hides the dropdown once selected (partResults
+    // returns [] when the query already equals the selected party's name —
+    // see CreateOrder.tsx's partResults useMemo). fill() sets the whole
+    // string in one synthetic event, so the exact match — and the
+    // auto-select — happens immediately; there is no dropdown button to
+    // click. "Current Balance" only renders once a party is selected
+    // (`{party && (...)}`), so that's the real, observable confirmation.
     await page.getByPlaceholder(/search party/i).fill(PARTY_NAME);
-    await page.getByRole("button", { name: new RegExp(PARTY_NAME, "i") }).first().click();
+    await expect(page.getByText("Current Balance")).toBeVisible({ timeout: 10_000 });
 
     // First empty grid row's product search cell.
     await page.locator('[data-col="part"]').first().click();
