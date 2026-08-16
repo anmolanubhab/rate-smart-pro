@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 
 interface Props {
   open: boolean;
@@ -102,9 +103,18 @@ function PartyExcelUpload({ open, onOpenChange, userId, onImported }: Props) {
       const json: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
       if (!json.length) throw new Error("Empty file");
 
+      // Duplicate detection must look at THIS company's parties only. Keyed
+      // on user_id alone, a name that exists in another of the user's
+      // companies produced a duplicateId pointing at that other company's
+      // row — which the "update" path below then overwrote (including
+      // outstanding_balance), while the party was never created here at all.
+      const biz = getActiveBusinessIdSync();
+      if (!biz) throw new Error("No active company selected");
+
       const { data: existing, error } = await supabase
         .from("parties")
         .select("id,name")
+        .eq("business_id", biz)
         .eq("user_id", userId);
       if (error) throw error;
       const byName = new Map((existing || []).map((p: any) => [norm(String(p.name || "")), p.id]));
@@ -159,12 +169,19 @@ function PartyExcelUpload({ open, onOpenChange, userId, onImported }: Props) {
   const dupCount = valid.filter((r) => r.duplicateId).length;
 
   const handleConfirm = async () => {
+    // Re-resolve rather than trusting the id captured at parse time, and
+    // refuse outright with no active company instead of writing rows with a
+    // NULL business_id (the milestone removed the RLS escape that used to
+    // make those readable).
+    const biz = getActiveBusinessIdSync();
+    if (!biz) { toast.error("No active company selected"); return; }
+
     const inserts = valid.filter((r) => !r.duplicateId);
     const updates = dupMode === "update" ? valid.filter((r) => r.duplicateId) : [];
 
     const toInsert = inserts.map((r) => ({
       user_id: userId,
-      business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
+      business_id: biz,
       name: r.name.trim(),
       phone: r.phone || null,
       gst: r.gst || null,
@@ -202,7 +219,14 @@ function PartyExcelUpload({ open, onOpenChange, userId, onImported }: Props) {
           agreed_discount: r.agreed_discount || 0,
           notes: r.notes || null,
         };
-        const { error } = await supabase.from("parties").update(payload).eq("id", r.duplicateId as string);
+        // .eq("business_id") is not redundant with the scoped lookup above:
+        // it is the standing guard that keeps a bare .eq("id") from ever
+        // reaching another company's row.
+        const { error } = await supabase
+          .from("parties")
+          .update(payload)
+          .eq("id", r.duplicateId as string)
+          .eq("business_id", biz);
         if (error) throw error;
       }
 

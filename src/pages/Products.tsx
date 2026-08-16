@@ -109,14 +109,18 @@ async function fetchProductsPage(
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  // Fail closed, matching fetchProducts() in src/lib/products.ts which
+  // already returns [] rather than querying unscoped.
+  if (!businessId) return { items: [], total: 0 };
+
   let query = supabase
     .from("products")
     .select(PRODUCT_COLUMNS, { count: "exact" })
+    .eq("business_id", businessId)
     .eq("user_id", userId)
     .order(sort.column, { ascending: sort.direction === "asc" })
     .range(from, to);
 
-  if (businessId) query = query.eq("business_id", businessId);
   if (statusFilter !== "all") query = query.eq("status", statusFilter);
 
   if (search.trim()) {
@@ -392,6 +396,9 @@ const Products = () => {
 
   const exportAll = async () => {
     if (!user) return;
+    // Export is a read surface: unscoped it wrote every company's products
+    // into one CSV.
+    if (!businessId) { toast.error("No active company selected"); return; }
     setExporting(true);
     toast.info("Exporting… please wait");
     try {
@@ -405,11 +412,10 @@ const Products = () => {
         let query = supabase
           .from("products")
           .select(PRODUCT_COLUMNS)
+          .eq("business_id", businessId)
           .eq("user_id", user.id)
           .order(sort.column, { ascending: sort.direction === "asc" })
           .range(from, from + BATCH - 1);
-
-        if (businessId) query = query.eq("business_id", businessId);
 
         if (debouncedSearch.trim()) {
           const q = `%${debouncedSearch.trim()}%`;

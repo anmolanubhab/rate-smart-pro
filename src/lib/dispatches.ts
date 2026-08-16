@@ -79,12 +79,15 @@ export async function nextDispatchNumber(userId: string) {
 
 export async function fetchDispatches(userId: string) {
   const biz = getActiveBusinessIdSync();
-  let q = supabase
+  // Fail closed, matching the single-record dispatch reads this module
+  // already scopes through businessScope.
+  if (!biz) return [] as any[];
+  const q = supabase
     .from("dispatches")
     .select("*, orders(order_number, party_name)")
+    .eq("business_id", biz)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
-  if (biz) q = q.eq("business_id", biz);
   const { data, error } = await q;
   if (error) throw error;
   return data as any[];

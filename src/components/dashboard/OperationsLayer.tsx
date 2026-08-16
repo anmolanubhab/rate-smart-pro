@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowRight, Boxes, Package, Plus, ShoppingBag, Truck, Us
 import { format, startOfMonth } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,21 +53,31 @@ function TableHeader({ cols }: { cols: string[] }) {
 
 export default function OperationsLayer() {
   const { user } = useAuth();
+  // Top-selling products, top customers and the outstanding-order alert list
+  // are per-company views. Keyed on user_id alone they merged every company
+  // the user belongs to, so with A active this panel listed B's and C's
+  // customers and outstanding amounts.
+  const { business } = useBusiness();
+  const businessId = business?.id ?? null;
   const monthStart = format(startOfMonth(new Date()), "yyyy-MM-dd");
 
   const productsQ = useQuery({
-    queryKey: ["ops-products", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["ops-products", businessId, user?.id],
+    enabled: !!user?.id && !!businessId,
     queryFn: () => fetchProducts(user!.id),
   });
 
   const topSellingQ = useQuery({
-    queryKey: ["ops-top-selling", user?.id, monthStart],
-    enabled: !!user?.id,
+    queryKey: ["ops-top-selling", businessId, user?.id, monthStart],
+    enabled: !!user?.id && !!businessId,
     queryFn: async () => {
+      // order_items carries no business_id of its own (ownership is held by
+      // the parent order), so the company filter goes through the !inner
+      // join rather than onto the child row.
       const { data, error } = await supabase
         .from("order_items")
-        .select("part_number, description, qty, net_rate, orders!inner(status, order_date, user_id)")
+        .select("part_number, description, qty, net_rate, orders!inner(status, order_date, user_id, business_id)")
+        .eq("orders.business_id", businessId!)
         .eq("user_id", user!.id)
         .gte("orders.order_date", monthStart)
         .in("orders.status", ["completed", "partial", "pending"]);
@@ -76,12 +87,13 @@ export default function OperationsLayer() {
   });
 
   const topCustomersQ = useQuery({
-    queryKey: ["ops-top-customers", user?.id, monthStart],
-    enabled: !!user?.id,
+    queryKey: ["ops-top-customers", businessId, user?.id, monthStart],
+    enabled: !!user?.id && !!businessId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
         .select("party_name, grand_total, order_date, status, dispatched_total_qty, pending_total_qty")
+        .eq("business_id", businessId!)
         .eq("user_id", user!.id)
         .gte("order_date", monthStart)
         .in("status", ["completed", "pending", "partial"])
@@ -94,12 +106,13 @@ export default function OperationsLayer() {
   });
 
   const outstandingQ = useQuery({
-    queryKey: ["ops-outstanding-alerts", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["ops-outstanding-alerts", businessId, user?.id],
+    enabled: !!user?.id && !!businessId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
         .select("order_date, party_name, grand_total, dispatched_total_qty, pending_total_qty, status")
+        .eq("business_id", businessId!)
         .eq("user_id", user!.id)
         .in("status", ["pending", "partial"])
         .eq("is_deleted", false)

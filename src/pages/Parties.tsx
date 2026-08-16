@@ -91,14 +91,17 @@ async function fetchPartiesPage(
   const from = (page - 1) * pageSize;
   const to   = from + pageSize - 1;
 
+  // Fail closed: without a company the old code dropped the filter and
+  // listed every company's parties (and counted them in the header).
+  if (!businessId) return { items: [], total: 0 };
+
   let q = supabase
     .from("parties")
     .select(PARTY_COLS, { count: "exact" })
+    .eq("business_id", businessId)
     .eq("user_id", userId)
     .order(sort.column, { ascending: sort.direction === "asc" })
     .range(from, to);
-
-  if (businessId) q = q.eq("business_id", businessId);
 
   if (search.trim()) {
     const s = `%${search.trim()}%`;
@@ -111,11 +114,13 @@ async function fetchPartiesPage(
 }
 
 async function fetchSummaryCounts(userId: string, businessId: string | null) {
-  let q = supabase
+  // These are the OUTSTANDING / credit-limit aggregates on the page header.
+  if (!businessId) return { total: 0, active: 0, blocked: 0, totalCredit: 0, totalOutstanding: 0 };
+  const q = supabase
     .from("parties")
     .select("outstanding_balance, credit_limit")
+    .eq("business_id", businessId)
     .eq("user_id", userId);
-  if (businessId) q = q.eq("business_id", businessId);
   const { data, error } = await q;
   if (error) throw error;
   const all = data ?? [];
@@ -344,8 +349,14 @@ const Parties = () => {
     const editId = searchParams.get("edit");
     if (!editId || !user) return;
     (async () => {
-      let q = supabase.from("parties").select(PARTY_COLS).eq("id", editId).eq("user_id", user.id);
-      if (businessId) q = q.eq("business_id", businessId);
+      // Deep link by raw id — the exact pattern businessScope.ts warns about.
+      // Unscoped, /parties?edit=<company-B-party-id> opened B's party in A's
+      // editor and saved back into B.
+      if (!businessId) { toast.error("Party not found."); return; }
+      const q = supabase.from("parties").select(PARTY_COLS)
+        .eq("id", editId)
+        .eq("business_id", businessId)
+        .eq("user_id", user.id);
       const { data, error } = await q.maybeSingle();
       if (error) { toast.error(error.message); }
       else if (!data) { toast.error("Party not found."); }
@@ -409,6 +420,9 @@ const Parties = () => {
 
   const exportCSV = async () => {
     if (!user) return;
+    // Export is a read surface like any other: unscoped it wrote every
+    // company's parties into one CSV.
+    if (!businessId) { toast.error("No active company selected"); return; }
     setExporting(true);
     toast.info("Exporting… please wait");
     try {
@@ -416,9 +430,10 @@ const Parties = () => {
       const rows: Party[] = [];
       let from = 0, hasMore = true;
       while (hasMore) {
-        let q = supabase.from("parties").select(PARTY_COLS).eq("user_id", user.id)
+        let q = supabase.from("parties").select(PARTY_COLS)
+          .eq("business_id", businessId)
+          .eq("user_id", user.id)
           .order(sort.column, { ascending: sort.direction === "asc" }).range(from, from + BATCH - 1);
-        if (businessId) q = q.eq("business_id", businessId);
         if (debouncedSearch.trim()) {
           const s = `%${debouncedSearch.trim()}%`;
           q = q.or(`name.ilike.${s},phone.ilike.${s},gst.ilike.${s}`);
