@@ -1,0 +1,39 @@
+-- Remove the vestigial business_members table. Follow-up to
+-- 20260816190000_close_business_members_escalation, which dropped the one
+-- live policy that trusted it (parties_business_policy) and thereby closed
+-- the escalation.
+--
+-- business_members was the original membership table; 20260604062740 renamed
+-- it to business_users, which is what is_business_member and has_business_role
+-- actually read. The table left behind was empty and unused, but writable by
+-- any authenticated user, with an INSERT policy that checked only
+-- (user_id = auth.uid()) — never that the caller had any right to the
+-- business_id being named.
+--
+-- Dropping the policy closed the hole. Dropping the table is what stops it
+-- reopening the next time someone writes a policy against the plausible-
+-- sounding name, which is the realistic way this would come back.
+--
+-- Verified immediately before applying:
+--   rows                              0
+--   inbound foreign keys              0
+--   triggers                          0
+--   functions referencing it          0
+--   RLS policies referencing it       0
+--   views / rules depending on it     0
+--   business_users (authoritative)    8 rows
+--
+-- Verified immediately after applying:
+--   table exists                      no
+--   policies referencing it           0
+--   business_users                    8 rows, unchanged
+--   parties / businesses              544 / 8 rows, unchanged
+--   is_business_member(own)           true
+--   has_business_role(own, owner)     true
+--   is_business_member(unrelated)     false
+--
+-- No CASCADE: if anything unexpected depended on it this would fail loudly
+-- rather than silently destroying the dependent object. No historical
+-- business data is touched — the table held none.
+
+DROP TABLE IF EXISTS public.business_members;

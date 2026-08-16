@@ -899,47 +899,6 @@ export type Database = {
           },
         ]
       }
-      business_members: {
-        Row: {
-          business_id: string | null
-          created_at: string | null
-          id: string
-          invitation_status: string | null
-          invited_by: string | null
-          role: string
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          business_id?: string | null
-          created_at?: string | null
-          id?: string
-          invitation_status?: string | null
-          invited_by?: string | null
-          role?: string
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          business_id?: string | null
-          created_at?: string | null
-          id?: string
-          invitation_status?: string | null
-          invited_by?: string | null
-          role?: string
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "business_members_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       business_user_invitations: {
         Row: {
           accepted_at: string | null
