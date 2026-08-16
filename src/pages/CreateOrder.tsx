@@ -142,6 +142,15 @@ const CreateOrder = () => {
     return parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12);
   }, [parties, partyQuery, party]);
 
+  // The party list loads asynchronously, but the user can type (or the
+  // browser can autofill) before it arrives. The load effect below is keyed
+  // on [user], so the `partyQuery` it closes over is the value at mount —
+  // empty — and its post-load re-check silently never fired for anyone who
+  // typed first. The party then stayed unselected even though the name
+  // matched exactly. A ref carries the CURRENT query across that boundary.
+  const partyQueryRef = useRef(partyQuery);
+  partyQueryRef.current = partyQuery;
+
   // Exact Match Verification Logic
   const checkExactPartyMatch = (query: string, currentParties: Party[]) => {
     const cleanQuery = query.trim().toLowerCase();
@@ -239,7 +248,10 @@ const CreateOrder = () => {
     fetchParties(user.id, "customer")
       .then((data) => {
         setParties(data);
-        if (partyQuery) checkExactPartyMatch(partyQuery, data);
+        // Read through the ref, not the closure: whatever the user has typed
+        // by the time this resolves is what must be matched.
+        const pendingQuery = partyQueryRef.current;
+        if (pendingQuery) checkExactPartyMatch(pendingQuery, data);
       })
       .catch((e) => toast.error(e.message));
 
@@ -399,10 +411,19 @@ const CreateOrder = () => {
     // A resolution failure must surface as a visible error, never a silent
     // wrong price (see the ruleResolver.ts/basePriceResolver.ts DB-error
     // fixes from the prior QA pass).
-    if (business?.id) {
+    // useBusiness() resolves asynchronously, so for a moment after page load
+    // `business` is still null. Treating that as "no business" sent product
+    // entry down the legacy fallback below and silently produced the WRONG
+    // price — the party's legacy 10% RD instead of the resolved price list —
+    // which is precisely what the pricing SSOT exists to prevent. The active
+    // company id is available synchronously from localStorage (the same
+    // source businessScope.ts trusts), so there is no window where it is
+    // unknown. The fallback now means "genuinely no company", not "not yet".
+    const pricingBusinessId = business?.id ?? getActiveBusinessIdSync();
+    if (pricingBusinessId) {
       try {
         const result = await calculatePricing({
-          businessId: business.id,
+          businessId: pricingBusinessId,
           branchId: null,
           partyId: partyId || null,
           partyGroupId: party?.party_group_id ?? null,

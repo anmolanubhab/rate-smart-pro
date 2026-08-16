@@ -41,8 +41,16 @@ test("ensure the pricing E2E fixture party + product exist in the QA business", 
   // business id are available to evaluate() below.
   await page.goto("/companies");
 
-  const result = await page.evaluate<FixtureResult, { partyName: string; productQuery: string }>(
-    async ({ partyName, productQuery }) => {
+  // Every value the browser side needs must be destructured here: evaluate()
+  // runs in the page, so it cannot close over Node-scope constants. The call
+  // below already passed priceListName/priceListRate, but they were missing
+  // from both the type parameter and this destructuring, so the price-list
+  // half of the fixture threw "priceListName is not defined" inside the page.
+  const result = await page.evaluate<
+    FixtureResult,
+    { partyName: string; productQuery: string; priceListName: string; priceListRate: number }
+  >(
+    async ({ partyName, productQuery, priceListName, priceListRate }) => {
       const clientModule = await import(/* @vite-ignore */ "/src/integrations/supabase/client.ts");
       const supabase = clientModule.supabase;
 

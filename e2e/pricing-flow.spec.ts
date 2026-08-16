@@ -111,13 +111,23 @@ test.describe("Pricing SSOT: Test Bench == Sales Order == Invoice", () => {
     await page.locator('[data-col="part"]').first().fill(PRODUCT_QUERY);
     await page.getByRole("button", { name: new RegExp(PRODUCT_QUERY, "i") }).first().click();
 
+    const mrpCell = page.locator('[data-col="mrp"]').first();
+    const discCell = page.locator('[data-col="disc"]').first();
+
+    // calculatePricing() is async (it hits the price list / rules tables), so
+    // the price cell is briefly EMPTY between picking the product and the
+    // engine's result landing. `not.toHaveValue("0")` is satisfied by that
+    // empty string, so the old assertion sailed through the intermediate
+    // state and then read "" — Number("") is 0, which is what produced the
+    // "expected 145, received 0" failure. Wait for a value to actually be
+    // present before reading it, and do it before touching qty so the
+    // sequence is deterministic rather than racing the engine.
+    await expect(mrpCell).not.toHaveValue("", { timeout: 15_000 });
+    await expect(mrpCell).not.toHaveValue("0", { timeout: 15_000 });
+
     await page.locator('[data-col="qty"]').first().fill(String(QTY));
     // Blur to flush the qty update.
     await page.locator('[data-col="qty"]').first().press("Tab");
-
-    const mrpCell = page.locator('[data-col="mrp"]').first();
-    const discCell = page.locator('[data-col="disc"]').first();
-    await expect(mrpCell).not.toHaveValue("0", { timeout: 10_000 });
 
     const orderBasePrice = Number(await mrpCell.inputValue());
     const orderDiscountPct = Number(await discCell.inputValue());
@@ -146,10 +156,24 @@ test.describe("Pricing SSOT: Test Bench == Sales Order == Invoice", () => {
 
   test("3. Editing the order (qty change) does not corrupt the resolved price", async ({ page }) => {
     await page.goto("/orders");
-    await page.getByText(new RegExp(PARTY_NAME, "i")).first().click();
+
+    // The party name appears in more than one place on this screen, and the
+    // first text match is the party LINK — clicking it navigated to
+    // Accounts > Party Statement, where there is no order grid at all, so the
+    // test sat waiting for [data-col="mrp"] until it timed out. Go through the
+    // row's actions menu instead, the same way test 4 does, so this opens the
+    // ORDER rather than whatever else happens to carry the party's name.
+    const orderRow = page.getByRole("row", { name: new RegExp(PARTY_NAME, "i") }).first();
+    await orderRow.getByRole("button").last().click();
+    await page.getByRole("menuitem", { name: /edit order/i }).click();
 
     const qtyCell = page.locator('[data-col="qty"]').first();
-    const mrpBefore = await page.locator('[data-col="mrp"]').first().inputValue();
+    const mrpLocator = page.locator('[data-col="mrp"]').first();
+    // Loading an existing order hydrates the grid asynchronously — read the
+    // baseline only once it is actually populated.
+    await expect(mrpLocator).not.toHaveValue("", { timeout: 15_000 });
+
+    const mrpBefore = await mrpLocator.inputValue();
     const discBefore = await page.locator('[data-col="disc"]').first().inputValue();
 
     await qtyCell.fill(String(QTY * 3));
@@ -227,6 +251,41 @@ test.describe("Pricing SSOT: Test Bench == Sales Order == Invoice", () => {
     await invoiceRow.getByRole("button", { name: /row actions/i }).click();
     await page.getByRole("menuitem", { name: /cancel invoice/i }).click();
     await page.getByRole("button", { name: /^cancel invoice$/i }).click();
+
+    // cancelInvoice() is a multi-step client-side sequence: reverse advances,
+    // flip the invoice to cancelled, cancel the auto-posted voucher, reverse
+    // stock, revert any dispatch, and only THEN recalc the order's status.
+    // The invoice flips early in that sequence, so polling the invoice alone
+    // still read the order while it was mid-flight and saw "invoiced".
+    // Poll the whole post-condition instead — invoice cancelled AND order
+    // released — so the assertions below describe a settled system.
+    const readSettled = async () =>
+      page.evaluate(async (partyName: string) => {
+        const { supabase } = await import(/* @vite-ignore */ "/src/integrations/supabase/client.ts");
+        const businessId = localStorage.getItem("rdpro.activeBusinessId");
+        const { data: inv } = await supabase
+          .from("sales_invoices")
+          .select("status, order_id")
+          .eq("business_id", businessId)
+          .eq("party_name", partyName)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const row = inv as { status: string; order_id: string | null } | null;
+        if (!row) return "no-invoice";
+        const { data: order } = row.order_id
+          ? await supabase.from("orders").select("status").eq("id", row.order_id).maybeSingle()
+          : { data: null };
+        const orderStatus = (order as { status: string } | null)?.status ?? "none";
+        return `${row.status}/${orderStatus}`;
+      }, PARTY_NAME);
+
+    await expect
+      .poll(readSettled, {
+        timeout: 25_000,
+        message: "invoice cancellation never fully settled (invoice cancelled + order released)",
+      })
+      .toMatch(/^cancelled\/(?!invoiced$).+$/);
 
     const state = await page.evaluate(async (partyName: string) => {
       const { supabase } = await import(/* @vite-ignore */ "/src/integrations/supabase/client.ts");
