@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import AppLayout from "@/components/AppLayout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import DealerGuard from "@/components/dealer/DealerGuard";
@@ -321,6 +322,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/auth/reset-password" element={<ResetPassword />} />
               <Route path="/accept-invite" element={B(<AcceptInvite />)} />
               <Route path="/companies" element={B(<CompanySelection />)} />
               <Route path="/setup/business" element={B(<BusinessWizard />)} />

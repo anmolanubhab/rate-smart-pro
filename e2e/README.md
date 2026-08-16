@@ -38,9 +38,28 @@ test.use({ storageState: "e2e/.auth/qa-user.json" });
 ## Test data
 
 Every spec in this suite only ever creates/reads records it can identify
-as its own (name-prefixed, e.g. `E2E_PRICING_*`) and cleans them up after
-itself. Never point `E2E_BASE_URL` at a real customer's business without
-also scoping test data that way.
+as its own (name-prefixed, e.g. `E2E_PRICING_*`), scoped to whatever
+business `E2E_QA_BUSINESS_NAME` selected during setup. Never point
+`E2E_BASE_URL` at a real customer's business without also scoping test
+data that way.
+
+**Fixtures (party/product) are idempotent — `e2e/pricing.fixtures.ts` runs
+automatically before the pricing spec** (wired as a dependency of the
+`chromium` project in `playwright.config.ts`) and only creates
+`E2E_PRICING_PARTY`/`E2E_PRICING_PRODUCT` if they don't already exist for
+that business, via the QA session's own RLS-scoped Supabase access — no
+UI form-filling, no service-role key, safe to run on every invocation.
+
+**Orders/invoices created by the pricing spec are *not* deleted between
+runs** — each `npm run test:e2e` adds one more `E2E_PRICING_PARTY` order
+and its invoice. This is intentional-by-omission, not a bug: both
+`Orders.tsx` and `Invoices.tsx` default-sort newest-first, so the spec's
+`.first()` selectors always land on the run that just created them,
+making reruns safe despite the accumulation. It does mean
+`BOOTSTRAP FIX VERIFY TEST`'s order/invoice history grows over time —
+acceptable for an isolated QA-only business, but worth knowing before you
+treat that business as representative of anything besides "has been
+E2E-tested N times."
 
 ## Running
 
@@ -55,6 +74,9 @@ deployment instead of local dev).
 
 ## Specs
 
+- `pricing.fixtures.ts` — ensures `E2E_PRICING_PARTY`/`E2E_PRICING_PRODUCT`
+  exist in the QA business. Not a "spec" in the assertion sense — treat it
+  as setup that happens to also be a test file, same shape as `auth.setup.ts`.
 - `pricing-flow.spec.ts` — Pricing Test Bench → Sales Order → Edit Order →
   Invoice generation, comparing the resolved price/discount/GST/total at
   each step. See the SSOT integration notes at the top of

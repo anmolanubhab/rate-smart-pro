@@ -8,9 +8,10 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   // Playwright's default file matching only picks up *.spec.ts/*.test.ts —
-  // auth.setup.ts needs an explicit opt-in, and the chromium project below
-  // excludes it so `npm run test:e2e` never tries to log in on its own.
-  testMatch: ["**/*.spec.ts", "**/*.setup.ts"],
+  // auth.setup.ts and *.fixtures.ts need an explicit opt-in, and the
+  // chromium project below excludes them so `npm run test:e2e` never tries
+  // to log in on its own (fixtures still run automatically — see below).
+  testMatch: ["**/*.spec.ts", "**/*.setup.ts", "**/*.fixtures.ts"],
   fullyParallel: false,
   retries: 0,
   workers: 1,
@@ -33,9 +34,19 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      name: "chromium",
-      testIgnore: "**/*.setup.ts",
+      // Unlike "setup", this only needs the storageState *file* — no fresh
+      // credentials — so it's safe to run automatically on every
+      // `npm run test:e2e` via the "chromium" dependency below. Idempotent
+      // (search-then-insert), so reruns never duplicate fixture data.
+      name: "fixtures",
+      testMatch: "**/*.fixtures.ts",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "chromium",
+      testIgnore: ["**/*.setup.ts", "**/*.fixtures.ts"],
+      use: { ...devices["Desktop Chrome"] },
+      dependencies: ["fixtures"],
     },
   ],
 });
