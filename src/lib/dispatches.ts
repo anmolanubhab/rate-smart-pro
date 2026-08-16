@@ -1,8 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { requireBusinessScope, assertOwnedByBusiness } from "@/lib/businessScope";
 import { cancelVoucher } from "@/lib/voucherService";
 import { adjustProductBatchQty } from "@/lib/productBatches";
 import { updateProductSerialStatus } from "@/lib/productSerials";
+
+/** Same wording for absent and foreign-company, so a UUID probe reveals nothing. */
+export const DISPATCH_NOT_FOUND = "Dispatch not found";
 
 export type DispatchStatus = "draft" | "confirmed" | "cancelled";
 
@@ -75,12 +79,15 @@ export async function nextDispatchNumber(userId: string) {
 
 export async function fetchDispatches(userId: string) {
   const biz = getActiveBusinessIdSync();
-  let q = supabase
+  // Fail closed, matching the single-record dispatch reads this module
+  // already scopes through businessScope.
+  if (!biz) return [] as any[];
+  const q = supabase
     .from("dispatches")
     .select("*, orders(order_number, party_name)")
+    .eq("business_id", biz)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
-  if (biz) q = q.eq("business_id", biz);
   const { data, error } = await q;
   if (error) throw error;
   return data as any[];
@@ -127,7 +134,9 @@ export async function createDispatch(input: {
   const dispatch_number = await nextDispatchNumber(input.userId);
   let packing_slip_number: string | null = null;
   if (input.packing?.auto_packing_slip) {
-    const { data, error } = await supabase.rpc("next_packing_slip_number", { _user_id: input.userId });
+    // Explicit company: without it the sequence was MAX() over every company's
+    // dispatches, so one company's volume advanced another's slip numbers.
+    const { data, error } = await supabase.rpc("next_packing_slip_number", { _user_id: input.userId, _business_id: businessId } as never);
     if (error) throw error;
     packing_slip_number = data as string;
   }
@@ -239,11 +248,15 @@ export async function bulkCreateDispatches(
  * The caller (Dispatch.tsx) should then call generateInvoiceFromDispatch()
  * from salesInvoices.ts to auto-create the invoice.
  */
-export async function confirmDispatch(dispatchId: string, userId?: string) {
+export async function confirmDispatch(dispatchId: string, userId?: string, businessId?: string | null) {
+  // Confirming a dispatch deducts stock and can trigger invoice generation, so
+  // it must not be reachable for another company's dispatch by raw UUID.
+  const biz = requireBusinessScope(businessId, DISPATCH_NOT_FOUND);
   const { error } = await supabase
     .from("dispatches")
     .update({ status: "confirmed", ...(userId ? { updated_by: userId } : {}) } as any)
     .eq("id", dispatchId)
+    .eq("business_id", biz)
     .eq("status", "draft"); // safety: only draft can be confirmed
   if (error) throw error;
 }
@@ -259,7 +272,11 @@ type DispatchWithItems = {
   }>;
 };
 
-async function fetchDispatchWithItems(dispatchId: string): Promise<DispatchWithItems> {
+/** Shared loader for cancel/delete. Business-scoped: a dispatch drives stock
+ *  reversal and order-status recalculation, so loading one from another company
+ *  by raw UUID would let company A move company B's inventory. */
+async function fetchDispatchWithItems(dispatchId: string, businessId?: string | null): Promise<DispatchWithItems> {
+  const biz = requireBusinessScope(businessId, DISPATCH_NOT_FOUND);
   const { data: dispatch, error: de } = await supabase
     .from("dispatches")
     .select(`*, dispatch_items(
@@ -268,9 +285,10 @@ async function fetchDispatchWithItems(dispatchId: string): Promise<DispatchWithI
       dispatch_item_serials(serial_id)
     )`)
     .eq("id", dispatchId)
-    .single();
+    .eq("business_id", biz)
+    .maybeSingle();
   if (de) throw de;
-  if (!dispatch) throw new Error("Dispatch not found");
+  if (!dispatch) throw new Error(DISPATCH_NOT_FOUND);
   return dispatch as unknown as DispatchWithItems;
 }
 
@@ -308,9 +326,10 @@ async function reverseDispatchStockEffects(dispatch: DispatchWithItems): Promise
  * - Otherwise reverses dispatched_qty on order_items and any batch/serial
  *   stock it consumed, then sets status = 'cancelled'.
  */
-export async function cancelDispatch(dispatchId: string, userId?: string): Promise<void> {
-  const dispatch = await fetchDispatchWithItems(dispatchId);
-  const { data: dRow } = await supabase.from("dispatches").select("status").eq("id", dispatchId).single();
+export async function cancelDispatch(dispatchId: string, userId?: string, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, DISPATCH_NOT_FOUND);
+  const dispatch = await fetchDispatchWithItems(dispatchId, biz);
+  const { data: dRow } = await supabase.from("dispatches").select("status").eq("id", dispatchId).eq("business_id", biz).single();
   if ((dRow as any)?.status === "cancelled") throw new Error("Dispatch already cancelled");
 
   if (dispatch.invoice_id) {
@@ -341,18 +360,19 @@ export async function cancelDispatch(dispatchId: string, userId?: string): Promi
  * stock effects a cancel would, then removes the row (dispatch_items
  * cascade via FK).
  */
-export async function deleteDispatch(dispatchId: string): Promise<void> {
-  const { data: dRow } = await supabase.from("dispatches").select("status").eq("id", dispatchId).single();
-  if (!dRow) throw new Error("Dispatch not found");
+export async function deleteDispatch(dispatchId: string, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, DISPATCH_NOT_FOUND);
+  const { data: dRow } = await supabase.from("dispatches").select("status").eq("id", dispatchId).eq("business_id", biz).maybeSingle();
+  if (!dRow) throw new Error(DISPATCH_NOT_FOUND);
   if ((dRow as any).status !== "draft") {
     throw new Error("Only draft dispatches can be deleted. Cancel a confirmed dispatch instead.");
   }
 
-  const dispatch = await fetchDispatchWithItems(dispatchId);
+  const dispatch = await fetchDispatchWithItems(dispatchId, biz);
   await reverseDispatchStockEffects(dispatch);
   await recalcOrderStatus(dispatch.order_id);
 
-  const { error } = await supabase.from("dispatches").delete().eq("id", dispatchId);
+  const { error } = await supabase.from("dispatches").delete().eq("id", dispatchId).eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -382,7 +402,9 @@ async function recalcOrderStatus(orderId: string) {
   await supabase.from("orders").update({ status: newStatus } as any).eq("id", orderId);
 }
 
-export async function fetchDispatchItems(dispatchId: string) {
+export async function fetchDispatchItems(dispatchId: string, businessId?: string | null) {
+  // dispatch_items ownership is proven through the parent dispatch.
+  await assertOwnedByBusiness("dispatches", dispatchId, businessId, DISPATCH_NOT_FOUND);
   const { data, error } = await supabase
     .from("dispatch_items").select("*, order_items(part_number, description)")
     .eq("dispatch_id", dispatchId);

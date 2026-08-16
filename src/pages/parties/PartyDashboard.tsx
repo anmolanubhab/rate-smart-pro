@@ -59,9 +59,14 @@ export default function PartyDashboard() {
     (async () => {
       setLoading(true);
       const [{ data: p }, { data: ord }, { data: inv }, ledgerRes, advanceRes] = await Promise.all([
-        supabase.from("parties").select("id, name, phone, gst, address, credit_limit, outstanding_balance, agreed_discount, discount_type, party_group_id").eq("id", partyId).maybeSingle(),
-        supabase.from("orders").select("id, order_number, status, grand_total, created_at").eq("party_id", partyId).order("created_at", { ascending: false }).limit(10),
-        supabase.from("sales_invoices").select("id, invoice_number, grand_total, invoice_date, status").eq("party_id", partyId).order("invoice_date", { ascending: false }).limit(10),
+        // parties/orders/sales_invoices are membership-gated in RLS, which
+        // answers "may this user touch this company at all" — not "is this
+        // the ACTIVE company". A bare .eq("id", partyId) therefore opened
+        // another of the user's companies' party 360 (balance, credit limit,
+        // agreed discount) and listed its orders and invoices underneath.
+        supabase.from("parties").select("id, name, phone, gst, address, credit_limit, outstanding_balance, agreed_discount, discount_type, party_group_id").eq("id", partyId).eq("business_id", business.id).maybeSingle(),
+        supabase.from("orders").select("id, order_number, status, grand_total, created_at").eq("party_id", partyId).eq("business_id", business.id).order("created_at", { ascending: false }).limit(10),
+        supabase.from("sales_invoices").select("id, invoice_number, grand_total, invoice_date, status").eq("party_id", partyId).eq("business_id", business.id).order("invoice_date", { ascending: false }).limit(10),
         fetchPartyLedger(user.id, partyId).catch(() => ({ ledger: null, lines: [], closingBalance: 0 })),
         business ? fetchAvailableAdvance(business.id, partyId).catch(() => ({ total: 0, advances: [] })) : Promise.resolve({ total: 0, advances: [] }),
       ]);
@@ -74,7 +79,7 @@ export default function PartyDashboard() {
       setAvailableAdvance(advanceRes.total);
 
       if (p?.party_group_id) {
-        const { data: g } = await supabase.from("party_groups").select("id, name").eq("id", p.party_group_id).maybeSingle();
+        const { data: g } = await supabase.from("party_groups").select("id, name").eq("id", p.party_group_id).eq("business_id", business.id).maybeSingle();
         setGroup((g as GroupRow) ?? null);
       } else {
         setGroup(null);

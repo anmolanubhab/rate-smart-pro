@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { assertOwnedByBusiness, requireBusinessScope } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const PICKING_LIST_NOT_FOUND = "Picking list not found";
 
 export type PickingListStatus = "pending" | "picked" | "cancelled";
 
@@ -51,7 +55,8 @@ export async function fetchPickingLists(businessId: string): Promise<PickingList
   return ((data ?? []) as any[]).map((row) => ({ ...row, order_number: row.orders?.order_number ?? null })) as unknown as PickingList[];
 }
 
-export async function fetchPickingListItems(pickingListId: string): Promise<PickingListItem[]> {
+export async function fetchPickingListItems(pickingListId: string, businessId?: string | null): Promise<PickingListItem[]> {
+  await assertOwnedByBusiness("picking_lists", pickingListId, businessId, PICKING_LIST_NOT_FOUND);
   const { data, error } = await supabase
     .from("picking_list_items" as never)
     .select("*, bin:warehouse_bins(location_code)")
@@ -68,7 +73,9 @@ export async function fetchPickingListItems(pickingListId: string): Promise<Pick
  * see the migration header comment for why this (not real route
  * optimization) is what "walk order" means here.
  */
-export async function fetchPendingItemsForOrder(orderId: string) {
+export async function fetchPendingItemsForOrder(orderId: string, businessId?: string | null) {
+  // order_items has no business_id; the order is the owner of record.
+  await assertOwnedByBusiness("orders", orderId, businessId, PICKING_LIST_NOT_FOUND);
   const { data, error } = await supabase
     .from("order_items")
     .select("id, product_id, part_number, description, rack, qty, dispatched_qty, pending_qty")
@@ -158,21 +165,34 @@ export async function createPickingList(input: CreatePickingListInput): Promise<
   return pickingList;
 }
 
-export async function markItemPicked(itemId: string, qtyPicked: number): Promise<void> {
+export async function markItemPicked(itemId: string, qtyPicked: number, businessId?: string | null): Promise<void> {
+  // picking_list_items carries no business_id, so the parent list is asked.
+  const biz = requireBusinessScope(businessId, PICKING_LIST_NOT_FOUND);
+  const { data, error: le } = await supabase
+    .from("picking_list_items" as never)
+    .select("picking_list_id")
+    .eq("id", itemId)
+    .maybeSingle();
+  if (le) throw le;
+  if (!data) throw new Error(PICKING_LIST_NOT_FOUND);
+  await assertOwnedByBusiness("picking_lists", (data as { picking_list_id: string }).picking_list_id, biz, PICKING_LIST_NOT_FOUND);
+
   const { error } = await supabase.from("picking_list_items" as never).update({ qty_picked: qtyPicked } as never).eq("id", itemId);
   if (error) throw error;
 }
 
 /** Marks the list 'picked' once every line has qty_picked >= qty_to_pick. */
-export async function completePickingList(pickingListId: string, userId?: string): Promise<void> {
-  const items = await fetchPickingListItems(pickingListId);
+export async function completePickingList(pickingListId: string, userId?: string, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, PICKING_LIST_NOT_FOUND);
+  const items = await fetchPickingListItems(pickingListId, biz);
   const allPicked = items.every((it) => Number(it.qty_picked) >= Number(it.qty_to_pick));
   if (!allPicked) throw new Error("All items must be fully picked before completing this picking list");
 
   const { error } = await supabase
     .from("picking_lists" as never)
     .update({ status: "picked", ...(userId ? { updated_by: userId } : {}) } as never)
-    .eq("id", pickingListId);
+    .eq("id", pickingListId)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -190,16 +210,23 @@ async function assertPickingListReversible(orderId: string): Promise<void> {
   }
 }
 
-export async function cancelPickingList(id: string, reason: string, userId: string): Promise<void> {
-  const { data: pl, error: le } = await supabase.from("picking_lists" as never).select("order_id, status").eq("id", id).single();
+export async function cancelPickingList(id: string, reason: string, userId: string, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, PICKING_LIST_NOT_FOUND);
+  const { data: pl, error: le } = await supabase.from("picking_lists" as never)
+    .select("order_id, status")
+    .eq("id", id)
+    .eq("business_id", biz)
+    .maybeSingle();
   if (le) throw le;
+  if (!pl) throw new Error(PICKING_LIST_NOT_FOUND);
   if ((pl as any).status === "cancelled") throw new Error("Picking list already cancelled");
   await assertPickingListReversible((pl as any).order_id);
 
   const { error } = await supabase
     .from("picking_lists" as never)
     .update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancelled_reason: reason || null, cancelled_by: userId, updated_by: userId } as never)
-    .eq("id", id);
+    .eq("id", id)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -251,11 +278,17 @@ export async function bulkCreatePickingLists(
   return { created, skipped };
 }
 
-export async function deletePickingList(id: string): Promise<void> {
-  const { data: pl, error: le } = await supabase.from("picking_lists" as never).select("order_id").eq("id", id).single();
+export async function deletePickingList(id: string, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, PICKING_LIST_NOT_FOUND);
+  const { data: pl, error: le } = await supabase.from("picking_lists" as never)
+    .select("order_id")
+    .eq("id", id)
+    .eq("business_id", biz)
+    .maybeSingle();
   if (le) throw le;
+  if (!pl) throw new Error(PICKING_LIST_NOT_FOUND);
   await assertPickingListReversible((pl as any).order_id);
 
-  const { error } = await supabase.from("picking_lists" as never).delete().eq("id", id);
+  const { error } = await supabase.from("picking_lists" as never).delete().eq("id", id).eq("business_id", biz);
   if (error) throw error;
 }

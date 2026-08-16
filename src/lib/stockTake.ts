@@ -1,6 +1,27 @@
 import { supabase } from "@/integrations/supabase/client";
+import { fetchScopedById, assertOwnedByBusiness, requireBusinessScope } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const STOCK_TAKE_NOT_FOUND = "Stock take sheet not found";
 
 export type StockTakeStatus = "draft" | "posted" | "cancelled";
+
+/**
+ * stock_take_items carries no business_id of its own, so an item's company is
+ * established through its parent sheet. Used by the item-level mutations,
+ * which receive only an item id.
+ */
+async function assertItemOwned(itemId: string, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, STOCK_TAKE_NOT_FOUND);
+  const { data, error } = await supabase
+    .from("stock_take_items" as never)
+    .select("sheet_id")
+    .eq("id", itemId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error(STOCK_TAKE_NOT_FOUND);
+  await assertOwnedByBusiness("stock_take_sheets", (data as { sheet_id: string }).sheet_id, biz, STOCK_TAKE_NOT_FOUND);
+}
 
 export interface StockTakeSheet {
   id: string;
@@ -40,17 +61,17 @@ export async function fetchStockTakeSheets(businessId: string): Promise<StockTak
   return (data as unknown as StockTakeSheet[]) ?? [];
 }
 
-export async function fetchStockTakeSheet(sheetId: string): Promise<StockTakeSheet> {
-  const { data, error } = await supabase
-    .from("stock_take_sheets" as never)
-    .select("*, warehouse:warehouses!stock_take_sheets_warehouse_id_fkey(warehouse_name)")
-    .eq("id", sheetId)
-    .single();
-  if (error) throw error;
-  return data as unknown as StockTakeSheet;
+export async function fetchStockTakeSheet(sheetId: string, businessId?: string | null): Promise<StockTakeSheet> {
+  return fetchScopedById<StockTakeSheet>("stock_take_sheets", sheetId, businessId, {
+    select: "*, warehouse:warehouses!stock_take_sheets_warehouse_id_fkey(warehouse_name)",
+    notFoundMessage: STOCK_TAKE_NOT_FOUND,
+  });
 }
 
-export async function fetchStockTakeItems(sheetId: string, page: number, pageSize: number): Promise<{ items: StockTakeItem[]; total: number }> {
+export async function fetchStockTakeItems(sheetId: string, page: number, pageSize: number, businessId?: string | null): Promise<{ items: StockTakeItem[]; total: number }> {
+  // Ownership is proven on the parent before its lines are read — the items
+  // themselves carry no business_id to filter on.
+  await assertOwnedByBusiness("stock_take_sheets", sheetId, businessId, STOCK_TAKE_NOT_FOUND);
   const from = page * pageSize;
   const to = from + pageSize - 1;
   const { data, error, count } = await supabase
@@ -92,7 +113,8 @@ export async function createStockTakeSheet(input: {
   return data as unknown as StockTakeSheet;
 }
 
-export async function addStockTakeItem(sheetId: string, productId: string, warehouseId: string, binId?: string | null) {
+export async function addStockTakeItem(sheetId: string, productId: string, warehouseId: string, binId?: string | null, businessId?: string | null) {
+  await assertOwnedByBusiness("stock_take_sheets", sheetId, businessId, STOCK_TAKE_NOT_FOUND);
   const systemQty = binId
     ? await supabase.rpc("get_bin_available_stock" as never, { _product_id: productId, _bin_id: binId } as never)
     : await supabase.rpc("get_warehouse_available_stock" as never, { _product_id: productId, _warehouse_id: warehouseId } as never);
@@ -107,34 +129,47 @@ export async function addStockTakeItem(sheetId: string, productId: string, wareh
   if (error) throw error;
 }
 
-export async function loadAllProducts(sheetId: string): Promise<number> {
+// The RPCs below are SECURITY DEFINER and already refuse a NON-member. That
+// is boundary A. It does not answer boundary B: a user who belongs to both
+// companies passes the membership check for either, so posting company B's
+// sheet while A is active succeeded. Ownership is asserted here first.
+
+export async function loadAllProducts(sheetId: string, businessId?: string | null): Promise<number> {
+  await assertOwnedByBusiness("stock_take_sheets", sheetId, businessId, STOCK_TAKE_NOT_FOUND);
   const { data, error } = await supabase.rpc("stock_take_load_all_products" as never, { _sheet_id: sheetId } as never);
   if (error) throw error;
   return Number(data ?? 0);
 }
 
-export async function loadBinProducts(sheetId: string, binId: string): Promise<number> {
+export async function loadBinProducts(sheetId: string, binId: string, businessId?: string | null): Promise<number> {
+  await assertOwnedByBusiness("stock_take_sheets", sheetId, businessId, STOCK_TAKE_NOT_FOUND);
   const { data, error } = await supabase.rpc("stock_take_load_bin_products" as never, { _sheet_id: sheetId, _bin_id: binId } as never);
   if (error) throw error;
   return Number(data ?? 0);
 }
 
-export async function setCountedQty(itemId: string, countedQty: number | null) {
+export async function setCountedQty(itemId: string, countedQty: number | null, businessId?: string | null) {
+  await assertItemOwned(itemId, businessId);
   const { error } = await supabase.from("stock_take_items" as never).update({ counted_qty: countedQty } as never).eq("id", itemId);
   if (error) throw error;
 }
 
-export async function removeStockTakeItem(itemId: string) {
+export async function removeStockTakeItem(itemId: string, businessId?: string | null) {
+  await assertItemOwned(itemId, businessId);
   const { error } = await supabase.from("stock_take_items" as never).delete().eq("id", itemId);
   if (error) throw error;
 }
 
-export async function postStockTake(sheetId: string) {
+export async function postStockTake(sheetId: string, businessId?: string | null) {
+  // Posting writes the counted quantities into stock and raises a journal
+  // voucher — the most consequential operation in this module.
+  await assertOwnedByBusiness("stock_take_sheets", sheetId, businessId, STOCK_TAKE_NOT_FOUND);
   const { error } = await supabase.rpc("post_stock_take" as never, { _sheet_id: sheetId } as never);
   if (error) throw error;
 }
 
-export async function cancelStockTake(sheetId: string) {
+export async function cancelStockTake(sheetId: string, businessId?: string | null) {
+  await assertOwnedByBusiness("stock_take_sheets", sheetId, businessId, STOCK_TAKE_NOT_FOUND);
   const { error } = await supabase.rpc("cancel_stock_take" as never, { _sheet_id: sheetId } as never);
   if (error) throw error;
 }

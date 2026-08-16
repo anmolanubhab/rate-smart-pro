@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { requireBusinessScope, assertOwnedByBusiness } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const PURCHASE_INVOICE_NOT_FOUND = "Purchase invoice not found";
 import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
 import { createVoucher, postVoucher, cancelVoucher, repostVoucherItems, type VoucherItem } from "@/lib/voucherService";
 import { assertHsnCompliance } from "@/lib/accountingLock";
@@ -803,16 +807,20 @@ async function assertPurchaseInvoicePaymentReversed(invoiceId: string): Promise<
   }
 }
 
-export async function cancelPurchaseInvoice(invoiceId: string, userId?: string): Promise<void> {
-  const businessId = getActiveBusinessIdSync();
+export async function cancelPurchaseInvoice(invoiceId: string, userId?: string, businessIdArg?: string | null): Promise<void> {
+  // businessId was already being resolved here but never applied to the query,
+  // so cancelling — which reverses the ledger voucher and stock — worked on any
+  // company's purchase invoice by raw UUID.
+  const businessId = requireBusinessScope(businessIdArg, PURCHASE_INVOICE_NOT_FOUND);
 
   const { data: inv, error: le } = await supabase
     .from("purchase_invoices")
     .select("status, voucher_id, goods_receipt_id, invoice_number")
     .eq("id", invoiceId)
-    .single();
+    .eq("business_id", businessId)
+    .maybeSingle();
   if (le) throw le;
-  if (!inv) throw new Error("Purchase invoice not found.");
+  if (!inv) throw new Error(PURCHASE_INVOICE_NOT_FOUND);
   if (inv.status === "cancelled") throw new Error("Invoice already cancelled.");
   await assertPurchaseInvoicePaymentReversed(invoiceId);
 
@@ -873,7 +881,9 @@ export async function cancelPurchaseInvoice(invoiceId: string, userId?: string):
   }
 }
 
-export async function fetchInvoiceItems(invoiceId: string): Promise<PurchaseInvoiceItem[]> {
+export async function fetchInvoiceItems(invoiceId: string, businessId?: string | null): Promise<PurchaseInvoiceItem[]> {
+  // Ownership proven through the parent invoice before any line is read.
+  await assertOwnedByBusiness("purchase_invoices", invoiceId, businessId, PURCHASE_INVOICE_NOT_FOUND);
   const { data, error } = await supabase
     .from("purchase_invoice_items")
     .select("*")
@@ -937,17 +947,22 @@ export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseIn
     );
 }
 
-export async function fetchPurchaseInvoice(id: string): Promise<PurchaseInvoice & {
+export async function fetchPurchaseInvoice(id: string, businessId?: string | null): Promise<PurchaseInvoice & {
   po_number?: string | null;
   grn_number?: string | null;
   supplier_name?: string | null;
 }> {
+  // Read path behind the detail and print views — unscoped, this rendered
+  // another company's purchase invoice (and its letterhead) from a raw UUID.
+  const biz = requireBusinessScope(businessId, PURCHASE_INVOICE_NOT_FOUND);
   const { data, error } = await supabase
     .from("purchase_invoices")
     .select("*, purchase_orders(po_number), goods_receipts(grn_number), parties(name)")
     .eq("id", id)
-    .single();
+    .eq("business_id", biz)
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error(PURCHASE_INVOICE_NOT_FOUND);
   const r = data as any;
   return {
     id: r.id,
@@ -1061,14 +1076,20 @@ export async function getRelatedDebitNotesForInvoice(
  *  violation the moment a Debit Note references one of them. Any other
  *  block (status/supplier_payments) is not duplicated client-side; the
  *  trigger's own exception surfaces as the error message. */
-export async function deletePurchaseInvoice(invoiceId: string): Promise<void> {
+export async function deletePurchaseInvoice(invoiceId: string, businessId?: string | null): Promise<void> {
+  // Ownership is established BEFORE the item delete: this function removes the
+  // lines first, so an unscoped call destroyed another company's invoice lines
+  // even if the header delete had later failed.
+  const biz = requireBusinessScope(businessId, PURCHASE_INVOICE_NOT_FOUND);
+  await assertOwnedByBusiness("purchase_invoices", invoiceId, biz, PURCHASE_INVOICE_NOT_FOUND);
+
   const relatedDebitNotes = await getRelatedDebitNotesForInvoice(invoiceId);
   if (relatedDebitNotes.length) {
     throw new Error("This Purchase Invoice has related Debit Notes. Please delete the related Debit Notes before deleting this Purchase Invoice.");
   }
   const { error: itemsErr } = await supabase.from("purchase_invoice_items").delete().eq("purchase_invoice_id", invoiceId);
   if (itemsErr) throw itemsErr;
-  const { error } = await supabase.from("purchase_invoices").delete().eq("id", invoiceId);
+  const { error } = await supabase.from("purchase_invoices").delete().eq("id", invoiceId).eq("business_id", biz);
   if (error) throw error;
 }
 

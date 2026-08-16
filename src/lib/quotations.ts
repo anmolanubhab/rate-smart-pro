@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { fetchScopedById, assertOwnedByBusiness, requireBusinessScope } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const QUOTATION_NOT_FOUND = "Quotation not found";
 import { computeItem, computeTotals, saveOrder, type OrderItem, type Order, type OrderStatus } from "@/lib/orders";
 
 export type QuotationStatus = "draft" | "sent" | "accepted" | "rejected" | "expired" | "converted";
@@ -68,13 +72,14 @@ export async function fetchQuotations(businessId: string): Promise<Quotation[]> 
   })) as unknown as Quotation[];
 }
 
-export async function fetchQuotationById(id: string): Promise<Quotation> {
-  const { data, error } = await supabase.from("quotations" as never).select("*").eq("id", id).single();
-  if (error) throw error;
-  return data as unknown as Quotation;
+export async function fetchQuotationById(id: string, businessId?: string | null): Promise<Quotation> {
+  return fetchScopedById<Quotation>("quotations", id, businessId, {
+    notFoundMessage: QUOTATION_NOT_FOUND,
+  });
 }
 
-export async function fetchQuotationItems(quotationId: string): Promise<QuotationItem[]> {
+export async function fetchQuotationItems(quotationId: string, businessId?: string | null): Promise<QuotationItem[]> {
+  await assertOwnedByBusiness("quotations", quotationId, businessId, QUOTATION_NOT_FOUND);
   const { data, error } = await supabase
     .from("quotation_items" as never)
     .select("*")
@@ -140,6 +145,9 @@ export async function saveQuotation(input: SaveQuotationInput): Promise<Quotatio
     if (error) throw error;
     quotationId = (row as any).id;
   } else {
+    // Edit-in-place deletes and reinserts the line items, so an unscoped id
+    // here would rewrite another company's quotation wholesale.
+    await assertOwnedByBusiness("quotations", quotationId, businessId, QUOTATION_NOT_FOUND);
     const { error } = await supabase
       .from("quotations" as never)
       .update({
@@ -160,7 +168,8 @@ export async function saveQuotation(input: SaveQuotationInput): Promise<Quotatio
         grand_total: totals.grand_total,
         ...(input.status ? { status: input.status } : {}),
       } as never)
-      .eq("id", quotationId);
+      .eq("id", quotationId)
+      .eq("business_id", businessId);
     if (error) throw error;
 
     await supabase.from("quotation_items" as never).delete().eq("quotation_id", quotationId);
@@ -190,8 +199,11 @@ export async function saveQuotation(input: SaveQuotationInput): Promise<Quotatio
   return fetchQuotationById(quotationId!);
 }
 
-export async function updateQuotationStatus(id: string, status: QuotationStatus): Promise<void> {
-  const { error } = await supabase.from("quotations" as never).update({ status } as never).eq("id", id);
+export async function updateQuotationStatus(id: string, status: QuotationStatus, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, QUOTATION_NOT_FOUND);
+  const { error } = await supabase.from("quotations" as never).update({ status } as never)
+    .eq("id", id)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -215,8 +227,11 @@ export async function duplicateQuotation(id: string, userId: string): Promise<Qu
   });
 }
 
-export async function deleteQuotation(id: string): Promise<void> {
-  const { error } = await supabase.from("quotations" as never).delete().eq("id", id);
+export async function deleteQuotation(id: string, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, QUOTATION_NOT_FOUND);
+  const { error } = await supabase.from("quotations" as never).delete()
+    .eq("id", id)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -226,14 +241,16 @@ export async function deleteQuotation(id: string): Promise<void> {
  * than a parallel SQL implementation, so numbering/snapshots/behavior stay
  * identical to orders created directly.
  */
-export async function convertQuotationToOrder(quotationId: string, userId: string): Promise<Order> {
-  const { data: qRow, error: qErr } = await supabase
-    .from("quotations" as never).select("*").eq("id", quotationId).single();
-  if (qErr) throw qErr;
-  const quotation = qRow as unknown as Quotation;
+export async function convertQuotationToOrder(quotationId: string, userId: string, businessId?: string | null): Promise<Order> {
+  // The sharpest edge in this module: unscoped, it read another company's
+  // quotation and materialised its party, pricing and line items as a real
+  // Sales Order in the ACTIVE company — cross-company data crossing into a
+  // live document, not merely being displayed.
+  const biz = requireBusinessScope(businessId, QUOTATION_NOT_FOUND);
+  const quotation = await fetchQuotationById(quotationId, biz);
   if (quotation.status === "converted") throw new Error("Quotation already converted to an order");
 
-  const items = await fetchQuotationItems(quotationId);
+  const items = await fetchQuotationItems(quotationId, biz);
   const orderItems: OrderItem[] = items.map((it) =>
     computeItem({
       product_id: it.product_id,
@@ -265,7 +282,8 @@ export async function convertQuotationToOrder(quotationId: string, userId: strin
   const { error: updErr } = await supabase
     .from("quotations" as never)
     .update({ status: "converted", converted_order_id: order.id } as never)
-    .eq("id", quotationId);
+    .eq("id", quotationId)
+    .eq("business_id", biz);
   if (updErr) throw updErr;
 
   return order;

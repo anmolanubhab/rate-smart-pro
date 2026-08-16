@@ -98,7 +98,9 @@ export interface SavePriceListInput {
   effective_to?: string | null;
 }
 
-/** Validates dates + duplicate name, then insert/update. Never touches status/is_active — use activatePriceList/archivePriceList for that. */
+/** Validates dates + duplicate name, then insert/update. An insert stamps the
+ *  initial draft/inactive state; an update never touches status/is_active —
+ *  use activatePriceList/archivePriceList for transitions after creation. */
 export async function savePriceList(input: SavePriceListInput): Promise<string> {
   if (input.effective_from && input.effective_to && input.effective_to < input.effective_from) {
     throw new Error("Effective To cannot be before Effective From");
@@ -136,7 +138,17 @@ export async function savePriceList(input: SavePriceListInput): Promise<string> 
     if (error) throw error;
     return input.id;
   }
-  const { data, error } = await supabase.from("price_lists" as any).insert(payload as any).select("id").single();
+  // A new list starts as a draft, and a draft must not price anything until
+  // Activate is pressed. status defaults to 'draft' but is_active defaults to
+  // true in the DB, and basePriceResolver resolves on is_active alone — so
+  // leaving is_active unset made every freshly-created list live immediately,
+  // Activate button notwithstanding. duplicatePriceList() already sets the two
+  // together for exactly this reason; the create path was the straggler.
+  const { data, error } = await supabase
+    .from("price_lists" as any)
+    .insert({ ...payload, status: "draft", is_active: false } as any)
+    .select("id")
+    .single();
   if (error) throw error;
   return (data as { id: string }).id;
 }

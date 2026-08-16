@@ -20,6 +20,7 @@ import {
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -265,6 +266,13 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
     });
 
     // Fetch existing part numbers for duplicate detection
+    // part_number is unique per BUSINESS (products_business_part_number_key),
+    // so the same part legitimately exists in two of the user's companies.
+    // Detecting duplicates by user_id therefore flagged this company's brand
+    // new part as an existing one because a sibling company stocks it.
+    const importBiz = getActiveBusinessIdSync();
+    if (!importBiz) { toast.error("No active company selected"); return; }
+
     const pns = Array.from(new Set(built.map((r) => r.part_number).filter(Boolean)));
     const existing = new Set<string>();
     const chunk = 500;
@@ -273,6 +281,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
       const { data } = await supabase
         .from("products")
         .select("part_number")
+        .eq("business_id", importBiz)
         .eq("user_id", user.id)
         .in("part_number", slice);
       data?.forEach((d) => existing.add(d.part_number));
@@ -360,6 +369,13 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
 
   const runImport = async () => {
     if (!user) return;
+    // Resolved once, through the canonical accessor rather than a raw
+    // localStorage read, and refused outright when absent — the update below
+    // matches on part_number, so an unscoped run rewrites every company that
+    // stocks the same part.
+    const biz = getActiveBusinessIdSync();
+    if (!biz) { toast.error("No active company selected"); return; }
+
     setProcessing(true);
     setProgress(0);
     const failed: any[] = [];
@@ -374,7 +390,7 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
     for (const r of valid) {
       const payload = {
         user_id: user.id,
-        business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
+        business_id: biz,
         part_number: r.part_number,
         name: r.name,
         vehicle_model: r.vehicle_model || null,
@@ -438,6 +454,10 @@ export default function ProductImport({ open, onOpenChange, onImported }: Props)
           gst_pct: p.gst_pct,
           barcode: p.barcode,
         })
+        // Without business_id this matched (user_id, part_number) across
+        // every company the user owns, so importing a price list into A
+        // silently rewrote B's and C's copy of the same part.
+        .eq("business_id", biz)
         .eq("user_id", user.id)
         .eq("part_number", p.part_number);
       if (error) failed.push({ ...p, error: error.message });

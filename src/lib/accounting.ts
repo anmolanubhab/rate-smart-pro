@@ -1,6 +1,10 @@
 // Accounting helpers — all queries are user + business scoped via RLS + business_id filter.
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { requireBusinessScope } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const LEDGER_NOT_FOUND = "Ledger not found";
 
 export type LedgerRow = {
   id: string;
@@ -76,10 +80,14 @@ export async function seedAccounts(userId: string) {
 // Ledger Accounts page.
 export async function ensurePartyLedgers(userId: string) {
   const biz = getActiveBusinessIdSync();
+  // Write path: each party found here gets a ledger created under `biz`.
+  // Unscoped, it walked every company's parties and created ledgers for
+  // them in whichever company happened to be active.
+  if (!biz) return;
   let pq = supabase.from("parties").select("id")
+    .eq("business_id", biz)
     .eq("user_id", userId)
     .or("preferred_customer.eq.true,preferred_supplier.eq.true");
-  if (biz) pq = pq.eq("business_id", biz);
   const { data: parties, error } = await pq;
   if (error) throw error;
   for (const p of parties ?? []) {
@@ -99,6 +107,9 @@ export async function ensurePartyLedgers(userId: string) {
 // opening_balance is still added here the same way as before.
 export async function fetchLedgersWithBalance(userId: string): Promise<LedgerRow[]> {
   const biz = getActiveBusinessIdSync();
+  // Trial balance, cash/bank, receivables and payables all derive from this
+  // list; unscoped it mixed every company's ledgers into one balance sheet.
+  if (!biz) return [];
   let lq = supabase
     .from("ledger_accounts")
     .select("id, name, ledger_type, group_id, party_id, opening_balance, opening_balance_type, is_system, status, current_balance, group:account_groups(name, nature)")
@@ -138,7 +149,10 @@ export async function assertLedgerNameAvailable(businessId: string, name: string
   }
 }
 
-export async function updateLedger(ledgerId: string, patch: LedgerEditPatch) {
+export async function updateLedger(ledgerId: string, patch: LedgerEditPatch, businessId?: string | null) {
+  // Renaming a ledger or moving its opening balance is an accounting change;
+  // scoped so a raw ledger UUID can't be edited from another company.
+  const biz = requireBusinessScope(businessId, LEDGER_NOT_FOUND);
   const { error } = await supabase
     .from("ledger_accounts")
     .update({
@@ -148,7 +162,8 @@ export async function updateLedger(ledgerId: string, patch: LedgerEditPatch) {
       opening_balance: patch.opening_balance,
       opening_balance_type: patch.opening_balance_type,
     } as never)
-    .eq("id", ledgerId);
+    .eq("id", ledgerId)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -160,17 +175,25 @@ export async function updateLedger(ledgerId: string, patch: LedgerEditPatch) {
  * — the DB's RLS policy blocks those too, but this gives a clear message
  * instead of a silent no-op delete.
  */
-export async function deleteLedger(ledger: { id: string; name: string; is_system: boolean }): Promise<{ archived: boolean }> {
+export async function deleteLedger(
+  ledger: { id: string; name: string; is_system: boolean },
+  businessId?: string | null
+): Promise<{ archived: boolean }> {
   if (ledger.is_system) throw new Error(`"${ledger.name}" is a system ledger and can't be deleted.`);
+  const biz = requireBusinessScope(businessId, LEDGER_NOT_FOUND);
 
-  const { error } = await supabase.from("ledger_accounts").delete().eq("id", ledger.id);
+  const { error } = await supabase
+    .from("ledger_accounts").delete()
+    .eq("id", ledger.id)
+    .eq("business_id", biz);
   if (!error) return { archived: false };
 
   if (error.code === "23503") {
     const { error: archiveErr } = await supabase
       .from("ledger_accounts")
       .update({ status: "inactive" } as never)
-      .eq("id", ledger.id);
+      .eq("id", ledger.id)
+      .eq("business_id", biz);
     if (archiveErr) throw archiveErr;
     return { archived: true };
   }
@@ -179,6 +202,10 @@ export async function deleteLedger(ledger: { id: string; name: string; is_system
 
 export async function fetchVouchers(userId: string, opts: { type?: string; from?: string; to?: string; limit?: number; status?: string } = {}) {
   const biz = getActiveBusinessIdSync();
+  // Fail closed. The old `if (biz)` left the company filter off entirely
+  // when no business was resolvable, which returned every company's
+  // vouchers merged into one list (Day Book, Cash Book, Bank Book).
+  if (!biz) return [] as VoucherRow[];
   let q = supabase
     .from("vouchers")
     .select(`
@@ -216,6 +243,7 @@ export async function fetchVouchers(userId: string, opts: { type?: string; from?
 export async function fetchVoucherItems(userId: string, voucherIds: string[]) {
   if (voucherIds.length === 0) return [];
   const biz = getActiveBusinessIdSync();
+  if (!biz) return [] as VoucherItemRow[];
   let q = supabase
     .from("voucher_items")
     .select("id, voucher_id, ledger_account_id, dr_amount, cr_amount, position, narration")
@@ -234,8 +262,10 @@ export async function backfillAccounting(userId: string) {
   // Ensure every party has a ledger. Mostly a no-op now that new parties
   // get one automatically (trg_parties_create_ledger) -- this remains a
   // safety net for parties created before that trigger existed.
-  let pq = supabase.from("parties").select("id").eq("user_id", userId);
-  if (biz) pq = pq.eq("business_id", biz);
+  if (!biz) return;
+  let pq = supabase.from("parties").select("id")
+    .eq("business_id", biz)
+    .eq("user_id", userId);
   const { data: parties } = await pq;
   for (const p of parties ?? []) {
     await callAccountingRpc("ensure_party_ledger", { _user_id: userId, _party_id: p.id, _business_id: biz });
@@ -424,6 +454,9 @@ export async function fetchPeriodIncomeExpense(
   to: string,
 ): Promise<{ income: number; expense: number; netSales: number; netPurchases: number }> {
   const biz = getActiveBusinessIdSync();
+  // Period income/expense feeds the P&L and the dashboard profit tiles —
+  // unscoped it summed every company's vouchers into one profit figure.
+  if (!biz) return { income: 0, expense: 0, netSales: 0, netPurchases: 0 };
   let q = supabase
     .from("vouchers")
     .select("status, voucher_items(dr_amount, cr_amount, ledger_accounts(account_groups(nature, account_type)))")

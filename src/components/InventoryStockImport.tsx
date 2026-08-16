@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchProducts, normalizePart, Product } from "@/lib/products";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { downloadStockTemplate, downloadErrorReport } from "@/lib/excelTemplates";
 
 interface Props {
@@ -125,6 +126,13 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
 
   const applyUpdate = async () => {
     if (!valid.length) return;
+    // The matched ids come from fetchProducts(), which is already confined to
+    // the active company, so the stock UPDATE is not reachable cross-company
+    // today. business_id is added anyway as the standing guard, and the
+    // movement/adjustment logs stop being written with a NULL business_id.
+    const biz = getActiveBusinessIdSync();
+    if (!biz) { toast.error("No active company selected"); return; }
+
     setApplying(true);
     const errors: any[] = [];
     let success = 0;
@@ -136,13 +144,14 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
           .from("products")
           .update({ stock: after })
           .eq("id", r.matched!.id)
+          .eq("business_id", biz)
           .eq("user_id", userId);
         if (error) { errors.push({ part: r.part_number, error: error.message }); continue; }
         success++;
         // Log movement (atomic per-row)
         await supabase.from("inventory_movements" as any).insert({
           user_id: userId,
-          business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
+          business_id: biz,
           product_id: r.matched!.id,
           movement_type: "import",
           qty: after - before,
@@ -153,7 +162,7 @@ export default function InventoryStockImport({ open, onOpenChange, userId, onDon
         });
         await supabase.from("inventory_adjustments").insert({
           user_id: userId,
-          business_id: (typeof window !== "undefined" ? localStorage.getItem("rdpro.activeBusinessId") : null),
+          business_id: biz,
           product_id: r.matched!.id,
           delta: after - before,
           reason: `Excel import (${mode}) — ${fileName}`,

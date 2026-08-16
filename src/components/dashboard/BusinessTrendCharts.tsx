@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
 import { fetchProducts } from "@/lib/products";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,16 +46,24 @@ function ChartSkeleton() {
 
 export default function BusinessTrendCharts() {
   const { user } = useAuth();
+  // Every trend below is a 30-day AGGREGATE. Scoping them by user_id alone
+  // summed each series across every company the user belongs to, so with A
+  // active the sales/purchase lines, the receivables trend and the stock
+  // movement chart all silently included B's and C's rows. business_id is
+  // the scope; user_id is kept only as a redundant narrowing predicate.
+  const { business } = useBusiness();
+  const businessId = business?.id ?? null;
   const from = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
   const to = new Date().toISOString().slice(0, 10);
 
   const vouchersQ = useQuery({
-    queryKey: ["dash-trend-vouchers", user?.id, from, to],
-    enabled: !!user?.id,
+    queryKey: ["dash-trend-vouchers", businessId, user?.id, from, to],
+    enabled: !!user?.id && !!businessId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vouchers")
         .select("voucher_type, voucher_date, total_amount, status")
+        .eq("business_id", businessId!)
         .eq("user_id", user!.id)
         .eq("status", "posted")
         .gte("voucher_date", from)
@@ -66,12 +75,13 @@ export default function BusinessTrendCharts() {
   });
 
   const ordersQ = useQuery({
-    queryKey: ["dash-trend-receivables", user?.id, from, to],
-    enabled: !!user?.id,
+    queryKey: ["dash-trend-receivables", businessId, user?.id, from, to],
+    enabled: !!user?.id && !!businessId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
         .select("order_date, grand_total, dispatched_total_qty, pending_total_qty, status")
+        .eq("business_id", businessId!)
         .eq("user_id", user!.id)
         .in("status", ["pending", "partial"])
         .gte("order_date", from)
@@ -83,18 +93,19 @@ export default function BusinessTrendCharts() {
   });
 
   const productsQ = useQuery({
-    queryKey: ["dashboard-products", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["dashboard-products", businessId, user?.id],
+    enabled: !!user?.id && !!businessId,
     queryFn: () => fetchProducts(user!.id),
   });
 
   const movementsQ = useQuery({
-    queryKey: ["dash-trend-inventory-movements", user?.id, from],
-    enabled: !!user?.id,
+    queryKey: ["dash-trend-inventory-movements", businessId, user?.id, from],
+    enabled: !!user?.id && !!businessId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("inventory_movements" as any)
         .select("product_id, qty, created_at")
+        .eq("business_id", businessId!)
         .eq("user_id", user!.id)
         .gte("created_at", `${from}T00:00:00.000Z`)
         .order("created_at", { ascending: false })

@@ -1,6 +1,10 @@
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { fetchScopedById, assertOwnedByBusiness, requireBusinessScope } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const PO_NOT_FOUND = "Purchase Order not found";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -234,9 +238,12 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
     // history from its PO line. Changing who the PO was ordered from after
     // goods were already received against it would similarly corrupt the
     // supplier ledger / receiving history, so that field is blocked too.
+    // Edit-in-place deletes and reinserts the PO's line items, so ownership
+    // is settled before any of the edit-lock checks run.
+    await assertOwnedByBusiness("purchase_orders", poId, businessId, PO_NOT_FOUND);
     const [{ count: grnCount, error: grnErr }, { data: existingPO, error: existingErr }] = await Promise.all([
       supabase.from("goods_receipts").select("id", { count: "exact", head: true }).eq("purchase_order_id", poId),
-      supabase.from("purchase_orders").select("supplier_id, warehouse_id, status, received_qty").eq("id", poId).single(),
+      supabase.from("purchase_orders").select("supplier_id, warehouse_id, status, received_qty").eq("id", poId).eq("business_id", businessId).single(),
     ]);
     if (grnErr) throw grnErr;
     if (existingErr) throw existingErr;
@@ -297,7 +304,8 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
         tax_total: totals.tax_total,
         grand_total: totals.grand_total,
       })
-      .eq("id", poId);
+      .eq("id", poId)
+      .eq("business_id", businessId);
     if (error) throw error;
 
     if (hasGRN) {
@@ -336,13 +344,15 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
 
 // ─── Fetch ───────────────────────────────────────────────────────────────────
 
-export async function fetchPurchaseOrder(id: string): Promise<PurchaseOrder> {
-  const { data, error } = await supabase.from("purchase_orders").select("*").eq("id", id).single();
-  if (error) throw error;
-  return data as PurchaseOrder;
+export async function fetchPurchaseOrder(id: string, businessId?: string | null): Promise<PurchaseOrder> {
+  return fetchScopedById<PurchaseOrder>("purchase_orders", id, businessId, {
+    notFoundMessage: PO_NOT_FOUND,
+  });
 }
 
-export async function fetchPOItems(poId: string): Promise<POItem[]> {
+export async function fetchPOItems(poId: string, businessId?: string | null): Promise<POItem[]> {
+  // Ownership proven on the parent PO before its lines are read.
+  await assertOwnedByBusiness("purchase_orders", poId, businessId, PO_NOT_FOUND);
   const { data, error } = await supabase
     .from("purchase_order_items")
     .select("*")
@@ -352,11 +362,15 @@ export async function fetchPOItems(poId: string): Promise<POItem[]> {
   return (data || []) as POItem[];
 }
 
-export async function approvePurchaseOrder(id: string, userId: string): Promise<void> {
+export async function approvePurchaseOrder(id: string, userId: string, businessId?: string | null): Promise<void> {
+  // Approval is the gate that lets goods be received against a PO — it must
+  // not be reachable for another company's order from this one.
+  const biz = requireBusinessScope(businessId, PO_NOT_FOUND);
   const { error } = await supabase
     .from("purchase_orders")
     .update({ status: "approved", approved_by: userId, approved_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -366,7 +380,12 @@ export async function approvePurchaseOrder(id: string, userId: string): Promise<
  * delete-time DB trigger) since goods already received against a PO means
  * cancelling it no longer makes sense; cancel/reverse the GRN(s) first.
  */
-export async function cancelPurchaseOrder(id: string, reason: string, userId: string): Promise<void> {
+export async function cancelPurchaseOrder(id: string, reason: string, userId: string, businessId?: string | null): Promise<void> {
+  // Ownership is proven BEFORE the GRN safety count, so a foreign PO never
+  // reaches the check and the cancel cannot fall through to another company.
+  const biz = requireBusinessScope(businessId, PO_NOT_FOUND);
+  await assertOwnedByBusiness("purchase_orders", id, biz, PO_NOT_FOUND);
+
   const { count: grnCount, error: grnErr } = await supabase
     .from("goods_receipts")
     .select("id", { count: "exact", head: true })
@@ -382,11 +401,13 @@ export async function cancelPurchaseOrder(id: string, reason: string, userId: st
       status: "cancelled",
       remarks: reason ? `Cancelled: ${reason}` : undefined,
     } as any)
-    .eq("id", id);
+    .eq("id", id)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
-export async function rejectPurchaseOrder(id: string, userId: string, reason?: string | null): Promise<void> {
+export async function rejectPurchaseOrder(id: string, userId: string, reason?: string | null, businessId?: string | null): Promise<void> {
+  const biz = requireBusinessScope(businessId, PO_NOT_FOUND);
   const { error } = await supabase
     .from("purchase_orders")
     .update({
@@ -395,7 +416,8 @@ export async function rejectPurchaseOrder(id: string, userId: string, reason?: s
       approved_at: new Date().toISOString(),
       remarks: reason ? `Rejected: ${reason}` : undefined,
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("business_id", biz);
   if (error) throw error;
 }
 
@@ -433,7 +455,10 @@ export async function logPOActivity(input: {
   });
 }
 
-export async function fetchPOActivityLogs(purchaseOrderId: string): Promise<POActivityLog[]> {
+export async function fetchPOActivityLogs(purchaseOrderId: string, businessId?: string | null): Promise<POActivityLog[]> {
+  // The log rows are reached only through their PO, so ownership is proven
+  // on the parent — the audit trail is as company-private as the PO itself.
+  await assertOwnedByBusiness("purchase_orders", purchaseOrderId, businessId, PO_NOT_FOUND);
   const { data, error } = await supabase
     .from("po_activity_logs" as any)
     .select("*")
@@ -521,13 +546,15 @@ export async function duplicatePurchaseOrder(id: string, userId: string): Promis
  * same "Draft -> Delete allowed, Confirmed -> Cancel only" gap already
  * closed for Sales Order/Quotation/Sales Return this session.
  */
-export async function deletePurchaseOrder(id: string): Promise<void> {
-  const { data: po, error: fetchErr } = await supabase
-    .from("purchase_orders")
-    .select("status")
-    .eq("id", id)
-    .single();
-  if (fetchErr) throw fetchErr;
+export async function deletePurchaseOrder(id: string, businessId?: string | null): Promise<void> {
+  // The item delete below is unconditional, so ownership has to be settled
+  // before it runs — otherwise a foreign PO's lines were destroyed even
+  // though the header delete matched nothing.
+  const biz = requireBusinessScope(businessId, PO_NOT_FOUND);
+  const po = await fetchScopedById<{ status: string }>("purchase_orders", id, biz, {
+    select: "status",
+    notFoundMessage: PO_NOT_FOUND,
+  });
   if (po.status !== "draft" && po.status !== "cancelled") {
     throw new Error("Only a draft or cancelled Purchase Order can be deleted. Cancel it first.");
   }
@@ -542,7 +569,7 @@ export async function deletePurchaseOrder(id: string): Promise<void> {
   }
 
   await supabase.from("purchase_order_items").delete().eq("purchase_order_id", id);
-  const { error } = await supabase.from("purchase_orders").delete().eq("id", id);
+  const { error } = await supabase.from("purchase_orders").delete().eq("id", id).eq("business_id", biz);
   if (error) throw error;
 }
 

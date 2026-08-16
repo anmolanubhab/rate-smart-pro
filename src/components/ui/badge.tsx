@@ -22,8 +22,12 @@ const badgeVariants = cva(
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
 
-function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
-}
+// forwardRef so Badge can be the child of an `asChild` trigger (Radix Tooltip,
+// Popover, …) — those clone the child and attach a ref to position/anchor
+// against it, which a plain function component silently drops.
+const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(({ className, variant, ...props }, ref) => (
+  <div ref={ref} className={cn(badgeVariants({ variant }), className)} {...props} />
+));
+Badge.displayName = "Badge";
 
 export { Badge, badgeVariants };

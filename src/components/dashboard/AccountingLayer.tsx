@@ -42,31 +42,38 @@ function Metric({ label, value, icon: Icon, tone }: { label: string; value: Reac
 
 export default function AccountingLayer() {
   const { user } = useAuth();
-  const { role, financialRights } = useBusiness();
+  const { business, role, financialRights } = useBusiness();
+  // Cash, bank, receivables, payables, today's collection, month income/
+  // expense and gross/net profit are all AGGREGATES. Keyed on user_id alone
+  // they summed every company the user belongs to, so with A active the
+  // profit and trial-balance figures included B's and C's vouchers.
+  const businessId = business?.id ?? null;
   const canProfit = canViewProfit(role, financialRights);
   const today = new Date().toISOString().slice(0, 10);
   const monthStart = format(startOfMonth(new Date()), "yyyy-MM-dd");
   const monthEnd = format(endOfMonth(new Date()), "yyyy-MM-dd");
 
   const ledgersQ = useQuery({
-    queryKey: ["ledgers-with-balance", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["ledgers-with-balance", businessId, user?.id],
+    enabled: !!user?.id && !!businessId,
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
 
   const vouchersMetaQ = useQuery({
-    queryKey: ["dashboard-voucher-meta", user?.id, today],
-    enabled: !!user?.id,
+    queryKey: ["dashboard-voucher-meta", businessId, user?.id, today],
+    enabled: !!user?.id && !!businessId,
     queryFn: async () => {
       const [{ count: recentCount, error: e1 }, { data: todayReceipts, error: e2 }] = await Promise.all([
         supabase
           .from("vouchers")
           .select("id", { count: "exact", head: true })
+          .eq("business_id", businessId!)
           .eq("user_id", user!.id)
           .gte("voucher_date", new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)),
         supabase
           .from("vouchers")
           .select("total_amount")
+          .eq("business_id", businessId!)
           .eq("user_id", user!.id)
           .eq("voucher_type", "receipt" as any)
           .eq("voucher_date", today)
@@ -80,12 +87,13 @@ export default function AccountingLayer() {
   });
 
   const monthVouchersQ = useQuery({
-    queryKey: ["dashboard-vouchers-month", user?.id, monthStart, monthEnd],
-    enabled: !!user?.id,
+    queryKey: ["dashboard-vouchers-month", businessId, user?.id, monthStart, monthEnd],
+    enabled: !!user?.id && !!businessId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vouchers")
         .select("voucher_type, voucher_date, total_amount, status")
+        .eq("business_id", businessId!)
         .eq("user_id", user!.id)
         .gte("voucher_date", monthStart)
         .lte("voucher_date", monthEnd)

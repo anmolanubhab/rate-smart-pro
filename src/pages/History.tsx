@@ -3,6 +3,7 @@ import { Trash2, Download, Search, FileDown, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -39,10 +40,18 @@ const History = () => {
 
   const load = async () => {
     if (!user) return;
+    // calculations RLS is `auth.uid() = user_id` — it carries no company
+    // dimension at all, so an unfiltered select returned every company's
+    // saved calculations in one history list. The company filter has to come
+    // from the client here, exactly as LegacyCalculatorPanel already does.
+    const biz = getActiveBusinessIdSync();
+    if (!biz) { setCalcs([]); setLoading(false); return; }
+
     setLoading(true);
     const { data, error } = await supabase
       .from("calculations")
       .select("*")
+      .eq("business_id", biz)
       .order("created_at", { ascending: false });
     if (error) toast.error(error.message);
     else setCalcs((data as Calc[]) ?? []);
@@ -61,7 +70,11 @@ const History = () => {
   }, [calcs, q]);
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("calculations").delete().eq("id", id);
+    // Bare .eq("id") on a table whose RLS is user-only would delete another
+    // company's calculation outright.
+    const biz = getActiveBusinessIdSync();
+    if (!biz) { toast.error("No active company selected"); return; }
+    const { error } = await supabase.from("calculations").delete().eq("id", id).eq("business_id", biz);
     if (error) toast.error(error.message);
     else {
       setCalcs((prev) => prev.filter((c) => c.id !== id));

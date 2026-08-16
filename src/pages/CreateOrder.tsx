@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { fetchParties, Party } from "@/lib/parties";
 import { searchProducts, Product } from "@/lib/products";
 import { fetchActiveWarehouses, resolveDefaultWarehouseId, type Warehouse } from "@/lib/warehouses";
-import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { getActiveBusinessIdSync, onActiveBusinessChange } from "@/lib/activeBusiness";
 import {
   computeItem,
   computeTotals,
@@ -107,6 +107,15 @@ const CreateOrder = () => {
   const [draftId, setDraftId] = useState<string | null>(editId);
   const draftIdRef = useRef<string | null>(editId);
 
+  // Autosave safety (see the interval below).
+  //   isDirty              — set only by a real user edit, never by hydrating
+  //                          an existing order into the form. This is what
+  //                          separates "viewing" from "editing".
+  //   loadedBusinessIdRef  — the company this form was loaded for, compared
+  //                          against the live active business before any write.
+  const [isDirty, setIsDirty] = useState(false);
+  const loadedBusinessIdRef = useRef<string | null>(getActiveBusinessIdSync());
+
   // product autocomplete
   const [searchIdx, setSearchIdx] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -132,6 +141,15 @@ const CreateOrder = () => {
     if (party && party.name.trim().toLowerCase() === q) return [];
     return parties.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12);
   }, [parties, partyQuery, party]);
+
+  // The party list loads asynchronously, but the user can type (or the
+  // browser can autofill) before it arrives. The load effect below is keyed
+  // on [user], so the `partyQuery` it closes over is the value at mount —
+  // empty — and its post-load re-check silently never fired for anyone who
+  // typed first. The party then stayed unselected even though the name
+  // matched exactly. A ref carries the CURRENT query across that boundary.
+  const partyQueryRef = useRef(partyQuery);
+  partyQueryRef.current = partyQuery;
 
   // Exact Match Verification Logic
   const checkExactPartyMatch = (query: string, currentParties: Party[]) => {
@@ -230,7 +248,10 @@ const CreateOrder = () => {
     fetchParties(user.id, "customer")
       .then((data) => {
         setParties(data);
-        if (partyQuery) checkExactPartyMatch(partyQuery, data);
+        // Read through the ref, not the closure: whatever the user has typed
+        // by the time this resolves is what must be matched.
+        const pendingQuery = partyQueryRef.current;
+        if (pendingQuery) checkExactPartyMatch(pendingQuery, data);
       })
       .catch((e) => toast.error(e.message));
 
@@ -240,6 +261,9 @@ const CreateOrder = () => {
     } else {
       (async () => {
         try {
+          // Both are scoped to the active business inside orders.ts, so an
+          // order id belonging to another company throws ORDER_NOT_FOUND
+          // instead of loading under this company's letterhead.
           const o = await fetchOrder(editId);
           const its = await fetchOrderItems(editId);
           setOrderNumber(o.order_number);
@@ -308,11 +332,19 @@ const CreateOrder = () => {
   const totals = useMemo(() => computeTotals(items, 0), [items]);
   const cgst = +(totals.gst_total / 2).toFixed(2);
   const sgst = +(totals.gst_total / 2).toFixed(2);
-  const roundOff = +(Math.round(totals.grand_total) - totals.grand_total).toFixed(2);
-  const finalTotal = Math.round(totals.grand_total);
+  // No round-off line here on purpose. Sales Order round off is not built yet
+  // (see the header note in src/lib/roundOffSettings.ts — only Sales Invoice is
+  // wired, and accounting_settings.round_off_sales_order defaults to false), and
+  // saveOrder() stores the unrounded computeTotals() grand total. This screen
+  // used to show an unconditional Math.round() of it, so the user confirmed
+  // ₹171.00 while ₹171.10 was written to orders.grand_total and shown
+  // everywhere else. Show the number that is actually saved.
   const totalQty = items.reduce((s, r) => s + (Number(r.qty) || 0), 0);
 
   const updateRow = (idx: number, patch: Partial<Row>) => {
+    // Every grid mutation funnels through here, so this is the one place that
+    // needs to record "the user is actually editing" for the autosave guard.
+    setIsDirty(true);
     setItems((rows) =>
       rows.map((r, i) => {
         if (i !== idx) return r;
@@ -329,9 +361,11 @@ const CreateOrder = () => {
     );
   };
 
-  const addRow = () => setItems((r) => [...r, blankRow()]);
-  const delRow = (idx: number) =>
+  const addRow = () => { setIsDirty(true); setItems((r) => [...r, blankRow()]); };
+  const delRow = (idx: number) => {
+    setIsDirty(true);
     setItems((r) => (r.length <= 1 ? [blankRow()] : r.filter((_, i) => i !== idx)));
+  };
 
   // Layer C3: per-product unit options, cached by product_id to avoid N+1 fetches
   const [unitsByProduct, setUnitsByProduct] = useState<Record<string, ProductUnit[]>>({});
@@ -377,10 +411,19 @@ const CreateOrder = () => {
     // A resolution failure must surface as a visible error, never a silent
     // wrong price (see the ruleResolver.ts/basePriceResolver.ts DB-error
     // fixes from the prior QA pass).
-    if (business?.id) {
+    // useBusiness() resolves asynchronously, so for a moment after page load
+    // `business` is still null. Treating that as "no business" sent product
+    // entry down the legacy fallback below and silently produced the WRONG
+    // price — the party's legacy 10% RD instead of the resolved price list —
+    // which is precisely what the pricing SSOT exists to prevent. The active
+    // company id is available synchronously from localStorage (the same
+    // source businessScope.ts trusts), so there is no window where it is
+    // unknown. The fallback now means "genuinely no company", not "not yet".
+    const pricingBusinessId = business?.id ?? getActiveBusinessIdSync();
+    if (pricingBusinessId) {
       try {
         const result = await calculatePricing({
-          businessId: business.id,
+          businessId: pricingBusinessId,
           branchId: null,
           partyId: partyId || null,
           partyGroupId: party?.party_group_id ?? null,
@@ -456,6 +499,21 @@ const CreateOrder = () => {
     handleGridKey(e, idx, col, { rowCount: items.length, onAddRow: addRow });
   };
 
+  // Switching company while an order form is open: drop the in-flight draft
+  // rather than let it follow the user into the other company. queryClient
+  // .clear() in useBusiness handles cached queries, but this component's own
+  // state (items, draftId, dirty flag, autosave timer) is not part of that.
+  useEffect(() => {
+    return onActiveBusinessChange(() => {
+      const now = getActiveBusinessIdSync();
+      if (now === loadedBusinessIdRef.current) return;
+      setIsDirty(false);
+      draftIdRef.current = null;
+      navigate("/orders");
+      toast.info("Company changed — the open order was closed without saving.");
+    });
+  }, [navigate]);
+
   const validRows = () =>
     items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
 
@@ -502,6 +560,9 @@ const CreateOrder = () => {
         setOrderNumber(saved.order_number);
       }
       setEditStatus(statusToSave);
+      // Everything on screen is now persisted, so the next autosave tick has
+      // nothing to write until the user edits again.
+      setIsDirty(false);
 
       if (status === "pending") {
         toast.success("Order confirmed");
@@ -528,18 +589,35 @@ const CreateOrder = () => {
     [items, partyId, user, orderNumber, orderDate, salesman, narration, refNo, party, saving],
   );
 
-  // auto-save draft every 30s
+  // Auto-save draft every 30s — but only for a form the user is deliberately
+  // editing, in the company that owns it.
+  //
+  // This used to fire on `user && validRows().length` alone. That meant merely
+  // OPENING an existing order and leaving the tab sitting there rewrote it:
+  // saveOrder() delete-and-reinserts the line items, so a read-only look
+  // produced a real mutation (confirmed on ORD-20260816-0001, whose order and
+  // item rows share an updated_at/created_at stamped while the page was only
+  // being viewed). It also never re-checked which company was active, so an
+  // order loaded under company A could be written after switching to B.
   const lastSavedAt = useRef(0);
   useEffect(() => {
     const id = setInterval(() => {
-      const valid = validRows();
-      if (!user || !valid.length || saving) return;
+      if (!user || saving) return;
+      // 1. Explicit edit intent. A form the user has not actually touched is
+      //    never written back, whether it's a new order or an existing one.
+      if (!isDirty) return;
+      // 2. Something worth saving.
+      if (!validRows().length) return;
+      // 3. Still the same company this form was loaded for. Covers switching
+      //    companies with an editor open — the stale draft is not written into
+      //    the new company, and the old company is not written from stale state.
+      if (getActiveBusinessIdSync() !== loadedBusinessIdRef.current) return;
       if (Date.now() - lastSavedAt.current < 25000) return;
       lastSavedAt.current = Date.now();
       handleSave("draft");
     }, 30000);
     return () => clearInterval(id);
-  }, [items, partyId, user]);
+  }, [items, partyId, user, isDirty, saving]);
 
   // duplicate detection
   const dupSet = useMemo(() => {
@@ -552,13 +630,37 @@ const CreateOrder = () => {
   }, [items]);
 
   // RD discount breakdown (display only)
+  // The party's legacy RD master figures. These are what the party record
+  // says — NOT necessarily what gets charged.
   const rdBreakdown = useMemo(() => {
     if (!party || party.discount_type !== "RD") return null;
     const sys = Number(party.default_discount || 0);
     const agreed = Number(party.agreed_discount || 0);
     const rdExtra = Math.max(agreed - sys, 0);
-    return { sys, agreed, rdExtra, effective: agreed };
+    return { sys, agreed, rdExtra };
   }, [party]);
+
+  // What calculatePricing() actually resolved for the lines on screen, read
+  // back from the engine's own output (price_source is stamped by pickProduct).
+  //
+  // The panel used to print the party's `agreed` figure as "Final Effective",
+  // so a party with a 10% legacy RD read "Final Effective 10.00%" on an order
+  // the engine had priced at 0% — a resolved Price List or Pricing Rule always
+  // outranks the legacy fallback and never stacks with it (engine.ts). The
+  // engine is right; the panel was reporting master data as if it were the
+  // outcome.
+  const appliedDiscount = useMemo(() => {
+    const priced = items.filter((r) => r.product_id);
+    if (!priced.length) return null;
+    const pct = totals.subtotal > 0 ? +((totals.discount_total / totals.subtotal) * 100).toFixed(2) : 0;
+    const sources = new Set(priced.map((r) => r.price_source).filter(Boolean));
+    const supersededBy = sources.has("pricing_rule")
+      ? "Pricing Rule"
+      : sources.has("price_list")
+        ? "Price List"
+        : null;
+    return { pct, supersededBy };
+  }, [items, totals]);
 
   const toolbarActions: DocumentToolbarAction[] = [
     { key: "save", label: editMode && editStatus === "draft" ? "Update Draft" : "Save Draft", icon: Save, shortcut: "Ctrl+S", onClick: () => handleSave("draft"), disabled: saving },
@@ -932,10 +1034,19 @@ const CreateOrder = () => {
                 <div className="text-right tabular-nums">{rdBreakdown.rdExtra.toFixed(2)}%</div>
                 <div className="text-muted-foreground">Agreed (RD)</div>
                 <div className="text-right tabular-nums">{rdBreakdown.agreed.toFixed(2)}%</div>
-                <div className="font-semibold border-t border-border pt-0.5">Final Effective</div>
-                <div className="text-right tabular-nums font-semibold border-t border-border pt-0.5">
-                  {rdBreakdown.effective.toFixed(2)}%
-                </div>
+                {appliedDiscount && (
+                  <>
+                    <div className="font-semibold border-t border-border pt-0.5">Applied Discount</div>
+                    <div className="text-right tabular-nums font-semibold border-t border-border pt-0.5">
+                      {appliedDiscount.pct.toFixed(2)}%
+                    </div>
+                    {appliedDiscount.supersededBy && (
+                      <div className="col-span-2 text-[10px] text-muted-foreground">
+                        {appliedDiscount.supersededBy} pricing takes precedence — legacy RD not applied
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -949,9 +1060,8 @@ const CreateOrder = () => {
                 { label: "Taxable Amount", value: fmt(totals.taxable), bold: true },
                 { label: "CGST", value: fmt(cgst) },
                 { label: "SGST", value: fmt(sgst) },
-                { label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) },
               ]}
-              grandTotal={`₹${fmt(finalTotal)}`}
+              grandTotal={`₹${fmt(totals.grand_total)}`}
             />
           </div>
         </div>

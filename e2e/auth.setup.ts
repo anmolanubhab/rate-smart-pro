@@ -79,11 +79,48 @@ setup("authenticate as QA user and select the QA business", async ({ page }) => 
   });
   await companyButton.click();
 
+  // Opening a company is gated by Company Access Verification
+  // (src/components/company/CompanyAccessVerification.tsx, backed by the
+  // company_access_verification_sessions table). The dialog re-confirms the
+  // account password before setActiveBusinessId() runs, so without clearing
+  // it the session never becomes business-scoped and every downstream spec
+  // would run unscoped. It is not always shown — an unexpired verification
+  // session for this company skips straight to navigation — so this races
+  // the dialog against the navigation rather than assuming either.
+  const verifyDialog = page.getByRole("dialog").filter({ hasText: "Verify Company Access" });
+  const passwordField = page.locator("#cav-password");
+  const leftCompanies = page.waitForURL(
+    (url) => !url.pathname.startsWith("/companies") && !url.pathname.startsWith("/auth"),
+    { timeout: 20_000 }
+  );
+
+  const needsVerification = await passwordField
+    .waitFor({ state: "visible", timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (needsVerification) {
+    await passwordField.fill(QA_PASSWORD);
+    await verifyDialog.getByRole("button", { name: "OK", exact: true }).click();
+
+    // A wrong password re-renders the dialog with an inline error instead of
+    // navigating; surface that as a credentials problem rather than letting
+    // it time out as a mystery navigation failure.
+    const inlineError = verifyDialog.locator("p.text-destructive");
+    const failed = await inlineError
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (failed) {
+      throw new Error(
+        `Company Access Verification rejected the password — verify E2E_QA_PASSWORD. App said: "${(await inlineError.textContent())?.trim()}"`
+      );
+    }
+  }
+
   // openCompany() navigates to the role's landing page once
   // setActiveBusinessId() has run — wait for that navigation, not a timeout.
-  await page.waitForURL((url) => !url.pathname.startsWith("/companies") && !url.pathname.startsWith("/auth"), {
-    timeout: 15_000,
-  });
+  await leftCompanies;
 
   // Concrete proof of a genuinely authenticated, business-scoped session —
   // not "the login button was clicked and nothing crashed". supabase-js v2's

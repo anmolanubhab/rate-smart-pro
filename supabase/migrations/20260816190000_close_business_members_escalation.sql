@@ -1,0 +1,61 @@
+-- Close a tenant-boundary escalation: a live RLS policy trusted a vestigial,
+-- attacker-writable membership table.
+--
+-- WHAT WAS WRONG
+-- business_members was the original membership table. Migration
+-- 20260604062740 renamed it to business_users, and business_users is what
+-- the authorization helpers actually read:
+--
+--   is_business_member(_business_id)  -> SELECT ... FROM public.business_users
+--   has_business_role(_business_id,…) -> SELECT ... FROM public.business_users
+--
+-- A table named business_members nevertheless still existed: empty (0 rows),
+-- no inbound foreign keys, referenced by no function and no view, unused by
+-- the application. It was not inert, because two things were true at once:
+--
+--   1. It was writable by any authenticated user, and its INSERT policy was
+--
+--        business_members_insert  WITH CHECK (user_id = auth.uid())
+--
+--      which checks only that the row names YOURSELF. It never checks that
+--      you have any right to the business_id you name.
+--
+--   2. Exactly one live RLS policy still trusted it — on parties, the
+--      customer master:
+--
+--        parties_business_policy  FOR ALL USING (
+--          business_id IN (SELECT business_id FROM business_members
+--                          WHERE user_id = auth.uid()))
+--
+-- Together those are a self-service grant into any business in the system:
+--
+--   INSERT INTO business_members (business_id, user_id)
+--   VALUES ('<any business uuid>', auth.uid());
+--
+-- Verified live against the real database, inside a rolled-back transaction,
+-- as a user who is an active member of one unrelated business only:
+--
+--   before the insert     0 rows of the victim's parties visible
+--   after the insert    542 rows visible — names, phones, GST numbers,
+--                       addresses, credit limits, outstanding balances
+--
+-- The RESTRICTIVE gates parties_writer_role_gate_ins/upd/del call
+-- has_business_role, which reads business_users, so WRITES stayed blocked.
+-- Nothing gates SELECT restrictively, so the read was wide open.
+--
+-- This is a broader failure than the rest of this branch. The cross-company
+-- work concerns a user who legitimately belongs to two companies acting on
+-- the wrong one. This is any authenticated user reaching a business they have
+-- no relationship with at all.
+--
+-- THE FIX
+-- Drop the policy that trusts the vestigial table. Access for real members is
+-- unaffected: parties remains covered for the full ALL command set by
+-- "Users can manage own business parties", which gates on business_users, and
+-- the RESTRICTIVE role gates are untouched.
+--
+-- The empty business_members table itself is left in place by this migration
+-- and removed separately, so that closing the vulnerability is not entangled
+-- with a destructive DROP TABLE.
+
+DROP POLICY IF EXISTS parties_business_policy ON public.parties;

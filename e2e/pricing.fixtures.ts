@@ -24,11 +24,14 @@ test.use({ storageState: "e2e/.auth/qa-user.json" });
 
 const PARTY_NAME = process.env.E2E_PARTY_NAME ?? "E2E_PRICING_PARTY";
 const PRODUCT_QUERY = process.env.E2E_PRODUCT_QUERY ?? "E2E_PRICING_PRODUCT";
+const PRICE_LIST_NAME = "E2E_PRICING_LIST";
+const PRICE_LIST_RATE = 145;
 
 interface FixtureResult {
   error?: string;
   partyCreated?: boolean;
   productCreated?: boolean;
+  priceListCreated?: boolean;
   businessId?: string;
 }
 
@@ -38,8 +41,16 @@ test("ensure the pricing E2E fixture party + product exist in the QA business", 
   // business id are available to evaluate() below.
   await page.goto("/companies");
 
-  const result = await page.evaluate<FixtureResult, { partyName: string; productQuery: string }>(
-    async ({ partyName, productQuery }) => {
+  // Every value the browser side needs must be destructured here: evaluate()
+  // runs in the page, so it cannot close over Node-scope constants. The call
+  // below already passed priceListName/priceListRate, but they were missing
+  // from both the type parameter and this destructuring, so the price-list
+  // half of the fixture threw "priceListName is not defined" inside the page.
+  const result = await page.evaluate<
+    FixtureResult,
+    { partyName: string; productQuery: string; priceListName: string; priceListRate: number }
+  >(
+    async ({ partyName, productQuery, priceListName, priceListRate }) => {
       const clientModule = await import(/* @vite-ignore */ "/src/integrations/supabase/client.ts");
       const supabase = clientModule.supabase;
 
@@ -96,9 +107,106 @@ test("ensure the pricing E2E fixture party + product exist in the QA business", 
         productCreated = true;
       }
 
-      return { partyCreated, productCreated, businessId };
+      // Price list @ PRICE_LIST_RATE assigned to the fixture party. Without
+      // it the party's own legacy RD discount (agreed_discount 10) would be
+      // what prices the line, and the spec could only assert "some number
+      // came back". With it the whole chain is deterministic: base 145,
+      // discount 0 (a resolved Price List always outranks the legacy
+      // fallback — never both), 18% GST, 171.10.
+      //
+      // is_active/status are set explicitly: price_lists.is_active defaults
+      // to true while status defaults to 'draft', and basePriceResolver
+      // resolves on is_active alone, so an "active" list must say so on both.
+      let priceListCreated = false;
+      const { data: existingList, error: listLookupErr } = await supabase
+        .from("price_lists")
+        .select("id")
+        .eq("business_id", businessId)
+        .eq("name", priceListName)
+        .maybeSingle();
+      if (listLookupErr) return { error: `Price list lookup failed: ${listLookupErr.message}` };
+
+      let priceListId = (existingList as { id: string } | null)?.id ?? null;
+      if (!priceListId) {
+        const { data: createdList, error: listInsertErr } = await supabase
+          .from("price_lists")
+          .insert({
+            business_id: businessId,
+            name: priceListName,
+            list_type: "dealer",
+            currency: "INR",
+            status: "active",
+            is_active: true,
+            is_default: false,
+            effective_from: "2020-01-01",
+          })
+          .select("id")
+          .single();
+        if (listInsertErr) return { error: `Price list insert failed: ${listInsertErr.message}` };
+        priceListId = (createdList as { id: string }).id;
+        priceListCreated = true;
+      }
+
+      const { data: productRow, error: prodIdErr } = await supabase
+        .from("products")
+        .select("id")
+        .eq("business_id", businessId)
+        .eq("name", productQuery)
+        .maybeSingle();
+      if (prodIdErr) return { error: `Product id lookup failed: ${prodIdErr.message}` };
+      const productId = (productRow as { id: string } | null)?.id;
+      if (!productId) return { error: "Fixture product missing right after ensuring it exists." };
+
+      const { data: existingItem, error: itemLookupErr } = await supabase
+        .from("price_list_items")
+        .select("id")
+        .eq("price_list_id", priceListId)
+        .eq("product_id", productId)
+        .maybeSingle();
+      if (itemLookupErr) return { error: `Price list item lookup failed: ${itemLookupErr.message}` };
+      if (!existingItem) {
+        const { error: itemInsertErr } = await supabase.from("price_list_items").insert({
+          price_list_id: priceListId,
+          product_id: productId,
+          price: priceListRate,
+          effective_from: "2020-01-01",
+        });
+        if (itemInsertErr) return { error: `Price list item insert failed: ${itemInsertErr.message}` };
+      }
+
+      const { data: partyRow, error: partyIdErr } = await supabase
+        .from("parties")
+        .select("id")
+        .eq("business_id", businessId)
+        .eq("name", partyName)
+        .maybeSingle();
+      if (partyIdErr) return { error: `Party id lookup failed: ${partyIdErr.message}` };
+      const partyId = (partyRow as { id: string } | null)?.id;
+      if (!partyId) return { error: "Fixture party missing right after ensuring it exists." };
+
+      const { data: existingAssignment, error: assignLookupErr } = await supabase
+        .from("party_price_assignments")
+        .select("id")
+        .eq("business_id", businessId)
+        .eq("party_id", partyId)
+        .eq("price_list_id", priceListId)
+        .maybeSingle();
+      if (assignLookupErr) return { error: `Assignment lookup failed: ${assignLookupErr.message}` };
+      if (!existingAssignment) {
+        const { error: assignInsertErr } = await supabase.from("party_price_assignments").insert({
+          business_id: businessId,
+          party_id: partyId,
+          price_list_id: priceListId,
+          priority: 100,
+          is_active: true,
+          effective_from: "2020-01-01",
+        });
+        if (assignInsertErr) return { error: `Assignment insert failed: ${assignInsertErr.message}` };
+      }
+
+      return { partyCreated, productCreated, priceListCreated, businessId };
     },
-    { partyName: PARTY_NAME, productQuery: PRODUCT_QUERY }
+    { partyName: PARTY_NAME, productQuery: PRODUCT_QUERY, priceListName: PRICE_LIST_NAME, priceListRate: PRICE_LIST_RATE }
   );
 
   expect(result.error, result.error).toBeUndefined();

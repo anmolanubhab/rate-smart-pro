@@ -68,8 +68,17 @@ export interface SalesInvoice {
   created_at: string;
 }
 
-export async function nextInvoiceNumber(userId: string) {
-  const { data, error } = await supabase.rpc("next_invoice_number", { _user_id: userId, _business_id: getActiveBusinessIdSync() } as any);
+/**
+ * Next invoice number for `businessId` (default: the active business).
+ *
+ * The businessId argument exists because generateInvoiceFrom*() already knows
+ * which company it is invoicing, and that is not necessarily the company the
+ * browser has active. Reading getActiveBusinessIdSync() unconditionally meant
+ * an invoice could be stamped with a different company's number series.
+ */
+export async function nextInvoiceNumber(userId: string, businessId?: string | null) {
+  const biz = businessId ?? getActiveBusinessIdSync();
+  const { data, error } = await supabase.rpc("next_invoice_number", { _user_id: userId, _business_id: biz } as any);
   if (error) throw error;
   return data as string;
 }
@@ -88,7 +97,46 @@ export async function fetchInvoices(userId: string) {
   return (data || []) as SalesInvoice[];
 }
 
-export async function fetchInvoiceItems(invoiceId: string) {
+/** Same not-found wording for "absent" and "another company's" — probing an id
+ *  must not confirm that some other business holds it. Mirrors ORDER_NOT_FOUND. */
+export const INVOICE_NOT_FOUND = "Invoice not found";
+
+function requireInvoiceScope(businessId?: string | null): string {
+  const biz = businessId ?? getActiveBusinessIdSync();
+  if (!biz) throw new Error(INVOICE_NOT_FOUND);
+  return biz;
+}
+
+/**
+ * Load one invoice, confined to `businessId` (default: the active business).
+ * The list (fetchInvoices) was already scoped; this single-record path was not,
+ * which is the same gap fetchOrder() had.
+ */
+export async function fetchInvoice(id: string, businessId?: string | null): Promise<SalesInvoice> {
+  const biz = requireInvoiceScope(businessId);
+  const { data, error } = await supabase
+    .from("sales_invoices")
+    .select("*")
+    .eq("id", id)
+    .eq("business_id", biz)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error(INVOICE_NOT_FOUND);
+  return data as SalesInvoice;
+}
+
+export async function fetchInvoiceItems(invoiceId: string, businessId?: string | null) {
+  const biz = requireInvoiceScope(businessId);
+  // Ownership is proven through the parent invoice before any line is read.
+  const { data: owner, error: ownerErr } = await supabase
+    .from("sales_invoices")
+    .select("id")
+    .eq("id", invoiceId)
+    .eq("business_id", biz)
+    .maybeSingle();
+  if (ownerErr) throw ownerErr;
+  if (!owner) throw new Error(INVOICE_NOT_FOUND);
+
   const { data, error } = await supabase
     .from("sales_invoice_items")
     .select("*")
@@ -135,7 +183,7 @@ export async function generateInvoiceFromDispatch(opts: {
   if ((dispatch as any).invoice_id) throw new Error("This dispatch already has an invoice");
 
   // 2. Load order for party / address info
-  const order = await fetchOrder(dispatch.order_id);
+  const order = await fetchOrder(dispatch.order_id, opts.businessId);
 
   // Interstate vs intra-state is the same for every line on this invoice
   // (one party, one business) — resolved once via the GST Engine, not
@@ -214,7 +262,7 @@ export async function generateInvoiceFromDispatch(opts: {
   );
 
   // 4. Create invoice
-  const invoice_number = await nextInvoiceNumber(opts.userId);
+  const invoice_number = await nextInvoiceNumber(opts.userId, opts.businessId);
   const salesmanGroupId = await resolveSalesmanGroupSnapshot(order.salesman_id);
   const { data: inv, error: ie } = await supabase
     .from("sales_invoices")
@@ -250,6 +298,10 @@ export async function generateInvoiceFromDispatch(opts: {
   // 5. Insert invoice line items
   const invRows = lineItems.map((it, idx) => ({
     user_id: opts.userId,
+    // Stamped from the invoice this line belongs to. Omitting it left every
+    // invoice line with a NULL business_id, which the RLS writer gates treat
+    // as "no business to check" and wave through.
+    business_id: opts.businessId,
     invoice_id: inv.id,
     product_id: it.product_id,
     part_number: it.part_number,
@@ -332,7 +384,9 @@ export async function generateInvoiceFromOrder(opts: {
   requireApproval?: boolean;
 }): Promise<SalesInvoice> {
   if (opts.businessId) await assertRegularGstScheme(opts.businessId, undefined, "Sales invoice generation");
-  const order = await fetchOrder(opts.orderId);
+  // Scoped to the invoicing business: an order from another company must not
+  // be invoiceable here, no matter what orderId the caller supplies.
+  const order = await fetchOrder(opts.orderId, opts.businessId);
   if (!order) throw new Error("Order not found");
   if (order.status === "cancelled") throw new Error("Cannot invoice a cancelled order");
   // orders has no invoice_id/invoiced_at column — the old check here
@@ -351,7 +405,7 @@ export async function generateInvoiceFromOrder(opts: {
     throw new Error("Order must be approved before invoicing");
   }
 
-  const items = await fetchOrderItems(opts.orderId);
+  const items = await fetchOrderItems(opts.orderId, opts.businessId);
   if (!items.length) throw new Error("Order has no items");
   const totals = computeTotals(items as any, order.shipping_charges || 0);
   const { round_off_amount, grand_total } = await applySalesInvoiceRoundOff(opts.businessId, totals.grand_total);
@@ -377,7 +431,7 @@ export async function generateInvoiceFromOrder(opts: {
   const hsnByProduct = new Map((productsData || []).map((p: any) => [p.id, p.hsn_code]));
   await assertHsnCompliance(opts.businessId, items as any[], productsData || []);
 
-  const invoice_number = await nextInvoiceNumber(opts.userId);
+  const invoice_number = await nextInvoiceNumber(opts.userId, opts.businessId);
   const status = opts.requireApproval ? "draft" : "posted";
   const salesmanGroupId = await resolveSalesmanGroupSnapshot(order.salesman_id);
 
@@ -419,6 +473,9 @@ export async function generateInvoiceFromOrder(opts: {
     const rateSplit = splitGstRate(it.gst_pct || 0, isInterstate);
     return {
       user_id: opts.userId,
+      // See generateInvoiceFromDispatch — invoice lines must carry their own
+      // business_id, not inherit "NULL means unchecked" from the RLS gates.
+      business_id: opts.businessId,
       invoice_id: inv.id,
       product_id: it.product_id,
       part_number: it.part_number,
@@ -468,16 +525,15 @@ export async function generateInvoiceFromOrder(opts: {
  * "detached copy" behavior in src/lib/orders.ts) and paid_amount resets to 0.
  */
 export async function duplicateInvoice(id: string, userId: string): Promise<SalesInvoice> {
-  const { data: originalRow, error: fe } = await supabase
-    .from("sales_invoices")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (fe) throw fe;
-  const original = originalRow as SalesInvoice;
+  // Business-scoped like fetchInvoice(): duplicating by raw UUID must not be a
+  // way to copy another company's invoice into this one.
+  const original = await fetchInvoice(id);
   const items = await fetchInvoiceItems(id);
 
-  const invoice_number = await nextInvoiceNumber(userId);
+  // Numbered from the invoice's OWN business, not whatever is active — the
+  // copy is inserted with original.business_id below, so taking the number
+  // from the active business would stamp company A's series onto company B.
+  const invoice_number = await nextInvoiceNumber(userId, original.business_id);
   const { data: inv, error: ie } = await supabase
     .from("sales_invoices")
     .insert({
@@ -702,14 +758,15 @@ export async function deleteInvoice(invoiceId: string) {
       .from("dispatches")
       .update({ status: "draft", invoice_id: null } as any)
       .eq("id", (inv as any).dispatch_id);
-  } else if ((inv as any)?.order_id) {
-    // Legacy order-only invoice: reset order
-    await supabase
-      .from("orders")
-      .update({ invoice_id: null, invoiced_at: null, status: "approved" } as any)
-      .eq("id", (inv as any).order_id)
-      .eq("status", "invoiced");
   }
+  // An order-only invoice needs no linkage reset here: orders has no
+  // invoice_id/invoiced_at column (sales_invoices.order_id is the only link
+  // — see generateInvoiceFromOrder), and recalcOrderAfterInvoice() below
+  // already restores the order's status from its own item quantities. The
+  // previous branch here UPDATEd orders.invoice_id/invoiced_at, which
+  // postgrest rejects as unknown columns; its error was never captured, so
+  // it failed silently on every order-only delete and only looked correct
+  // because the recalc below happened to set the right status anyway.
 
   // Delete the invoice itself
   const { error: e2 } = await supabase

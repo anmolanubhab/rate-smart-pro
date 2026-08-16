@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { requireBusinessScope } from "@/lib/businessScope";
 
 export type OrderStatus = "draft" | "confirmed" | "cancelled" | "completed" | "pending" | "partial" | "approved" | "invoiced" | "closed";
 export type OrderSource = "manual" | "excel" | "pending-generated";
@@ -36,6 +37,10 @@ export interface OrderItem {
 export interface Order {
   id: string;
   user_id: string;
+  /** Owning company. Always written by saveOrder() and the column every
+   *  single-order read is scoped by — see fetchOrder(). It was missing from
+   *  this interface even though callers (Salesman Portal) already read it. */
+  business_id: string | null;
   created_by: string | null;
   updated_by: string | null;
   order_number: string;
@@ -84,13 +89,51 @@ export async function fetchOrders(userId: string) {
   return (data || []) as Order[];
 }
 
-export async function fetchOrder(id: string) {
-  const { data, error } = await supabase.from("orders").select("*").eq("id", id).single();
+/**
+ * Thrown when a single-record lookup resolves to a row outside the caller's
+ * business. Deliberately worded (and handled) like a not-found so callers
+ * can't distinguish "exists elsewhere" from "doesn't exist" — probing an id
+ * must not confirm that another company holds it.
+ */
+export const ORDER_NOT_FOUND = "Order not found";
+
+/**
+ * Load one order, confined to `businessId` (default: the active business).
+ *
+ * Previously this filtered on id alone, so with company A active,
+ * /orders/edit/<company-B-order-id> loaded B's order and rendered it under
+ * A's letterhead — readable, editable, printable and invoiceable from the
+ * wrong company. fetchOrders() (the list) was always business-scoped; this
+ * single-record sibling was the one that wasn't.
+ */
+export async function fetchOrder(id: string, businessId?: string | null) {
+  const biz = requireBusinessScope(businessId, ORDER_NOT_FOUND);
+  const { data, error } = await supabase
+    .from("orders").select("*")
+    .eq("id", id)
+    .eq("business_id", biz)
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error(ORDER_NOT_FOUND);
   return data as Order;
 }
 
-export async function fetchOrderItems(orderId: string) {
+/**
+ * Line items for one order, gated by the same business check as fetchOrder()
+ * so item data can't be read for an order the caller may not open. order_items
+ * carries no business_id of its own, so ownership is established through the
+ * parent order.
+ */
+export async function fetchOrderItems(orderId: string, businessId?: string | null) {
+  const biz = requireBusinessScope(businessId, ORDER_NOT_FOUND);
+  const { data: owner, error: ownerErr } = await supabase
+    .from("orders").select("id")
+    .eq("id", orderId)
+    .eq("business_id", biz)
+    .maybeSingle();
+  if (ownerErr) throw ownerErr;
+  if (!owner) throw new Error(ORDER_NOT_FOUND);
+
   const { data, error } = await supabase
     .from("order_items").select("*").eq("order_id", orderId)
     .order("position", { ascending: true });
@@ -339,7 +382,9 @@ export async function saveOrder(input: SaveOrderInput): Promise<Order> {
     if (error) throw error;
   }
 
-  return await fetchOrder(orderId!);
+  // Re-read under the same business this save resolved, not whatever is
+  // active by the time the await lands.
+  return await fetchOrder(orderId!, input.businessId ?? getActiveBusinessIdSync());
 }
 
 /**

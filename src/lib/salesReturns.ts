@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { requireBusinessScope, assertOwnedByBusiness } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const SALES_RETURN_NOT_FOUND = "Sales return not found";
 import { computeItem, computeTotals, type OrderItem } from "@/lib/orders";
 import { cancelSalesReturn as cancelSalesReturnBase } from "@/lib/returns";
 import { deleteVoucher } from "@/lib/voucherService";
@@ -59,13 +63,21 @@ export async function nextSalesReturnNumber(businessId: string): Promise<string>
   return data as string;
 }
 
-export async function fetchSalesReturnById(id: string): Promise<SalesReturn> {
-  const { data, error } = await supabase.from("sales_returns" as never).select("*").eq("id", id).single();
+export async function fetchSalesReturnById(id: string, businessId?: string | null): Promise<SalesReturn> {
+  const biz = requireBusinessScope(businessId, SALES_RETURN_NOT_FOUND);
+  const { data, error } = await supabase
+    .from("sales_returns" as never).select("*")
+    .eq("id", id)
+    .eq("business_id", biz)
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error(SALES_RETURN_NOT_FOUND);
   return data as unknown as SalesReturn;
 }
 
-export async function fetchSalesReturnItems(returnId: string): Promise<SalesReturnItem[]> {
+export async function fetchSalesReturnItems(returnId: string, businessId?: string | null): Promise<SalesReturnItem[]> {
+  // sales_return_items ownership runs through the parent return.
+  await assertOwnedByBusiness("sales_returns", returnId, businessId, SALES_RETURN_NOT_FOUND);
   const { data, error } = await supabase
     .from("sales_return_items" as never)
     .select("*")
@@ -335,7 +347,10 @@ export async function saveSalesReturnDraft(input: SaveSalesReturnInput): Promise
 }
 
 /** Posts an already-saved draft: stock reversal (+ batch qty for batch-tracked lines), inventory_movements, Credit Note voucher — all inside post_sales_return (SECURITY DEFINER). */
-export async function postSalesReturn(returnId: string): Promise<void> {
+export async function postSalesReturn(returnId: string, businessId?: string | null): Promise<void> {
+  // Posting a return puts stock back and creates a Credit Note voucher, so
+  // ownership is proven before the RPC runs.
+  await assertOwnedByBusiness("sales_returns", returnId, businessId, SALES_RETURN_NOT_FOUND);
   const { error } = await supabase.rpc("post_sales_return" as never, { _return_id: returnId } as never);
   if (error) throw error;
 }
@@ -357,9 +372,17 @@ export async function cancelSalesReturn(returnId: string, userId?: string): Prom
  * (status='cancelled') orphaned forever in Voucher Center / Voucher List /
  * the Financial Adjustment tab, so the linked voucher is deleted first.
  */
-export async function deleteSalesReturn(id: string, userId?: string): Promise<void> {
-  const { data: ret, error: le } = await supabase.from("sales_returns" as never).select("status, voucher_id").eq("id", id).single();
+export async function deleteSalesReturn(id: string, userId?: string, businessId?: string | null): Promise<void> {
+  // Deleting also removes the linked Credit Note voucher, so ownership is
+  // established before anything is touched.
+  const biz = requireBusinessScope(businessId, SALES_RETURN_NOT_FOUND);
+  const { data: ret, error: le } = await supabase
+    .from("sales_returns" as never).select("status, voucher_id")
+    .eq("id", id)
+    .eq("business_id", biz)
+    .maybeSingle();
   if (le) throw le;
+  if (!ret) throw new Error(SALES_RETURN_NOT_FOUND);
   if ((ret as any).status === "posted") {
     throw new Error("This return is posted. Cancel it first, then delete.");
   }
