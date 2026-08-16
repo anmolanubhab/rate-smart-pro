@@ -23,6 +23,7 @@ import { buildTrace } from "./trace";
 import { buildWarnings } from "./warnings";
 import { resolveApproval } from "./approval";
 import { getBudgetProvider, type BudgetCheckResult } from "./budgetProvider";
+import { resolveLegacyPartyDiscountPct } from "./legacyPartyDiscount";
 import type {
   PricingContext,
   PricingContextLine,
@@ -32,6 +33,7 @@ import type {
   PricingPolicy,
   PricingResult,
   PricingRuleMatch,
+  PricingSource,
   PricingTotals,
 } from "./types";
 
@@ -101,10 +103,12 @@ async function calculateLine(
   thresholds: LineCalcThresholds,
   isInterstate: boolean,
   events: PricingEvent[],
+  legacyPartyDiscountPct: number,
   includeDraftRuleIds?: string[]
 ): Promise<LineCalcOutcome> {
   const base = await resolveBasePrice(context, line);
   let effectiveBase = base.basePrice;
+  let priceSource: PricingSource = base.priceListId != null ? "price_list" : "product_fallback";
 
   let appliedRules: PricingRuleMatch[] = [];
   let rejectedRules: PricingRuleMatch[] = [];
@@ -117,9 +121,12 @@ async function calculateLine(
   if (line.manualDiscountPct != null) {
     // Manual Override short-circuits rule resolution entirely — matches
     // today's CreateOrder.tsx behavior (a free-typed discount_pct) so a
-    // business with zero pricing rules still gets a correct result.
-    discountAmount = round2(effectiveBase * line.qty * (line.manualDiscountPct / 100));
+    // business with zero pricing rules still gets a correct result. Floored
+    // at 0 like benefitAmount() below — a negative % typed by mistake must
+    // not silently turn into a markup with no warning.
+    discountAmount = round2(Math.max(0, effectiveBase * line.qty * (line.manualDiscountPct / 100)));
     events.push({ type: "RULE_APPLIED", lineId: line.lineId, message: `Manual override ${line.manualDiscountPct}%` });
+    priceSource = "manual_override";
   } else {
     const resolution = await resolveApplicableRules(context, line, effectiveBase, includeDraftRuleIds);
     rulesEvaluated = resolution.rulesEvaluated;
@@ -172,6 +179,25 @@ async function calculateLine(
       runningTotal -= amt;
       discountAmount += amt;
       events.push({ type: "RULE_APPLIED", lineId: line.lineId, ruleId: r.ruleId, message: `${r.name} applied (sequential)` });
+    }
+
+    if (discountRules.length > 0) {
+      priceSource = "pricing_rule";
+    } else if (base.priceListId == null) {
+      // Nothing in the new pricing system applied to this line at all — no
+      // Price List resolved AND no Pricing Rule matched. Fall back to the
+      // legacy party.agreed_discount/default_discount mechanism every
+      // business still runs on today, using product MRP as the base exactly
+      // like the pre-integration CreateOrder.tsx did (not price-list-style
+      // dealer_rate) so numbers stay identical for anyone who hasn't
+      // configured the new system yet. A configured Price List or Pricing
+      // Rule always wins — this branch is unreachable when either matched.
+      effectiveBase = base.mrp;
+      discountAmount = round2(effectiveBase * line.qty * (legacyPartyDiscountPct / 100));
+      priceSource = legacyPartyDiscountPct > 0 ? "legacy_party_discount" : "product_fallback";
+      if (legacyPartyDiscountPct > 0) {
+        events.push({ type: "RULE_APPLIED", lineId: line.lineId, message: `Legacy party discount ${legacyPartyDiscountPct}%` });
+      }
     }
 
     for (const r of [...rejectedRules, ...ineligibleRules]) {
@@ -249,6 +275,7 @@ async function calculateLine(
     qty: line.qty,
     basePrice: effectiveBase,
     priceListId: base.priceListId,
+    priceSource,
     appliedRules,
     rejectedRules,
     ineligibleRules,
@@ -298,10 +325,13 @@ function sumTotals(lines: PricingLineResult[]): PricingTotals {
 export async function calculatePricing(context: PricingContext, opts: CalculatePricingOptions = {}): Promise<PricingResult> {
   const startedAt = performance.now();
 
-  const [pricingPolicy, thresholds, isInterstate] = await Promise.all([
+  // Fetched once per call, not per line — same party for every line on an
+  // order/invoice, so this would otherwise be an N+1 query against `parties`.
+  const [pricingPolicy, thresholds, isInterstate, legacyPartyDiscountPct] = await Promise.all([
     fetchPricingPolicy(context.businessId).then((p) => p ?? ("rule_based" as PricingPolicy)),
     fetchPricingThresholds(context.businessId),
     resolveGstSplit(context.businessId, context.partyId),
+    resolveLegacyPartyDiscountPct(context.partyId),
   ]);
 
   const events: PricingEvent[] = [];
@@ -309,7 +339,7 @@ export async function calculatePricing(context: PricingContext, opts: CalculateP
   const metrics: PricingMetrics = { rulesEvaluated: 0, rulesMatched: 0, rulesApplied: 0, executionTimeMs: 0 };
 
   for (const line of context.lines) {
-    const outcome = await calculateLine(context, line, pricingPolicy, thresholds, isInterstate, events, opts.includeDraftRuleIds);
+    const outcome = await calculateLine(context, line, pricingPolicy, thresholds, isInterstate, events, legacyPartyDiscountPct, opts.includeDraftRuleIds);
     lines.push(outcome.result);
     metrics.rulesEvaluated += outcome.rulesEvaluated;
     metrics.rulesMatched += outcome.rulesMatched;

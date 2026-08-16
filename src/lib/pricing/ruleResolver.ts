@@ -193,7 +193,8 @@ export async function resolveApplicableRules(
     ? query.or(`status.eq.active,id.in.(${includeDraftRuleIds.join(",")})`)
     : query.eq("status", "active");
   const { data: ruleRows, error: ruleErr } = await query;
-  if (ruleErr || !ruleRows?.length) return { candidates: [], ineligible: [], rulesEvaluated: 0 };
+  if (ruleErr) throw new Error(`Failed to load pricing rules: ${ruleErr.message}`);
+  if (!ruleRows?.length) return { candidates: [], ineligible: [], rulesEvaluated: 0 };
 
   const allRules = ruleRows as PricingRuleRow[];
   const ineligible: IneligibleRule[] = [];
@@ -206,12 +207,25 @@ export async function resolveApplicableRules(
   if (dateEligibleRules.length === 0) return { candidates: [], ineligible, rulesEvaluated: allRules.length };
 
   const ruleIds = dateEligibleRules.map((r) => r.id);
-  const [{ data: targetRows }, { data: conditionRows }, { data: benefitRows }, { data: productRow }] = await Promise.all([
+  const [
+    { data: targetRows, error: targetErr },
+    { data: conditionRows, error: conditionErr },
+    { data: benefitRows, error: benefitErr },
+    { data: productRow, error: productErr },
+  ] = await Promise.all([
     supabase.from("pricing_rule_targets" as any).select("rule_id, target_type, target_id").in("rule_id", ruleIds),
     supabase.from("pricing_rule_conditions" as any).select("rule_id, condition_type, operator, value").in("rule_id", ruleIds),
     supabase.from("pricing_rule_benefits" as any).select("rule_id, benefit_type, value, free_product_id, free_qty, max_benefit_amount").in("rule_id", ruleIds),
     supabase.from("products").select("brand, category, group_id").eq("id", line.productId).maybeSingle(),
   ]);
+  // A partial failure here must not be silently read as "this rule has no
+  // targets/conditions" — that would make an ineligible rule look universal
+  // (targetsMatch treats an empty target list as "applies to everything")
+  // or make an eligible rule look unconditionally blocked. Surface it.
+  if (targetErr) throw new Error(`Failed to load pricing rule targets: ${targetErr.message}`);
+  if (conditionErr) throw new Error(`Failed to load pricing rule conditions: ${conditionErr.message}`);
+  if (benefitErr) throw new Error(`Failed to load pricing rule benefits: ${benefitErr.message}`);
+  if (productErr) throw new Error(`Failed to load product for pricing: ${productErr.message}`);
 
   const targetsByRule = groupBy((targetRows as TargetRow[]) ?? [], (t) => t.rule_id);
   const conditionsByRule = groupBy((conditionRows as ConditionRow[]) ?? [], (c) => c.rule_id);

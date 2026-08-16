@@ -18,6 +18,7 @@ import {
   computeTotals,
   nextOrderNumber,
   saveOrder,
+  isManualPricePatch,
   OrderItem,
   OrderStatus,
   fetchOrder,
@@ -39,6 +40,8 @@ import { useDocumentGridNavigation } from "@/hooks/useDocumentGridNavigation";
 import { useOutputCenterShortcut } from "@/hooks/useOutputCenterShortcut";
 import { DocumentOutputCenter, type DocumentOutputCenterHandle } from "@/components/documentEngine/DocumentOutputCenter";
 import { buildOrderUdm } from "@/lib/documentUdm/orderUdm";
+import { calculatePricing } from "@/lib/pricing/engine";
+import { localDateISO } from "@/lib/pricing/dateUtils";
 
 /** Extended row that also carries HSN/Rack for the Tally-style UI (not persisted). */
 type Row = OrderItem & { hsn?: string; rack?: string };
@@ -88,7 +91,7 @@ const CreateOrder = () => {
   const [partyQuery, setPartyQuery] = useState("");
 
   const [orderNumber, setOrderNumber] = useState("");
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
+  const [orderDate, setOrderDate] = useState(localDateISO());
   const [refNo, setRefNo] = useState("");
   const [voucherType] = useState("Sales Order");
   const [salesman, setSalesman] = useState("");
@@ -313,7 +316,13 @@ const CreateOrder = () => {
     setItems((rows) =>
       rows.map((r, i) => {
         if (i !== idx) return r;
-        const merged = { ...r, ...patch };
+        let merged = { ...r, ...patch };
+        // A direct grid edit to price/discount means the user is manually
+        // overriding the engine's result — mark it so order_items.price_source
+        // reflects that honestly instead of still claiming "price_list"/"pricing_rule".
+        if (isManualPricePatch(patch)) {
+          merged = { ...merged, is_manual_override: true, price_source: "manual_override" };
+        }
         const computed = computeItem(merged);
         return { ...computed, hsn: merged.hsn, rack: merged.rack } as Row;
       }),
@@ -341,19 +350,17 @@ const CreateOrder = () => {
   };
 
   const pickProduct = async (idx: number, p: Product) => {
-    const def = party
-      ? Number(party.discount_type === "RD" ? party.agreed_discount : party.default_discount) || 0
-      : 0;
     const qty = items[idx].qty || 1;
+    // Identity/qty fields update immediately so the row doesn't sit blank
+    // while pricing resolves. mrp/discount_pct/gst_pct are deliberately left
+    // out of this first patch — they come from the Pricing Engine below,
+    // the single source of truth for both this screen and the Test Bench.
     updateRow(idx, {
       product_id: p.id,
       part_number: p.part_number,
       description: p.name,
       vehicle_model: p.vehicle_model,
-      mrp: Number(p.mrp),
-      gst_pct: Number(p.gst_pct),
       hsn: p.hsn_code || "",
-      discount_pct: items[idx].discount_pct || def,
       qty,
       unit_id: null,
       stock_qty: null,
@@ -362,6 +369,49 @@ const CreateOrder = () => {
     setSearchTerm("");
     setSearchResults([]);
     setTimeout(() => focusCell(idx, "qty"), 10);
+
+    // Pricing Engine (src/lib/pricing/engine.ts) is the single source of
+    // truth: Party Price List -> Party Group Price List -> Default Price
+    // List -> Pricing Rules -> legacy party.agreed_discount/default_discount
+    // fallback (only when nothing in the new system applies — never both).
+    // A resolution failure must surface as a visible error, never a silent
+    // wrong price (see the ruleResolver.ts/basePriceResolver.ts DB-error
+    // fixes from the prior QA pass).
+    if (business?.id) {
+      try {
+        const result = await calculatePricing({
+          businessId: business.id,
+          branchId: null,
+          partyId: partyId || null,
+          partyGroupId: party?.party_group_id ?? null,
+          salesmanId: salesmanId,
+          warehouseId,
+          date: orderDate,
+          voucherType: "sales_order",
+          lines: [{ lineId: p.id, productId: p.id, qty }],
+        });
+        const line = result.lines[0];
+        const grossLine = line.basePrice * qty;
+        const effectiveDiscountPct = grossLine > 0 ? +((line.discountAmount / grossLine) * 100).toFixed(4) : 0;
+        updateRow(idx, {
+          mrp: line.basePrice,
+          gst_pct: line.gstPct,
+          discount_pct: effectiveDiscountPct,
+          price_list_id: line.priceListId,
+          pricing_rule_ids: line.appliedRules.filter((r) => r.decision === "applied" || r.decision === "replaced_base").map((r) => r.ruleId),
+          price_source: line.priceSource,
+          is_manual_override: false,
+        });
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Could not resolve pricing for this product — please set the price manually";
+        toast.error(message);
+        updateRow(idx, { mrp: 0, discount_pct: 0, gst_pct: Number(p.gst_pct) || 0, price_source: null });
+      }
+    } else {
+      // No active business context yet (e.g. still loading) — fall back to
+      // raw product fields rather than blocking product entry entirely.
+      updateRow(idx, { mrp: Number(p.mrp), gst_pct: Number(p.gst_pct), discount_pct: items[idx].discount_pct || 0, price_source: "product_fallback" });
+    }
 
     // Default to this product's configured Sales Unit, if any
     const pu = await loadProductUnits(p.id);

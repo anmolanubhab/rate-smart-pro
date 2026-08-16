@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { AuthWatermark } from "@/components/auth/AuthBackground";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { passwordRules, isStrongPassword } from "@/lib/passwordRules";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -59,16 +60,6 @@ const countryMobileRules: Record<(typeof COUNTRIES)[number], RegExp> = {
 };
 
 const normalizeMobile = (value: string) => value.replace(/[^\d]/g, "");
-
-const passwordRules = [
-  { label: "8 characters", test: (value: string) => value.length >= 8 },
-  { label: "1 uppercase", test: (value: string) => /[A-Z]/.test(value) },
-  { label: "1 lowercase", test: (value: string) => /[a-z]/.test(value) },
-  { label: "1 number", test: (value: string) => /\d/.test(value) },
-  { label: "1 special character", test: (value: string) => /[^A-Za-z0-9]/.test(value) },
-];
-
-const isStrongPassword = (value: string) => passwordRules.every((rule) => rule.test(value));
 
 const loginSchema = z.object({
   email: z.string().email("Valid email address required"),
