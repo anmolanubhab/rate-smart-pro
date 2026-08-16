@@ -81,6 +81,49 @@ const TABLES: Record<string, Record<string, unknown>[]> = {
     { id: "sri-A", return_id: "sr-A", position: 0 },
     { id: "sri-B", return_id: "sr-B", position: 0 },
   ],
+  // ─── Modules scoped after the first milestone ────────────────────────────
+  stock_take_sheets: [
+    { id: "st-A", business_id: BIZ_A, sheet_no: "ST-A-1", status: "draft" },
+    { id: "st-B", business_id: BIZ_B, sheet_no: "ST-B-1", status: "draft" },
+  ],
+  // stock_take_items has no business_id — ownership runs through sheet_id.
+  stock_take_items: [
+    { id: "sti-A", sheet_id: "st-A", counted_qty: null },
+    { id: "sti-B", sheet_id: "st-B", counted_qty: null },
+  ],
+  stock_transfers: [
+    { id: "tr-A", business_id: BIZ_A, transfer_no: "TR-A-1", status: "draft" },
+    { id: "tr-B", business_id: BIZ_B, transfer_no: "TR-B-1", status: "draft" },
+  ],
+  purchase_orders: [
+    { id: "po-A", business_id: BIZ_A, po_number: "PO-A-1", status: "draft" },
+    { id: "po-B", business_id: BIZ_B, po_number: "PO-B-1", status: "draft" },
+  ],
+  purchase_order_items: [
+    { id: "poi-A", purchase_order_id: "po-A", position: 0 },
+    { id: "poi-B", purchase_order_id: "po-B", position: 0 },
+  ],
+  po_activity_logs: [
+    { id: "pal-A", purchase_order_id: "po-A" },
+    { id: "pal-B", purchase_order_id: "po-B" },
+  ],
+  quotations: [
+    { id: "q-A", business_id: BIZ_A, quotation_number: "QT-A-1", status: "draft" },
+    { id: "q-B", business_id: BIZ_B, quotation_number: "QT-B-1", status: "draft" },
+  ],
+  quotation_items: [
+    { id: "qi-A", quotation_id: "q-A", position: 0 },
+    { id: "qi-B", quotation_id: "q-B", position: 0 },
+  ],
+  picking_lists: [
+    { id: "pl-A", business_id: BIZ_A, order_id: "order-A", status: "open" },
+    { id: "pl-B", business_id: BIZ_B, order_id: "order-B", status: "open" },
+  ],
+  picking_list_items: [
+    { id: "pli-A", picking_list_id: "pl-A", qty_to_pick: 5, qty_picked: 0, position: 0 },
+    { id: "pli-B", picking_list_id: "pl-B", qty_to_pick: 5, qty_picked: 0, position: 0 },
+  ],
+  goods_receipts_for_po: [],
 };
 
 let activeBusinessId: string | null = BIZ_A;
@@ -109,6 +152,7 @@ function query(rows: Record<string, unknown>[], mode: "select" | "update" = "sel
     neq: () => q,
     order: () => q,
     limit: () => q,
+    range: () => q,
     maybeSingle: (): Promise<Result> => Promise.resolve({ data: filtered[0] ?? null, error: null }),
     single: (): Promise<Result> =>
       Promise.resolve(filtered[0] ? { data: filtered[0], error: null } : { data: null, error: { message: "no rows" } }),
@@ -125,6 +169,13 @@ vi.mock("@/integrations/supabase/client", () => ({
       update: () => query(TABLES[table] ?? [], "update"),
       delete: () => query(TABLES[table] ?? [], "update"),
     }),
+    // Several newly scoped modules (stock take, stock transfer) do their work
+    // in a SECURITY DEFINER RPC. Those RPCs already refuse a NON-member; what
+    // is asserted here is the ownership check the service layer performs
+    // BEFORE calling them, so the stub just succeeds — if the guard is
+    // missing, the foreign case reaches this stub and resolves, failing the
+    // "DENIED" expectation.
+    rpc: () => Promise.resolve({ data: null, error: null }),
   },
 }));
 
@@ -139,6 +190,34 @@ import {
 import { updateLedger } from "./accounting";
 import { fetchGoodsReceipt, fetchGoodsReceiptItems, cancelGRN } from "./goodsReceipts";
 import { fetchSalesReturnById, fetchSalesReturnItems, postSalesReturn } from "./salesReturns";
+import {
+  fetchStockTakeSheet,
+  fetchStockTakeItems,
+  postStockTake,
+  cancelStockTake,
+  setCountedQty,
+  removeStockTakeItem,
+} from "./stockTake";
+import {
+  fetchStockTransfer,
+  dispatchStockTransfer,
+  receiveStockTransfer,
+  cancelStockTransfer,
+} from "./stockTransfers";
+import {
+  fetchPurchaseOrder,
+  fetchPOItems,
+  fetchPOActivityLogs,
+  approvePurchaseOrder,
+  rejectPurchaseOrder,
+} from "./purchaseOrders";
+import {
+  fetchQuotationById,
+  fetchQuotationItems,
+  updateQuotationStatus,
+  deleteQuotation,
+} from "./quotations";
+import { fetchPickingListItems, markItemPicked } from "./pickingLists";
 
 /**
  * One row per business-scoped read path.
@@ -162,6 +241,17 @@ const ENTITIES: {
   { name: "goods receipt items", call: (id) => fetchGoodsReceiptItems(id), ownA: "grn-A", ownB: "grn-B" },
   { name: "sales return", call: (id) => fetchSalesReturnById(id), ownA: "sr-A", ownB: "sr-B" },
   { name: "sales return items", call: (id) => fetchSalesReturnItems(id), ownA: "sr-A", ownB: "sr-B" },
+
+  // Modules scoped after the first milestone.
+  { name: "stock take sheet", call: (id) => fetchStockTakeSheet(id), ownA: "st-A", ownB: "st-B" },
+  { name: "stock take items", call: (id) => fetchStockTakeItems(id, 0, 50), ownA: "st-A", ownB: "st-B" },
+  { name: "stock transfer", call: (id) => fetchStockTransfer(id), ownA: "tr-A", ownB: "tr-B" },
+  { name: "purchase order", call: (id) => fetchPurchaseOrder(id), ownA: "po-A", ownB: "po-B" },
+  { name: "purchase order items", call: (id) => fetchPOItems(id), ownA: "po-A", ownB: "po-B" },
+  { name: "purchase order activity log", call: (id) => fetchPOActivityLogs(id), ownA: "po-A", ownB: "po-B" },
+  { name: "quotation", call: (id) => fetchQuotationById(id), ownA: "q-A", ownB: "q-B" },
+  { name: "quotation items", call: (id) => fetchQuotationItems(id), ownA: "q-A", ownB: "q-B" },
+  { name: "picking list items", call: (id) => fetchPickingListItems(id), ownA: "pl-A", ownB: "pl-B" },
 ];
 
 describe("Cross-company attack matrix — A ↔ B", () => {
@@ -243,6 +333,89 @@ describe("Cross-company attack matrix — A ↔ B", () => {
       activeBusinessId = BIZ_A;
       // Posting a return puts stock back and creates a Credit Note voucher.
       await expect(postSalesReturn("sr-B")).rejects.toThrow();
+    });
+
+    // ─── Modules scoped after the first milestone ─────────────────────────
+    // Each of these ends in a SECURITY DEFINER RPC or a direct write. The
+    // RPCs refuse a non-member on their own; these assert the ACTIVE-company
+    // guard that runs before them.
+
+    it("postStockTake refuses company B's sheet before writing stock", async () => {
+      activeBusinessId = BIZ_A;
+      // Posting a stock take overwrites products.stock and raises a journal
+      // voucher — it must never run against another company's count.
+      await expect(postStockTake("st-B")).rejects.toThrow();
+    });
+
+    it("postStockTake on own sheet is allowed", async () => {
+      activeBusinessId = BIZ_A;
+      await expect(postStockTake("st-A")).resolves.toBeUndefined();
+    });
+
+    it("cancelStockTake refuses company B's sheet", async () => {
+      activeBusinessId = BIZ_A;
+      await expect(cancelStockTake("st-B")).rejects.toThrow();
+    });
+
+    it("setCountedQty refuses a line on company B's sheet", async () => {
+      activeBusinessId = BIZ_A;
+      await expect(setCountedQty("sti-B", 99)).rejects.toThrow();
+    });
+
+    it("removeStockTakeItem refuses a line on company B's sheet", async () => {
+      activeBusinessId = BIZ_A;
+      await expect(removeStockTakeItem("sti-B")).rejects.toThrow();
+    });
+
+    it("dispatchStockTransfer refuses company B's transfer before moving stock", async () => {
+      activeBusinessId = BIZ_A;
+      await expect(dispatchStockTransfer("tr-B")).rejects.toThrow();
+    });
+
+    it("receiveStockTransfer refuses company B's transfer", async () => {
+      activeBusinessId = BIZ_A;
+      await expect(receiveStockTransfer("tr-B")).rejects.toThrow();
+    });
+
+    it("cancelStockTransfer refuses company B's transfer", async () => {
+      activeBusinessId = BIZ_A;
+      await expect(cancelStockTransfer("tr-B")).rejects.toThrow();
+    });
+
+    it("approvePurchaseOrder on company B's PO matches nothing", async () => {
+      activeBusinessId = BIZ_A;
+      // Approval is what unlocks goods receipt against a PO.
+      await approvePurchaseOrder("po-B", "user-1");
+      expect(lastUpdateMatched, "foreign PO must not be approvable").toBe(0);
+    });
+
+    it("approvePurchaseOrder on own PO matches a row", async () => {
+      activeBusinessId = BIZ_A;
+      await approvePurchaseOrder("po-A", "user-1");
+      expect(lastUpdateMatched, "own PO should be approvable").toBe(1);
+    });
+
+    it("rejectPurchaseOrder on company B's PO matches nothing", async () => {
+      activeBusinessId = BIZ_A;
+      await rejectPurchaseOrder("po-B", "user-1", "no");
+      expect(lastUpdateMatched, "foreign PO must not be rejectable").toBe(0);
+    });
+
+    it("updateQuotationStatus on company B's quotation matches nothing", async () => {
+      activeBusinessId = BIZ_A;
+      await updateQuotationStatus("q-B", "accepted");
+      expect(lastUpdateMatched, "foreign quotation must not be updatable").toBe(0);
+    });
+
+    it("deleteQuotation on company B's quotation matches nothing", async () => {
+      activeBusinessId = BIZ_A;
+      await deleteQuotation("q-B");
+      expect(lastUpdateMatched, "foreign quotation must not be deletable").toBe(0);
+    });
+
+    it("markItemPicked refuses a line on company B's picking list", async () => {
+      activeBusinessId = BIZ_A;
+      await expect(markItemPicked("pli-B", 5)).rejects.toThrow();
     });
 
     it("updateLedger on own ledger matches a row", async () => {

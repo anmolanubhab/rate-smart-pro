@@ -1,4 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
+import { fetchScopedById, assertOwnedByBusiness } from "@/lib/businessScope";
+
+/** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
+export const STOCK_TRANSFER_NOT_FOUND = "Stock transfer not found";
 
 export type StockTransferStatus = "draft" | "in_transit" | "received" | "cancelled";
 
@@ -96,19 +100,33 @@ export async function createStockTransfer(input: {
   return transfer as unknown as StockTransfer;
 }
 
-export async function dispatchStockTransfer(transferId: string) {
+// Each of these moves real stock between warehouses. The RPCs are SECURITY
+// DEFINER and refuse a NON-member, but a user who belongs to both companies
+// passes that check for either one — so dispatching/receiving/cancelling
+// company B's transfer while A was active succeeded. Ownership first.
+
+export async function dispatchStockTransfer(transferId: string, businessId?: string | null) {
+  await assertOwnedByBusiness("stock_transfers", transferId, businessId, STOCK_TRANSFER_NOT_FOUND);
   const { error } = await supabase.rpc("dispatch_stock_transfer" as never, { _transfer_id: transferId } as never);
   if (error) throw error;
 }
 
-export async function receiveStockTransfer(transferId: string) {
+export async function receiveStockTransfer(transferId: string, businessId?: string | null) {
+  await assertOwnedByBusiness("stock_transfers", transferId, businessId, STOCK_TRANSFER_NOT_FOUND);
   const { error } = await supabase.rpc("receive_stock_transfer" as never, { _transfer_id: transferId } as never);
   if (error) throw error;
 }
 
-export async function cancelStockTransfer(transferId: string) {
+export async function cancelStockTransfer(transferId: string, businessId?: string | null) {
+  await assertOwnedByBusiness("stock_transfers", transferId, businessId, STOCK_TRANSFER_NOT_FOUND);
   const { error } = await supabase.rpc("cancel_stock_transfer" as never, { _transfer_id: transferId } as never);
   if (error) throw error;
+}
+
+export async function fetchStockTransfer(transferId: string, businessId?: string | null): Promise<StockTransfer> {
+  return fetchScopedById<StockTransfer>("stock_transfers", transferId, businessId, {
+    notFoundMessage: STOCK_TRANSFER_NOT_FOUND,
+  });
 }
 
 export async function getWarehouseAvailableStock(productId: string, warehouseId: string): Promise<number> {
