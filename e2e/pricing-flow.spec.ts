@@ -32,10 +32,19 @@ interface TestBenchResult {
   }[];
 }
 
+// The JSON View tab renders `exportPayload`, which wraps the actual
+// PricingResult under `.pricingResult` (see PricingTestBench.tsx:277-280:
+// `{ pricingResult: result, snapshot: result.lines.map(buildSnapshot) }`)
+// — not the result's `lines` directly.
+interface ExportPayload {
+  pricingResult: TestBenchResult;
+}
+
 async function readTestBenchJson(page: Page): Promise<TestBenchResult> {
   await page.getByRole("tab", { name: "JSON View" }).click();
   const text = await page.locator("pre").innerText();
-  return JSON.parse(text) as TestBenchResult;
+  const payload = JSON.parse(text) as ExportPayload;
+  return payload.pricingResult;
 }
 
 test.describe("Pricing SSOT: Test Bench == Sales Order == Invoice", () => {
