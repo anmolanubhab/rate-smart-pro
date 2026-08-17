@@ -14,6 +14,10 @@ import {
   Ban,
   Copy,
 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import { buildPurchaseOrderUdm } from "@/lib/documentUdm/purchaseOrderUdm";
 import {
@@ -162,6 +166,11 @@ export default function CreatePurchaseOrder() {
   const [importOpen, setImportOpen] = useState(false);
   const [activityLogs, setActivityLogs] = useState<POActivityLog[]>([]);
   const [duplicating, setDuplicating] = useState(false);
+  // AlertDialog, not window.prompt() — a native prompt() renders outside the
+  // React tree and can't be driven the same way as every other confirm flow
+  // in this app (Cancel Invoice, Cancel GRN, and the PO list page's own
+  // Cancel PO already use AlertDialog; only this edit-page action didn't).
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   const poIdRef = useRef<string | null>(editId || null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
@@ -468,7 +477,7 @@ export default function CreatePurchaseOrder() {
 
   const handleCancelPO = async () => {
     if (!user || !poIdRef.current) return;
-    const reason = window.prompt("Reason for cancelling this Purchase Order? (optional)") ?? "";
+    const reason = "";
     try {
       setSaving(true);
       await cancelPurchaseOrder(poIdRef.current, reason, user.id);
@@ -489,6 +498,7 @@ export default function CreatePurchaseOrder() {
       toast.error(e.message);
     } finally {
       setSaving(false);
+      setCancelConfirmOpen(false);
     }
   };
 
@@ -551,7 +561,7 @@ export default function CreatePurchaseOrder() {
     { key: "submit", label: "Submit", icon: CheckCircle2, shortcut: "Ctrl+Enter", onClick: () => handleSave("pending_approval"), disabled: saving, variant: "primary" },
     { key: "reject", label: "Reject", icon: X, onClick: handleReject, disabled: saving, hidden: !(editMode && currentStatus === "pending_approval" && canApprove), className: "border-destructive/40 text-destructive" },
     { key: "approve", label: "Approve", icon: ShieldCheck, onClick: handleApprove, disabled: saving, hidden: !(editMode && currentStatus === "pending_approval" && canApprove), variant: "primary" },
-    { key: "cancel", label: "Cancel PO", icon: Ban, onClick: handleCancelPO, disabled: saving, hidden: !(editMode && currentStatus !== "cancelled" && currentStatus !== "closed"), className: "border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700" },
+    { key: "cancel", label: "Cancel PO", icon: Ban, onClick: () => setCancelConfirmOpen(true), disabled: saving, hidden: !(editMode && currentStatus !== "cancelled" && currentStatus !== "closed"), className: "border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700" },
     { key: "duplicate", label: duplicating ? "Duplicating…" : "Duplicate", icon: Copy, onClick: handleDuplicate, disabled: duplicating, hidden: !editMode },
     { key: "close", label: "Close", icon: X, onClick: () => navigate("/purchase/orders"), variant: "ghost", className: "text-muted-foreground" },
   ];
@@ -953,6 +963,24 @@ export default function CreatePurchaseOrder() {
         .po-entry input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         .po-entry input[type=number] { -moz-appearance: textfield; }
       `}</style>
+
+      <AlertDialog open={cancelConfirmOpen} onOpenChange={(o) => !o && setCancelConfirmOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Purchase Order?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark the Purchase Order as cancelled. Blocked if any Goods Receipt has ever been recorded
+              against it — cancel the GRN(s) first. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Keep PO</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCancelPO} disabled={saving} className="bg-orange-600 hover:bg-orange-700 text-white">
+              Cancel PO
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </DocumentRoot>
   );

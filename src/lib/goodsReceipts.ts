@@ -96,12 +96,24 @@ export async function fetchGoodsReceipt(id: string, businessId?: string | null):
 }
 
 /**
- * Cancel a GRN, reversing everything grn_apply_stock() applied on receipt:
- * - Decrements products.stock by each item's accepted_qty.
+ * Cancel a GRN, reversing everything receipt applied:
+ * - products.stock / stock_on_hold are reversed by the DB trigger
+ *   trg_grn_cancel_reversal (fires on goods_receipts.status: 'received' ->
+ *   'cancelled', function grn_cancel_reversal()) the instant the status
+ *   update below commits -- atomically, and with a proper inventory_movements
+ *   row (movement_type='return', reference_type='goods_receipt_reversal').
+ *   This function must NOT also touch products.stock/stock_on_hold itself:
+ *   a prior version of this function did that as a second, separate,
+ *   unlogged UPDATE alongside the (already-existing, correct) DB trigger --
+ *   since neither side knew about the other, every GRN cancellation silently
+ *   reversed stock TWICE (confirmed via a live GST-audit reconciliation:
+ *   cancelling GRNs for accepted qty 10/5/8 dropped stock by 20/10/16
+ *   instead of 10/5/8 -- exactly double, matching this double-write).
  * - Reverses batch qty top-ups (goods_receipt_item_batches) and deletes
  *   serials this GRN created (goods_receipt_item_serials) -- serials are
  *   newly minted by receiving, unlike dispatch which flips existing ones,
- *   so cancelling deletes them rather than reverting a status.
+ *   so cancelling deletes them rather than reverting a status. The DB
+ *   trigger does not touch batches/serials, so these stay here.
  * - Recomputes the linked PO's status from its remaining non-cancelled GRNs.
  * Blocks if a non-cancelled Purchase Invoice was generated from this GRN --
  * cancel that first (same "block, don't cascade" stance as the delete-time
@@ -135,7 +147,7 @@ export async function cancelGRN(grnId: string, businessId?: string | null): Prom
   const { data: rawItems, error: itemsErr } = await supabase
     .from("goods_receipt_items")
     .select(`
-      product_id, accepted_qty, damaged_qty, shortage_qty,
+      product_id,
       goods_receipt_item_batches(batch_id, qty),
       goods_receipt_item_serials(serial_id)
     `)
@@ -143,21 +155,8 @@ export async function cancelGRN(grnId: string, businessId?: string | null): Prom
   if (itemsErr) throw itemsErr;
 
   for (const item of (rawItems ?? []) as any[]) {
-    if (item.product_id) {
-      const heldQty = Number(item.damaged_qty ?? 0) + Number(item.shortage_qty ?? 0);
-      if (Number(item.accepted_qty) > 0 || heldQty > 0) {
-        const { data: product } = await supabase.from("products").select("stock, stock_on_hold").eq("id", item.product_id).single();
-        const stockBefore = Number(product?.stock) || 0;
-        const holdBefore = Number((product as any)?.stock_on_hold) || 0;
-        // Mirrors the rest of this function: a plain balance update, no
-        // inventory_movements row (this GRN-cancel path has never logged
-        // movements even for the accepted-qty reversal above it).
-        await supabase.from("products").update({
-          stock: Math.max(0, stockBefore - Number(item.accepted_qty)),
-          stock_on_hold: Math.max(0, holdBefore - heldQty),
-        } as any).eq("id", item.product_id);
-      }
-    }
+    // products.stock / stock_on_hold are reversed by trg_grn_cancel_reversal
+    // when the status update below commits -- not here (see function doc).
     for (const b of item.goods_receipt_item_batches ?? []) {
       await adjustProductBatchQty(b.batch_id, -Number(b.qty));
     }
