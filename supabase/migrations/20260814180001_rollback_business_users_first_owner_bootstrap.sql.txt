@@ -1,0 +1,16 @@
+-- ROLLBACK for 20260814180000_fix_business_users_first_owner_bootstrap.sql
+-- Kept as a .sql.txt file (NOT auto-applied as a migration) so it doesn't
+-- run automatically -- rename to .sql and apply manually only if reverting.
+--
+-- Restores the original business_users_insert policy (pre-bootstrap) and
+-- removes the helper function. After this, new business creation will again
+-- fail at the "add owner" step exactly as it did before this fix, so only
+-- run this if you specifically need to revert the RLS change itself.
+
+DROP POLICY IF EXISTS business_users_insert ON public.business_users;
+CREATE POLICY business_users_insert ON public.business_users FOR INSERT TO authenticated
+WITH CHECK (
+  public.has_business_role(business_id, ARRAY['owner'::business_role, 'admin'::business_role])
+);
+
+DROP FUNCTION IF EXISTS public.can_bootstrap_business_owner(uuid);

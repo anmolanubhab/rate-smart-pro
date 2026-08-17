@@ -379,6 +379,8 @@ const Parties = () => {
         party_group_id: form.party_group_id || null,
         use_group_defaults: form.use_group_defaults,
         salesman_id: form.salesman_id || null,
+        preferred_customer: form.preferred_customer,
+        preferred_supplier: form.preferred_supplier,
       };
       if (editing) {
         const { error } = await supabase.from("parties").update(payload).eq("id", editing.id);
