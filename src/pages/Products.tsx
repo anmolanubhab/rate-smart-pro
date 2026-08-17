@@ -24,7 +24,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Product, ProductCategory, ProductTrackingType, bulkDeleteProducts } from "@/lib/products";
+import { Product, ProductCategory, ProductTrackingType, bulkDeleteProducts, hasTradingHistory } from "@/lib/products";
 import {
   fetchCategories, fetchUnits, fetchProductUnits, saveProductUnits,
   type MeasurementCategory, type Unit,
@@ -288,6 +288,14 @@ const Products = () => {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  // Once a product has traded, its Stock field is no longer an opening-stock
+  // figure -- changing it is a stock adjustment, which has to go through
+  // create_inventory_adjustment to get a movement row, accounting and an
+  // audit trail. The database already refuses to restate the opening voucher
+  // past that point (sync_product_opening_stock's lock); this stops the form
+  // from silently changing products.stock behind that lock, which wrote no
+  // movement row at all.
+  const [openingLocked, setOpeningLocked] = useState(false);
 
   // Storage location: default_bin_id is the only thing persisted on the product —
   // this warehouse select is just a local filter for which bins BinLocationPicker offers.
@@ -492,6 +500,7 @@ const Products = () => {
 
   const openNew = () => {
     setEditing(null);
+    setOpeningLocked(false);
     setForm(EMPTY_FORM);
     setHsnQuery("");
     setHsnResults([]);
@@ -501,6 +510,12 @@ const Products = () => {
 
   const openEdit = async (p: Product) => {
     setEditing(p);
+    // Assume locked until proven otherwise, so a slow or failed lookup can
+    // never leave the field open on a product that has actually traded.
+    setOpeningLocked(true);
+    hasTradingHistory(p.id)
+      .then(setOpeningLocked)
+      .catch(() => setOpeningLocked(true));
     setForm({
       part_number: p.part_number,
       name: p.name,
@@ -596,7 +611,14 @@ const Products = () => {
       };
       let productId = editing?.id;
       if (editing) {
-        const { error } = await supabase.from("products").update(payload).eq("id", editing.id);
+        // Never send stock for a product that has traded, even if the field
+        // was somehow edited (stale lock lookup, devtools, a re-render race).
+        // The disabled input is the affordance; this is the guarantee.
+        const { stock: _stock, ...lockedPayload } = payload;
+        const { error } = await supabase
+          .from("products")
+          .update(openingLocked ? lockedPayload : payload)
+          .eq("id", editing.id);
         if (error) throw error;
       } else {
         const { data, error } = await supabase.from("products").insert(payload).select("id").single();
@@ -943,12 +965,28 @@ const Products = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Stock</Label>
+              <Label>{editing ? "Stock" : "Opening Stock"}</Label>
               <Input
                 type="number"
                 value={form.stock}
+                disabled={openingLocked}
                 onChange={(e) => setForm({ ...form, stock: e.target.value })}
               />
+              {openingLocked ? (
+                <p className="text-xs text-muted-foreground">
+                  This product has already been traded, so its stock can only change through a
+                  movement that leaves an audit trail.{" "}
+                  <Link to="/inventory/adjustments" className="underline underline-offset-2">
+                    Post a Stock Adjustment
+                  </Link>{" "}
+                  instead.
+                </p>
+              ) : editing ? (
+                <p className="text-xs text-muted-foreground">
+                  Opening stock — editable until this product is first traded. Changing it restates
+                  its opening entry (Dr Opening Stock / Cr Capital Account).
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label>Low-stock alert at</Label>

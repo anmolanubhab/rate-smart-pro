@@ -32,6 +32,32 @@ created_at: string;
 updated_at: string;
 }
 
+/**
+ * True once a product has traded — i.e. it has any inventory_movements row
+ * other than the movement_type='initial' one written at product create.
+ *
+ * That is the same test sync_product_opening_stock() uses in the database
+ * (see supabase/migrations/20260818090000_opening_stock_edit_lifecycle.sql)
+ * to decide whether the opening-stock entry is still editable. The opening
+ * entry is anchored to the 'initial' movement precisely because trading
+ * appends new rows and never rewrites that one, so "has a non-initial
+ * movement" is exactly "has traded".
+ *
+ * The UI asks the same question for the same reason: once true, the Stock
+ * field stops being an opening-stock correction and a change to it would
+ * be a stock adjustment, which must go through create_inventory_adjustment
+ * so it gets a movement row, its own accounting and an audit trail.
+ */
+export async function hasTradingHistory(productId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from("inventory_movements")
+    .select("id", { count: "exact", head: true })
+    .eq("product_id", productId)
+    .neq("movement_type", "initial");
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
 export function normalizePart(s: any): string {
 return String(s ?? "")
 .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, "")
