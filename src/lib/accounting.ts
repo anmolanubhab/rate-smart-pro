@@ -424,9 +424,33 @@ export function computeInventoryAdjustedProfitLoss(
  * in this schema (inventory_movements.rate/value are unpopulated in
  * production), so this is always a snapshot as of right now, never a
  * reconstructed past value.
+ *
+ * Valued at COST, not at selling price. It used to read
+ * `dealer_rate || mrp` -- dealer_rate is the *selling* rate, so every
+ * unsold unit's margin was booked as Closing Stock income and fell
+ * straight through netProfitWithInventory into Net Profit as unrealised
+ * profit. It also disagreed with the Stock Valuation report, whose
+ * "Cost Value (Book)" column comes from get_stock_valuation()'s
+ * avg_cost = COALESCE(purchase_price, cost_price, dealer_rate, 0). The
+ * cost chain below is that same chain, so P&L / Balance Sheet /
+ * Dashboard / Stock Valuation now all value the same stock identically.
+ *
+ * Difference from the SQL: this picks the first *positive* value rather
+ * than the first non-NULL one. A literal 0 in a price column means "not
+ * entered" in this schema, and treating it as a real ₹0 cost would value
+ * whole catalogues at nothing -- see the 2026-08-13 reconciliation
+ * regression in accounting.test.ts, a real business whose products carry
+ * only MRP (dealer_rate stored as 0). mrp is kept as the last resort for
+ * exactly that shape of data; get_stock_valuation() has no such fallback.
  */
-export function computeClosingStockValue(products: { stock: number; dealer_rate?: number | null; mrp?: number | null }[]): number {
-  return products.reduce((s, p) => s + Number(p.stock || 0) * Number(p.dealer_rate || p.mrp || 0), 0);
+export function computeClosingStockValue(
+  products: { stock: number; purchase_price?: number | null; cost_price?: number | null; dealer_rate?: number | null; mrp?: number | null }[]
+): number {
+  return products.reduce((s, p) => s + Number(p.stock || 0) * unitCost(p), 0);
+}
+
+function unitCost(p: { purchase_price?: number | null; cost_price?: number | null; dealer_rate?: number | null; mrp?: number | null }): number {
+  return Number(p.purchase_price || p.cost_price || p.dealer_rate || p.mrp || 0);
 }
 
 /**
