@@ -166,6 +166,54 @@ describe("Dashboard/P&L reconciliation regression (real business data, 2026-08-1
   });
 });
 
+describe("Opening stock regression (BOOTSTRAP FIX VERIFY TEST, 2026-08-17)", () => {
+  // A product created with opening stock wrote only an inventory_movements
+  // row -- no voucher, no ledger entry -- while the reports added its value
+  // as synthetic Closing Stock income. The whole stock value therefore
+  // surfaced as Net Profit under the Balance Sheet's "Capital" group, next
+  // to a Capital Account ledger that was genuinely 0/0. Both halves of the
+  // fix are asserted here: cost-basis valuation, and the Opening Stock
+  // ledger that 20260817140000_opening_stock_accounting_counterpart.sql
+  // now posts against Capital.
+  const product = { stock: 100, cost_price: 50, dealer_rate: 180, mrp: 200 };
+
+  it("values closing stock at cost, not at the selling rate", () => {
+    // was 100 x 180 = 18000 (dealer_rate), which is what the phantom profit
+    // was made of; 13000 of it was unrealised margin.
+    expect(computeClosingStockValue([product])).toBe(5000);
+  });
+
+  it("agrees with get_stock_valuation()'s avg_cost chain (purchase_price wins over cost_price)", () => {
+    expect(computeClosingStockValue([{ ...product, purchase_price: 40 }])).toBe(4000);
+  });
+
+  it("leaves no phantom Net Profit once the opening-stock counterpart is posted", () => {
+    const closingStock = computeClosingStockValue([product]);
+    // What the trigger writes: Dr Opening Stock 5000 / Cr Capital 5000.
+    const ledgers = [
+      ledger({ name: "Opening Stock", group: { name: "Direct Expenses", nature: "expense" }, balance: closingStock }),
+      ledger({ name: "Capital Account", group: { name: "Capital", nature: "capital" }, balance: -closingStock }),
+    ];
+    expect(computeTrialBalance(ledgers).totDr - computeTrialBalance(ledgers).totCr).toBeCloseTo(0, 2);
+
+    // BalanceSheet.tsx / ProfitLoss.tsx both pass openingStock = 0 -- the
+    // Opening Stock *ledger* above is what carries it, via computeProfitLoss.
+    const { profit } = computeInventoryAdjustedProfitLoss(ledgers, 0, closingStock);
+    expect(profit).toBe(0);
+
+    // Balance Sheet then reads: Assets (synthetic closing stock) = Capital.
+    const capital = -(ledgers.find((l) => l.name === "Capital Account")!.balance ?? 0);
+    expect(closingStock).toBe(capital + profit);
+  });
+
+  it("still reports the pre-fix phantom profit when no counterpart exists", () => {
+    // Guards the diagnosis itself: with the stock but no Opening Stock
+    // ledger, profit is exactly the stock value -- the shape seen live.
+    const closingStock = computeClosingStockValue([product]);
+    expect(computeInventoryAdjustedProfitLoss([], 0, closingStock).profit).toBe(closingStock);
+  });
+});
+
 describe("Balance Sheet equation: Assets = Liabilities + Capital + P&L", () => {
   it("holds for a balanced double-entry ledger set (mirrors BalanceSheet.tsx's own aggregation)", () => {
     const ledgers = [
