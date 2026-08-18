@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateLedgerImportRows, validatePartyImportRows, parseCsv } from "./migrationImport";
+import { validateLedgerImportRows, validatePartyImportRows, validateStockImportRows, parseCsv } from "./migrationImport";
 
 const ledgers = [
   { id: "L1", name: "Cash Account" },
@@ -117,5 +117,58 @@ describe("validatePartyImportRows — real CSV fixture", () => {
     expect(result.errors[2]).toMatch(/Row 6.*not classified as Customer or Supplier/);
     expect(result.errors[3]).toMatch(/Row 7.*duplicate party "Bharat Suppliers"/);
     expect(result.errors).toHaveLength(4);
+  });
+});
+
+const products = [
+  { id: "PR1", part_number: "P001", name: "Oil" },
+  { id: "PR2", part_number: "P002", name: "Filter" },
+];
+
+describe("validateStockImportRows — real CSV fixture", () => {
+  const fixture = [
+    "Part Number,Product,Opening Qty,Opening Cost",
+    "P001,Oil,100,500",
+    "P002,Filter,200,150",
+    "P001,Oil,50,500",              // duplicate part number in file
+    "P999,Ghost,10,100",            // unknown part number
+  ].join("\n");
+
+  const result = validateStockImportRows(fixture, products);
+
+  it("accepts the two genuinely valid rows", () => {
+    expect(result.valid).toEqual([
+      { productId: "PR1", qty: 100, unitCost: 500 },
+      { productId: "PR2", qty: 200, unitCost: 150 },
+    ]);
+  });
+
+  it("flags the duplicate and unknown part number rows distinctly", () => {
+    expect(result.errors[0]).toMatch(/Row 4.*duplicate part number "P001"/);
+    expect(result.errors[1]).toMatch(/Row 5.*unknown part number "P999"/);
+    expect(result.errors).toHaveLength(2);
+  });
+});
+
+describe("validateStockImportRows — invalid qty and cost", () => {
+  it("rejects a negative qty", () => {
+    const csv = "Part Number,Product,Opening Qty,Opening Cost\nP001,Oil,-5,500";
+    const result = validateStockImportRows(csv, products);
+    expect(result.valid).toHaveLength(0);
+    expect(result.errors[0]).toMatch(/Row 2.*invalid opening qty "-5"/);
+  });
+
+  it("rejects a non-numeric cost", () => {
+    const csv = "Part Number,Product,Opening Qty,Opening Cost\nP001,Oil,100,abc";
+    const result = validateStockImportRows(csv, products);
+    expect(result.valid).toHaveLength(0);
+    expect(result.errors[0]).toMatch(/Row 2.*invalid opening cost "abc"/);
+  });
+
+  it("accepts zero qty (a product being zeroed out)", () => {
+    const csv = "Part Number,Product,Opening Qty,Opening Cost\nP001,Oil,0,0";
+    const result = validateStockImportRows(csv, products);
+    expect(result.errors).toHaveLength(0);
+    expect(result.valid).toEqual([{ productId: "PR1", qty: 0, unitCost: 0 }]);
   });
 });
