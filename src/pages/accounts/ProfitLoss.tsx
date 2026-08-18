@@ -6,7 +6,7 @@ import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canViewProfit } from "@/lib/permissions";
-import { fetchLedgersWithBalance, computeInventoryAdjustedProfitLoss, computeClosingStockValue, fmtInr, buildBusinessHeaderLines } from "@/lib/accounting";
+import { fetchLedgersWithBalance, computeInventoryAdjustedProfitLoss, computeClosingStockValue, hasRealStockLedger, fmtInr, buildBusinessHeaderLines } from "@/lib/accounting";
 import { fetchProducts } from "@/lib/products";
 import { useFormatDate } from "@/lib/dateFormat";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
@@ -41,7 +41,12 @@ export default function ProfitLoss() {
   });
 
   const data = useMemo(() => {
-    const closingStock = computeClosingStockValue(products);
+    // Phase 2: once real (this business has closed a financial year), the
+    // Closing Stock ledger already flows through computeProfitLoss's normal
+    // income sum -- passing it again via this parameter would double-count
+    // it, so it drops to 0 here exactly like the openingStock argument
+    // above it already does.
+    const closingStock = hasRealStockLedger(ledgers) ? 0 : computeClosingStockValue(products);
     const { income, expense, profit, rows } = computeInventoryAdjustedProfitLoss(ledgers, 0, closingStock);
     return { rows, income, expense, profit };
   }, [ledgers, products]);

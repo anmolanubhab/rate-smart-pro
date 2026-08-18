@@ -115,9 +115,11 @@ export default function FinancialYears() {
         <p className="text-sm text-muted-foreground">Settings</p>
         <h1 className="font-display text-3xl font-bold mt-1">Financial Years</h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Closing a financial year blocks any new posting (or deletion of an already-posted
-          voucher) dated inside it. Closing is only allowed once this business's Trial Balance
-          is balanced. This is additional to, and independent of, the single Accounting Lock date.
+          Closing a financial year posts the closing-stock journal (and, from the second year
+          onward, carries the prior closing balance into this year's Opening Stock), then blocks
+          any new posting (or deletion of an already-posted voucher) dated inside it. Closing is
+          only allowed once this business's Trial Balance is balanced. This is additional to, and
+          independent of, the single Accounting Lock date.
         </p>
       </header>
 
@@ -191,10 +193,12 @@ export default function FinancialYears() {
           <AlertDialogHeader>
             <AlertDialogTitle>Close {closeTarget?.fy_name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This blocks any new posted voucher, and the deletion of any already-posted voucher,
-              dated between {closeTarget?.start_date} and {closeTarget?.end_date}. It only succeeds
-              if this business's Trial Balance is currently balanced — if it isn't, closing will be
-              refused and nothing changes. This cannot be undone from this screen.
+              This posts the closing-stock journal (Dr Stock-in-Hand / Cr Closing Stock) for this
+              year, carries forward any prior year's closing balance into this year's Opening
+              Stock, then blocks any new posted voucher, and the deletion of any already-posted
+              voucher, dated between {closeTarget?.start_date} and {closeTarget?.end_date}. It only
+              succeeds if this business's Trial Balance is currently balanced — if it isn't,
+              closing will be refused and nothing changes. This cannot be undone from this screen.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchLedgersWithBalance, computeInventoryAdjustedProfitLoss, computeClosingStockValue, fmtInrPrecise, balanceSheetPresentationSign, buildBusinessHeaderLines } from "@/lib/accounting";
+import { fetchLedgersWithBalance, computeInventoryAdjustedProfitLoss, computeClosingStockValue, hasRealStockLedger, fmtInrPrecise, balanceSheetPresentationSign, buildBusinessHeaderLines } from "@/lib/accounting";
 import { fetchProducts } from "@/lib/products";
 import { useFormatDate } from "@/lib/dateFormat";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
@@ -40,7 +40,14 @@ export default function BalanceSheet() {
 
   const data = useMemo(() => {
     const nature = (l: any) => l.group?.nature;
-    const closingStock = computeClosingStockValue(products);
+    // Phase 2: once this business has closed a financial year, Stock-in-Hand
+    // and Closing Stock are real, properly-grouped ledgers already present
+    // in `ledgers` -- the asset loop and computeProfitLoss's income loop
+    // pick them up on their own. Falling back to the synthetic figure only
+    // when no real ledger exists yet is what keeps every business that
+    // hasn't closed a period looking exactly as it did before Phase 2.
+    const stockIsReal = hasRealStockLedger(ledgers);
+    const closingStock = stockIsReal ? 0 : computeClosingStockValue(products);
     const { profit } = computeInventoryAdjustedProfitLoss(ledgers, 0, closingStock);
     // Capital has no seeded children (see fetchAccountGroupTree's doc
     // comment) -- ledgers post straight to it, so any capital-nature
@@ -83,7 +90,7 @@ export default function BalanceSheet() {
       asset += signed;
       rows.push({ side: "Assets", group: l.group?.name ?? "—", item: l.name, amount: signed * sign, side_tone: signed >= 0 ? "success" : "danger", _party_id: l.party_id, _group_id: l.group_id, _ledger_id: l.id });
     });
-    if (closingStock !== 0) {
+    if (!stockIsReal && closingStock !== 0) {
       asset += closingStock;
       rows.push({ side: "Assets", group: "Stock-in-Hand", item: "Closing Stock", amount: closingStock * sign, side_tone: "success", _party_id: null, _group_id: null, _ledger_id: "" });
     }

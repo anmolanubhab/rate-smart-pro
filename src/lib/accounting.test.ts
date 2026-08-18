@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeTrialBalance, computeProfitLoss, computeInventoryAdjustedProfitLoss, netProfitWithInventory, computeClosingStockValue, type LedgerRow } from "./accounting";
+import { computeTrialBalance, computeProfitLoss, computeInventoryAdjustedProfitLoss, netProfitWithInventory, computeClosingStockValue, rollForwardOpeningBalance, hasRealStockLedger, type LedgerRow } from "./accounting";
 
 const ledger = (over: Partial<LedgerRow>): LedgerRow => ({
   id: over.id ?? Math.random().toString(),
@@ -237,5 +237,78 @@ describe("Balance Sheet equation: Assets = Liabilities + Capital + P&L", () => {
       .reduce((s, l) => s + Math.abs(l.balance ?? 0), 0);
 
     expect(asset).toBeCloseTo(liabPlusCapital + profit, 2);
+  });
+});
+
+describe("rollForwardOpeningBalance (ledger statement date-range regression, Phase 1 F8)", () => {
+  // buildLedgerStatement() previously read opening balance from
+  // ledger.opening_balance alone, ignoring any posted voucher dated before
+  // opts.from -- viewing a statement on a range starting after the ledger's
+  // earliest activity showed a too-low opening figure that didn't reconcile
+  // with the Balance Sheet.
+  it("returns the stored opening balance unchanged when there is no prior movement", () => {
+    expect(rollForwardOpeningBalance({ opening_balance: 5000, opening_balance_type: "dr" }, 0)).toBe(5000);
+    expect(rollForwardOpeningBalance({ opening_balance: 5000, opening_balance_type: "cr" }, 0)).toBe(-5000);
+  });
+
+  it("folds in Dr-heavy prior-period movement for a Dr-opening ledger", () => {
+    // opening Dr 1000, plus 3000 of net Dr posted before `from`
+    expect(rollForwardOpeningBalance({ opening_balance: 1000, opening_balance_type: "dr" }, 3000)).toBe(4000);
+  });
+
+  it("folds in Cr-heavy prior-period movement for a Cr-opening ledger", () => {
+    // opening Cr 1000 (-1000 signed), plus -2000 net (more Cr than Dr) before `from`
+    expect(rollForwardOpeningBalance({ opening_balance: 1000, opening_balance_type: "cr" }, -2000)).toBe(-3000);
+  });
+
+  it("reconciles with the Balance Sheet: statement opening + in-range movement = current balance, for any split of the date range", () => {
+    const opening_balance = 2000;
+    const opening_balance_type = "dr" as const;
+    const wholeHistory = [500, -300, 1200]; // Dr-Cr per posted voucher, chronological
+    const currentBalance = wholeHistory.reduce((s, m) => s + m, opening_balance);
+    // split the history at any point; prior-to-from + in-range must still sum to currentBalance
+    for (let split = 0; split <= wholeHistory.length; split++) {
+      const prior = wholeHistory.slice(0, split).reduce((s, m) => s + m, 0);
+      const inRange = wholeHistory.slice(split).reduce((s, m) => s + m, 0);
+      const openingAtSplit = rollForwardOpeningBalance({ opening_balance, opening_balance_type }, prior);
+      expect(openingAtSplit + inRange).toBe(currentBalance);
+    }
+  });
+});
+
+describe("unit-cost precedence consistency (Phase 1 F7 — mirrors SQL opening_stock_unit_cost)", () => {
+  // purchase_price > cost_price > dealer_rate > mrp > 0, first POSITIVE
+  // wins. Both create_inventory_adjustment()/post_stock_take() now call the
+  // SQL twin of this via opening_stock_unit_cost(); this locks the TS side
+  // so the two can't silently diverge again the way F7 found them.
+  it.each([
+    [{ purchase_price: 40, cost_price: 50, dealer_rate: 180, mrp: 200 }, 40],
+    [{ cost_price: 50, dealer_rate: 180, mrp: 200 }, 50],
+    [{ dealer_rate: 180, mrp: 200 }, 180],
+    [{ mrp: 200 }, 200],
+    [{ purchase_price: 0, cost_price: 0, dealer_rate: 0, mrp: 0 }, 0],
+  ])("resolves %j to unit cost %d", (product, expected) => {
+    expect(computeClosingStockValue([{ stock: 1, ...product }])).toBe(expected);
+  });
+});
+
+describe("hasRealStockLedger (Phase 2 — period-close adoption gate)", () => {
+  // Before a business's first close_financial_year() call, no "Stock-in-Hand"
+  // ledger row exists at all (Phase 1 removed every ad-hoc creation path;
+  // only period close creates it now) -- report call sites use this to fall
+  // back to the synthetic closing-stock figure exactly as before Phase 2,
+  // so nothing regresses for the 8 production businesses that have never
+  // closed a period.
+  it("is false when no Stock-in-Hand ledger is present", () => {
+    expect(hasRealStockLedger([ledger({ name: "Cash" }), ledger({ name: "Sales Account" })])).toBe(false);
+  });
+
+  it("is true once a Stock-in-Hand ledger exists, regardless of its balance", () => {
+    expect(hasRealStockLedger([ledger({ name: "Stock-in-Hand", balance: 0 })])).toBe(true);
+    expect(hasRealStockLedger([ledger({ name: "Cash" }), ledger({ name: "Stock-in-Hand", balance: 12000 })])).toBe(true);
+  });
+
+  it("is false on an empty ledger set", () => {
+    expect(hasRealStockLedger([])).toBe(false);
   });
 });
