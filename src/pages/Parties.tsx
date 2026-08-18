@@ -919,19 +919,33 @@ const Parties = () => {
                     <Label>Ledger Name</Label>
                     <Input value={form.ledger_name} onChange={e => setForm({...form, ledger_name: e.target.value})} placeholder="Auto-filled from party name" />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Opening Balance (₹)</Label>
-                    <Input type="number" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: e.target.value})} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Balance Type</Label>
-                    <Select value={form.balance_type} onValueChange={v => setForm({...form, balance_type: v})}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="DR">DR (Debit)</SelectItem>
-                        <SelectItem value="CR">CR (Credit)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label className="flex items-center justify-between">
+                      <span>Opening Balance (₹)</span>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-xs"
+                        onClick={() => navigate("/settings/opening-balance-migration")}
+                      >
+                        Set via Opening Balance Migration →
+                      </Button>
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input type="number" value={form.opening_balance} readOnly disabled className="bg-muted" />
+                      <Select value={form.balance_type} disabled>
+                        <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="DR">DR (Debit)</SelectItem>
+                          <SelectItem value="CR">CR (Credit)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      This value is a legacy/informational field only and does not affect the party's ledger balance.
+                      Use the Opening Balance Migration wizard to post an opening balance that reflects in the ledger, trial balance, and balance sheet.
+                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Credit Days</Label>

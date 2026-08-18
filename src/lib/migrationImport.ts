@@ -66,6 +66,42 @@ export function validateLedgerImportRows(
   return { valid, errors };
 }
 
+export type StockImportRow = { productId: string; qty: number; unitCost: number };
+
+/** CSV columns: Part Number, Product, Opening Qty, Opening Cost. Matches by
+ *  Part Number (the product's natural unique key) — never creates a
+ *  product, same "must already exist" rule the ledger/party importers use. */
+export function validateStockImportRows(
+  csvText: string,
+  products: { id: string; part_number: string; name: string }[]
+): ImportResult<StockImportRow> {
+  const rows = stripHeader(parseCsv(csvText), "part number");
+  const byPartNumber = new Map(products.map((p) => [p.part_number.trim().toLowerCase(), p]));
+  const seen = new Set<string>();
+  const errors: string[] = [];
+  const valid: StockImportRow[] = [];
+
+  rows.forEach((row, i) => {
+    const [partNumber, , qtyStr, costStr] = row;
+    const rowNo = i + 2;
+    if (!partNumber) { errors.push(`Row ${rowNo}: missing part number`); return; }
+    const key = partNumber.trim().toLowerCase();
+    if (seen.has(key)) { errors.push(`Row ${rowNo}: duplicate part number "${partNumber}" in file`); return; }
+    seen.add(key);
+    const product = byPartNumber.get(key);
+    if (!product) { errors.push(`Row ${rowNo}: unknown part number "${partNumber}" — create the product first`); return; }
+
+    const qty = Number(qtyStr);
+    if (!qtyStr || isNaN(qty) || qty < 0) { errors.push(`Row ${rowNo}: invalid opening qty "${qtyStr}"`); return; }
+    const unitCost = Number(costStr);
+    if (!costStr || isNaN(unitCost) || unitCost < 0) { errors.push(`Row ${rowNo}: invalid opening cost "${costStr}"`); return; }
+
+    valid.push({ productId: product.id, qty, unitCost });
+  });
+
+  return { valid, errors };
+}
+
 /** CSV columns: Party Name, Party Type, Opening Balance, Dr/Cr */
 export function validatePartyImportRows(
   csvText: string,
