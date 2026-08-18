@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarClock, CheckCircle2, Lock, Upload, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCircle2, Lock, Upload, Trash2, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canGranular } from "@/lib/permissions";
@@ -38,6 +38,7 @@ type Recon = {
 
 type LedgerLite = { id: string; name: string; ledger_type: string; group?: { name: string; nature: string } | null };
 type PartyLite = { id: string; name: string; preferred_customer: boolean | null; preferred_supplier: boolean | null };
+type LedgerForAdjustment = { id: string; name: string; party_id: string | null; group?: { name: string; nature: string } | null };
 
 const NATURE_LABEL: Record<string, string> = {
   asset: "Assets", liability: "Liabilities", capital: "Capital / Equity", income: "Income", expense: "Expenses",
@@ -86,6 +87,23 @@ export default function OpeningBalanceMigration() {
         .order("name");
       if (error) throw error;
       return (data ?? []) as unknown as LedgerLite[];
+    },
+  });
+
+  // Adjustment lines can target a party's own ledger, so this pulls every
+  // ledger (party-linked included) — unlike `ledgers` above, which excludes
+  // party ledgers because the Ledger Opening tab only sets general ledgers.
+  const { data: allLedgers = [] } = useQuery({
+    queryKey: ["mig-all-ledgers", business?.id],
+    enabled: !!business?.id && finalized,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ledger_accounts")
+        .select("id, name, party_id, group:account_groups(name, nature)")
+        .eq("business_id", business!.id)
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as unknown as LedgerForAdjustment[];
     },
   });
 
@@ -264,6 +282,7 @@ export default function OpeningBalanceMigration() {
               <TabsTrigger value="parties">Party Opening</TabsTrigger>
               <TabsTrigger value="stock">Stock &amp; Fixed Assets</TabsTrigger>
               <TabsTrigger value="reconcile">Reconciliation &amp; Finalize</TabsTrigger>
+              <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
             </TabsList>
 
             <TabsContent value="ledgers" className="space-y-4">
@@ -405,6 +424,17 @@ export default function OpeningBalanceMigration() {
                 </section>
               )}
             </TabsContent>
+
+            <TabsContent value="adjustments" className="space-y-4">
+              <AdjustmentPanel
+                businessId={business?.id ?? null}
+                ledgers={allLedgers as LedgerForAdjustment[]}
+                finalized={finalized}
+                editable={editable}
+                migrationDate={recon?.migration_date ?? null}
+                onPosted={() => qc.invalidateQueries({ queryKey: ["mig-reconciliation", business?.id] })}
+              />
+            </TabsContent>
           </Tabs>
         </>
       )}
@@ -496,6 +526,173 @@ function PartyRowEditor({ party, disabled, onSave, onRemove }: {
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+type AdjustmentLine = { key: string; ledgerId: string; drcr: "dr" | "cr"; amount: number; narration: string };
+
+function newAdjustmentLine(drcr: "dr" | "cr"): AdjustmentLine {
+  return { key: crypto.randomUUID(), ledgerId: "", drcr, amount: 0, narration: "" };
+}
+
+// Once finalized, the wizard itself is locked — this posts a normal journal
+// via mig_create_adjustment (tagged reference_type: 'opening_balance_adjustment'
+// and linked back to the original Opening Balance Voucher) so post-finalize
+// corrections still show up in Trial Balance, Party Statement and Ledger
+// Statement instead of being a silent, untracked edit.
+function AdjustmentPanel({ businessId, ledgers, finalized, editable, migrationDate, onPosted }: {
+  businessId: string | null; ledgers: LedgerForAdjustment[]; finalized: boolean; editable: boolean;
+  migrationDate: string | null; onPosted?: () => void;
+}) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [narration, setNarration] = useState("Opening Balance Adjustment");
+  const [lines, setLines] = useState<AdjustmentLine[]>([newAdjustmentLine("dr"), newAdjustmentLine("cr")]);
+  const [posting, setPosting] = useState(false);
+
+  if (!finalized) {
+    return (
+      <section className="rounded-2xl bg-card border p-6">
+        <p className="text-sm text-muted-foreground">
+          Adjustments are only needed once opening balances are finalized and locked. Until then, edit
+          balances directly in the tabs above.
+        </p>
+      </section>
+    );
+  }
+
+  const totalDr = lines.reduce((s, l) => s + (l.drcr === "dr" ? Number(l.amount) || 0 : 0), 0);
+  const totalCr = lines.reduce((s, l) => s + (l.drcr === "cr" ? Number(l.amount) || 0 : 0), 0);
+  const diff = Math.round((totalDr - totalCr) * 100) / 100;
+  const filledLines = lines.filter((l) => l.ledgerId && Number(l.amount) > 0);
+  const canPost = editable && filledLines.length >= 2 && totalDr > 0 && Math.abs(diff) < 0.01;
+
+  const updateLine = (key: string, patch: Partial<AdjustmentLine>) =>
+    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const addLine = () => setLines((prev) => [...prev, newAdjustmentLine("dr")]);
+  const removeLine = (key: string) => setLines((prev) => (prev.length > 2 ? prev.filter((l) => l.key !== key) : prev));
+
+  const post = async () => {
+    if (!businessId || !canPost) return;
+    setPosting(true);
+    try {
+      const { error } = await supabase.rpc("mig_create_adjustment" as any, {
+        _business_id: businessId,
+        _voucher_date: date,
+        _narration: narration.trim() || "Opening Balance Adjustment",
+        _lines: filledLines.map((l) => ({
+          ledger_account_id: l.ledgerId, dr_cr: l.drcr, amount: Number(l.amount), narration: l.narration.trim() || null,
+        })),
+      });
+      if (error) throw error;
+      await logAudit({
+        business_id: businessId, action: "MIGRATION_OPENING_BALANCE_ADJUSTED", entity_type: "business_migration_settings",
+        new_value: { voucher_date: date, lines: filledLines },
+      });
+      toast.success("Opening balance adjustment posted.");
+      setLines([newAdjustmentLine("dr"), newAdjustmentLine("cr")]);
+      setNarration("Opening Balance Adjustment");
+      onPosted?.();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl bg-card border p-6 space-y-4">
+      <div>
+        <h2 className="font-semibold">Opening Balance Adjustment</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Opening balances are locked. Post a balanced correcting journal here — it stays linked to the
+          original Opening Balance Voucher and shows up in Trial Balance, Party Statement and Ledger
+          Statement like any other posted entry.
+        </p>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Voucher Date</Label>
+          <Input type="date" value={date} min={migrationDate ?? undefined} disabled={!editable}
+            onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Narration</Label>
+          <Input value={narration} disabled={!editable} onChange={(e) => setNarration(e.target.value)}
+            placeholder="Opening Balance Adjustment" />
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ledger</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Dr/Cr</TableHead>
+              <TableHead>Line narration</TableHead>
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lines.map((l) => (
+              <TableRow key={l.key}>
+                <TableCell>
+                  <Select value={l.ledgerId} onValueChange={(v) => updateLine(l.key, { ledgerId: v })} disabled={!editable}>
+                    <SelectTrigger className="w-56"><SelectValue placeholder="Select ledger…" /></SelectTrigger>
+                    <SelectContent>
+                      {ledgers.map((led) => (
+                        <SelectItem key={led.id} value={led.id}>
+                          {led.name}{led.party_id ? " (Party)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Input type="number" min={0} step="0.01" className="w-32 ml-auto text-right" value={l.amount}
+                    disabled={!editable} onChange={(e) => updateLine(l.key, { amount: Number(e.target.value) })} />
+                </TableCell>
+                <TableCell>
+                  <Select value={l.drcr} onValueChange={(v) => updateLine(l.key, { drcr: v as "dr" | "cr" })} disabled={!editable}>
+                    <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="dr">Dr</SelectItem><SelectItem value="cr">Cr</SelectItem></SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell>
+                  <Input value={l.narration} disabled={!editable} onChange={(e) => updateLine(l.key, { narration: e.target.value })}
+                    placeholder="Optional" />
+                </TableCell>
+                <TableCell>
+                  {editable && lines.length > 2 && (
+                    <Button size="sm" variant="ghost" onClick={() => removeLine(l.key)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {editable && (
+        <Button size="sm" variant="outline" onClick={addLine}><Plus className="h-3.5 w-3.5 mr-1" /> Add line</Button>
+      )}
+
+      <div className="border-t pt-4 grid grid-cols-3 gap-4">
+        <SummaryStat label="Total Debit" value={totalDr} big />
+        <SummaryStat label="Total Credit" value={totalCr} big />
+        <div>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Difference</p>
+          <p className={`text-2xl font-bold ${Math.abs(diff) < 0.01 ? "text-emerald-600" : "text-destructive"}`}>{fmtInr(Math.abs(diff))}</p>
+        </div>
+      </div>
+
+      {editable && (
+        <Button onClick={post} disabled={!canPost || posting}>
+          <CheckCircle2 className="h-4 w-4 mr-1" /> {posting ? "Posting…" : "Post Adjustment"}
+        </Button>
+      )}
+    </section>
   );
 }
 
