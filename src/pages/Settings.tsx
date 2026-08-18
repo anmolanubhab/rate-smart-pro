@@ -3,7 +3,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { isOwner as isOwnerRole, canAccessMaintenance } from "@/lib/permissions";
 import {
   Building2, Hash, SlidersHorizontal, UserCog, Handshake,
-  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags, Wrench, Calculator, CalendarClock,
+  ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags, Wrench, Calculator, CalendarClock, ArrowLeftRight,
 } from "lucide-react";
 
 const items = [
@@ -48,6 +48,12 @@ const items = [
     icon: CalendarClock,
     title: "Financial Years",
     desc: "Open/close financial years — a closed year blocks new posting and posted-voucher deletion inside it",
+  },
+  {
+    to: "/settings/opening-balance-migration",
+    icon: ArrowLeftRight,
+    title: "Opening Balance / Migration",
+    desc: "Migrate closing balances from Tally/Busy/Easy into RD Pro as reconciled opening balances",
   },
   {
     to: "/settings/round-off",
