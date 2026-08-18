@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { ensurePartyLedgers } from "@/lib/accounting";
 import { useAuth } from "@/hooks/useAuth";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useBusiness } from "@/hooks/useBusiness";
@@ -472,6 +473,9 @@ const Parties = () => {
       } else {
         const { error } = await supabase.from("parties").insert(payload);
         if (error) throw error;
+      }
+      if (form.preferred_customer || form.preferred_supplier) {
+        await ensurePartyLedgers(user.id);
       }
       toast.success(editing ? "Party updated" : "Party added");
       setOpen(false);
