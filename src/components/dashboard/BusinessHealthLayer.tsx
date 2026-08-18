@@ -9,7 +9,7 @@ import { fetchProducts } from "@/lib/products";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchLedgersWithBalance, fetchPeriodIncomeExpense, netProfitWithInventory, computeInventoryAdjustedProfitLoss, computeClosingStockValue } from "@/lib/accounting";
+import { fetchLedgersWithBalance, fetchPeriodIncomeExpense, netProfitWithInventory, computeInventoryAdjustedProfitLoss, computeClosingStockValue, hasRealStockLedger } from "@/lib/accounting";
 
 /** Earliest possible voucher_date -- used as the "from" bound of a
  *  fetchPeriodIncomeExpense call whenever we actually want a cumulative,
@@ -253,7 +253,11 @@ export default function BusinessHealthLayer() {
     // (inventory_movements.rate/value are unpopulated in production), so
     // that reconstruction is never attempted again -- see EPOCH usage above
     // for how the Prev-month comparison is derived instead.
-    const stockValue = computeClosingStockValue(products);
+    // Phase 2: once this business has closed a financial year, Closing
+    // Stock is a real income ledger computeProfitLoss already sums --
+    // passing it again here would double-count it, exactly the same
+    // fallback ProfitLoss.tsx/BalanceSheet.tsx apply.
+    const stockValue = hasRealStockLedger(ledgers) ? 0 : computeClosingStockValue(products);
 
     // Net Profit = the EXACT SAME function, with the EXACT SAME ledger data
     // and closing-stock figure, that ProfitLoss.tsx/BalanceSheet.tsx use --

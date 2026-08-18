@@ -454,6 +454,20 @@ function unitCost(p: { purchase_price?: number | null; cost_price?: number | nul
 }
 
 /**
+ * True once a business has closed at least one financial year under Phase 2
+ * (close_financial_year() posts a real Dr Stock-in-Hand / Cr Closing Stock
+ * journal and creates this ledger for the first time ever when it does).
+ * Report call sites use this to switch from the synthetic
+ * computeClosingStockValue(products) figure to the real ledger balance --
+ * never both, which would double-count the same physical stock. Before a
+ * business's first close, no "Stock-in-Hand" row exists at all, so this
+ * stays false and every report behaves exactly as it did before Phase 2.
+ */
+export function hasRealStockLedger(ledgers: Pick<LedgerRow, "name">[]): boolean {
+  return ledgers.some((l) => l.name === "Stock-in-Hand");
+}
+
+/**
  * Same Income/Expense (and Net Sales/Net Purchase) aggregation as
  * computeProfitLoss, but date-scoped to posted vouchers in [from, to]
  * instead of cumulative ledger balances -- ledger_accounts.current_balance
@@ -920,6 +934,20 @@ export async function fetchLedgerStatement(
   return buildLedgerStatement(userId, businessId, ledger as LedgerRow, opts);
 }
 
+/**
+ * Pure roll-forward: the ledger's stored opening_balance/opening_balance_type
+ * plus the net Dr-Cr movement of every posted voucher item dated strictly
+ * before the statement's `from` date. Exported so buildLedgerStatement's
+ * date-range math is unit-testable without a DB round-trip.
+ */
+export function rollForwardOpeningBalance(
+  ledger: Pick<LedgerRow, "opening_balance" | "opening_balance_type">,
+  priorMovement: number
+): number {
+  const base = ledger.opening_balance_type === "dr" ? ledger.opening_balance : -ledger.opening_balance;
+  return base + priorMovement;
+}
+
 async function buildLedgerStatement(
   userId: string,
   businessId: string,
@@ -980,9 +1008,27 @@ async function buildLedgerStatement(
     });
   }
 
-  // 3. Compute opening balance
-  const opening =
-    ledger.opening_balance_type === "dr" ? ledger.opening_balance : -ledger.opening_balance;
+  // 3. Compute opening balance, rolling forward any posted voucher activity
+  // dated before opts.from — without this, a statement viewed on a range
+  // that starts after the ledger's earliest activity showed a too-low
+  // opening figure that didn't reconcile with the Balance Sheet.
+  let priorMovement = 0;
+  if (opts?.from) {
+    const { data: priorItems, error: priorError } = await supabase
+      .from("voucher_items")
+      .select(`dr_amount, cr_amount, vouchers!inner ( voucher_date )`)
+      .eq("ledger_account_id", ledger.id)
+      .eq("business_id", businessId)
+      .eq("user_id", userId)
+      .eq("vouchers.status", "posted")
+      .lt("vouchers.voucher_date", opts.from);
+    if (priorError) throw new Error(`fetchLedgerStatement priorMovement: ${priorError.message}`);
+    priorMovement = (priorItems ?? []).reduce(
+      (s: number, it: any) => s + (Number(it.dr_amount) || 0) - (Number(it.cr_amount) || 0),
+      0
+    );
+  }
+  const opening = rollForwardOpeningBalance(ledger, priorMovement);
 
   // 4. Build lines with running balance
   const lines: PartyLedgerLine[] = [];
