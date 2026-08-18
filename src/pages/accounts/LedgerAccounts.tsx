@@ -8,7 +8,7 @@ import MockTablePage from "@/components/accounts/MockTablePage";
 import { DocumentActionMenu, type DocumentRowAction } from "@/components/documentEngine/DocumentActionMenu";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchLedgersWithBalance, seedAccounts, deleteLedger, fmtInr, type LedgerRow } from "@/lib/accounting";
+import { fetchLedgersWithBalance, seedAccounts, ensurePartyLedgers, deleteLedger, fmtInr, type LedgerRow } from "@/lib/accounting";
 import { useNavigate } from "react-router-dom"; // NEW
 import { useLedgerEditRouter } from "@/hooks/useLedgerEditRouter";
 import { resolveLinkedEntity } from "@/lib/ledgerEditRouter";
@@ -39,6 +39,7 @@ export default function LedgerAccounts() {
     enabled: !!user?.id,
     queryFn: async () => {
       await seedAccounts(user!.id);
+      await ensurePartyLedgers(user!.id);
       return fetchLedgersWithBalance(user!.id);
     },
   });
