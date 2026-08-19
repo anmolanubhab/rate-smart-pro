@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarClock, CheckCircle2, Lock, Upload, Trash2, Plus } from "lucide-react";
+import { CalendarClock, CheckCircle2, Lock, Upload, Trash2, Plus, Pencil, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useBusiness } from "@/hooks/useBusiness";
-import { canGranular } from "@/lib/permissions";
+import { useBusiness, type BusinessRole } from "@/hooks/useBusiness";
+import { canGranular, canHardDelete, canUnlockVouchers, type FinancialRights } from "@/lib/permissions";
+import type { PermissionMatrix } from "@/lib/permissionMatrix";
+import { useAuth } from "@/hooks/useAuth";
+import { deleteVoucher, repostVoucherItems } from "@/lib/voucherService";
 import { fmtInr, computeClosingStockValue } from "@/lib/accounting";
 import { validateLedgerImportRows, validatePartyImportRows, validateStockImportRows } from "@/lib/migrationImport";
 import { logAudit } from "@/lib/audit";
@@ -19,6 +22,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { HardDeleteVoucherDialog } from "@/components/vouchers/HardDeleteVoucherDialog";
 
 type MigStatus = "not_started" | "in_progress" | "finalized";
 
@@ -41,13 +45,18 @@ type PartyLite = { id: string; name: string; preferred_customer: boolean | null;
 type ProductLite = { id: string; part_number: string; name: string };
 type StockLine = { product_id: string; product_name: string; part_number: string; qty: number; unit_cost: number; value: number };
 type LedgerForAdjustment = { id: string; name: string; party_id: string | null; group?: { name: string; nature: string } | null };
+type PostedAdjustmentVoucher = {
+  id: string; voucher_number: string; voucher_date: string; narration: string | null; total_amount: number;
+  voucher_items: { id: string; ledger_account_id: string; dr_amount: number; cr_amount: number; narration: string | null; ledger_accounts: { name: string } | null }[];
+};
 
 const NATURE_LABEL: Record<string, string> = {
   asset: "Assets", liability: "Liabilities", capital: "Capital / Equity", income: "Income", expense: "Expenses",
 };
 
 export default function OpeningBalanceMigration() {
-  const { business, role, permissions } = useBusiness();
+  const { business, role, permissions, financialRights } = useBusiness();
+  const { user } = useAuth();
   const qc = useQueryClient();
   const editable = canGranular(role, "settings.edit", permissions);
   const [migDate, setMigDate] = useState("");
@@ -559,6 +568,10 @@ export default function OpeningBalanceMigration() {
                 finalized={finalized}
                 editable={editable}
                 migrationDate={recon?.migration_date ?? null}
+                userId={user?.id ?? null}
+                role={role}
+                permissions={permissions}
+                financialRights={financialRights}
                 onPosted={() => qc.invalidateQueries({ queryKey: ["mig-reconciliation", business?.id] })}
               />
             </TabsContent>
@@ -667,14 +680,38 @@ function newAdjustmentLine(drcr: "dr" | "cr"): AdjustmentLine {
 // and linked back to the original Opening Balance Voucher) so post-finalize
 // corrections still show up in Trial Balance, Party Statement and Ledger
 // Statement instead of being a silent, untracked edit.
-function AdjustmentPanel({ businessId, ledgers, finalized, editable, migrationDate, onPosted }: {
+function AdjustmentPanel({ businessId, ledgers, finalized, editable, migrationDate, onPosted, userId, role, permissions, financialRights }: {
   businessId: string | null; ledgers: LedgerForAdjustment[]; finalized: boolean; editable: boolean;
   migrationDate: string | null; onPosted?: () => void;
+  userId: string | null; role: BusinessRole | null; permissions: PermissionMatrix | null; financialRights: FinancialRights | null;
 }) {
+  const qc = useQueryClient();
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [narration, setNarration] = useState("Opening Balance Adjustment");
   const [lines, setLines] = useState<AdjustmentLine[]>([newAdjustmentLine("dr"), newAdjustmentLine("cr")]);
   const [posting, setPosting] = useState(false);
+  const [editingVoucher, setEditingVoucher] = useState<PostedAdjustmentVoucher | null>(null);
+  const [editReason, setEditReason] = useState("");
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<PostedAdjustmentVoucher | null>(null);
+  const canEditLocked = canUnlockVouchers(role, financialRights);
+  const canDeletePosted = canHardDelete(role, permissions, "accounts");
+
+  const { data: postedAdjustments = [], isLoading: loadingAdjustments } = useQuery({
+    queryKey: ["mig-adjustments", businessId],
+    enabled: !!businessId && finalized,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("vouchers")
+        .select("id, voucher_number, voucher_date, narration, total_amount, voucher_items ( id, ledger_account_id, dr_amount, cr_amount, narration, ledger_accounts ( name ) )")
+        .eq("business_id", businessId!)
+        .eq("reference_type", "opening_balance_adjustment")
+        .eq("status", "posted")
+        .order("voucher_date", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as PostedAdjustmentVoucher[];
+    },
+  });
 
   if (!finalized) {
     return (
@@ -691,38 +728,123 @@ function AdjustmentPanel({ businessId, ledgers, finalized, editable, migrationDa
   const totalCr = lines.reduce((s, l) => s + (l.drcr === "cr" ? Number(l.amount) || 0 : 0), 0);
   const diff = Math.round((totalDr - totalCr) * 100) / 100;
   const filledLines = lines.filter((l) => l.ledgerId && Number(l.amount) > 0);
-  const canPost = editable && filledLines.length >= 2 && totalDr > 0 && Math.abs(diff) < 0.01;
+  const hasOrphanAmount = lines.some((l) => Number(l.amount) > 0 && !l.ledgerId);
+  const canPost = editable && filledLines.length >= 2 && totalDr > 0 && Math.abs(diff) < 0.01 && !hasOrphanAmount
+    && (!editingVoucher || editReason.trim().length >= 5);
 
   const updateLine = (key: string, patch: Partial<AdjustmentLine>) =>
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const addLine = () => setLines((prev) => [...prev, newAdjustmentLine("dr")]);
   const removeLine = (key: string) => setLines((prev) => (prev.length > 2 ? prev.filter((l) => l.key !== key) : prev));
 
+  // When the user finishes entering an amount on the last line and a balance
+  // still remains, auto-append a new line pre-filled with the leftover so the
+  // user only has to pick the ledger — repeats until the difference is ₹0.
+  const commitAmount = (key: string) => {
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l.key === key);
+      if (idx === -1 || idx !== prev.length - 1) return prev;
+      const line = prev[idx];
+      if (!line.amount || Number(line.amount) <= 0) return prev;
+      const dr = prev.reduce((s, l) => s + (l.drcr === "dr" ? Number(l.amount) || 0 : 0), 0);
+      const cr = prev.reduce((s, l) => s + (l.drcr === "cr" ? Number(l.amount) || 0 : 0), 0);
+      const remaining = Math.round((dr - cr) * 100) / 100;
+      if (Math.abs(remaining) < 0.01) return prev;
+      const nextSide: "dr" | "cr" = remaining > 0 ? "cr" : "dr";
+      return [...prev, { ...newAdjustmentLine(nextSide), amount: Math.abs(remaining) }];
+    });
+  };
+
+  const resetForm = () => {
+    setEditingVoucher(null);
+    setEditReason("");
+    setLines([newAdjustmentLine("dr"), newAdjustmentLine("cr")]);
+    setNarration("Opening Balance Adjustment");
+    setDate(new Date().toISOString().slice(0, 10));
+  };
+
+  const startEdit = (v: PostedAdjustmentVoucher) => {
+    setEditingVoucher(v);
+    setEditReason("");
+    setDate(v.voucher_date);
+    setNarration(v.narration ?? "Opening Balance Adjustment");
+    setLines(v.voucher_items.map((it) => ({
+      key: crypto.randomUUID(),
+      ledgerId: it.ledger_account_id,
+      drcr: Number(it.dr_amount) > 0 ? "dr" : "cr",
+      amount: Number(it.dr_amount) > 0 ? Number(it.dr_amount) : Number(it.cr_amount),
+      narration: it.narration ?? "",
+    })));
+  };
+
   const post = async () => {
     if (!businessId || !canPost) return;
     setPosting(true);
     try {
-      const { error } = await supabase.rpc("mig_create_adjustment" as any, {
-        _business_id: businessId,
-        _voucher_date: date,
-        _narration: narration.trim() || "Opening Balance Adjustment",
-        _lines: filledLines.map((l) => ({
-          ledger_account_id: l.ledgerId, dr_cr: l.drcr, amount: Number(l.amount), narration: l.narration.trim() || null,
-        })),
-      });
-      if (error) throw error;
-      await logAudit({
-        business_id: businessId, action: "MIGRATION_OPENING_BALANCE_ADJUSTED", entity_type: "business_migration_settings",
-        new_value: { voucher_date: date, lines: filledLines },
-      });
-      toast.success("Opening balance adjustment posted.");
-      setLines([newAdjustmentLine("dr"), newAdjustmentLine("cr")]);
-      setNarration("Opening Balance Adjustment");
-      onPosted?.();
+      if (editingVoucher) {
+        if (!userId) throw new Error("Not signed in.");
+        const items = filledLines.map((l) => ({
+          ledger_account_id: l.ledgerId,
+          debit: l.drcr === "dr" ? Number(l.amount) : 0,
+          credit: l.drcr === "cr" ? Number(l.amount) : 0,
+          remarks: l.narration.trim() || "",
+        }));
+        await repostVoucherItems(userId, editingVoucher.id, items, editReason.trim(), { canEditLockedVoucher: canEditLocked });
+        const { error: narErr } = await supabase
+          .from("vouchers")
+          .update({ narration: narration.trim() || "Opening Balance Adjustment" })
+          .eq("id", editingVoucher.id)
+          .eq("business_id", businessId);
+        if (narErr) throw narErr;
+        await logAudit({
+          business_id: businessId, action: "MIGRATION_OPENING_BALANCE_ADJUSTMENT_EDITED", entity_type: "business_migration_settings",
+          entity_id: editingVoucher.id, new_value: { lines: filledLines }, reason: editReason.trim(),
+        });
+        toast.success("Adjustment updated.");
+        resetForm();
+        qc.invalidateQueries({ queryKey: ["mig-adjustments", businessId] });
+        onPosted?.();
+      } else {
+        const { error } = await supabase.rpc("mig_create_adjustment" as any, {
+          _business_id: businessId,
+          _voucher_date: date,
+          _narration: narration.trim() || "Opening Balance Adjustment",
+          _lines: filledLines.map((l) => ({
+            ledger_account_id: l.ledgerId, dr_cr: l.drcr, amount: Number(l.amount), narration: l.narration.trim() || null,
+          })),
+        });
+        if (error) throw error;
+        await logAudit({
+          business_id: businessId, action: "MIGRATION_OPENING_BALANCE_ADJUSTED", entity_type: "business_migration_settings",
+          new_value: { voucher_date: date, lines: filledLines },
+        });
+        toast.success("Opening balance adjustment posted.");
+        resetForm();
+        qc.invalidateQueries({ queryKey: ["mig-adjustments", businessId] });
+        onPosted?.();
+      }
     } catch (e: any) {
       toast.error(e.message);
     } finally {
       setPosting(false);
+    }
+  };
+
+  const handleHardDeleteConfirm = async (reason: string) => {
+    if (!hardDeleteTarget || !businessId || !userId) return;
+    try {
+      await deleteVoucher(userId, hardDeleteTarget.id, reason, { canEditLockedVoucher: canEditLocked });
+      toast.success(`Adjustment ${hardDeleteTarget.voucher_number} deleted.`);
+      await logAudit({
+        business_id: businessId, action: "MIGRATION_OPENING_BALANCE_ADJUSTMENT_DELETED", entity_type: "business_migration_settings",
+        entity_id: hardDeleteTarget.id, reason,
+      });
+      if (editingVoucher?.id === hardDeleteTarget.id) resetForm();
+      qc.invalidateQueries({ queryKey: ["mig-adjustments", businessId] });
+      onPosted?.();
+    } catch (e: any) {
+      toast.error(e.message ?? "Could not delete adjustment");
+      throw e;
     }
   };
 
@@ -737,10 +859,24 @@ function AdjustmentPanel({ businessId, ledgers, finalized, editable, migrationDa
         </p>
       </div>
 
+      {editingVoucher && (
+        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Editing adjustment {editingVoucher.voucher_number}</p>
+            <Button size="sm" variant="ghost" onClick={resetForm}><X className="h-3.5 w-3.5 mr-1" /> Cancel edit</Button>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="adj-edit-reason">Reason for change (required)</Label>
+            <Input id="adj-edit-reason" value={editReason} disabled={!editable}
+              onChange={(e) => setEditReason(e.target.value)} placeholder="Why is this adjustment being corrected?" />
+          </div>
+        </div>
+      )}
+
       <div className="grid sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>Voucher Date</Label>
-          <Input type="date" value={date} min={migrationDate ?? undefined} disabled={!editable}
+          <Input type="date" value={date} min={migrationDate ?? undefined} disabled={!editable || !!editingVoucher}
             onChange={(e) => setDate(e.target.value)} />
         </div>
         <div className="space-y-1.5">
@@ -778,7 +914,9 @@ function AdjustmentPanel({ businessId, ledgers, finalized, editable, migrationDa
                 </TableCell>
                 <TableCell className="text-right">
                   <Input type="number" min={0} step="0.01" className="w-32 ml-auto text-right" value={l.amount}
-                    disabled={!editable} onChange={(e) => updateLine(l.key, { amount: Number(e.target.value) })} />
+                    disabled={!editable} onChange={(e) => updateLine(l.key, { amount: Number(e.target.value) })}
+                    onBlur={() => commitAmount(l.key)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitAmount(l.key); } }} />
                 </TableCell>
                 <TableCell>
                   <Select value={l.drcr} onValueChange={(v) => updateLine(l.key, { drcr: v as "dr" | "cr" })} disabled={!editable}>
@@ -809,16 +947,85 @@ function AdjustmentPanel({ businessId, ledgers, finalized, editable, migrationDa
         <SummaryStat label="Total Debit" value={totalDr} big />
         <SummaryStat label="Total Credit" value={totalCr} big />
         <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Difference</p>
-          <p className={`text-2xl font-bold ${Math.abs(diff) < 0.01 ? "text-emerald-600" : "text-destructive"}`}>{fmtInr(Math.abs(diff))}</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Remaining Balance</p>
+          <p className={`text-2xl font-bold ${Math.abs(diff) < 0.01 && !hasOrphanAmount ? "text-emerald-600" : "text-destructive"}`}>
+            {Math.abs(diff) < 0.01 ? (hasOrphanAmount ? "Pick a ledger" : "Balanced ✓") : `${fmtInr(Math.abs(diff))} · ${diff > 0 ? "Credit needed" : "Debit needed"}`}
+          </p>
         </div>
       </div>
+      {Math.abs(diff) >= 0.01 && (
+        <p className="text-xs text-muted-foreground -mt-2">
+          A new line was added with the leftover amount — pick its ledger, or edit the amount to split it further.
+        </p>
+      )}
+      {Math.abs(diff) < 0.01 && hasOrphanAmount && (
+        <p className="text-xs text-muted-foreground -mt-2">
+          Amounts balance, but a line still has no ledger selected — choose one to enable posting.
+        </p>
+      )}
 
       {editable && (
-        <Button onClick={post} disabled={!canPost || posting}>
-          <CheckCircle2 className="h-4 w-4 mr-1" /> {posting ? "Posting…" : "Post Adjustment"}
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={post} disabled={!canPost || posting}>
+            <CheckCircle2 className="h-4 w-4 mr-1" /> {posting ? (editingVoucher ? "Updating…" : "Posting…") : editingVoucher ? "Update Adjustment" : "Post Adjustment"}
+          </Button>
+          {editingVoucher && (
+            <Button variant="outline" onClick={resetForm} disabled={posting}>Cancel</Button>
+          )}
+        </div>
       )}
+
+      <div className="border-t pt-4 space-y-3">
+        <h3 className="font-semibold text-sm">Posted Adjustments</h3>
+        {loadingAdjustments && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {!loadingAdjustments && postedAdjustments.length === 0 && (
+          <p className="text-sm text-muted-foreground">No adjustments posted yet.</p>
+        )}
+        {postedAdjustments.map((v) => (
+          <div key={v.id} className="rounded-lg border p-3 space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">{v.voucher_number} · {v.voucher_date}</p>
+                <p className="text-xs text-muted-foreground">{v.narration || "Opening Balance Adjustment"}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm font-semibold tabular-nums">{fmtInr(Number(v.total_amount))}</span>
+                {editable && (
+                  <Button size="sm" variant="ghost" onClick={() => startEdit(v)} disabled={posting || (!!editingVoucher && editingVoucher.id !== v.id)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {canDeletePosted && (
+                  <Button size="sm" variant="ghost" onClick={() => setHardDeleteTarget(v)} disabled={posting}>
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground space-y-0.5">
+              {v.voucher_items.map((it) => (
+                <div key={it.id} className="flex justify-between gap-3">
+                  <span>{it.ledger_accounts?.name ?? "—"}</span>
+                  <span className="tabular-nums">
+                    {Number(it.dr_amount) > 0 ? `${fmtInr(Number(it.dr_amount))} Dr` : `${fmtInr(Number(it.cr_amount))} Cr`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <HardDeleteVoucherDialog
+        target={hardDeleteTarget ? {
+          id: hardDeleteTarget.id, voucher_number: hardDeleteTarget.voucher_number, voucher_type: "journal",
+          voucher_date: hardDeleteTarget.voucher_date, total_amount: Number(hardDeleteTarget.total_amount),
+        } : null}
+        open={!!hardDeleteTarget}
+        onOpenChange={(o) => !o && setHardDeleteTarget(null)}
+        onConfirm={handleHardDeleteConfirm}
+        typeLabel="Journal (Opening Balance Adjustment)"
+      />
     </section>
   );
 }

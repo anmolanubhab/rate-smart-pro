@@ -49,6 +49,12 @@ export interface PurchaseInvoice {
   round_off_amount: number;
   paid_amount: number;
   created_at: string;
+  /** Set when auto-posting/reposting to the ledger failed after this invoice
+   *  was already saved -- the invoice exists with no matching voucher (or a
+   *  stale one), and no automatic retry happens. Callers should surface this
+   *  so the user knows to retry rather than assume the invoice is fully
+   *  posted just because the save succeeded. */
+  ledgerPostError?: string;
 }
 
 export function computeInvoiceItem(item: Partial<PurchaseInvoiceItem>): PurchaseInvoiceItem {
@@ -467,12 +473,94 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     }
   }
 
+  const validItemsAtomic = validItemsForCheck;
+  const isNew = !input.id;
+
+  if (isNew && input.createdBy) {
+    // Atomic path: header + items + voucher + (direct) stock all happen
+    // inside one DB transaction (create_purchase_invoice_atomic) instead of
+    // this function's own sequence of independent round-trips -- a RAISE
+    // EXCEPTION anywhere inside it rolls back everything, so "invoice saved
+    // but no voucher" / "no stock movement" can't happen for a new invoice.
+    // See that migration's comment for the incident this replaces.
+    const invoiceNumber = input.invoice_number || (await nextInvoiceNumber(businessId));
+    const { data: newId, error: atomicErr } = await supabase.rpc("create_purchase_invoice_atomic" as never, {
+      _business_id: businessId,
+      _supplier_id: input.supplier_id,
+      _invoice_number: invoiceNumber,
+      _supplier_invoice_number: input.supplier_invoice_number ?? null,
+      _purchase_order_id: input.purchase_order_id ?? null,
+      _goods_receipt_id: input.goods_receipt_id ?? null,
+      _invoice_date: input.invoice_date,
+      _due_date: input.due_date ?? null,
+      _notes: input.remarks ?? null,
+      _created_by: input.createdBy,
+      _items: validItemsAtomic.map((it) => ({
+        product_id: it.product_id,
+        part_number: it.part_number,
+        description: it.description,
+        qty: it.qty,
+        rate: it.rate,
+        discount_percent: it.discount_percent,
+        gst_percent: it.gst_percent,
+        taxable_amount: it.taxable_amount,
+        tax_amount: it.tax_amount,
+        total_amount: it.total_amount,
+        unit_id: it.unit_id ?? null,
+        stock_qty: it.stock_qty ?? null,
+      })),
+    } as never);
+    if (atomicErr) throw atomicErr;
+
+    const { data: newRow, error: newRowErr } = await supabase
+      .from("purchase_invoices").select("*").eq("id", newId as string).single();
+    if (newRowErr) throw newRowErr;
+
+    const newData: PurchaseInvoice = {
+      id: newRow.id,
+      business_id: newRow.business_id,
+      invoice_number: newRow.invoice_number,
+      supplier_invoice_number: newRow.supplier_invoice_number,
+      supplier_id: newRow.supplier_id,
+      purchase_order_id: newRow.purchase_order_id,
+      goods_receipt_id: newRow.goods_receipt_id,
+      invoice_date: newRow.invoice_date,
+      due_date: newRow.due_date,
+      status: newRow.status,
+      remarks: newRow.notes,
+      subtotal: Number(newRow.subtotal) || 0,
+      discount_total: Number(newRow.discount_total) || 0,
+      tax_total: Number(newRow.gst_total) || 0,
+      grand_total: Number(newRow.grand_total) || 0,
+      round_off_amount: Number(newRow.round_off_amount) || 0,
+      paid_amount: Number(newRow.paid_amount) || 0,
+      created_at: newRow.created_at,
+    };
+
+    if (newData.goods_receipt_id) {
+      // GRN-linked invoice: raise auto QC debit notes for any damaged/short
+      // qty the GRN rejected -- a separate, independently-idempotent flow
+      // not folded into the atomic RPC (it posts its own reversing voucher
+      // via create_qc_debit_note). Best-effort, matches prior behavior.
+      try {
+        await autoCreateQcDebitNotesForGrn(businessId, newData.id, newData.goods_receipt_id);
+      } catch (e: any) {
+        console.error("QC debit-note posting failed:", e.message);
+      }
+    }
+
+    return newData;
+  }
+
   const totals = computeInvoiceTotals(input.items);
   const { round_off_amount, grand_total } = await applyPurchaseInvoiceRoundOff(businessId, totals.grand_total);
   let invId = input.id;
-  const isNew = !invId;
 
   if (!invId) {
+    // Reached only when isNew but createdBy is missing -- no atomic RPC
+    // (it requires a user id to post the voucher as), so this falls back to
+    // the old plain insert with no ledger/stock posting at all, same as
+    // before this migration existed.
     const invoiceNumber = input.invoice_number || (await nextInvoiceNumber(businessId));
     const { data, error } = await supabase
       .from("purchase_invoices")
@@ -591,36 +679,12 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     created_at: row.created_at,
   };
 
-  if (isNew && input.createdBy) {
-    // Sequenced (not fire-and-forget-in-parallel): both this call and the QC
-    // debit-note posting below write to the same business's ledger_accounts
-    // via seed_accounting_defaults/ensure_party_ledger, so they run one after
-    // another rather than racing.
-    try {
-      await postPurchaseInvoiceToLedger(input.createdBy, data);
-    } catch (e: any) {
-      console.error("Auto-post to ledger failed:", e.message);
-    }
-
-    if (!data.goods_receipt_id) {
-      // Direct purchase invoice (no linked GRN) — GRN already posts stock for
-      // the GRN-linked path, so only post stock here when there was no GRN,
-      // to avoid double-counting the same goods twice.
-      postDirectInvoiceStock(input.createdBy, businessId, data.id, data.invoice_number, validItems).catch((e) =>
-        console.error("Direct-invoice stock posting failed:", e.message)
-      );
-    } else {
-      // GRN-linked invoice was pre-filled with the FULL received qty (what the
-      // supplier billed). Any qty the GRN's QC step rejected (damaged/short)
-      // never became available stock — claw it back from the supplier as a
-      // Debit Note instead of touching this invoice.
-      try {
-        await autoCreateQcDebitNotesForGrn(businessId, data.id, data.goods_receipt_id);
-      } catch (e: any) {
-        console.error("QC debit-note posting failed:", e.message);
-      }
-    }
-  } else if (input.createdBy && row.status !== "cancelled") {
+  // isNew is always false past this point -- the isNew && createdBy case
+  // returned early via the atomic RPC path above; isNew with no createdBy
+  // falls through to here with no voucher/stock posting at all (unchanged
+  // legacy behavior for that edge case), so only the repost/edit branch
+  // below is ever reachable now.
+  if (input.createdBy && row.status !== "cancelled") {
     // Alter path: this invoice already exists and was edited above (header +
     // items replaced). Previously this fell through to `return data` with the
     // stale ledger/stock untouched (100 -> 120 qty edit left the original 100
@@ -635,6 +699,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         await repostPurchaseInvoiceToLedger(input.createdBy, data, row.voucher_id, "Purchase invoice altered");
       } catch (e: any) {
         console.error("Repost to ledger failed:", e.message);
+        data.ledgerPostError = e.message ?? "Repost to ledger failed";
       }
     }
 
@@ -824,48 +889,19 @@ export async function cancelPurchaseInvoice(invoiceId: string, userId?: string, 
   if (inv.status === "cancelled") throw new Error("Invoice already cancelled.");
   await assertPurchaseInvoicePaymentReversed(invoiceId);
 
-  if (!inv.goods_receipt_id) {
-    const items = await fetchInvoiceItems(invoiceId);
-    for (const item of items) {
-      if (!item.product_id) continue;
-      const qtyToReverse = item.stock_qty ?? item.qty;
-      if (!(qtyToReverse > 0)) continue;
-
-      // Fail closed, not silently skip-and-proceed: a stock read/write
-      // failure here must abort the whole cancel (the invoice must NOT end
-      // up marked 'cancelled' below with this item's stock un-reversed --
-      // that's exactly the class of bug that let a cancelled invoice's
-      // original stock effect stay permanently baked into Stock Summary/
-      // Stock Ledger with no way to detect it after the fact).
-      const { data: product, error: prodErr } = await supabase
-        .from("products").select("stock").eq("id", item.product_id).single();
-      if (prodErr) throw prodErr;
-
-      const before = Number(product?.stock) || 0;
-      const after = Math.max(0, before - qtyToReverse);
-      const { error: updErr } = await supabase.from("products").update({ stock: after }).eq("id", item.product_id);
-      if (updErr) throw updErr;
-
-      if (businessId) {
-        const { error: insErr } = await supabase.from("inventory_movements" as any).insert({
-          user_id: userId ?? null,
-          business_id: businessId,
-          product_id: item.product_id,
-          movement_type: "purchase_invoice_cancel",
-          qty: -qtyToReverse,
-          stock_before: before,
-          stock_after: after,
-          reference_id: invoiceId,
-          reference_type: "purchase_invoice",
-          notes: `Purchase Invoice ${inv.invoice_number} cancelled`,
-        });
-        if (insErr) throw insErr;
-      }
-    }
-  }
-
   const { error } = await supabase.from("purchase_invoices").update({ status: "cancelled" }).eq("id", invoiceId);
   if (error) throw error;
+
+  // trg_purchase_invoice_cancel_stock_reversal (DB trigger, fires on the
+  // status UPDATE above) atomically reverses this invoice's stock via
+  // reverse_purchase_invoice_stock() -- see
+  // 20260819200000_enforce_purchase_invoice_cancel_stock_reversal.sql. This
+  // used to be a manual client-side loop here (one round-trip per item,
+  // reversing stock BEFORE the status update), which meant a failure
+  // partway through left some items reversed and others not while the
+  // invoice was still NOT marked cancelled -- a half-posted state. Mirrors
+  // the sales-side pattern (cancelInvoice() in salesInvoices.ts), which has
+  // relied on its own trigger the same way since 20260810150000/20260813010000.
 
   // trg_purchase_invoice_cancel_voucher (DB trigger, fires on the status
   // UPDATE above) already cancels the linked voucher atomically and

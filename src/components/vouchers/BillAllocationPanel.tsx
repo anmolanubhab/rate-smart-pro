@@ -69,6 +69,11 @@ export default function BillAllocationPanel({
       toast.error("Allocated more than the voucher amount");
       return;
     }
+    const overAllocated = bills.find((b) => (Number(amounts[b.id]) || 0) > b.due + 0.01);
+    if (overAllocated) {
+      toast.error(`${overAllocated.invoiceNumber}: allocated more than its due amount (₹ ${fmtInr(overAllocated.due)})`);
+      return;
+    }
     const lines: BillAllocationLine[] = bills
       .filter((b) => Number(amounts[b.id]) > 0)
       .map((b) => ({ invoiceId: b.id, invoiceNumber: b.invoiceNumber, amount: Number(amounts[b.id]) }));
@@ -113,8 +118,8 @@ export default function BillAllocationPanel({
                   <div className="text-[11px] text-muted-foreground">{fd(b.invoiceDate)} · Due ₹ {fmtInr(b.due)}</div>
                 </div>
                 <Input
-                  type="number" min="0" step="0.01"
-                  className="w-28 h-8 text-right tabular-nums"
+                  type="number" min="0" max={b.due} step="0.01"
+                  className={`w-28 h-8 text-right tabular-nums ${(Number(amounts[b.id]) || 0) > b.due + 0.01 ? "border-destructive text-destructive" : ""}`}
                   placeholder="0.00"
                   value={amounts[b.id] ?? ""}
                   onChange={(e) => setAmounts({ ...amounts, [b.id]: e.target.value })}
