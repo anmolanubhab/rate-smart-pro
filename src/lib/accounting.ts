@@ -833,6 +833,82 @@ export async function fetchSupplierLedgerSummary(userId: string): Promise<Suppli
     })
     .sort((a, b) => b.outstanding - a.outstanding);
 }
+
+export type CustomerLedgerSummary = {
+  party_id: string;
+  name: string;
+  gstin: string | null;
+  credit_limit: number;
+  outstanding: number;
+  last_txn: string | null;
+};
+
+/**
+ * Customers, with outstanding balance and last transaction date — the
+ * receivables mirror of fetchSupplierLedgerSummary() above, built the same
+ * way and for the same reason: ledger_type can't be trusted (every party
+ * ledger is auto-created as 'customer' regardless of actual usage), so a
+ * party is identified as a customer here by actual usage (has been the
+ * party on an order or sales invoice), and the outstanding figure comes
+ * from the posted-voucher-derived ledger balance (fetchLedgersWithBalance),
+ * not from any order-quantity estimate. Previously Receivables.tsx computed
+ * "outstanding" from orders.pending_total_qty as a fraction of grand_total
+ * — a figure with no connection to sales_invoices.grand_total, paid_amount,
+ * credit notes, advances, or the Sundry Debtors ledger, so it could never
+ * reconcile with Trial Balance. This is Sundry Debtors' own ledger balance,
+ * the same number Trial Balance already shows for that group.
+ */
+export async function fetchCustomerLedgerSummary(userId: string): Promise<CustomerLedgerSummary[]> {
+  const biz = getActiveBusinessIdSync();
+  if (!biz) return [];
+
+  const [ordersRes, invRes] = await Promise.all([
+    supabase.from("orders").select("party_id").eq("business_id", biz).not("party_id", "is", null),
+    supabase.from("sales_invoices").select("party_id, invoice_date").eq("business_id", biz).not("party_id", "is", null),
+  ]);
+  if (ordersRes.error) throw ordersRes.error;
+  if (invRes.error) throw invRes.error;
+
+  const customerIds = new Set<string>();
+  const lastTxnByParty = new Map<string, string>();
+  const bump = (id: string | null, date: string | null) => {
+    if (!id) return;
+    customerIds.add(id);
+    if (date && (!lastTxnByParty.has(id) || date > lastTxnByParty.get(id)!)) lastTxnByParty.set(id, date);
+  };
+  (ordersRes.data ?? []).forEach((r: any) => bump(r.party_id, null));
+  (invRes.data ?? []).forEach((r: any) => bump(r.party_id, r.invoice_date));
+
+  if (!customerIds.size) return [];
+  const ids = Array.from(customerIds);
+
+  const [{ data: parties, error: partiesErr }, ledgers] = await Promise.all([
+    supabase.from("parties").select("id, name, gst, credit_limit").in("id", ids),
+    fetchLedgersWithBalance(userId),
+  ]);
+  if (partiesErr) throw partiesErr;
+
+  const partyMap = new Map((parties ?? []).map((p: any) => [p.id, p]));
+  const ledgerByParty = new Map(
+    ledgers.filter((l) => l.party_id && customerIds.has(l.party_id)).map((l) => [l.party_id as string, l])
+  );
+
+  return ids
+    .map((id) => {
+      const party = partyMap.get(id);
+      const ledger = ledgerByParty.get(id);
+      const balance = ledger?.balance ?? 0;
+      return {
+        party_id: id,
+        name: party?.name ?? "—",
+        gstin: party?.gst ?? null,
+        credit_limit: Number(party?.credit_limit ?? 0),
+        outstanding: balance > 0 ? balance : 0,
+        last_txn: lastTxnByParty.get(id) ?? null,
+      };
+    })
+    .sort((a, b) => b.outstanding - a.outstanding);
+}
 // ───────────────────────────────────────────────────────────────
 // NEW: Party Ledger exports (append to end of file)
 // ───────────────────────────────────────────────────────────────

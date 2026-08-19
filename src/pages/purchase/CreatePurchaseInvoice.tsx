@@ -164,7 +164,14 @@ export default function CreatePurchaseInvoice() {
         action: "created",
         description: `Created as ${saved.invoice_number}`,
       });
-      toast.success(`Invoice ${saved.invoice_number} recorded`);
+      if (saved.ledgerPostError) {
+        toast.warning(
+          `Invoice ${saved.invoice_number} saved, but posting to the ledger failed (${saved.ledgerPostError}). It won't show up in Trial Balance/Payables until this is retried — open the invoice and re-save, or contact support.`,
+          { duration: 15000 }
+        );
+      } else {
+        toast.success(`Invoice ${saved.invoice_number} recorded`);
+      }
       navigate(`/purchase/invoices/${saved.id}`, { replace: true });
     } catch (e: any) {
       toast.error(e.message ?? "Failed to save invoice");

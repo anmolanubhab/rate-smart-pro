@@ -38,12 +38,21 @@ export default function GstSummary() {
       monthStart.setDate(1);
       const from = monthStart.toISOString().slice(0, 10);
 
-      // Only items belonging to non-cancelled invoices this month, for this business.
+      // Only POSTED invoices this month, for this business -- sales_invoices
+      // has a real 'draft' status (unlike purchase_invoices, which has no
+      // lifecycle draft state at all, only payment-status values), and a
+      // draft invoice has no voucher/GL effect (sales_invoice_autopost
+      // guards on status='posted'). neq("status","cancelled") would
+      // incorrectly include drafts here, showing tax figures for invoices
+      // that were never actually posted to the ledger -- matches the same
+      // eq("status","posted") filter Gstr1.tsx/Gstr3B.tsx already use for
+      // the sales side, so this report can't disagree with those over the
+      // same month.
       const { data: invoices, error: invErr } = await supabase
         .from("sales_invoices")
         .select("id")
         .eq("business_id", business!.id)
-        .neq("status", "cancelled")
+        .eq("status", "posted")
         .gte("invoice_date", from);
       if (invErr) throw invErr;
       const invoiceIds = (invoices ?? []).map((i) => i.id);

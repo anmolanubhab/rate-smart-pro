@@ -1,22 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useBusiness } from "@/hooks/useBusiness";
-import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import MockTablePage from "@/components/accounts/MockTablePage";
-
-type OrderRow = {
-  id: string;
-  order_number: string;
-  order_date: string;
-  party_name: string | null;
-  party_id: string | null;
-  grand_total: number;
-  dispatched_total_qty: number;
-  pending_total_qty: number;
-  status: string;
-};
+import { useAuth } from "@/hooks/useAuth";
+import { useBusiness } from "@/hooks/useBusiness";
+import { fetchCustomerLedgerSummary, fmtInr } from "@/lib/accounting";
+import { useFormatDate } from "@/lib/dateFormat";
 
 const daysBetween = (iso: string) => {
   const d = new Date(iso).getTime();
@@ -26,50 +15,35 @@ const daysBetween = (iso: string) => {
 export default function Receivables() {
   useEffect(() => { document.title = "Outstanding Receivables — RD Pro"; }, []);
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { business } = useBusiness();
-  const businessId = business?.id ?? getActiveBusinessIdSync();
-  const [page, setPage] = useState(0);
-  const PAGE = 50;
+  const fd = useFormatDate();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["receivables", businessId, page],
-    enabled: !!businessId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("id, order_number, order_date, party_name, party_id, grand_total, dispatched_total_qty, pending_total_qty, status")
-        .eq("business_id", businessId!)
-        .in("status", ["pending", "partial"])
-        .eq("is_deleted", false)
-        .order("order_date", { ascending: false })
-        .range(page * PAGE, page * PAGE + PAGE - 1);
-      if (error) throw error;
-      return (data ?? []) as OrderRow[];
-    },
+  const { data: customers = [], isLoading } = useQuery({
+    queryKey: ["customer-ledger", user?.id, business?.id],
+    enabled: !!user?.id,
+    queryFn: () => fetchCustomerLedgerSummary(user!.id),
   });
 
-  const rows = useMemo(() => {
-    return (data ?? []).map((o) => {
-      const total = Number(o.grand_total ?? 0);
-      const totalQty = Number(o.dispatched_total_qty ?? 0) + Number(o.pending_total_qty ?? 0);
-      const outstanding = totalQty > 0
-        ? Math.round((total * Number(o.pending_total_qty ?? 0)) / totalQty)
-        : total;
-      const days = daysBetween(o.order_date);
+  // This is the party's actual Sundry Debtors ledger balance (posted
+  // vouchers only), not an estimate from order quantities — it ties out to
+  // Trial Balance by construction, unlike the previous orders-based figure.
+  const rows = useMemo(() => customers
+    .filter((c) => c.outstanding > 0)
+    .map((c) => {
+      const days = c.last_txn ? daysBetween(c.last_txn) : 0;
       const status = days > 30 ? "Overdue" : days > 14 ? "Due Soon" : "Current";
       const tone = status === "Overdue" ? "danger" : status === "Due Soon" ? "warning" : "success";
       return {
-        party: o.party_name ?? "—",
-        invoice: o.order_number,
-        date: o.order_date,
+        party: c.name,
+        date: c.last_txn ?? "—",
         days,
-        amount: outstanding,
+        amount: c.outstanding,
         status,
         status_tone: tone,
-        _party_id: o.party_id,
+        _party_id: c.party_id,
       };
-    }).filter(r => r.amount > 0);
-  }, [data]);
+    }), [customers]);
 
   const total = rows.reduce((s, r) => s + r.amount, 0);
   const overdue = rows.filter(r => r.status === "Overdue").reduce((s, r) => s + r.amount, 0);
@@ -79,17 +53,23 @@ export default function Receivables() {
     <MockTablePage
       eyebrow="Accounts · Outstanding"
       title="Outstanding Receivables"
-      description={isLoading ? "Loading…" : "Customer-wise pending invoices computed from open orders."}
+      description={
+        isLoading
+          ? "Loading…"
+          : rows.length === 0
+            ? "No customers with an outstanding balance. Once sales vouchers are recorded against customers, they will appear here."
+            : "Customer-wise outstanding from posted vouchers (Sundry Debtors ledger)."
+      }
       kpis={[
-        { label: "Total Receivable", value: `₹ ${total.toLocaleString("en-IN")}`, tone: "success" },
-        { label: "Overdue (>30d)", value: `₹ ${overdue.toLocaleString("en-IN")}`, tone: "danger" },
-        { label: "Invoices", value: rows.length },
+        { label: "Total Receivable", value: `₹ ${fmtInr(total)}`, tone: "success" },
+        { label: "Overdue (>30d)", value: `₹ ${fmtInr(overdue)}`, tone: "danger" },
+        { label: "Customers", value: rows.length },
         { label: "Avg Days", value: avgDays },
+        { label: "As On", value: fd(new Date().toISOString().slice(0, 10)) },
       ]}
       columns={[
         { key: "party", label: "Customer" },
-        { key: "invoice", label: "Order #" },
-        { key: "date", label: "Date" },
+        { key: "date", label: "Last Transaction" },
         { key: "days", label: "Days", align: "right", format: "number" },
         { key: "amount", label: "Outstanding", align: "right", format: "currency" },
         { key: "status", label: "Status", format: "badge" },

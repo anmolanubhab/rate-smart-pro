@@ -101,11 +101,18 @@ export async function applyBillAllocations(kind: BillAllocationKind, lines: Bill
     } else {
       const { data: inv, error: fetchErr } = await supabase
         .from("sales_invoices")
-        .select("paid_amount")
+        .select("paid_amount, grand_total, invoice_number")
         .eq("id", line.invoiceId)
         .single();
       if (fetchErr) throw fetchErr;
       const newPaid = Number(inv.paid_amount ?? 0) + line.amount;
+      // Mirrors receive_sales_payment's per-invoice due check (server-side
+      // there; this path has no RPC of its own, so the guard has to live
+      // here) -- without it this raw read-then-write could push paid_amount
+      // above grand_total with nothing to catch it.
+      if (newPaid > Number(inv.grand_total ?? 0) + 0.01) {
+        throw new Error(`${inv.invoice_number}: allocation would exceed the invoice's grand total.`);
+      }
       const { error } = await supabase
         .from("sales_invoices")
         .update({ paid_amount: newPaid })
