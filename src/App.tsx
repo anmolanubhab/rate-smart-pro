@@ -101,6 +101,7 @@ const FinancialYears = lazy(() => import("./pages/settings/FinancialYears"));
 const OpeningBalanceMigration = lazy(() => import("./pages/settings/OpeningBalanceMigration"));
 const FinancialNoteCategories = lazy(() => import("./pages/settings/FinancialNoteCategories"));
 const DangerZone = lazy(() => import("./pages/settings/DangerZone"));
+const BackupRestore = lazy(() => import("./pages/settings/BackupRestore"));
 const Maintenance = lazy(() => import("./pages/settings/Maintenance"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const VerifyCompanyAccess = lazy(() => import("./pages/companies/VerifyCompanyAccess"));
@@ -431,6 +432,7 @@ const App = () => (
               <Route path="/settings/financial-note-categories" element={L(<FinancialNoteCategories />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
               <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
+              <Route path="/settings/backup-restore" element={L(<BackupRestore />)} />
               <Route path="/settings/maintenance" element={L(<Maintenance />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
               <Route path="/sales/receive-payment" element={L(<ReceivePayment />)} />
