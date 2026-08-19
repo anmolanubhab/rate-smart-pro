@@ -4,6 +4,7 @@ import { isOwner as isOwnerRole, canAccessMaintenance } from "@/lib/permissions"
 import {
   Building2, Hash, SlidersHorizontal, UserCog, Handshake,
   ChevronRight, ShieldAlert, ShieldCheck, Ruler, Tags, Wrench, Calculator, CalendarClock, ArrowLeftRight,
+  DatabaseBackup,
 } from "lucide-react";
 
 const items = [
@@ -159,6 +160,24 @@ export default function Settings() {
               <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             </button>
           </div>
+        </div>
+      )}
+
+      {isOwner && (
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+          <button
+            onClick={() => navigate("/settings/backup-restore")}
+            className="w-full flex items-center gap-4 px-5 py-4 hover:bg-muted/50 transition-colors text-left"
+          >
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <DatabaseBackup className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm">Backup & Restore</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Create encrypted backups, download them, or restore into a new company (owner only)</div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          </button>
         </div>
       )}
 
