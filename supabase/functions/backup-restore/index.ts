@@ -47,6 +47,20 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// Errors thrown from a Supabase RPC/query (`throw someError` where
+// someError came from `{ data, error }`) are plain PostgrestError-shaped
+// objects, not `instanceof Error` — so `e instanceof Error ? e.message :
+// "<generic>"` silently discards the real database error message and
+// always falls back to the generic string. This reads `.message` off
+// anything that has one, Error or not.
+function errMsg(e: unknown, fallback: string): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object" && typeof (e as { message?: unknown }).message === "string") {
+    return (e as { message: string }).message;
+  }
+  return fallback;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -74,14 +88,14 @@ Deno.serve(async (req) => {
     body = await req.json();
     if (!body?.action || !body?.envelope) throw new Error("action and envelope are required");
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : "invalid request body" }, 400);
+    return json({ error: errMsg(e, "invalid request body") }, 400);
   }
 
   let payload: Record<string, unknown>;
   try {
     payload = await decryptPayload(body.envelope) as Record<string, unknown>;
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : "could not decrypt backup file" }, 400);
+    return json({ error: errMsg(e, "could not decrypt backup file") }, 400);
   }
 
   const { data: validation, error: validationError } = await userClient.rpc("validate_backup_manifest", {
@@ -145,7 +159,7 @@ Deno.serve(async (req) => {
 
       return json({ success: true, new_business_id: newBusinessId, integrity_result: integrityResult });
     } catch (e) {
-      const message = e instanceof Error ? e.message : "restore failed";
+      const message = errMsg(e, "restore failed");
       await touchRestoreRequest({ status: "failed", error_message: message });
       return json({ error: message }, 500);
     }
@@ -264,7 +278,7 @@ Deno.serve(async (req) => {
       pre_restore_backup_id: safetyBackupId,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "restore failed";
+    const message = errMsg(e, "restore failed");
     await touchRestoreRequest({ status: "failed", error_message: message });
     return json({ error: message, pre_restore_backup_id: safetyBackupId }, 500);
   }

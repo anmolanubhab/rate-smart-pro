@@ -21,6 +21,18 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Errors thrown from a Supabase RPC/query are plain PostgrestError-shaped
+// objects, not `instanceof Error` — `e instanceof Error ? e.message :
+// "<generic>"` silently discards the real database error message. This
+// reads `.message` off anything that has one, Error or not.
+function errMsg(e: unknown, fallback: string): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object" && typeof (e as { message?: unknown }).message === "string") {
+    return (e as { message: string }).message;
+  }
+  return fallback;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -58,7 +70,7 @@ Deno.serve(async (req) => {
     if (!businessId || !backupId) throw new Error("business_id and backup_id are required");
   } catch (e) {
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "invalid request body" }),
+      JSON.stringify({ error: errMsg(e, "invalid request body") }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
@@ -98,7 +110,7 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
-    const message = e instanceof Error ? e.message : "backup export failed";
+    const message = errMsg(e, "backup export failed");
     await adminClient.from("business_backups").update({ status: "failed", error_message: message }).eq("id", backupId);
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
