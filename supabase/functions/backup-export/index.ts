@@ -11,14 +11,33 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encryptPayload } from "../_shared/crypto.ts";
 
+// Browsers preflight cross-origin POSTs with an OPTIONS request before
+// sending the real one; without a response carrying these headers the
+// preflight fails and supabase-js reports it generically as "Failed to
+// send a request to the Edge Function" — the actual function code never
+// runs. CORS is unrelated to auth (verify_jwt still gates the real POST).
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405 });
+    return new Response(JSON.stringify({ error: "method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
-    return new Response(JSON.stringify({ error: "missing Authorization header" }), { status: 401 });
+    return new Response(JSON.stringify({ error: "missing Authorization header" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -40,7 +59,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "invalid request body" }),
-      { status: 400 },
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 
@@ -76,11 +95,14 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ success: true, backup_id: backupId, size_bytes: sizeBytes }),
-      { headers: { "Content-Type": "application/json" } },
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "backup export failed";
     await adminClient.from("business_backups").update({ status: "failed", error_message: message }).eq("id", backupId);
-    return new Response(JSON.stringify({ error: message }), { status: 500 });
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

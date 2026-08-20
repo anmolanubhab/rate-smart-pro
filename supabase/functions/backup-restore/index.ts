@@ -22,14 +22,30 @@ interface RequestBody {
   restore_request_id?: string;
 }
 
+// See backup-export/index.ts for why this is required: without it the
+// browser's CORS preflight fails before the real POST is ever sent.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405 });
+    return new Response(JSON.stringify({ error: "method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
-    return new Response(JSON.stringify({ error: "missing Authorization header" }), { status: 401 });
+    return new Response(JSON.stringify({ error: "missing Authorization header" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -48,7 +64,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "invalid request body" }),
-      { status: 400 },
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 
@@ -58,7 +74,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "could not decrypt backup file" }),
-      { status: 400 },
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 
@@ -66,7 +82,10 @@ Deno.serve(async (req) => {
     _manifest: payload,
   });
   if (validationError) {
-    return new Response(JSON.stringify({ error: validationError.message }), { status: 400 });
+    return new Response(JSON.stringify({ error: validationError.message }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   if (body.action === "validate") {
@@ -81,7 +100,7 @@ Deno.serve(async (req) => {
           row_counts: snapshot.row_counts ?? {},
         },
       }),
-      { headers: { "Content-Type": "application/json" } },
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 
@@ -89,11 +108,14 @@ Deno.serve(async (req) => {
   if (!validation.valid) {
     return new Response(
       JSON.stringify({ error: "backup failed validation — cannot restore", validation_result: validation }),
-      { status: 400 },
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
   if (!body.new_business_name?.trim()) {
-    return new Response(JSON.stringify({ error: "new_business_name is required" }), { status: 400 });
+    return new Response(JSON.stringify({ error: "new_business_name is required" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const touchRestoreRequest = async (fields: Record<string, unknown>) => {
@@ -126,11 +148,14 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ success: true, new_business_id: newBusinessId, integrity_result: integrityResult }),
-      { headers: { "Content-Type": "application/json" } },
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "restore failed";
     await touchRestoreRequest({ status: "failed", error_message: message });
-    return new Response(JSON.stringify({ error: message }), { status: 500 });
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
