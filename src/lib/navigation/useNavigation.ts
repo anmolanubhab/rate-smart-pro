@@ -15,7 +15,7 @@ import { NAV_ITEMS } from "./registry";
 import type { NavItem, NavItemWithPath } from "./types";
 import { scoreItem } from "./fuzzy";
 import { useBusiness } from "@/hooks/useBusiness";
-import { canGranular } from "@/lib/permissions";
+import { canGranular, isOwner, canAccessMaintenance } from "@/lib/permissions";
 
 // Explicit sidebar module sequence — business workflow order (transactional
 // modules first, then compliance/analytics, then admin/settings last). Any
@@ -29,9 +29,10 @@ const MODULE_ORDER = [
   "Accounts",
   "GST",
   "Reports",
-  "Administration",
-  "Configuration",
   "Settings",
+  "Configuration",
+  "Administration",
+  "Dealer Portal",
 ];
 
 export interface NavModuleGroup {
@@ -58,7 +59,15 @@ export function useNavigation() {
   const { role, permissions } = useBusiness();
 
   const isVisible = useMemo(() => {
-    return (item: NavItem) => !item.perm || canGranular(role, item.perm, permissions);
+    return (item: NavItem) => {
+      if (!item.perm) return true;
+      // Reserved sentinels for role-based gates the granular permission
+      // matrix can't express (owner-only, maintenance-role-only) — matches
+      // the exact checks Settings.tsx uses for these same pages.
+      if (item.perm === "owner") return isOwner(role);
+      if (item.perm === "maintenance") return canAccessMaintenance(role);
+      return canGranular(role, item.perm, permissions);
+    };
   }, [role, permissions]);
 
   // Everything below depends only on the static registry + role, so it's

@@ -120,11 +120,7 @@ const Dashboard = () => {
     <div className="max-w-6xl mx-auto space-y-6 animate-fade-in-up">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground font-medium">Welcome back</p>
-          <h1 className="font-display text-3xl md:text-4xl font-bold mt-1">
-            {nameLoading ? <Skeleton className="h-10 w-48" /> : displayName}
-          </h1>
-          <p className="text-muted-foreground mt-1">Business Health Control Center.</p>
+          <p className="text-muted-foreground">Business Health Control Center.</p>
         </div>
       </header>
 

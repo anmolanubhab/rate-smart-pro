@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
+import { NavigationModeProvider } from "@/hooks/useNavigationMode";
 import AppLayout from "@/components/AppLayout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -317,6 +318,7 @@ const P = (el: React.ReactNode) => (
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
+      <NavigationModeProvider>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -558,6 +560,7 @@ const App = () => (
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
+      </NavigationModeProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

@@ -38,6 +38,7 @@ import CompanyAvatar from "@/components/company/CompanyAvatar";
 import { UserAvatar } from "@/components/common/UserAvatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useAvatarUrl } from "@/hooks/useAvatarUrl";
+import { useDisplayName } from "@/hooks/useDisplayName";
 import { useBusiness, setActiveBusinessId } from "@/hooks/useBusiness";
 import { useTheme } from "@/hooks/useTheme";
 import { useNavigation } from "@/lib/navigation/useNavigation";
@@ -47,13 +48,12 @@ export default function TopNav() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { avatarUrl } = useAvatarUrl();
+  const { displayName } = useDisplayName();
   const { business } = useBusiness();
   const { theme, toggle } = useTheme();
   const { quickActions } = useNavigation();
   const [notifOpen, setNotifOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-
-  const displayName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User";
 
   const switchCompany = () => {
     setActiveBusinessId(null);
