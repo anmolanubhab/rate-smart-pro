@@ -63,6 +63,17 @@ export interface NavItem {
   disabled?: boolean;
   /** Tooltip shown on a disabled item. Defaults to "Coming soon" when omitted. */
   disabledReason?: string;
+  /**
+   * Position in the Gateway Mode drill-down hierarchy, e.g.
+   * `["Masters", "Inventory", "Products"]`. Independent of `module`/
+   * `parentId` (which drive Classic Tree) — an item can appear in both
+   * trees under different groupings, or in only one. Omit for items with
+   * no natural Gateway home (reached via Search/Favorites/TopNav instead).
+   * A bare group node (no `route`) is expressed by another item's
+   * `gatewayPath` naming it as an intermediate segment — group labels are
+   * not separate NavItems here, unlike the Classic `parentId` groups.
+   */
+  gatewayPath?: string[];
 }
 
 /** A NavItem enriched with the fully joined breadcrumb path (root → item) */

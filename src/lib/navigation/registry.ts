@@ -54,6 +54,13 @@ import {
   Zap,
   Clock,
   Activity,
+  ArrowLeftRight,
+  DatabaseBackup,
+  Wrench,
+  ShieldAlert,
+  HelpCircle,
+  Keyboard,
+  Mail,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -69,6 +76,9 @@ export const NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
     module: "Dashboard",
     keywords: ["home", "overview", "summary"],
+    // Empty path = a leaf directly at the Gateway root (not nested inside a
+    // "Dashboard" group you'd have to drill into first).
+    gatewayPath: [],
   },
   {
     id: "calculator",
@@ -78,6 +88,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Calculator,
     module: "Dashboard",
     keywords: ["rate", "discount", "calc"],
+    gatewayPath: ["Utilities"],
   },
   {
     id: "reports",
@@ -96,6 +107,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/reports/center",
     icon: LayoutGrid,
     module: "Reports",
+    gatewayPath: ["Reports"],
   },
   {
     id: "history",
@@ -106,6 +118,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     keywords: ["past orders", "activity"],
     showInSidebar: false,
+    gatewayPath: ["Reports"],
   },
   {
     id: "reports-sales-register",
@@ -116,6 +129,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     keywords: ["sales", "invoices", "register"],
     showInSidebar: false,
+    gatewayPath: ["Reports", "Sales"],
   },
   {
     id: "reports-purchase-register",
@@ -126,6 +140,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     keywords: ["purchase", "invoices", "supplier"],
     showInSidebar: false,
+    gatewayPath: ["Reports", "Purchase"],
   },
   {
     id: "reports-outstanding-ageing",
@@ -136,6 +151,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     keywords: ["outstanding", "ageing", "aging", "overdue", "receivables"],
     showInSidebar: false,
+    gatewayPath: ["Reports", "Sales"],
   },
   {
     id: "reports-sales-performance",
@@ -146,6 +162,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     keywords: ["salesman", "sales team", "performance", "commission", "target", "drill down"],
     showInSidebar: false,
+    gatewayPath: ["Reports", "Sales"],
   },
   {
     id: "reports-party-part-sales",
@@ -156,6 +173,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     keywords: ["party", "part number", "item", "rate history", "customer", "drill down"],
     showInSidebar: false,
+    gatewayPath: ["Reports", "Sales"],
   },
 
   // ==========================================================================
@@ -169,6 +187,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: PlusSquare,
     module: "Sales",
     keywords: ["quote", "estimate", "proforma"],
+    gatewayPath: ["Transactions", "Sales"],
   },
   {
     id: "sales-quotations-new",
@@ -179,6 +198,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Sales",
     quickAction: { label: "New Quotation", shortcut: "⌘⌥N" },
     keywords: ["quote", "estimate", "proforma"],
+    gatewayPath: ["Transactions", "Sales"],
   },
   {
     id: "orders-new",
@@ -189,6 +209,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Sales",
     quickAction: { label: "Create Order", shortcut: "⌘N" },
     perm: "voucher.create",
+    gatewayPath: ["Transactions", "Sales"],
   },
   {
     id: "orders",
@@ -197,6 +218,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/orders",
     icon: ShoppingCart,
     module: "Sales",
+    gatewayPath: ["Orders"],
   },
   {
     id: "pending",
@@ -206,6 +228,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Boxes,
     module: "Sales",
     keywords: ["awaiting", "open orders"],
+    gatewayPath: ["Orders"],
   },
   {
     id: "sales-picking-list",
@@ -215,6 +238,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ClipboardList,
     module: "Sales",
     keywords: ["pick", "warehouse", "pending dispatch"],
+    gatewayPath: ["Orders"],
   },
   {
     id: "dispatch",
@@ -224,6 +248,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Package,
     module: "Sales",
     keywords: ["shipment", "delivery"],
+    gatewayPath: ["Orders"],
   },
   {
     id: "sales-invoices",
@@ -233,6 +258,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Receipt,
     module: "Sales",
     aliases: ["bills"],
+    gatewayPath: ["Transactions", "Sales"],
   },
   {
     id: "sales-receive-payment",
@@ -242,6 +268,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: CreditCard,
     module: "Sales",
     keywords: ["receipt", "collection", "bill-wise"],
+    gatewayPath: ["Transactions", "Sales"],
   },
   {
     id: "sales-returns",
@@ -251,6 +278,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Repeat,
     module: "Sales",
     keywords: ["credit note", "return", "rma"],
+    gatewayPath: ["Transactions", "Sales"],
   },
   {
     id: "excel-import",
@@ -261,6 +289,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Sales",
     keywords: ["bulk", "csv", "upload", "xlsx"],
     showInSidebar: false,
+    gatewayPath: ["Orders"],
   },
   {
     id: "parties",
@@ -270,6 +299,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Users,
     module: "Sales",
     aliases: ["parties", "clients", "buyers"],
+    gatewayPath: ["Masters", "Parties"],
   },
   {
     id: "party-groups",
@@ -279,6 +309,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Users,
     module: "Sales",
     keywords: ["masters", "grouping"],
+    gatewayPath: ["Masters", "Parties"],
   },
   {
     id: "salesman-groups",
@@ -288,6 +319,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Users,
     module: "Sales",
     keywords: ["masters", "salesman", "team", "territory"],
+    gatewayPath: ["Masters", "Parties"],
   },
   {
     id: "salesmen",
@@ -297,6 +329,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Users,
     module: "Sales",
     keywords: ["masters", "salesman", "sales rep"],
+    gatewayPath: ["Masters", "Parties"],
   },
   {
     id: "sales-config",
@@ -307,6 +340,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Sales",
     keywords: ["config", "settings"],
     perm: "settings.edit",
+    gatewayPath: ["Configuration"],
   },
 
   // ==========================================================================
@@ -319,6 +353,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/purchase",
     icon: ShoppingBag,
     module: "Purchase",
+    gatewayPath: ["Transactions", "Purchase"],
   },
   {
     id: "purchase-orders",
@@ -328,6 +363,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ClipboardList,
     module: "Purchase",
     aliases: ["po"],
+    gatewayPath: ["Transactions", "Purchase"],
   },
   {
     id: "purchase-orders-new",
@@ -338,6 +374,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Purchase",
     quickAction: { label: "Create Purchase" },
     perm: "purchase.create",
+    gatewayPath: ["Transactions", "Purchase"],
   },
   {
     id: "purchase-grn",
@@ -347,6 +384,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: TruckIcon,
     module: "Purchase",
     aliases: ["grn"],
+    gatewayPath: ["Transactions", "Purchase"],
   },
   {
     id: "purchase-invoices",
@@ -355,6 +393,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/purchase/invoices",
     icon: FileText,
     module: "Purchase",
+    gatewayPath: ["Transactions", "Purchase"],
   },
   {
     id: "purchase-returns",
@@ -363,6 +402,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/purchase/returns",
     icon: Repeat,
     module: "Purchase",
+    gatewayPath: ["Transactions", "Purchase"],
   },
   {
     id: "vendor-claim-register",
@@ -371,6 +411,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/purchase/vendor-claims",
     icon: Repeat,
     module: "Purchase",
+    gatewayPath: ["Reports", "Purchase"],
   },
   {
     id: "purchase-approvals",
@@ -380,6 +421,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ShieldCheck,
     module: "Purchase",
     perm: "purchase.approve",
+    gatewayPath: ["Transactions", "Purchase"],
   },
   {
     id: "purchase-payments",
@@ -388,6 +430,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/purchase/payments",
     icon: CreditCard,
     module: "Purchase",
+    gatewayPath: ["Transactions", "Purchase"],
   },
   {
     id: "purchase-reports",
@@ -397,6 +440,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: BarChart3,
     module: "Purchase",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Purchase"],
   },
   {
     id: "supplier-ledger",
@@ -405,6 +449,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/purchase/supplier-ledger",
     icon: BookOpen,
     module: "Purchase",
+    gatewayPath: ["Reports", "Purchase"],
   },
 
   // ==========================================================================
@@ -419,6 +464,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Inventory",
     quickAction: { label: "Create Product" },
     aliases: ["items", "sku"],
+    gatewayPath: ["Masters", "Inventory"],
   },
   {
     id: "products-bulk-gst",
@@ -428,6 +474,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Tags,
     module: "Inventory",
     keywords: ["gst", "tax", "bulk"],
+    gatewayPath: ["Masters", "Inventory"],
   },
   {
     id: "inventory",
@@ -437,6 +484,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Boxes,
     module: "Inventory",
     aliases: ["stock"],
+    gatewayPath: ["Reports", "Inventory"],
   },
   {
     id: "inventory-warehouses",
@@ -445,6 +493,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/inventory/warehouses",
     icon: Building2,
     module: "Inventory",
+    gatewayPath: ["Masters", "Inventory"],
   },
   {
     id: "inventory-racking",
@@ -454,6 +503,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: LayoutGrid,
     module: "Inventory",
     aliases: ["racking", "bins", "zones", "racks"],
+    gatewayPath: ["Masters", "Inventory"],
   },
   {
     id: "inventory-batches",
@@ -463,6 +513,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Layers,
     module: "Inventory",
     aliases: ["lots"],
+    gatewayPath: ["Masters", "Inventory"],
   },
   {
     id: "inventory-serials",
@@ -471,6 +522,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/inventory/serials",
     icon: FilePlus,
     module: "Inventory",
+    gatewayPath: ["Masters", "Inventory"],
   },
   {
     id: "inventory-barcodes",
@@ -479,6 +531,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/inventory/barcodes",
     icon: Barcode,
     module: "Inventory",
+    gatewayPath: ["Utilities"],
   },
   {
     id: "inventory-transfers",
@@ -487,6 +540,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/inventory/transfers",
     icon: Repeat,
     module: "Inventory",
+    gatewayPath: ["Transactions", "Inventory"],
   },
   {
     id: "inventory-stock-take",
@@ -496,6 +550,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ScanLine,
     module: "Inventory",
     aliases: ["stock take", "count"],
+    gatewayPath: ["Transactions", "Inventory"],
   },
   {
     id: "inventory-adjustments",
@@ -504,6 +559,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/inventory/adjustments",
     icon: Scale,
     module: "Inventory",
+    gatewayPath: ["Transactions", "Inventory"],
   },
 
   // ==========================================================================
@@ -543,6 +599,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Receipt,
     module: "Accounts",
     parentId: "accounts-vouchers-group",
+    gatewayPath: ["Transactions", "Accounting"],
   },
   {
     id: "accounting-vouchers",
@@ -552,6 +609,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: FilePlus,
     module: "Accounts",
     parentId: "accounts-vouchers-group",
+    gatewayPath: ["Transactions", "Accounting"],
   },
   {
     id: "accounting-vouchers-new",
@@ -563,6 +621,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "accounts-vouchers-group",
     quickAction: { label: "Create Voucher" },
     perm: "voucher.create",
+    gatewayPath: ["Transactions", "Accounting"],
   },
   {
     id: "accounts-journal",
@@ -574,6 +633,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "accounts-vouchers-group",
     aliases: ["jv"],
     perm: "voucher.create",
+    gatewayPath: ["Transactions", "Accounting"],
   },
   {
     id: "accounts-contra",
@@ -584,6 +644,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-vouchers-group",
     perm: "voucher.create",
+    gatewayPath: ["Transactions", "Accounting"],
   },
   {
     id: "accounts-payment",
@@ -594,6 +655,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-vouchers-group",
     perm: "voucher.create",
+    gatewayPath: ["Transactions", "Accounting"],
   },
   {
     id: "accounts-receipt",
@@ -604,6 +666,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-vouchers-group",
     perm: "voucher.create",
+    gatewayPath: ["Transactions", "Accounting"],
   },
   {
     id: "accounts-debit-note",
@@ -614,6 +677,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-vouchers-group",
     perm: "voucher.create",
+    gatewayPath: ["Transactions", "Accounting"],
   },
   {
     id: "accounts-credit-note",
@@ -624,6 +688,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-vouchers-group",
     perm: "voucher.create",
+    gatewayPath: ["Transactions", "Accounting"],
   },
 
   {
@@ -634,6 +699,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: BookOpen,
     module: "Accounts",
     aliases: ["ledger", "coa"],
+    gatewayPath: ["Masters", "Accounts"],
   },
   {
     id: "accounts-day-book",
@@ -643,6 +709,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ClipboardList,
     module: "Accounts",
     parentId: "accounts-books-group",
+    gatewayPath: ["Reports", "Accounting"],
   },
   {
     id: "accounts-cash-book",
@@ -652,6 +719,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Wallet,
     module: "Accounts",
     parentId: "accounts-books-group",
+    gatewayPath: ["Reports", "Accounting"],
   },
   {
     id: "accounts-bank-book",
@@ -661,6 +729,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Landmark,
     module: "Accounts",
     parentId: "accounts-books-group",
+    gatewayPath: ["Reports", "Accounting"],
   },
   {
     id: "accounts-bank-accounts",
@@ -671,6 +740,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-books-group",
     keywords: ["ifsc", "account number", "banking"],
+    gatewayPath: ["Masters", "Accounts"],
   },
 
   {
@@ -682,6 +752,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Accounting"],
   },
   {
     id: "accounts-profit-loss",
@@ -693,6 +764,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "accounts-reports-group",
     aliases: ["p&l", "pnl", "income statement"],
     showInSidebar: false,
+    gatewayPath: ["Reports", "Accounting"],
   },
   {
     id: "accounts-balance-sheet",
@@ -703,6 +775,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Accounts",
     parentId: "accounts-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Accounting"],
   },
   {
     id: "accounts-cash-flow",
@@ -712,6 +785,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: PieChart,
     module: "Accounts",
     parentId: "accounts-reports-group",
+    gatewayPath: ["Reports", "Accounting"],
     // NOT hidden / NOT in Report Center yet -- this page is still mock
     // (verified: 0 real Supabase calls). Stays in the sidebar under its
     // native "Financial Reports" group until it's wired to real data,
@@ -728,6 +802,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "accounts-outstanding-group",
     aliases: ["debtors"],
     showInSidebar: false,
+    gatewayPath: ["Reports", "Accounting"],
   },
   {
     id: "accounts-payables",
@@ -739,6 +814,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "accounts-outstanding-group",
     aliases: ["creditors"],
     showInSidebar: false,
+    gatewayPath: ["Reports", "Accounting"],
   },
 
   // ==========================================================================
@@ -760,6 +836,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["stock", "inventory", "dashboard", "kpi", "overview"],
   },
   {
@@ -771,6 +848,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["stock", "summary", "opening", "closing", "inward", "outward", "tally", "stock report"],
     aliases: ["stock summary", "stock report", "inventory summary"],
   },
@@ -783,6 +861,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["stock", "summary", "hierarchical", "group", "ledger", "tally", "drill-down", "expand"],
     aliases: ["stock group drill-down", "stock ledger", "hierarchical stock summary"],
   },
@@ -795,6 +874,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["group", "product group", "stock group"],
   },
   {
@@ -806,6 +886,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["category", "stock category", "category summary"],
   },
   {
@@ -817,6 +898,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["warehouse", "location", "godown", "stock"],
   },
   {
@@ -828,6 +910,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["ageing", "aging", "old stock", "slow moving", "days"],
   },
   {
@@ -839,6 +922,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["dead stock", "idle", "non moving", "stuck inventory"],
   },
   {
@@ -850,6 +934,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["movement", "register", "inward", "outward", "purchase", "sales", "transfer", "stock ledger"],
     aliases: ["stock ledger", "movement register", "stock register"],
   },
@@ -862,6 +947,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["valuation", "value", "cost", "mrp", "profit", "stock value"],
   },
   {
@@ -873,6 +959,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["abc", "pareto", "80-20", "classification", "analysis"],
   },
   {
@@ -884,6 +971,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Reports",
     parentId: "inv-reports-group",
     showInSidebar: false,
+    gatewayPath: ["Reports", "Inventory"],
     keywords: ["fsn", "fast", "slow", "non moving", "frequency", "velocity"],
   },
 
@@ -911,6 +999,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "GST",
     parentId: "gst-group-dashboard",
     keywords: ["dashboard", "output tax", "itc", "net payable", "overview"],
+    gatewayPath: ["GST"],
   },
 
   {
@@ -929,6 +1018,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-returns",
     order: 1,
     keywords: ["gstr1", "gstr3b", "filing", "arn", "return", "lock", "approval", "revision"],
+    gatewayPath: ["GST", "Returns"],
   },
   {
     id: "gst-gstr-1",
@@ -940,6 +1030,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-returns",
     order: 2,
     keywords: ["gstr1", "returns", "filing", "b2b", "b2c"],
+    gatewayPath: ["GST", "Returns"],
   },
   {
     id: "gst-gstr-3b",
@@ -951,6 +1042,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-returns",
     order: 3,
     keywords: ["gstr3b", "returns", "filing"],
+    gatewayPath: ["GST", "Returns"],
   },
   {
     id: "gst-gstr-2-reconciliation",
@@ -962,6 +1054,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-returns",
     order: 4,
     keywords: ["gstr2a", "gstr2b", "itc", "reconciliation", "import"],
+    gatewayPath: ["GST"],
   },
   {
     id: "gst-gstr-9",
@@ -973,6 +1066,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-returns",
     order: 5,
     keywords: ["gstr9", "gstr9c", "annual", "reconciliation"],
+    gatewayPath: ["GST", "Returns"],
   },
 
   {
@@ -991,6 +1085,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-reports",
     order: 1,
     keywords: ["tax", "gstr", "returns"],
+    gatewayPath: ["GST", "GST Reports"],
   },
   {
     id: "gst-tax-register",
@@ -1002,6 +1097,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-reports",
     order: 2,
     keywords: ["tax", "register", "input", "output"],
+    gatewayPath: ["GST", "GST Reports"],
   },
   {
     id: "gst-hsn-summary",
@@ -1013,6 +1109,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-reports",
     order: 3,
     keywords: ["hsn", "gstr1"],
+    gatewayPath: ["GST", "GST Reports"],
   },
   {
     id: "gst-hsn-summary-purchase",
@@ -1024,6 +1121,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-reports",
     order: 4,
     keywords: ["hsn", "purchase", "input tax"],
+    gatewayPath: ["GST", "GST Reports"],
   },
 
   {
@@ -1042,6 +1140,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-masters",
     order: 1,
     keywords: ["hsn", "sac", "gst rate", "tax profile", "uqc"],
+    gatewayPath: ["Masters", "GST & Tax"],
   },
 
   {
@@ -1059,6 +1158,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-utilities",
     order: 1,
     disabled: true,
+    gatewayPath: ["GST"],
   },
   {
     id: "gst-einvoice-register",
@@ -1070,6 +1170,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-utilities",
     order: 2,
     keywords: ["einvoice", "irn", "ack"],
+    gatewayPath: ["GST"],
   },
   {
     id: "gst-ewaybill-register",
@@ -1081,6 +1182,7 @@ export const NAV_ITEMS: NavItem[] = [
     parentId: "gst-group-utilities",
     order: 3,
     keywords: ["ewaybill", "e-way bill", "vehicle", "transport"],
+    gatewayPath: ["GST"],
   },
 
   {
@@ -1098,6 +1200,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "GST",
     parentId: "gst-group-settings",
     keywords: ["gstin", "registration", "e-invoice", "e-way bill", "config"],
+    gatewayPath: ["GST"],
   },
 
   // ==========================================================================
@@ -1116,6 +1219,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Pricing",
     order: 1,
     keywords: ["pricing", "price list", "dealer price", "wholesale", "retail"],
+    gatewayPath: ["Masters", "Pricing"],
   },
   {
     id: "pricing-rules",
@@ -1126,6 +1230,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Pricing",
     order: 2,
     keywords: ["pricing", "discount", "rule", "scheme", "party discount", "item discount"],
+    gatewayPath: ["Masters", "Pricing"],
   },
   {
     id: "pricing-test-bench",
@@ -1136,143 +1241,11 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Pricing",
     order: 3,
     keywords: ["pricing", "discount", "scheme", "test", "trace", "explain", "rule engine"],
+    gatewayPath: ["Utilities"],
   },
 
   // ==========================================================================
-  // ADMINISTRATION
-  // ==========================================================================
-  {
-    id: "approval-center",
-    title: "Approval Center",
-    description: "Pending approvals across modules",
-    route: "/approval-center",
-    icon: ShieldCheck,
-    module: "Administration",
-  },
-  {
-    id: "audit-logs",
-    title: "Audit Logs",
-    description: "System-wide audit trail",
-    route: "/admin/audit-logs",
-    icon: ShieldCheck,
-    module: "Administration",
-    perm: "audit.view",
-  },
-  {
-    id: "voucher-numbering",
-    title: "Voucher Numbering",
-    description: "Configure voucher numbering series",
-    route: "/settings/voucher-numbering",
-    icon: Receipt,
-    module: "Administration",
-    perm: "settings.edit",
-  },
-  {
-    id: "print-copy-configuration",
-    title: "Print Copy Configuration",
-    description: "Configure the copy labels offered when printing any document (Original, Duplicate, Office Copy, etc.)",
-    route: "/settings/print-copies",
-    icon: FileText,
-    module: "Administration",
-    perm: "settings.edit",
-    keywords: ["print", "copy", "original", "duplicate", "transporter"],
-  },
-  {
-    id: "print-profiles",
-    title: "Print Profiles",
-    description: "Page size, margins, sections, and watermark for each document's default print layout",
-    route: "/settings/print-profiles",
-    icon: FileText,
-    module: "Administration",
-    perm: "settings.edit",
-    keywords: ["print", "template", "page size", "margin", "watermark", "layout"],
-  },
-  {
-    id: "financial-note-categories",
-    title: "Financial Note Categories",
-    description: "Debit/Credit Note adjustment categories and default ledgers",
-    route: "/settings/financial-note-categories",
-    icon: Tags,
-    module: "Administration",
-    perm: "settings.edit",
-  },
-  {
-    id: "accounting-lock",
-    title: "Accounting Lock",
-    description: "Lock accounting periods from further edits",
-    route: "/settings/accounting-lock",
-    icon: ShieldCheck,
-    module: "Administration",
-    perm: "settings.edit",
-  },
-  {
-    id: "dealer-applications",
-    title: "Dealer Applications",
-    description: "Review incoming dealer/retailer applications",
-    route: "/settings/dealer-applications",
-    icon: ClipboardList,
-    module: "Administration",
-    perm: "settings.edit",
-  },
-
-  // ==========================================================================
-  // CONFIGURATION (business-level setup)
-  // ==========================================================================
-  {
-    id: "business-profile",
-    title: "Business Profile",
-    description: "Company details, GSTIN, PAN, bank info",
-    route: "/settings/business-profile",
-    icon: Landmark,
-    module: "Configuration",
-    perm: "business.edit",
-  },
-  {
-    id: "company-users",
-    title: "Company Users",
-    description: "Manage users in this company",
-    route: "/settings/company-users",
-    icon: Users,
-    module: "Configuration",
-    perm: "team.manage",
-  },
-  {
-    id: "security-group",
-    title: "Security",
-    module: "Configuration",
-    description: "Permission and access settings",
-  },
-  {
-    id: "permission-system",
-    title: "Permission System",
-    description: "Choose how permissions work for this company",
-    route: "/settings/permission-system",
-    icon: ShieldCheck,
-    module: "Configuration",
-    parentId: "security-group",
-    perm: "team.manage",
-  },
-  {
-    id: "inventory-settings",
-    title: "Inventory Settings",
-    description: "Bin management and warehouse feature toggles used by GRN, Dispatch, Stock Transfer, Stock Take, and Picking List",
-    route: "/settings/inventory",
-    icon: SettingsIcon,
-    module: "Configuration",
-    keywords: ["bin", "warehouse", "put-away", "zone", "rack", "batch", "serial", "cycle count"],
-  },
-  {
-    id: "round-off-settings",
-    title: "Round Off Settings",
-    description: "Enable rounding on invoice totals, choose the rounding method, and pick which vouchers apply it",
-    route: "/settings/round-off",
-    icon: Calculator,
-    module: "Configuration",
-    keywords: ["round off", "rounding", "nearest", "precision", "ledger"],
-  },
-
-  // ==========================================================================
-  // SETTINGS (personal account)
+  // SETTINGS — company/user/security identity (module "Settings")
   // ==========================================================================
   {
     id: "profile",
@@ -1289,5 +1262,296 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/settings",
     icon: SettingsIcon,
     module: "Settings",
+  },
+  {
+    id: "business-profile",
+    title: "Business Profile",
+    description: "Company details, GSTIN, PAN, bank info",
+    route: "/settings/business-profile",
+    icon: Landmark,
+    module: "Settings",
+    perm: "business.edit",
+    gatewayPath: ["Administration", "Company"],
+  },
+  {
+    id: "users-access-group",
+    title: "Users & Access",
+    module: "Settings",
+    description: "Who has access to this company, and how permissions work",
+  },
+  {
+    id: "company-users",
+    title: "Company Users",
+    description: "Manage users in this company",
+    route: "/settings/company-users",
+    icon: Users,
+    module: "Settings",
+    parentId: "users-access-group",
+    perm: "team.manage",
+    gatewayPath: ["Administration", "Company"],
+  },
+  {
+    id: "permission-system",
+    title: "Permission System",
+    description: "Choose how permissions work for this company",
+    route: "/settings/permission-system",
+    icon: ShieldCheck,
+    module: "Settings",
+    parentId: "users-access-group",
+    perm: "team.manage",
+    gatewayPath: ["Administration", "Security & Access"],
+  },
+
+  // ==========================================================================
+  // CONFIGURATION — business behavior rules (module "Configuration")
+  // ==========================================================================
+  {
+    id: "config-sales-group",
+    title: "Sales",
+    module: "Configuration",
+    description: "Sales workflow, numbering and rounding rules",
+  },
+  {
+    id: "voucher-numbering",
+    title: "Voucher Numbering",
+    description: "Configure voucher numbering series",
+    route: "/settings/voucher-numbering",
+    icon: Receipt,
+    module: "Configuration",
+    parentId: "config-sales-group",
+    perm: "settings.edit",
+    gatewayPath: ["Configuration"],
+  },
+  {
+    id: "round-off-settings",
+    title: "Round Off Settings",
+    description: "Enable rounding on invoice totals, choose the rounding method, and pick which vouchers apply it",
+    route: "/settings/round-off",
+    icon: Calculator,
+    module: "Configuration",
+    parentId: "config-sales-group",
+    keywords: ["round off", "rounding", "nearest", "precision", "ledger"],
+    gatewayPath: ["Configuration"],
+  },
+  {
+    id: "config-inventory-group",
+    title: "Inventory",
+    module: "Configuration",
+    description: "Units, bins and warehouse feature toggles",
+  },
+  {
+    id: "measurement-units",
+    title: "Measurement Units",
+    description: "Manage units, categories and conversions used across Purchase, Sales & Inventory",
+    route: "/settings/measurement-units",
+    icon: Layers,
+    module: "Configuration",
+    parentId: "config-inventory-group",
+    perm: "settings.edit",
+    gatewayPath: ["Masters", "Inventory"],
+  },
+  {
+    id: "inventory-settings",
+    title: "Inventory Settings",
+    description: "Bin management and warehouse feature toggles used by GRN, Dispatch, Stock Transfer, Stock Take, and Picking List",
+    route: "/settings/inventory",
+    icon: SettingsIcon,
+    module: "Configuration",
+    parentId: "config-inventory-group",
+    keywords: ["bin", "warehouse", "put-away", "zone", "rack", "batch", "serial", "cycle count"],
+    gatewayPath: ["Configuration"],
+  },
+  {
+    id: "config-accounting-group",
+    title: "Accounting",
+    module: "Configuration",
+    description: "Note categories, accounting lock and financial years",
+  },
+  {
+    id: "financial-note-categories",
+    title: "Financial Note Categories",
+    description: "Debit/Credit Note adjustment categories and default ledgers",
+    route: "/settings/financial-note-categories",
+    icon: Tags,
+    module: "Configuration",
+    parentId: "config-accounting-group",
+    perm: "settings.edit",
+    gatewayPath: ["Configuration"],
+  },
+  {
+    id: "accounting-lock",
+    title: "Accounting Lock",
+    description: "Lock accounting periods from further edits",
+    route: "/settings/accounting-lock",
+    icon: ShieldCheck,
+    module: "Configuration",
+    parentId: "config-accounting-group",
+    perm: "settings.edit",
+    gatewayPath: ["Configuration"],
+  },
+  {
+    id: "financial-years",
+    title: "Financial Years",
+    description: "Open/close financial years — a closed year blocks new posting and posted-voucher deletion inside it",
+    route: "/settings/financial-years",
+    icon: ShieldCheck,
+    module: "Configuration",
+    parentId: "config-accounting-group",
+    perm: "settings.edit",
+    gatewayPath: ["Administration", "Company"],
+  },
+
+  // ==========================================================================
+  // ADMINISTRATION — data & system maintenance (module "Administration")
+  // ==========================================================================
+  {
+    id: "approval-center",
+    title: "Approval Center",
+    description: "Pending approvals across modules",
+    route: "/approval-center",
+    icon: ShieldCheck,
+    module: "Administration",
+    gatewayPath: ["Administration"],
+  },
+  {
+    id: "audit-logs",
+    title: "Audit Logs",
+    description: "System-wide audit trail",
+    route: "/admin/audit-logs",
+    icon: ShieldCheck,
+    module: "Administration",
+    perm: "audit.view",
+    gatewayPath: ["Administration"],
+  },
+  {
+    id: "print-copy-configuration",
+    title: "Print Copy Configuration",
+    description: "Configure the copy labels offered when printing any document (Original, Duplicate, Office Copy, etc.)",
+    route: "/settings/print-copies",
+    icon: FileText,
+    module: "Administration",
+    perm: "settings.edit",
+    keywords: ["print", "copy", "original", "duplicate", "transporter"],
+    gatewayPath: ["Configuration"],
+  },
+  {
+    id: "print-profiles",
+    title: "Print Profiles",
+    description: "Page size, margins, sections, and watermark for each document's default print layout",
+    route: "/settings/print-profiles",
+    icon: FileText,
+    module: "Administration",
+    perm: "settings.edit",
+    keywords: ["print", "template", "page size", "margin", "watermark", "layout"],
+    gatewayPath: ["Configuration"],
+  },
+  {
+    id: "opening-balance-migration",
+    title: "Opening Balance / Migration",
+    description: "Migrate closing balances from Tally/Busy/Easy into RD Pro as reconciled opening balances",
+    route: "/settings/opening-balance-migration",
+    icon: ArrowLeftRight,
+    module: "Administration",
+    keywords: ["migration", "tally", "busy", "easy", "opening balance"],
+    // showInSidebar: false keeps Classic Tree exactly as it was — this item
+    // was intentionally never in the sidebar (only Settings.tsx + Search),
+    // Gateway mode is a new way to reach it, not a new Classic sidebar row.
+    showInSidebar: false,
+    gatewayPath: ["Utilities"],
+  },
+  {
+    id: "backup-restore",
+    title: "Backup & Restore",
+    description: "Create encrypted backups, download them, or restore into a new company (owner only)",
+    route: "/settings/backup-restore",
+    icon: DatabaseBackup,
+    module: "Administration",
+    perm: "owner",
+    showInSidebar: false,
+    gatewayPath: ["Administration"],
+  },
+  {
+    id: "maintenance",
+    title: "Maintenance",
+    description: "Rebuild ledger balances and other data-recovery actions (Owner/Admin only)",
+    route: "/settings/maintenance",
+    icon: Wrench,
+    module: "Administration",
+    perm: "maintenance",
+    showInSidebar: false,
+    gatewayPath: ["Administration"],
+  },
+  {
+    id: "danger-zone",
+    title: "Danger Zone",
+    description: "Archive or permanently delete this company (owner only)",
+    route: "/settings/danger-zone",
+    icon: ShieldAlert,
+    module: "Administration",
+    perm: "owner",
+    showInSidebar: false,
+    gatewayPath: ["Administration"],
+  },
+
+  // ==========================================================================
+  // HELP & SUPPORT — planned, not yet built. Disabled placeholders per the
+  // same precedent as gst-portal-sync above: no `route` (nothing to link
+  // to), so they render greyed-out and are excluded from Command Search
+  // automatically. Becomes real later by adding `route` and dropping
+  // `disabled` — no other change needed.
+  // ==========================================================================
+  {
+    id: "help-center",
+    title: "Help Center",
+    description: "Browse help articles and documentation",
+    icon: HelpCircle,
+    module: "Administration",
+    disabled: true,
+    showInSidebar: false,
+    gatewayPath: ["Help & Support"],
+  },
+  {
+    id: "help-getting-started",
+    title: "Getting Started",
+    description: "Onboarding walkthrough for new users",
+    icon: BookOpen,
+    module: "Administration",
+    disabled: true,
+    showInSidebar: false,
+    gatewayPath: ["Help & Support"],
+  },
+  {
+    id: "help-keyboard-shortcuts",
+    title: "Keyboard Shortcuts",
+    description: "Full list of keyboard shortcuts",
+    icon: Keyboard,
+    module: "Administration",
+    disabled: true,
+    showInSidebar: false,
+    gatewayPath: ["Help & Support"],
+  },
+  {
+    id: "help-contact-support",
+    title: "Contact Support",
+    description: "Reach the RD Pro support team",
+    icon: Mail,
+    module: "Administration",
+    disabled: true,
+    showInSidebar: false,
+    gatewayPath: ["Help & Support"],
+  },
+
+  // ==========================================================================
+  // DEALER PORTAL
+  // ==========================================================================
+  {
+    id: "dealer-applications",
+    title: "Dealer Applications",
+    description: "Review incoming dealer/retailer applications",
+    route: "/settings/dealer-applications",
+    icon: ClipboardList,
+    module: "Dealer Portal",
+    perm: "settings.edit",
+    gatewayPath: ["Administration", "Company"],
   },
 ];

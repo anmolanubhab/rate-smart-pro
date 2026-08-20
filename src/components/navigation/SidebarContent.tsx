@@ -7,11 +7,15 @@
 import { ChevronDown, ChevronRight, Repeat, Star } from "lucide-react";
 import type { NavItem } from "@/lib/navigation/types";
 import type { NavModuleGroup } from "@/lib/navigation/useNavigation";
+import type { useGatewayNavigation } from "@/lib/navigation/useGatewayNavigation";
 import SidebarNavItem from "@/components/navigation/SidebarNavItem";
+import GatewayNav from "@/components/navigation/GatewayNav";
 import CompanyAvatar from "@/components/company/CompanyAvatar";
 
 interface SidebarContentProps {
   collapsed?: boolean;
+  navMode: "gateway" | "classic";
+  gateway: ReturnType<typeof useGatewayNavigation>;
   tree: NavModuleGroup[];
   childrenOf: Map<string, NavItem[]>;
   favoriteItems: NavItem[];
@@ -26,6 +30,8 @@ interface SidebarContentProps {
 
 export default function SidebarContent({
   collapsed = false,
+  navMode,
+  gateway,
   tree,
   childrenOf,
   favoriteItems,
@@ -60,7 +66,7 @@ export default function SidebarContent({
           <div className={`flex items-center gap-2.5 ${collapsed ? "justify-center" : ""}`}>
             <CompanyAvatar company={business} size="md" clickable />
             {!collapsed && (
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 pr-8">
                 <p className="truncate text-sm font-semibold text-foreground" title={business.business_name}>
                   {business.business_name}
                 </p>
@@ -108,7 +114,9 @@ export default function SidebarContent({
           </div>
         )}
 
-        {collapsed
+        {navMode === "gateway" ? (
+          <GatewayNav gateway={gateway} collapsed={collapsed} onNavigate={onNavigate} />
+        ) : collapsed
           ? tree.map((group) => (
               <div key={group.module} className="mb-3 space-y-0.5 border-b border-sidebar-border/60 pb-3 last:border-0">
                 {group.items.map((item) => (

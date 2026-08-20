@@ -19,8 +19,11 @@ import OfflinePage from "@/components/pwa/OfflinePage";
 import UpdateNotification from "@/components/pwa/UpdateNotification";
 
 import { useNavigation } from "@/lib/navigation/useNavigation";
+import { useGatewayNavigation } from "@/lib/navigation/useGatewayNavigation";
 import { useFavoritePages } from "@/lib/navigation/useFavoritePages";
 import { useRecentPages } from "@/lib/navigation/useRecentPages";
+import { useNavigationMode } from "@/hooks/useNavigationMode";
+import { LayoutList, Map as MapIcon } from "lucide-react";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -29,6 +32,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   const { tree, childrenOf, byId } = useNavigation();
+  const gateway = useGatewayNavigation();
+  const { mode: navMode, toggle: toggleNavMode } = useNavigationMode();
   const { favoriteIds } = useFavoritePages();
   const { recordVisit } = useRecentPages();
 
@@ -107,6 +112,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           >
             <SidebarContent
               collapsed={collapsed}
+              navMode={navMode}
+              gateway={gateway}
               tree={tree}
               childrenOf={childrenOf}
               favoriteItems={favoriteItems}
@@ -118,8 +125,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               onSwitchCompany={switchCompany}
             />
 
-            {/* Collapse toggle */}
-            <div className="border-t border-sidebar-border p-3">
+            {/* Nav mode + collapse toggles */}
+            <div className="border-t border-sidebar-border p-3 space-y-1">
+              {!collapsed && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleNavMode}
+                  className="w-full justify-start text-sidebar-foreground/70 hover:text-foreground"
+                  title={navMode === "gateway" ? "Switch to Classic Tree" : "Switch to Gateway Mode"}
+                >
+                  {navMode === "gateway" ? <LayoutList className="h-4 w-4" /> : <MapIcon className="h-4 w-4" />}
+                  <span className="ml-2">{navMode === "gateway" ? "Classic Tree" : "Gateway Mode"}</span>
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -140,6 +159,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               <SheetTitle className="sr-only">Navigation menu</SheetTitle>
               <div className="flex h-full flex-col pt-4">
                 <SidebarContent
+                  navMode={navMode}
+                  gateway={gateway}
                   tree={tree}
                   childrenOf={childrenOf}
                   favoriteItems={favoriteItems}
