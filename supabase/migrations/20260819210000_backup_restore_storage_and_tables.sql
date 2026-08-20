@@ -232,6 +232,10 @@ from information_schema.columns c
 where c.table_schema = 'public'
   and c.column_name = 'business_id'
   and exists (
+    select 1 from information_schema.tables t
+    where t.table_schema = 'public' and t.table_name = c.table_name and t.table_type = 'BASE TABLE'
+  )
+  and exists (
     select 1 from information_schema.columns pk
     where pk.table_schema = 'public' and pk.table_name = c.table_name
       and pk.column_name = 'id' and pk.data_type = 'uuid'
