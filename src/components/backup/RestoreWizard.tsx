@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Upload, ShieldAlert, CheckCircle2, XCircle, Building2, FilePlus2 } from "lucide-react";
 import { verifyCurrentPassword } from "@/lib/companySafety";
 import { fetchBusinessesForUser } from "@/lib/businesses";
+import { extractFunctionErrorMessage } from "@/lib/functionErrors";
 import { isOwner } from "@/lib/permissions";
 import { RestoreIntegrityReport, type IntegrityCheck } from "./RestoreIntegrityReport";
 
@@ -100,7 +101,7 @@ export function RestoreWizard({
         body: { action: "validate", envelope: parsed },
         headers: await authHeader(),
       });
-      if (fnError) throw fnError;
+      if (fnError) throw new Error(await extractFunctionErrorMessage(fnError));
 
       setValidation(data.validation_result);
       setPreview(data.preview);
@@ -144,7 +145,7 @@ export function RestoreWizard({
         },
         headers: await authHeader(),
       });
-      if (fnError) throw fnError;
+      if (fnError) throw new Error(await extractFunctionErrorMessage(fnError));
       if (data.error && !data.integrity_result) throw new Error(data.error);
 
       setResultBusinessId(mode === "new_company" ? data.new_business_id : data.target_business_id);

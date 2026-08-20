@@ -11,6 +11,7 @@ import { isOwner } from "@/lib/permissions";
 import { useFormatDate } from "@/lib/dateFormat";
 import { CreateBackupDialog } from "@/components/backup/CreateBackupDialog";
 import { RestoreWizard } from "@/components/backup/RestoreWizard";
+import { extractFunctionErrorMessage } from "@/lib/functionErrors";
 
 type BackupRow = {
   id: string;
@@ -116,7 +117,7 @@ export default function BackupRestore() {
         body: { action: "validate", envelope },
         headers: await authHeader(),
       });
-      if (fnError) throw fnError;
+      if (fnError) throw new Error(await extractFunctionErrorMessage(fnError));
       if (data.validation_result?.valid) {
         toast.success("Backup verified — file is intact and restorable");
       } else {
