@@ -256,8 +256,22 @@ export default function BusinessHealthLayer() {
     // Phase 2: once this business has closed a financial year, Closing
     // Stock is a real income ledger computeProfitLoss already sums --
     // passing it again here would double-count it, exactly the same
-    // fallback ProfitLoss.tsx/BalanceSheet.tsx apply.
+    // fallback ProfitLoss.tsx/BalanceSheet.tsx apply. This is ONLY the
+    // input to the profit formula below -- it is deliberately 0 post-Phase-2
+    // and must never be shown to the user as "the" inventory value (see
+    // stockValueDisplay for that).
     const stockValue = hasRealStockLedger(ledgers) ? 0 : computeClosingStockValue(products);
+    // What the "Inventory Value" KPI card actually displays: ALWAYS the
+    // live synthetic figure, never the 0 used above for the profit formula.
+    // hasRealStockLedger only tells you a "Stock-in-Hand" ledger ROW exists
+    // -- that ledger is also lazily auto-created (at 0 or a partial delta)
+    // by stock-take/opening-stock/warehouse-tagging flows, not exclusively
+    // by close_financial_year() as its own doc-comment assumes, so its
+    // balance is not a reliable stand-in for "current inventory value" --
+    // trusting it here made this card show ₹0 forever for any business
+    // whose Stock-in-Hand ledger happened to get created without a real
+    // closing entry ever posting to it.
+    const stockValueDisplay = computeClosingStockValue(products);
 
     // Net Profit = the EXACT SAME function, with the EXACT SAME ledger data
     // and closing-stock figure, that ProfitLoss.tsx/BalanceSheet.tsx use --
@@ -273,7 +287,7 @@ export default function BusinessHealthLayer() {
     // so the trend isolates the change in cumulative trading income/expense
     // rather than fabricating a stock movement.
     const profitPrev = netProfitWithInventory(toDatePrevTotals, 0, stockValue).profit;
-    const stockPrev = stockValue;
+    const stockPrev = stockValueDisplay;
 
     const cash = ledgers.filter((l: any) => l.ledger_type === "cash").reduce((s, l: any) => s + (l.balance ?? 0), 0);
     const bank = ledgers.filter((l: any) => l.ledger_type === "bank").reduce((s, l: any) => s + (l.balance ?? 0), 0);
@@ -288,6 +302,7 @@ export default function BusinessHealthLayer() {
       payableCur,
       payablePrev,
       stockValue,
+      stockValueDisplay,
       stockPrev,
       profitCur,
       profitPrev,
@@ -318,7 +333,7 @@ export default function BusinessHealthLayer() {
   const purchaseTone = toneForPct(purchasePct === null ? null : -purchasePct);
   const receivableTone = toneForOutstanding(computed.receivableCur, computed.salesCur);
   const payableTone = toneForOutstanding(computed.payableCur, computed.purchaseCur);
-  const inventoryTone = toneForPct(pctChange(computed.stockValue, computed.stockPrev));
+  const inventoryTone = toneForPct(pctChange(computed.stockValueDisplay, computed.stockPrev));
   const profitTone = toneForProfit(computed.profitCur);
   const profitDelta = profitChangeLabel(computed.profitCur, computed.profitPrev);
 
@@ -347,7 +362,7 @@ export default function BusinessHealthLayer() {
             <KpiCard label="Purchase This Month" value={computed.purchaseCur} previous={computed.purchasePrev} status={purchaseTone} icon={CreditCard} />
             <KpiCard label="Receivables" value={computed.receivableCur} previous={computed.receivablePrev} status={receivableTone} icon={ArrowUpRight} />
             <KpiCard label="Payables" value={computed.payableCur} previous={computed.payablePrev} status={payableTone} icon={ArrowDownRight} />
-            <KpiCard label="Inventory Value" value={computed.stockValue} previous={computed.stockPrev} status={inventoryTone} icon={Boxes} />
+            <KpiCard label="Inventory Value" value={computed.stockValueDisplay} previous={computed.stockPrev} status={inventoryTone} icon={Boxes} />
             {canProfit && (
               <KpiCard
                 label={computed.profitCur >= 0 ? "Net Profit (Life-to-Date)" : "Net Loss (Life-to-Date)"}
