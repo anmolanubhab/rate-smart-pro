@@ -43,7 +43,12 @@ begin
     table_name text not null,
     delete_sql text not null
   ) on commit drop;
-  delete from _restore_delete_pending;
+  -- Cleared with an explicit WHERE (even though `on commit drop` means a
+  -- fresh temp table per invocation already; a re-run within the same
+  -- session via `if not exists` could reuse one) — found via a live
+  -- production functional test that this platform enforces a WHERE clause
+  -- on every DELETE, including against temp tables.
+  delete from _restore_delete_pending where true;
 
   for r in
     select table_name, business_id_column, scope_mode, parent_table, parent_fk_column
@@ -122,7 +127,7 @@ declare
 begin
   if _remap_ids then
     create temporary table if not exists _restore_id_map (old_id uuid primary key, new_id uuid not null) on commit drop;
-    delete from _restore_id_map;
+    delete from _restore_id_map where true;
 
     for r in select table_name from public.backup_table_registry where phase = 1 and include_in_backup
     loop
@@ -143,7 +148,7 @@ begin
     table_name text not null,
     row_data jsonb not null
   ) on commit drop;
-  delete from _restore_pending;
+  delete from _restore_pending where true;
 
   for r in
     select table_name, business_id_column, scope_mode, parent_table, parent_fk_column, section
