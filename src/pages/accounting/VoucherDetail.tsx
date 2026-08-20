@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowLeft, Pencil, CheckCircle, Trash2, Printer, Share2, Ban,
-  AlertTriangle,
+  AlertTriangle, RefreshCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ import {
 } from "@/lib/voucherService";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import { buildVoucherUdm, isEngineVoucherType, VOUCHER_REGISTRY_ID, type EngineVoucherType } from "@/lib/documentUdm/voucherUdm";
+import { VOUCHER_TYPE_CONFIGS } from "@/lib/voucherTypeConfig";
 
 // ── tone maps ──────────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ export default function VoucherDetail() {
   const [postOpen, setPostOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [smartEditOpen, setSmartEditOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const { data: voucher, isLoading, error } = useQuery({
@@ -112,6 +114,29 @@ export default function VoucherDetail() {
       setBusy(false);
       setCancelOpen(false);
       setCancelReason("");
+    }
+  };
+
+  // Smart Edit: posted vouchers can't be edited in place (updateVoucher
+  // rejects anything that isn't "draft" — see voucherService.ts), so this
+  // cancels the posted voucher and sends the user to a fresh entry screen
+  // pre-filled with the same values via ?copyFrom=<id>. The accounting
+  // trail stays intact (a real cancelled record plus a real new one)
+  // while the user experience is "edit this voucher".
+  const handleSmartEdit = async () => {
+    if (!user?.id || !id || !voucher) return;
+    const engineConfig = VOUCHER_TYPE_CONFIGS[voucher.voucher_type as keyof typeof VOUCHER_TYPE_CONFIGS];
+    if (!engineConfig) return;
+    setBusy(true);
+    try {
+      await cancelVoucher(user.id, id, "Edited — replaced by a corrected voucher", voucherLockOpts);
+      qc.invalidateQueries({ queryKey: ["voucher-detail", id] });
+      qc.invalidateQueries({ queryKey: ["vouchers-list"] });
+      navigate(`${engineConfig.path}?copyFrom=${id}`);
+    } catch (e: any) {
+      toast.error(e.message);
+      setBusy(false);
+      setSmartEditOpen(false);
     }
   };
 
@@ -247,14 +272,25 @@ export default function VoucherDetail() {
               </>
             )}
             {voucher.status === "posted" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-orange-600 border-orange-500/40 hover:bg-orange-500/10"
-                onClick={() => setCancelOpen(true)}
-              >
-                <Ban className="h-3.5 w-3.5 mr-1" /> Cancel
-              </Button>
+              <>
+                {VOUCHER_TYPE_CONFIGS[voucher.voucher_type as keyof typeof VOUCHER_TYPE_CONFIGS] && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSmartEditOpen(true)}
+                  >
+                    <RefreshCcw className="h-3.5 w-3.5 mr-1" /> Edit
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-orange-600 border-orange-500/40 hover:bg-orange-500/10"
+                  onClick={() => setCancelOpen(true)}
+                >
+                  <Ban className="h-3.5 w-3.5 mr-1" /> Cancel
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -496,6 +532,26 @@ export default function VoucherDetail() {
               className="bg-orange-600 text-white hover:bg-orange-700"
             >
               Cancel Voucher
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Smart Edit confirmation dialog */}
+      <AlertDialog open={smartEditOpen} onOpenChange={setSmartEditOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit Voucher?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Posted vouchers can't be changed directly — this will cancel <strong>{voucher.voucher_no}</strong> and
+              open a new voucher pre-filled with the same date, ledgers and amounts, so you can correct it and save.
+              The original stays visible in the Cancelled tab for the audit trail.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep Voucher</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSmartEdit} disabled={busy}>
+              Cancel & Edit
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

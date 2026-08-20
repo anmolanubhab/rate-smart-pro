@@ -10,7 +10,7 @@
 // the existing Document Engine invoice screens.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle, Save, Trash2, AlertTriangle } from "lucide-react";
@@ -51,6 +51,14 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   const config = VOUCHER_TYPE_CONFIGS[type];
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
+  const [searchParams] = useSearchParams();
+  // Smart Edit: a posted voucher can't be edited directly (see
+  // voucherService.updateVoucher), so VoucherDetail's "Edit" action instead
+  // cancels it and sends the user here with ?copyFrom=<old id> — this
+  // screen then behaves exactly like a normal create, just pre-filled with
+  // the cancelled voucher's values, so it feels like editing without ever
+  // touching the immutable posted record.
+  const copyFromId = !isEdit ? searchParams.get("copyFrom") : null;
   const navigate = useNavigate();
   const { user } = useAuth();
   const { business, role, financialRights } = useBusiness();
@@ -238,6 +246,36 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
       setBankBranch(existingVoucher.bank_branch ?? "");
     }
   }, [existingVoucher]);
+
+  // ── Smart Edit: prefill from the cancelled voucher (?copyFrom=) ────────
+  // Same shape as the edit-mode load above, but voucherNo/status are left
+  // alone — this is a genuine new draft, not the old record, and posting
+  // it will get its own fresh voucher number.
+  const { data: copyFromVoucher } = useQuery({
+    queryKey: ["voucher-detail", copyFromId],
+    enabled: !!copyFromId,
+    queryFn: () => getVoucher(copyFromId!),
+  });
+
+  useEffect(() => {
+    if (copyFromVoucher) {
+      setVDate(copyFromVoucher.voucher_date);
+      setNarration(copyFromVoucher.narration ?? "");
+      setNarrationTouched(true);
+      if (copyFromVoucher.items && copyFromVoucher.items.length > 0) {
+        setItems(copyFromVoucher.items.map((it) => ({ ...it, id: undefined })));
+      }
+      if (copyFromVoucher.adjustment_category_id) setAdjustmentCategoryId(copyFromVoucher.adjustment_category_id);
+      if (copyFromVoucher.reference_id && copyFromVoucher.note_mode === "financial_adjustment") {
+        setLinkedInvoiceId(copyFromVoucher.reference_id);
+      }
+      setInstrumentType(copyFromVoucher.instrument_type ?? "");
+      setInstrumentNo(copyFromVoucher.instrument_no ?? "");
+      setInstrumentDate(copyFromVoucher.instrument_date ?? "");
+      setBankBranch(copyFromVoucher.bank_branch ?? "");
+      toast.info(`Pre-filled from cancelled voucher ${copyFromVoucher.voucher_no} — review and save.`);
+    }
+  }, [copyFromVoucher]);
 
   // ── ledger accounts ─────────────────────────────────────────────────────
   const { data: ledgers = [], isLoading: ledgersLoading } = useQuery({
