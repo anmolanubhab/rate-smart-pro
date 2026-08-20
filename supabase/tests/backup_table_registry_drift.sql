@@ -20,6 +20,10 @@ FROM information_schema.columns c
 WHERE c.table_schema = 'public'
   AND c.column_name = 'business_id'
   AND EXISTS (
+    SELECT 1 FROM information_schema.tables t
+    WHERE t.table_schema = 'public' AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
+  )
+  AND EXISTS (
     SELECT 1 FROM information_schema.columns pk
     WHERE pk.table_schema = 'public' AND pk.table_name = c.table_name
       AND pk.column_name = 'id' AND pk.data_type = 'uuid'

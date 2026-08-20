@@ -236,7 +236,14 @@ declare
   v_key text;
   v_val jsonb;
   r record;
+  v_item record;
   v_table_rows jsonb;
+  v_progress boolean;
+  v_remaining int;
+  v_pass int := 0;
+  v_stuck_tables text;
+  v_disable_tables text[];
+  v_tbl text;
 begin
   if auth.uid() is null then
     raise exception 'authentication required';
@@ -247,6 +254,34 @@ begin
   if coalesce(trim(_new_business_name), '') = '' then
     raise exception 'a name is required for the restored company';
   end if;
+
+  -- 0. Restoring replays already-valid historical data, not new business
+  -- activity, so business-logic side-effect triggers on the tables we're
+  -- about to bulk-insert into must not fire — a live production functional
+  -- test found several that otherwise create phantom duplicate records
+  -- (products_opening_stock_sync_trigger() auto-posting a second "opening
+  -- stock" voucher, products_initial_movement() auto-logging a second
+  -- inventory movement, sales_invoice_autopost() auto-posting a second
+  -- invoice voucher, dispatch/payment-allocation triggers double-applying
+  -- stock/balance deltas that are already reflected in the backed-up
+  -- column values, etc.). ALTER TABLE ... DISABLE TRIGGER USER is the
+  -- standard tool for exactly this (same mechanism pg_restore's
+  -- --disable-triggers uses): it disables every user-defined trigger on a
+  -- table while leaving FK/CHECK constraint enforcement (implemented as
+  -- internal constraint triggers) fully active, so referential integrity
+  -- is still verified during the insert. Re-enabled unconditionally before
+  -- return; if anything raises first, the DISABLE itself rolls back with
+  -- the rest of the transaction (DDL is transactional), so triggers are
+  -- never left disabled beyond this one call. Scoped only to the tables
+  -- this restore actually writes to, to keep the brief ACCESS EXCLUSIVE
+  -- lock each ALTER TABLE takes as narrow as possible for other tenants.
+  select array_agg(distinct table_name) into v_disable_tables
+  from public.backup_table_registry where phase = 1 and include_in_backup;
+  v_disable_tables := array_append(v_disable_tables, 'businesses');
+
+  foreach v_tbl in array v_disable_tables loop
+    execute format('alter table public.%I disable trigger user', v_tbl);
+  end loop;
 
   v_old_business := _payload -> 'business';
 
@@ -277,7 +312,7 @@ begin
   )
   returning id into v_new_business_id;
 
-  insert into public.business_users (business_id, user_id, role, status, joined_at, email)
+  insert into public.business_users (business_id, user_id, role, status, created_at, email)
   values (v_new_business_id, auth.uid(), 'owner', 'active', now(), (select email from auth.users where id = auth.uid()));
 
   -- 2. Other membership rows come back as inactive stubs only — never
@@ -316,13 +351,19 @@ begin
     end loop;
   end loop;
 
-  -- 4. Insert every row, id/business_id/any-uuid-shaped-FK-column remapped.
-  -- Section order is a heuristic dependency order (settings -> masters ->
+  -- 4. Stage every row, id/business_id/any-uuid-shaped-FK-column remapped,
+  -- into a pending queue rather than inserting immediately. Section order
+  -- here is only a heuristic dependency order (settings -> masters ->
   -- transaction headers -> transaction children -> inventory -> gst),
-  -- direct tables before their via_parent children within that. It is not a
-  -- full topological sort of the FK graph; a genuine cross-section
-  -- dependency violation raises here and rolls back the whole restore
-  -- (fail-closed, per the plan) rather than silently dropping rows.
+  -- direct tables before their via_parent children within that — it is not
+  -- a full topological sort of the FK graph, which is why insertion itself
+  -- (step 5) is a retry loop rather than a single ordered pass.
+  create temporary table _restore_pending (
+    seq bigserial primary key,
+    table_name text not null,
+    row_data jsonb not null
+  ) on commit drop;
+
   for r in
     select table_name, business_id_column, scope_mode, parent_table, parent_fk_column, section
     from public.backup_table_registry
@@ -366,11 +407,121 @@ begin
         end if;
       end loop;
 
-      execute format(
-        'insert into public.%I select * from jsonb_populate_record(null::public.%I, $1)',
-        r.table_name, r.table_name
-      ) using v_new_row;
+      insert into _restore_pending (table_name, row_data) values (r.table_name, v_new_row);
     end loop;
+  end loop;
+
+  -- 5. Retry-insert loop: a row that fails on foreign_key_violation goes
+  -- back into the queue for the next pass (its dependency likely hasn't
+  -- been inserted yet); any other error is a real problem and raises
+  -- immediately, rolling back the whole restore.
+  loop
+    v_progress := false;
+    for v_item in select * from _restore_pending order by seq
+    loop
+      begin
+        execute format(
+          'insert into public.%I select * from jsonb_populate_record(null::public.%I, $1)',
+          v_item.table_name, v_item.table_name
+        ) using v_item.row_data;
+        delete from _restore_pending where seq = v_item.seq;
+        v_progress := true;
+      exception
+        when foreign_key_violation or raise_exception then
+          -- foreign_key_violation: a real FK constraint pointing at a row
+          -- not yet inserted. raise_exception (P0001): the same situation
+          -- surfaced by a validation trigger's own plain RAISE EXCEPTION
+          -- instead of a native constraint (e.g. warehouse_bins'
+          -- set_bin_location_code(), which does its own existence lookup on
+          -- the parent rack/zone/warehouse chain rather than relying on the
+          -- FK alone). Both are retried the same way.
+        when unique_violation then
+          -- A business-creation side-effect trigger (e.g.
+          -- seed_default_warehouse(), which auto-inserts a "Main Warehouse"
+          -- row via trg_seed_default_warehouse on businesses AFTER INSERT)
+          -- already created a row that collides with one from the backup —
+          -- found via a live production functional test. Resolve generically
+          -- rather than hardcoding "warehouses": look up the violated
+          -- constraint's columns, find the pre-existing row those values
+          -- match, and repoint every remaining reference from the discarded
+          -- id to that existing row's real id — both in the id map (for
+          -- rows not yet staged... there are none at this point, staging
+          -- already happened) and, critically, in every row still queued in
+          -- _restore_pending that already had its FK column remapped to the
+          -- now-discarded id.
+          declare
+            v_constraint_name text;
+            v_conflict_cols text[];
+            v_where_parts text[] := array[]::text[];
+            v_col text;
+            v_existing_id uuid;
+            v_discarded_id uuid;
+          begin
+            get stacked diagnostics v_constraint_name = constraint_name;
+
+            -- Try a formal UNIQUE constraint first (pg_constraint)...
+            select array_agg(a.attname order by k.ord)
+              into v_conflict_cols
+            from pg_constraint c
+            join unnest(c.conkey) with ordinality as k(attnum, ord) on true
+            join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum
+            where c.conname = v_constraint_name
+              and c.conrelid = ('public.' || v_item.table_name)::regclass;
+
+            -- ...falling back to a bare UNIQUE INDEX (no pg_constraint row
+            -- at all — e.g. warehouse_bins_business_location_code_key,
+            -- found via a live production functional test) if the first
+            -- lookup found nothing. Postgres reports the same
+            -- name (the index's own name) for both cases.
+            if v_conflict_cols is null then
+              select array_agg(a.attname order by k.ord)
+                into v_conflict_cols
+              from pg_index i
+              join unnest(i.indkey) with ordinality as k(attnum, ord) on true
+              join pg_attribute a on a.attrelid = i.indrelid and a.attnum = k.attnum
+              where i.indexrelid = to_regclass('public.' || quote_ident(v_constraint_name))
+                and i.indrelid = ('public.' || v_item.table_name)::regclass;
+            end if;
+
+            if v_conflict_cols is null then
+              raise; -- could not resolve the index/constraint's columns — escalate, do not silently drop data
+            end if;
+
+            foreach v_col in array v_conflict_cols loop
+              v_where_parts := v_where_parts || format('%I = %L', v_col, v_item.row_data ->> v_col);
+            end loop;
+
+            execute format('select id from public.%I where %s limit 1', v_item.table_name, array_to_string(v_where_parts, ' and '))
+              into v_existing_id;
+
+            if v_existing_id is null then
+              raise; -- couldn't find the conflicting row by that key — escalate
+            end if;
+
+            v_discarded_id := (v_item.row_data ->> 'id')::uuid;
+            update _restore_id_map set new_id = v_existing_id where new_id = v_discarded_id;
+            update _restore_pending set row_data = replace(row_data::text, v_discarded_id::text, v_existing_id::text)::jsonb
+              where seq <> v_item.seq and row_data::text like '%' || v_discarded_id::text || '%';
+
+            delete from _restore_pending where seq = v_item.seq;
+            v_progress := true;
+          end;
+      end;
+    end loop;
+
+    select count(*) into v_remaining from _restore_pending;
+    exit when v_remaining = 0;
+
+    v_pass := v_pass + 1;
+    if not v_progress or v_pass > 20 then
+      select string_agg(distinct table_name, ', ') into v_stuck_tables from _restore_pending;
+      raise exception 'restore could not resolve insert order for % row(s) across tables: % (unresolved foreign-key dependency)',
+        v_remaining, v_stuck_tables;
+    end if;
+  end loop;
+
+  foreach v_tbl in array v_disable_tables loop
+    execute format('alter table public.%I enable trigger user', v_tbl);
   end loop;
 
   return v_new_business_id;
@@ -488,6 +639,13 @@ set search_path = public
 as $$
 declare
   v_member_count int;
+  v_disable_tables text[];
+  v_tbl text;
+  r record;
+  v_item record;
+  v_progress boolean;
+  v_remaining int;
+  v_pass int := 0;
 begin
   if not public.has_business_role(_business_id, array['owner'::business_role]) then
     raise exception 'only the company owner can roll back a restore';
@@ -502,7 +660,98 @@ begin
      set status = 'rolled_back', updated_at = now()
    where target_business_id = _business_id and status <> 'rolled_back';
 
+  -- DELETE FROM businesses cascades across every FK'd table at once, and a
+  -- live production functional test found this trips two separate
+  -- pre-existing trigger interactions on a business with real data:
+  -- enforce_business_user_safety() blocks removing the caller's own
+  -- membership (always true here — the caller is always the fresh
+  -- business's sole owner), and products_cancel_opening_stock() /
+  -- vouchers_sync_balance_on_status_change() / apply_ledger_balance_delta()
+  -- chain into each other trying to reverse an opening-stock voucher
+  -- against a ledger_accounts row that the SAME cascade may already have
+  -- removed, depending on cascade ordering. Both are sidestepped the same
+  -- way restore_backup_to_new_business() avoids unwanted side effects on
+  -- insert: disable every user trigger on the tables this delete touches
+  -- first (DDL is transactional, so it re-enables automatically if
+  -- anything fails before the matching ENABLE call).
+  select array_agg(distinct table_name) into v_disable_tables
+  from public.backup_table_registry where phase = 1 and include_in_backup;
+  v_disable_tables := array_append(v_disable_tables, 'business_users');
+
+  foreach v_tbl in array v_disable_tables loop
+    execute format('alter table public.%I disable trigger user', v_tbl);
+  end loop;
+
+  -- Delete every registered table's rows for this business explicitly,
+  -- rather than relying on ON DELETE CASCADE from businesses: a live
+  -- production functional test found the cascade graph itself has a
+  -- RESTRICT-vs-CASCADE ordering conflict unrelated to triggers
+  -- (voucher_items.ledger_account_id is ON DELETE RESTRICT, but
+  -- ledger_accounts is cascade-deleted from businesses — if Postgres
+  -- happens to process that cascade before voucher_items' own cascade
+  -- finishes, the RESTRICT blocks it). Same retry-queue pattern as
+  -- restore's insert loop, mirrored for delete: a table that fails on
+  -- foreign_key_violation (something still references its rows) goes back
+  -- in the queue for the next pass.
+  create temporary table _rollback_pending (
+    seq bigserial primary key,
+    table_name text not null,
+    delete_sql text not null
+  ) on commit drop;
+
+  for r in
+    select table_name, business_id_column, scope_mode, parent_table, parent_fk_column
+    from public.backup_table_registry where phase = 1 and include_in_backup
+  loop
+    if r.scope_mode = 'direct' then
+      insert into _rollback_pending (table_name, delete_sql)
+      values (r.table_name, format('delete from public.%I where %I = %L', r.table_name, r.business_id_column, _business_id));
+    else
+      insert into _rollback_pending (table_name, delete_sql)
+      values (r.table_name, format(
+        'delete from public.%I t using public.%I p where p.id = t.%I and p.business_id = %L',
+        r.table_name, r.parent_table, r.parent_fk_column, _business_id
+      ));
+    end if;
+  end loop;
+
+  loop
+    v_progress := false;
+    for v_item in select * from _rollback_pending order by seq
+    loop
+      begin
+        execute v_item.delete_sql;
+        delete from _rollback_pending where seq = v_item.seq;
+        v_progress := true;
+      exception when foreign_key_violation or check_violation then
+        -- foreign_key_violation: something still references these rows.
+        -- check_violation: deleting a different table's row can trigger an
+        -- ON DELETE SET NULL that then fails a NOT NULL-ish check
+        -- constraint on a row not yet cleared (e.g. account_groups ->
+        -- ledger_accounts.group_id SET NULL vs
+        -- ledger_accounts_group_id_not_null — found via a live production
+        -- functional test). Both are ordering artifacts of our own
+        -- generated per-table deletes, not real data problems; retry after
+        -- other tables have been cleared.
+      end;
+    end loop;
+
+    select count(*) into v_remaining from _rollback_pending;
+    exit when v_remaining = 0;
+
+    v_pass := v_pass + 1;
+    if not v_progress or v_pass > 20 then
+      raise exception 'rollback could not resolve delete order for tables: %',
+        (select string_agg(distinct table_name, ', ') from _rollback_pending);
+    end if;
+  end loop;
+
+  delete from public.business_users where business_id = _business_id;
   delete from public.businesses where id = _business_id;
+
+  foreach v_tbl in array v_disable_tables loop
+    execute format('alter table public.%I enable trigger user', v_tbl);
+  end loop;
 end;
 $$;
 
