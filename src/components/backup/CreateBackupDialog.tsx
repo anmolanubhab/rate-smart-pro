@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { DatabaseBackup } from "lucide-react";
+import { extractFunctionErrorMessage } from "@/lib/functionErrors";
 
 export function CreateBackupDialog({
   open,
@@ -32,7 +33,7 @@ export function CreateBackupDialog({
         body: { business_id: businessId, backup_id: backupId },
         headers: session ? { Authorization: `Bearer ${session.access_token}` } : undefined,
       });
-      if (exportError) throw exportError;
+      if (exportError) throw new Error(await extractFunctionErrorMessage(exportError));
 
       toast.success("Backup created");
       onCreated();
