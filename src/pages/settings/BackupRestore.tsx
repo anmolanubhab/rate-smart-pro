@@ -229,7 +229,7 @@ export default function BackupRestore() {
         businessId={business.id}
         onCreated={() => qc.invalidateQueries({ queryKey: ["business-backups"] })}
       />
-      <RestoreWizard open={openRestore} onOpenChange={setOpenRestore} />
+      <RestoreWizard open={openRestore} onOpenChange={setOpenRestore} currentBusinessId={business.id} />
     </div>
   );
 }
