@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchScopedById, assertOwnedByBusiness, requireBusinessScope } from "@/lib/businessScope";
+import { computePurchaseLine, type PurchasePricingMode, type PurchaseSchemeType, type PurchaseSchemeConfig } from "@/lib/purchaseCalc";
 
 /** Same wording for absent and foreign-company — a UUID probe reveals nothing. */
 export const PO_NOT_FOUND = "Purchase Order not found";
@@ -27,7 +28,10 @@ export interface POItem {
   description: string;
   qty: number;
   rate: number;
+  /** Primary discount % — kept as the pre-existing field name/meaning for backward compatibility. */
   discount_percent: number;
+  /** Additional discount %, applied sequentially after the primary discount (spec Mode 2). */
+  additional_discount_percent?: number;
   gst_percent: number;
   taxable_amount: number;
   tax_amount: number;
@@ -35,6 +39,21 @@ export interface POItem {
   position?: number;
   unit_id?: string | null;
   stock_qty?: number | null;
+
+  // ── Purchase Pricing Engine transaction snapshot (all optional/nullable —
+  // absent for any pre-engine PO, which keeps behaving exactly as before) ──
+  resolved_purchase_pricing_mode?: PurchasePricingMode | null;
+  resolved_ndp?: number | null;
+  resolved_primary_discount_pct?: number | null;
+  resolved_additional_discount_pct?: number | null;
+  purchase_scheme_id?: string | null;
+  purchase_scheme_type?: PurchaseSchemeType | null;
+  purchase_scheme_config?: PurchaseSchemeConfig | null;
+  chargeable_qty?: number | null;
+  free_qty?: number;
+  source_price_list_id?: string | null;
+  is_overridden?: boolean;
+  configured_rate?: number | null;
 }
 
 export type TransportMode = "road" | "rail" | "air" | "courier" | "self_pickup" | "other";
@@ -51,6 +70,7 @@ export interface PurchaseOrder {
   status: POStatus;
   remarks: string | null;
   transport_name: string | null;
+  transporter_id?: string | null;
   transport_mode: TransportMode | null;
   lr_number: string | null;
   vehicle_number: string | null;
@@ -77,12 +97,18 @@ export function computePOItem(item: Partial<POItem>): POItem {
   const qty = Number(item.qty) || 0;
   const rate = Number(item.rate) || 0;
   const discPct = Number(item.discount_percent) || 0;
+  const additionalPct = Number(item.additional_discount_percent) || 0;
   const gstPct = Number(item.gst_percent) || 0;
 
-  const discountedRate = +(rate * (1 - discPct / 100)).toFixed(2);
-  const taxableAmount = +(discountedRate * qty).toFixed(2);
-  const taxAmount = +(taxableAmount * (gstPct / 100)).toFixed(2);
-  const totalAmount = +(taxableAmount + taxAmount).toFixed(2);
+  const line = computePurchaseLine({
+    qty,
+    rate,
+    primaryDiscountPct: discPct,
+    additionalDiscountPct: additionalPct,
+    gstPct,
+    schemeType: item.purchase_scheme_type ?? undefined,
+    schemeConfig: item.purchase_scheme_config ?? undefined,
+  });
 
   return {
     product_id: item.product_id ?? null,
@@ -91,13 +117,26 @@ export function computePOItem(item: Partial<POItem>): POItem {
     qty,
     rate,
     discount_percent: discPct,
+    additional_discount_percent: additionalPct,
     gst_percent: gstPct,
-    taxable_amount: taxableAmount,
-    tax_amount: taxAmount,
-    total_amount: totalAmount,
+    taxable_amount: line.taxableAmount,
+    tax_amount: line.taxAmount,
+    total_amount: line.totalAmount,
     position: item.position,
     unit_id: item.unit_id ?? null,
     stock_qty: item.stock_qty ?? null,
+    resolved_purchase_pricing_mode: item.resolved_purchase_pricing_mode ?? null,
+    resolved_ndp: item.resolved_ndp ?? null,
+    resolved_primary_discount_pct: item.resolved_primary_discount_pct ?? null,
+    resolved_additional_discount_pct: item.resolved_additional_discount_pct ?? null,
+    purchase_scheme_id: item.purchase_scheme_id ?? null,
+    purchase_scheme_type: item.purchase_scheme_type ?? null,
+    purchase_scheme_config: item.purchase_scheme_config ?? null,
+    chargeable_qty: line.chargeableQty,
+    free_qty: line.freeQty,
+    source_price_list_id: item.source_price_list_id ?? null,
+    is_overridden: item.is_overridden ?? false,
+    configured_rate: item.configured_rate ?? null,
   };
 }
 
@@ -176,6 +215,7 @@ export interface SavePOInput {
   status: POStatus;
   remarks?: string | null;
   transport_name?: string | null;
+  transporter_id?: string | null;
   transport_mode?: TransportMode | null;
   lr_number?: string | null;
   vehicle_number?: string | null;
@@ -206,6 +246,7 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
           status: input.status,
           remarks: input.remarks ?? null,
           transport_name: input.transport_name ?? null,
+          transporter_id: input.transporter_id ?? null,
           transport_mode: input.transport_mode ?? null,
           lr_number: input.lr_number ?? null,
           vehicle_number: input.vehicle_number ?? null,
@@ -293,6 +334,7 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
         status: input.status,
         remarks: input.remarks ?? null,
         transport_name: input.transport_name ?? null,
+          transporter_id: input.transporter_id ?? null,
         transport_mode: input.transport_mode ?? null,
         lr_number: input.lr_number ?? null,
         vehicle_number: input.vehicle_number ?? null,
@@ -327,6 +369,7 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
       qty: it.qty,
       rate: it.rate,
       discount_percent: it.discount_percent,
+      additional_discount_percent: it.additional_discount_percent ?? 0,
       gst_percent: it.gst_percent,
       taxable_amount: it.taxable_amount,
       tax_amount: it.tax_amount,
@@ -334,6 +377,16 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
       position: idx,
       unit_id: it.unit_id ?? null,
       stock_qty: it.stock_qty ?? null,
+      resolved_purchase_pricing_mode: it.resolved_purchase_pricing_mode ?? null,
+      resolved_ndp: it.resolved_ndp ?? null,
+      resolved_primary_discount_pct: it.resolved_primary_discount_pct ?? null,
+      resolved_additional_discount_pct: it.resolved_additional_discount_pct ?? null,
+      purchase_scheme_id: it.purchase_scheme_id ?? null,
+      chargeable_qty: it.chargeable_qty ?? it.qty,
+      free_qty: it.free_qty ?? 0,
+      source_price_list_id: it.source_price_list_id ?? null,
+      is_overridden: it.is_overridden ?? false,
+      configured_rate: it.configured_rate ?? null,
     }));
     const { error } = await supabase.from("purchase_order_items").insert(rows);
     if (error) throw error;
@@ -518,6 +571,7 @@ export async function duplicatePurchaseOrder(id: string, userId: string): Promis
       qty: it.qty,
       rate: it.rate,
       discount_percent: it.discount_percent,
+      additional_discount_percent: it.additional_discount_percent ?? 0,
       gst_percent: it.gst_percent,
       taxable_amount: it.taxable_amount,
       tax_amount: it.tax_amount,
@@ -525,6 +579,16 @@ export async function duplicatePurchaseOrder(id: string, userId: string): Promis
       position: idx,
       unit_id: it.unit_id ?? null,
       stock_qty: it.stock_qty ?? null,
+      resolved_purchase_pricing_mode: it.resolved_purchase_pricing_mode ?? null,
+      resolved_ndp: it.resolved_ndp ?? null,
+      resolved_primary_discount_pct: it.resolved_primary_discount_pct ?? null,
+      resolved_additional_discount_pct: it.resolved_additional_discount_pct ?? null,
+      purchase_scheme_id: it.purchase_scheme_id ?? null,
+      chargeable_qty: it.chargeable_qty ?? it.qty,
+      free_qty: it.free_qty ?? 0,
+      source_price_list_id: it.source_price_list_id ?? null,
+      is_overridden: it.is_overridden ?? false,
+      configured_rate: it.configured_rate ?? null,
     }));
     const { error: itemsError } = await supabase.from("purchase_order_items").insert(rows);
     if (itemsError) throw itemsError;

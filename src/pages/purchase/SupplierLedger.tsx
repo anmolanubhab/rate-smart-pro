@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchSupplierLedgerSummary, fmtInr } from "@/lib/accounting";
+import { fetchSupplierLedgerSummary, fmtInrPrecise } from "@/lib/accounting";
 import { useFormatDate } from "@/lib/dateFormat";
 
 export default function SupplierLedger() {
@@ -46,7 +46,7 @@ export default function SupplierLedger() {
             : "Ledger balances for all suppliers, from posted purchase and payment vouchers. Click a supplier to view detailed transactions."
       }
       kpis={[
-        { label: "Total Outstanding", value: `₹ ${fmtInr(totalOutstanding)}`, tone: "warning" },
+        { label: "Total Outstanding", value: `₹ ${fmtInrPrecise(totalOutstanding)}`, tone: "warning" },
         { label: "Open Suppliers", value: openCount },
         { label: "Total Suppliers", value: rows.length },
         { label: "As On", value: fd(new Date().toISOString().slice(0, 10)) },
@@ -55,7 +55,7 @@ export default function SupplierLedger() {
         { key: "supplier", label: "Supplier" },
         { key: "gstin", label: "GSTIN" },
         { key: "credit_limit", label: "Credit Limit", align: "right", format: "currency" },
-        { key: "outstanding", label: "Outstanding", align: "right", format: "currency" },
+        { key: "outstanding", label: "Outstanding", align: "right", render: (row) => `₹ ${fmtInrPrecise(row.outstanding)}` },
         { key: "last_txn", label: "Last Transaction" },
         { key: "status", label: "Status", format: "badge" },
       ]}
