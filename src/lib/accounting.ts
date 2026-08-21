@@ -1095,6 +1095,66 @@ export function rollForwardOpeningBalance(
   return base + priorMovement;
 }
 
+/** LedgerRow whose `.balance` is the CLOSING balance as of `to` (rolled
+ *  forward the same way rollForwardOpeningBalance/buildLedgerStatement
+ *  already do for a single ledger), plus the OPENING balance as of `from`
+ *  (i.e. every posted voucher dated strictly before `from`) on the side --
+ *  so a caller can build both an "opening" and a "closing" rollup from one
+ *  pair of queries, matching the two-figure convention buildLedgerStatement
+ *  already established for a single ledger's own statement. */
+export type LedgerRangeRow = LedgerRow & { openingBalanceInRange: number };
+
+/**
+ * Every ledger's opening (as of `from`) and closing (as of `to`) balance for
+ * a date range, in one pass over voucher_items -- not per-ledger, so Group
+ * Summary's date-range view can feed buildAccountHierarchy the exact same
+ * way fetchLedgersWithBalance does for "as of today", without an N+1 query
+ * per ledger. Same posted-only/business-scoped filtering buildLedgerStatement
+ * uses for a single ledger.
+ */
+export async function fetchLedgersForDateRange(userId: string, from: string, to: string): Promise<LedgerRangeRow[]> {
+  const biz = getActiveBusinessIdSync();
+  if (!biz) return [];
+
+  let lq = supabase
+    .from("ledger_accounts")
+    .select("id, name, ledger_type, group_id, party_id, opening_balance, opening_balance_type, is_system, status, group:account_groups(name, nature)")
+    .eq("user_id", userId)
+    .eq("business_id", biz)
+    .order("name");
+  const { data: ledgers, error } = await lq;
+  if (error) throw error;
+
+  const movementByLedger = async (filter: (q: any) => any) => {
+    let q = supabase
+      .from("voucher_items")
+      .select("ledger_account_id, dr_amount, cr_amount, vouchers!inner(voucher_date)")
+      .eq("business_id", biz)
+      .eq("user_id", userId)
+      .eq("vouchers.status", "posted");
+    q = filter(q);
+    const { data, error: err } = await q;
+    if (err) throw err;
+    const map = new Map<string, number>();
+    for (const it of (data ?? []) as any[]) {
+      const key = it.ledger_account_id as string;
+      map.set(key, (map.get(key) ?? 0) + (Number(it.dr_amount) || 0) - (Number(it.cr_amount) || 0));
+    }
+    return map;
+  };
+
+  const [priorMap, rangeMap] = await Promise.all([
+    movementByLedger((q) => q.lt("vouchers.voucher_date", from)),
+    movementByLedger((q) => q.gte("vouchers.voucher_date", from).lte("vouchers.voucher_date", to)),
+  ]);
+
+  return (ledgers ?? []).map((l: any) => {
+    const opening = rollForwardOpeningBalance(l, priorMap.get(l.id) ?? 0);
+    const closing = opening + (rangeMap.get(l.id) ?? 0);
+    return { ...l, balance: closing, openingBalanceInRange: opening } as LedgerRangeRow;
+  });
+}
+
 async function buildLedgerStatement(
   userId: string,
   businessId: string,
