@@ -9,6 +9,7 @@ import { createVoucher, postVoucher, cancelVoucher, repostVoucherItems, type Vou
 import { assertHsnCompliance } from "@/lib/accountingLock";
 import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
 import { resolveIsInterstate, splitGstAmount, splitGstRate } from "@/lib/gstCalc";
+import { computePurchaseLine, type PurchasePricingMode, type PurchaseSchemeType, type PurchaseSchemeConfig } from "@/lib/purchaseCalc";
 
 export type PurchaseInvoiceStatus = "unpaid" | "partially_paid" | "paid" | "cancelled";
 
@@ -20,7 +21,10 @@ export interface PurchaseInvoiceItem {
   description: string;
   qty: number;
   rate: number;
+  /** Primary discount % — kept as the pre-existing field name/meaning for backward compatibility. */
   discount_percent: number;
+  /** Additional discount %, applied sequentially after the primary discount (spec Mode 2). */
+  additional_discount_percent?: number;
   gst_percent: number;
   taxable_amount: number;
   tax_amount: number;
@@ -28,6 +32,20 @@ export interface PurchaseInvoiceItem {
   position?: number;
   unit_id?: string | null;
   stock_qty?: number | null;
+
+  // ── Purchase Pricing Engine transaction snapshot (optional/nullable) ──
+  resolved_purchase_pricing_mode?: PurchasePricingMode | null;
+  resolved_ndp?: number | null;
+  resolved_primary_discount_pct?: number | null;
+  resolved_additional_discount_pct?: number | null;
+  purchase_scheme_id?: string | null;
+  purchase_scheme_type?: PurchaseSchemeType | null;
+  purchase_scheme_config?: PurchaseSchemeConfig | null;
+  chargeable_qty?: number | null;
+  free_qty?: number;
+  source_price_list_id?: string | null;
+  is_overridden?: boolean;
+  configured_rate?: number | null;
 }
 
 export interface PurchaseInvoice {
@@ -61,12 +79,18 @@ export function computeInvoiceItem(item: Partial<PurchaseInvoiceItem>): Purchase
   const qty = Number(item.qty) || 0;
   const rate = Number(item.rate) || 0;
   const discPct = Number(item.discount_percent) || 0;
+  const additionalPct = Number(item.additional_discount_percent) || 0;
   const gstPct = Number(item.gst_percent) || 0;
 
-  const discountedRate = +(rate * (1 - discPct / 100)).toFixed(2);
-  const taxableAmount = +(discountedRate * qty).toFixed(2);
-  const taxAmount = +(taxableAmount * (gstPct / 100)).toFixed(2);
-  const totalAmount = +(taxableAmount + taxAmount).toFixed(2);
+  const line = computePurchaseLine({
+    qty,
+    rate,
+    primaryDiscountPct: discPct,
+    additionalDiscountPct: additionalPct,
+    gstPct,
+    schemeType: item.purchase_scheme_type ?? undefined,
+    schemeConfig: item.purchase_scheme_config ?? undefined,
+  });
 
   return {
     product_id: item.product_id ?? null,
@@ -74,13 +98,26 @@ export function computeInvoiceItem(item: Partial<PurchaseInvoiceItem>): Purchase
     description: item.description ?? "",
     qty, rate,
     discount_percent: discPct,
+    additional_discount_percent: additionalPct,
     gst_percent: gstPct,
-    taxable_amount: taxableAmount,
-    tax_amount: taxAmount,
-    total_amount: totalAmount,
+    taxable_amount: line.taxableAmount,
+    tax_amount: line.taxAmount,
+    total_amount: line.totalAmount,
     position: item.position,
     unit_id: item.unit_id ?? null,
     stock_qty: item.stock_qty ?? null,
+    resolved_purchase_pricing_mode: item.resolved_purchase_pricing_mode ?? null,
+    resolved_ndp: item.resolved_ndp ?? null,
+    resolved_primary_discount_pct: item.resolved_primary_discount_pct ?? null,
+    resolved_additional_discount_pct: item.resolved_additional_discount_pct ?? null,
+    purchase_scheme_id: item.purchase_scheme_id ?? null,
+    purchase_scheme_type: item.purchase_scheme_type ?? null,
+    purchase_scheme_config: item.purchase_scheme_config ?? null,
+    chargeable_qty: line.chargeableQty,
+    free_qty: line.freeQty,
+    source_price_list_id: item.source_price_list_id ?? null,
+    is_overridden: item.is_overridden ?? false,
+    configured_rate: item.configured_rate ?? null,
   };
 }
 
@@ -502,12 +539,23 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         qty: it.qty,
         rate: it.rate,
         discount_percent: it.discount_percent,
+        additional_discount_percent: it.additional_discount_percent ?? 0,
         gst_percent: it.gst_percent,
         taxable_amount: it.taxable_amount,
         tax_amount: it.tax_amount,
         total_amount: it.total_amount,
         unit_id: it.unit_id ?? null,
         stock_qty: it.stock_qty ?? null,
+        resolved_purchase_pricing_mode: it.resolved_purchase_pricing_mode ?? null,
+        resolved_ndp: it.resolved_ndp ?? null,
+        resolved_primary_discount_pct: it.resolved_primary_discount_pct ?? null,
+        resolved_additional_discount_pct: it.resolved_additional_discount_pct ?? null,
+        purchase_scheme_id: it.purchase_scheme_id ?? null,
+        chargeable_qty: it.chargeable_qty ?? it.qty,
+        free_qty: it.free_qty ?? 0,
+        source_price_list_id: it.source_price_list_id ?? null,
+        is_overridden: it.is_overridden ?? false,
+        configured_rate: it.configured_rate ?? null,
       })),
     } as never);
     if (atomicErr) throw atomicErr;
@@ -641,6 +689,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         quantity: it.qty,
         purchase_price: it.rate,
         discount_percent: it.discount_percent,
+        additional_discount_percent: it.additional_discount_percent ?? 0,
         gst_percent: it.gst_percent,
         line_total: it.total_amount,
         ...rateSplit,
@@ -649,6 +698,16 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         position: idx,
         unit_id: it.unit_id ?? null,
         stock_qty: it.stock_qty ?? null,
+        resolved_purchase_pricing_mode: it.resolved_purchase_pricing_mode ?? null,
+        resolved_ndp: it.resolved_ndp ?? null,
+        resolved_primary_discount_pct: it.resolved_primary_discount_pct ?? null,
+        resolved_additional_discount_pct: it.resolved_additional_discount_pct ?? null,
+        purchase_scheme_id: it.purchase_scheme_id ?? null,
+        chargeable_qty: it.chargeable_qty ?? it.qty,
+        free_qty: it.free_qty ?? 0,
+        source_price_list_id: it.source_price_list_id ?? null,
+        is_overridden: it.is_overridden ?? false,
+        configured_rate: it.configured_rate ?? null,
       };
     });
     const { error } = await supabase.from("purchase_invoice_items").insert(rows);
@@ -935,6 +994,7 @@ export async function fetchInvoiceItems(invoiceId: string, businessId?: string |
     qty: Number(r.quantity) || 0,
     rate: Number(r.purchase_price) || 0,
     discount_percent: Number(r.discount_percent) || 0,
+    additional_discount_percent: Number(r.additional_discount_percent) || 0,
     gst_percent: Number(r.gst_percent) || 0,
     taxable_amount: Number(r.line_total) - (Number(r.cgst_amount) + Number(r.sgst_amount) + Number(r.igst_amount)),
     tax_amount: Number(r.cgst_amount) + Number(r.sgst_amount) + Number(r.igst_amount),
@@ -942,6 +1002,16 @@ export async function fetchInvoiceItems(invoiceId: string, businessId?: string |
     position: r.position,
     unit_id: r.unit_id ?? null,
     stock_qty: r.stock_qty != null ? Number(r.stock_qty) : null,
+    resolved_purchase_pricing_mode: r.resolved_purchase_pricing_mode ?? null,
+    resolved_ndp: r.resolved_ndp != null ? Number(r.resolved_ndp) : null,
+    resolved_primary_discount_pct: r.resolved_primary_discount_pct != null ? Number(r.resolved_primary_discount_pct) : null,
+    resolved_additional_discount_pct: r.resolved_additional_discount_pct != null ? Number(r.resolved_additional_discount_pct) : null,
+    purchase_scheme_id: r.purchase_scheme_id ?? null,
+    chargeable_qty: r.chargeable_qty != null ? Number(r.chargeable_qty) : null,
+    free_qty: Number(r.free_qty) || 0,
+    source_price_list_id: r.source_price_list_id ?? null,
+    is_overridden: !!r.is_overridden,
+    configured_rate: r.configured_rate != null ? Number(r.configured_rate) : null,
   }));
 }
 
@@ -959,7 +1029,7 @@ export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseIn
     .select(`
       product_id, received_qty, unit_id,
       product:products(part_number, name, dealer_rate, gst_pct),
-      purchase_order_item:purchase_order_items(rate, gst_percent)
+      purchase_order_item:purchase_order_items(rate, discount_percent, additional_discount_percent, gst_percent, resolved_purchase_pricing_mode, resolved_ndp, resolved_primary_discount_pct, resolved_additional_discount_pct, purchase_scheme_id, source_price_list_id, is_overridden, configured_rate)
     `)
     .eq("goods_receipt_id", grnId);
   if (error) throw error;
@@ -976,9 +1046,22 @@ export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseIn
         // silently produced ₹0 invoices when unset (see fetchPendingPOItemsForInvoice,
         // the direct-PO path, which already used purchase_order_items.rate correctly).
         rate: Number(r.purchase_order_item?.rate ?? r.product?.dealer_rate ?? 0),
+        // Same reasoning as the rate above — the PO's negotiated discount(s)
+        // must carry forward too, or a GRN-based invoice silently re-prices
+        // at full rate (the bug: "Purchase Invoice mein 1.5% nahi le raha hay").
+        discount_percent: Number(r.purchase_order_item?.discount_percent) || 0,
+        additional_discount_percent: Number(r.purchase_order_item?.additional_discount_percent) || 0,
         gst_percent: Number(r.purchase_order_item?.gst_percent ?? r.product?.gst_pct ?? 18),
         unit_id: r.unit_id ?? null,
         stock_qty: null,
+        resolved_purchase_pricing_mode: r.purchase_order_item?.resolved_purchase_pricing_mode ?? null,
+        resolved_ndp: r.purchase_order_item?.resolved_ndp ?? null,
+        resolved_primary_discount_pct: r.purchase_order_item?.resolved_primary_discount_pct ?? null,
+        resolved_additional_discount_pct: r.purchase_order_item?.resolved_additional_discount_pct ?? null,
+        purchase_scheme_id: r.purchase_order_item?.purchase_scheme_id ?? null,
+        source_price_list_id: r.purchase_order_item?.source_price_list_id ?? null,
+        is_overridden: r.purchase_order_item?.is_overridden ?? false,
+        configured_rate: r.purchase_order_item?.configured_rate ?? null,
       })
     );
 }
@@ -1052,7 +1135,7 @@ export async function fetchPendingPOItemsForInvoice(poId: string, excludeInvoice
 
   const { data: poItems, error } = await supabase
     .from("purchase_order_items")
-    .select("product_id, qty, part_number, description, rate, gst_percent, unit_id")
+    .select("product_id, qty, part_number, description, rate, discount_percent, additional_discount_percent, gst_percent, unit_id, resolved_purchase_pricing_mode, resolved_ndp, resolved_primary_discount_pct, resolved_additional_discount_pct, purchase_scheme_id, source_price_list_id, is_overridden, configured_rate")
     .eq("purchase_order_id", poId);
   if (error) throw error;
 
@@ -1067,8 +1150,22 @@ export async function fetchPendingPOItemsForInvoice(poId: string, excludeInvoice
           description: it.description ?? "",
           qty: pending,
           rate: Number(it.rate) || 0,
+          // Carries the PO's negotiated discount(s) forward — previously
+          // dropped entirely here, so linking a PO into an invoice silently
+          // re-priced at full rate with zero discount (the exact bug this
+          // fixes: "Purchase Invoice mein 1.5% nahi le raha hay").
+          discount_percent: Number(it.discount_percent) || 0,
+          additional_discount_percent: Number(it.additional_discount_percent) || 0,
           gst_percent: Number(it.gst_percent) || 0,
           unit_id: it.unit_id ?? null,
+          resolved_purchase_pricing_mode: it.resolved_purchase_pricing_mode ?? null,
+          resolved_ndp: it.resolved_ndp ?? null,
+          resolved_primary_discount_pct: it.resolved_primary_discount_pct ?? null,
+          resolved_additional_discount_pct: it.resolved_additional_discount_pct ?? null,
+          purchase_scheme_id: it.purchase_scheme_id ?? null,
+          source_price_list_id: it.source_price_list_id ?? null,
+          is_overridden: it.is_overridden ?? false,
+          configured_rate: it.configured_rate ?? null,
         }),
         pending_qty: pending,
       };

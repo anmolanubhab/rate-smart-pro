@@ -7,9 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { recordSupplierPayment, PaymentMode } from "@/lib/supplierPayments";
 import { fetchOutstandingBills, autoAllocateBills, type OutstandingBill } from "@/lib/billAllocation";
 import { fetchParties } from "@/lib/parties";
+
+interface BankAccount {
+  id: string;
+  account_name: string;
+  bank_name: string;
+}
 
 interface Props {
   open: boolean;
@@ -49,6 +56,8 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [bankAccountId, setBankAccountId] = useState("");
 
   useEffect(() => {
     if (!open || !businessId || !userId) return;
@@ -56,13 +65,15 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
       const data = await fetchParties(userId, "supplier");
       setSuppliers(data ?? []);
     })();
+    supabase.from("bank_accounts").select("id, account_name, bank_name").eq("business_id", businessId).order("account_name")
+      .then(({ data }) => setBankAccounts((data as BankAccount[]) ?? []));
   }, [open, businessId, userId]);
 
   useEffect(() => {
     if (open) {
       setSupplierId(""); setBills([]); setAmounts({});
       setPaymentDate(new Date().toISOString().slice(0, 10));
-      setMode("bank_transfer"); setAmount(""); setNote("");
+      setMode("bank_transfer"); setAmount(""); setNote(""); setBankAccountId("");
     }
   }, [open]);
 
@@ -103,6 +114,7 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
         mode,
         amount: amt,
         reference_note: note || null,
+        bank_account_id: mode !== "cash" ? (bankAccountId || null) : null,
         allocations,
       });
       toast.success("Payment recorded");
@@ -146,6 +158,23 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
               </Select>
             </div>
           </div>
+
+          {mode !== "cash" && (
+            <div className="space-y-1.5">
+              <Label>Bank Account</Label>
+              <Select value={bankAccountId} onValueChange={setBankAccountId}>
+                <SelectTrigger><SelectValue placeholder="Select bank account" /></SelectTrigger>
+                <SelectContent>
+                  {bankAccounts.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>{b.account_name} — {b.bank_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {bankAccounts.length === 0 && (
+                <p className="text-xs text-muted-foreground">No bank accounts yet — add one under Accounts → Bank Accounts, or this will post to the first Bank/Cash ledger found.</p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Amount (₹)</Label>
@@ -201,8 +230,12 @@ export default function RecordSupplierPaymentDialog({ open, onOpenChange, busine
           </div>
 
           <div className="space-y-1.5">
-            <Label>Reference / Notes</Label>
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Cheque no., UTR, etc." />
+            <Label>{mode === "cheque" ? "Cheque Number / Notes" : mode === "bank_transfer" ? "UTR / Transaction Reference" : mode === "upi" ? "UPI Reference" : "Reference / Notes"}</Label>
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={mode === "cheque" ? "e.g. Cheque no. 000123, dated 21/08/2026" : mode === "bank_transfer" ? "e.g. UTR / NEFT reference number" : mode === "upi" ? "e.g. UPI transaction ID" : "Cheque no., UTR, etc."}
+            />
           </div>
         </div>
 

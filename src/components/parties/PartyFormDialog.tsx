@@ -47,6 +47,7 @@ const emptyForm = {
   state: "", district: "", city: "", pincode: "", country: "India", maps_link: "",
   ledger_name: "", opening_balance: "0", balance_type: "CR",
   credit_enabled: false, credit_limit: "0", credit_days: "30",
+  payment_terms: "",
   interest_pct: "0", last_payment_date: "", last_invoice_date: "",
   outstanding_balance: "0",
   default_discount: "0", discount_type: "RD" as DiscountType, agreed_discount: "0",
@@ -200,6 +201,7 @@ export default function PartyFormDialog({ open, onOpenChange, businessId, userId
         balance_type: editing.balance_type || "CR",
         credit_enabled: editing.credit_enabled ?? false,
         credit_days: String(editing.credit_days ?? 30),
+        payment_terms: editing.payment_terms ?? "",
         interest_pct: String(editing.interest_pct ?? 0),
         last_payment_date: editing.last_payment_date || "",
         last_invoice_date: editing.last_invoice_date || "",
@@ -278,6 +280,7 @@ export default function PartyFormDialog({ open, onOpenChange, businessId, userId
         balance_type: form.balance_type,
         credit_enabled: form.credit_enabled,
         credit_days: parseInt(form.credit_days, 10) || 0,
+        payment_terms: form.payment_terms.trim() || null,
         interest_pct: parseFloat(form.interest_pct) || 0,
         last_payment_date: form.last_payment_date || null,
         last_invoice_date: form.last_invoice_date || null,
@@ -578,6 +581,17 @@ export default function PartyFormDialog({ open, onOpenChange, businessId, userId
                     disabled={form.use_group_defaults && !!form.party_group_id}
                     onChange={(e) => setForm({ ...form, credit_limit: e.target.value })}
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Payment Terms</Label>
+                  <Input
+                    value={form.payment_terms}
+                    onChange={(e) => setForm({ ...form, payment_terms: e.target.value })}
+                    placeholder="e.g. Net 30 Days"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Default only — auto-fills a new Purchase Order's Payment Terms when this party is selected as supplier; editing a PO never changes this.
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Interest % (p.a.)</Label>

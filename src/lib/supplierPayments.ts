@@ -14,6 +14,7 @@ export interface SupplierPayment {
   mode: PaymentMode;
   amount: number;
   reference_note: string | null;
+  bank_account_id: string | null;
   created_at: string;
 }
 
@@ -34,6 +35,12 @@ export interface RecordPaymentInput {
   mode: PaymentMode;
   amount: number;
   reference_note?: string | null;
+  /** Which specific bank account (from the `bank_accounts` master) the
+   *  money actually left from — required for any non-cash mode so the
+   *  posted voucher credits the right ledger instead of a guessed "first
+   *  bank account found". Same field/pattern as the Sales-side Receive
+   *  Payment flow's `bankAccountId`. Leave null for Cash mode. */
+  bank_account_id?: string | null;
   /** Which outstanding invoices this payment applies to, and how much of each.
    *  Sum can be less than `amount` (the remainder is recorded as an on-account
    *  payment, same as leaving "Against Invoice" blank in the old single-invoice form). */
@@ -63,6 +70,7 @@ export async function recordSupplierPayment(input: RecordPaymentInput): Promise<
     _payment_date: input.payment_date,
     _reference_note: input.reference_note ?? null,
     _allocations: input.allocations.map((a) => ({ invoice_id: a.invoiceId, amount: a.amount })),
+    _bank_account_id: input.bank_account_id ?? null,
   } as never);
   if (error) throw error;
   return data as string;
