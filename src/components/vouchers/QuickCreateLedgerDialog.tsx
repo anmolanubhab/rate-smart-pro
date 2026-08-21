@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { assertLedgerNameAvailable, updateLedger, fetchAccountGroupTree, type LedgerRow, type AccountGroupNode } from "@/lib/accounting";
 import { resolveLedgerEditor } from "@/lib/ledgerEditRouter";
 import GroupSelector from "@/components/accounts/GroupSelector";
+import type { BusinessRole } from "@/hooks/useBusiness";
+import type { PermissionMatrix } from "@/lib/permissionMatrix";
+import { canCreateLedger } from "@/lib/permissions";
 
 export const LEDGER_TYPES = [
   "expense", "income", "asset", "liability", "customer", "supplier",
@@ -39,12 +42,19 @@ interface Props {
   /** Pre-selects the Account Group when creating (e.g. an "Add ledger here"
    *  action on a specific Chart of Accounts node). Ignored when `ledger` is set. */
   presetGroupId?: string | null;
+  /** Quick Create Master RBAC gate (create mode only — editing an existing
+   *  ledger keeps whatever access control its own call site already
+   *  enforces). Optional so existing callers that don't pass these keep
+   *  today's behavior unchanged. */
+  role?: BusinessRole | null;
+  permissions?: PermissionMatrix | null;
 }
 
 const emptyForm = { name: "", ledger_type: "expense", group_id: "", opening_balance: "0", opening_balance_type: "dr" as "dr" | "cr" };
 
-export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId, userId, onCreated, ledger, presetGroupId }: Props) {
+export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId, userId, onCreated, ledger, presetGroupId, role, permissions }: Props) {
   const isEdit = !!ledger;
+  const createAllowed = isEdit || role === undefined ? true : canCreateLedger(role, permissions);
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [groups, setGroups] = useState<AccountGroupNode[]>([]);
@@ -85,6 +95,7 @@ export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId
   }, [open, ledger, presetGroupId]);
 
   const save = async () => {
+    if (!isEdit && !createAllowed) { toast.error("You don't have permission to create a new ledger."); return; }
     if (!form.name.trim()) { toast.error("Ledger name is required"); return; }
     if (!form.group_id) { toast.error("Group is required"); return; }
     setSaving(true);
@@ -106,6 +117,7 @@ export default function QuickCreateLedgerDialog({ open, onOpenChange, businessId
         const { data, error } = await supabase.from("ledger_accounts").insert({
           business_id: businessId,
           user_id: userId,
+          created_by: userId,
           name: form.name.trim(),
           ledger_type: form.ledger_type,
           group_id: form.group_id || null,

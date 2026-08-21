@@ -31,6 +31,9 @@ const FREEZE_OVERRIDE_ROLES: BusinessRole[] = ["owner"];
 const PERIOD_CLOSE_ROLES: BusinessRole[] = ["owner"];
 const READ_ONLY_ROLES: BusinessRole[] = ["viewer"];
 const ADJUSTMENT_LEDGER_OVERRIDE_ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant"];
+const PARTY_CREATE_ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant", "salesman", "staff"];
+const PRODUCT_CREATE_ROLES: BusinessRole[] = ["owner", "admin", "manager", "store_manager"];
+const LEDGER_CREATE_ROLES: BusinessRole[] = ["owner", "admin", "manager", "accountant"];
 
 export function hasRole(role: BusinessRole | null | undefined, allowed: BusinessRole[]): boolean {
   if (!role) return false;
@@ -108,6 +111,31 @@ export function canGranular(
     return hasModulePermission(permissions, mapped[0], mapped[1]);
   }
   return can(role, perm);
+}
+
+/**
+ * Quick Create Master (Phase 1): "can this actor create a new Party/Product/
+ * Ledger record at all" — distinct from the edit/delete/approve gates above,
+ * which govern what happens to a record AFTER it exists. Matrix-first
+ * (reusing the exact module each entity's approval workflow already maps to
+ * — see APPROVAL_MODULE_TO_PERMISSION_MODULE below: party->sales,
+ * product->inventory, ledger->accounts), falling back to a role-rank check
+ * for businesses that haven't configured a custom permission matrix, same
+ * fallback shape as canGranular.
+ */
+export function canCreateParty(role: BusinessRole | null, permissions?: PermissionMatrix | null): boolean {
+  if (permissions) return hasModulePermission(permissions, "sales", "create");
+  return hasRole(role, PARTY_CREATE_ROLES);
+}
+
+export function canCreateProduct(role: BusinessRole | null, permissions?: PermissionMatrix | null): boolean {
+  if (permissions) return hasModulePermission(permissions, "inventory", "create");
+  return hasRole(role, PRODUCT_CREATE_ROLES);
+}
+
+export function canCreateLedger(role: BusinessRole | null, permissions?: PermissionMatrix | null): boolean {
+  if (permissions) return hasModulePermission(permissions, "accounts", "create");
+  return hasRole(role, LEDGER_CREATE_ROLES);
 }
 
 /** Can this role finalize (approve / reject) approval requests at all? */

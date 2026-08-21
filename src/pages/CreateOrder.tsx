@@ -33,6 +33,8 @@ import { DocumentToolbar, type DocumentToolbarAction } from "@/components/docume
 import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
 import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
+import QuickCreateParty from "@/components/quickCreate/QuickCreateParty";
+import { canCreateParty } from "@/lib/permissions";
 import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
 import { DocumentImportExportButtons } from "@/components/documentEngine/DocumentImportExportButtons";
@@ -75,7 +77,7 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
 
 const CreateOrder = () => {
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, role, permissions } = useBusiness();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const routeParams = useParams<{ id?: string }>();
@@ -89,6 +91,8 @@ const CreateOrder = () => {
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
+  const [quickCreateCustomerOpen, setQuickCreateCustomerOpen] = useState(false);
+  const customerQuickCreateAllowed = canCreateParty(role, permissions);
 
   const [orderNumber, setOrderNumber] = useState("");
   const [orderDate, setOrderDate] = useState(localDateISO());
@@ -213,6 +217,25 @@ const CreateOrder = () => {
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
   }, [searchIdx, navigate]);
+
+  // Quick Create Master: Ctrl+N (bare, no Alt) opens the customer Quick
+  // Create dialog. Confirmed unbound on this page today -- Alt+N's label on
+  // the "Add Row" button is legacy/inert here (useDocumentGridNavigation's
+  // handleGridKey never actually checks e.altKey), so this is a standalone
+  // listener rather than adopting the full useDocumentShortcuts hook, to
+  // avoid touching this page's existing (larger, unaudited) shortcut set.
+  useEffect(() => {
+    if (!customerQuickCreateAllowed) return;
+    const onQuickCreate = (e: KeyboardEvent) => {
+      const ctrlOrCmd = e.ctrlKey || e.metaKey;
+      if (ctrlOrCmd && !e.altKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        setQuickCreateCustomerOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onQuickCreate);
+    return () => window.removeEventListener("keydown", onQuickCreate);
+  }, [customerQuickCreateAllowed]);
 
   useEffect(() => {
     if (!user) return;
@@ -721,6 +744,24 @@ const CreateOrder = () => {
         }}
       />
 
+      {user && business && (
+        <QuickCreateParty
+          open={quickCreateCustomerOpen}
+          onOpenChange={setQuickCreateCustomerOpen}
+          businessId={business.id}
+          userId={user.id}
+          role={role}
+          permissions={permissions}
+          presetType="customer"
+          onCreated={async (newParty) => {
+            setParties(await fetchParties(user.id, "customer"));
+            setPartyId(newParty.id);
+            setPartyQuery(newParty.name);
+            setTimeout(() => focusCell(0, "part"), 10);
+          }}
+        />
+      )}
+
       <DocumentSheet>
         <DocumentSheetBanner left={voucherType} center={business?.business_name ?? business?.firm_name ?? ""} right={day} />
 
@@ -787,6 +828,8 @@ const CreateOrder = () => {
               placeholder="Type to search party…"
               inputRef={partyInputRef}
               inputClassName="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+              onQuickCreate={customerQuickCreateAllowed ? () => setQuickCreateCustomerOpen(true) : undefined}
+              quickCreateLabel="Customer"
             />
           </DocumentHeaderValue>
 

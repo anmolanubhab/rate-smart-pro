@@ -4231,6 +4231,7 @@ export type Database = {
           city: string | null
           country: string | null
           created_at: string | null
+          created_by: string | null
           credit_days: number | null
           credit_limit: number | null
           current_balance: number | null
@@ -4267,6 +4268,7 @@ export type Database = {
           city?: string | null
           country?: string | null
           created_at?: string | null
+          created_by?: string | null
           credit_days?: number | null
           credit_limit?: number | null
           current_balance?: number | null
@@ -4303,6 +4305,7 @@ export type Database = {
           city?: string | null
           country?: string | null
           created_at?: string | null
+          created_by?: string | null
           credit_days?: number | null
           credit_limit?: number | null
           current_balance?: number | null
@@ -5844,6 +5847,7 @@ export type Database = {
           contact_person: string | null
           country: string | null
           created_at: string | null
+          created_by: string | null
           credit_days: number | null
           credit_enabled: boolean | null
           credit_limit: number | null
@@ -5933,6 +5937,7 @@ export type Database = {
           contact_person?: string | null
           country?: string | null
           created_at?: string | null
+          created_by?: string | null
           credit_days?: number | null
           credit_enabled?: boolean | null
           credit_limit?: number | null
@@ -6022,6 +6027,7 @@ export type Database = {
           contact_person?: string | null
           country?: string | null
           created_at?: string | null
+          created_by?: string | null
           credit_days?: number | null
           credit_enabled?: boolean | null
           credit_limit?: number | null
@@ -9081,6 +9087,7 @@ export type Database = {
           category_id: string | null
           cost_price: number | null
           created_at: string | null
+          created_by: string | null
           dealer_rate: number | null
           default_bin_id: string | null
           delete_reason: string | null
@@ -9156,6 +9163,7 @@ export type Database = {
           category_id?: string | null
           cost_price?: number | null
           created_at?: string | null
+          created_by?: string | null
           dealer_rate?: number | null
           default_bin_id?: string | null
           delete_reason?: string | null
@@ -9231,6 +9239,7 @@ export type Database = {
           category_id?: string | null
           cost_price?: number | null
           created_at?: string | null
+          created_by?: string | null
           dealer_rate?: number | null
           default_bin_id?: string | null
           delete_reason?: string | null
