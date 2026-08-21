@@ -47,6 +47,7 @@ opening_balance?: number;
 balance_type?: string | null;
 credit_enabled?: boolean;
 credit_days?: number;
+payment_terms?: string | null;
 interest_pct?: number;
 last_payment_date?: string | null;
 last_invoice_date?: string | null;

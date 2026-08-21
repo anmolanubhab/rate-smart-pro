@@ -27,6 +27,7 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "qty", header: "Qty", align: "right", widthClass: "w-20" },
   { key: "rate", header: "Rate (₹)", align: "right", widthClass: "w-24" },
   { key: "disc", header: "Disc %", align: "right", widthClass: "w-16" },
+  { key: "adisc", header: "Add'l %", align: "right", widthClass: "w-16" },
   { key: "gst", header: "GST %", align: "right", widthClass: "w-16" },
   { key: "taxable", header: "Taxable", align: "right", widthClass: "w-24" },
   { key: "tax", header: "Tax", align: "right", widthClass: "w-20" },
@@ -297,6 +298,9 @@ export default function CreatePurchaseInvoice() {
               </td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput align="right" type="number" value={item.discount_percent || ""} onChange={(e) => updateRow(idx, { discount_percent: +e.target.value })} />
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput align="right" type="number" value={item.additional_discount_percent || ""} onChange={(e) => updateRow(idx, { additional_discount_percent: +e.target.value })} />
               </td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput align="right" type="number" value={item.gst_percent || ""} onChange={(e) => updateRow(idx, { gst_percent: +e.target.value })} />

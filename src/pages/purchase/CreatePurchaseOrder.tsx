@@ -57,13 +57,18 @@ import {
   fetchPOActivityLogs,
   type POActivityLog,
 } from "@/lib/purchaseOrders";
+import { resolvePurchasePrice } from "@/lib/purchasePricing/resolvePurchasePrice";
+import { resolveRateForMode } from "@/lib/purchaseCalc";
+import { fetchTransporters, type Transporter } from "@/lib/transporters";
+import TransporterFormDialog from "@/components/purchase/TransporterFormDialog";
 import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/documentEngine/DocumentRoot";
 import { DocumentToolbar, DocumentToolbarButton, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
 import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
 import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
 import PartyFormDialog from "@/components/parties/PartyFormDialog";
-import { canCreateParty } from "@/lib/permissions";
+import { canCreateParty, canCreateProduct } from "@/lib/permissions";
+import ProductFormDialog from "@/components/products/ProductFormDialog";
 import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
 import { DocumentImportExportButtons } from "@/components/documentEngine/DocumentImportExportButtons";
@@ -74,7 +79,7 @@ import { useDocumentShortcuts } from "@/hooks/useDocumentShortcuts";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const COLS = ["part", "desc", "qty", "rate", "disc", "gst"] as const;
+const COLS = ["part", "desc", "qty", "rate", "disc", "adisc", "gst"] as const;
 type Col = (typeof COLS)[number];
 
 const fmt = (n: number) =>
@@ -87,6 +92,7 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
   { key: "unit", header: "Unit", widthClass: "w-16" },
   { key: "rate", header: "Rate (₹)", align: "right", widthClass: "w-24" },
   { key: "disc", header: "Disc %", align: "right", widthClass: "w-16" },
+  { key: "adisc", header: "Add'l %", align: "right", widthClass: "w-16" },
   { key: "gst", header: "GST %", align: "right", widthClass: "w-16" },
   { key: "taxable", header: "Taxable", align: "right", widthClass: "w-24" },
   { key: "tax", header: "Tax", align: "right", widthClass: "w-20" },
@@ -109,6 +115,12 @@ export default function CreatePurchaseOrder() {
   const [expectedDelivery, setExpectedDelivery] = useState("");
   const [remarks, setRemarks] = useState("");
   const [transportName, setTransportName] = useState("");
+  const [transporterId, setTransporterId] = useState<string | null>(null);
+  const [transporters, setTransporters] = useState<Transporter[]>([]);
+  const [transporterQuery, setTransporterQuery] = useState("");
+  const [quickCreateTransporterOpen, setQuickCreateTransporterOpen] = useState(false);
+  const [quickCreateProductOpen, setQuickCreateProductOpen] = useState(false);
+  const [quickCreateProductRowIdx, setQuickCreateProductRowIdx] = useState<number | null>(null);
   const [transportMode, setTransportMode] = useState<string>("");
   const [lrNumber, setLrNumber] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
@@ -194,6 +206,12 @@ export default function CreatePurchaseOrder() {
     return suppliers.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 12);
   }, [suppliers, supplierQuery, supplier]);
 
+  const transporterResults = useMemo(() => {
+    const q = transporterQuery.trim().toLowerCase();
+    if (!q) return transporters.slice(0, 12);
+    return transporters.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 12);
+  }, [transporters, transporterQuery]);
+
   // Mirrors the server-side edit-lock in savePurchaseOrder(): once a PO has
   // moved past draft/pending_approval, supplier/warehouse/rate become
   // read-only, and qty is only locked per line once something has actually
@@ -206,8 +224,10 @@ export default function CreatePurchaseOrder() {
   const totals = useMemo(() => computePOTotals(items), [items]);
   const cgst = +(totals.tax_total / 2).toFixed(2);
   const sgst = +(totals.tax_total / 2).toFixed(2);
-  const roundOff = +(Math.round(totals.grand_total) - totals.grand_total).toFixed(2);
-  const finalTotal = Math.round(totals.grand_total);
+  // No auto round-off — the Grand Total must match the supplier's invoice
+  // paisa-to-paisa, not a rupee-rounded approximation. What's shown here is
+  // exactly what savePurchaseOrder() persists (computePOTotals' own
+  // grand_total), so display and saved value can never disagree.
   const validItems = () => items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
 
   const dupSet = useMemo(() => {
@@ -230,6 +250,7 @@ export default function CreatePurchaseOrder() {
     if (!user || !businessId) return;
 
     fetchParties(user.id, "supplier").then(setSuppliers).catch(() => {});
+    fetchTransporters(businessId).then(setTransporters).catch(() => {});
     supabase
       .from("warehouses")
       .select("id, warehouse_name")
@@ -261,6 +282,7 @@ export default function CreatePurchaseOrder() {
           setSupplierId(po.supplier_id || "");
           setWarehouseId(po.warehouse_id || null);
           setTransportName(po.transport_name || "");
+          setTransporterId(po.transporter_id || null);
           setTransportMode(po.transport_mode || "");
           setLrNumber(po.lr_number || "");
           setVehicleNumber(po.vehicle_number || "");
@@ -291,6 +313,13 @@ export default function CreatePurchaseOrder() {
     if (supplier) setSupplierQuery(supplier.name);
   }, [supplierId]);
 
+  // Set transporter query when transporter loads
+  useEffect(() => {
+    if (!transporterId) return;
+    const t = transporters.find((x) => x.id === transporterId);
+    if (t) setTransporterQuery(t.name);
+  }, [transporterId, transporters]);
+
   // Product search
   useEffect(() => {
     if (searchIdx === null || !user || !searchTerm.trim()) {
@@ -315,7 +344,17 @@ export default function CreatePurchaseOrder() {
 
   const updateRow = (idx: number, patch: Partial<POItem>) => {
     setItems((rows) =>
-      rows.map((r, i) => (i !== idx ? r : computePOItem({ ...r, ...patch })))
+      rows.map((r, i) => {
+        if (i !== idx) return r;
+        const next = { ...r, ...patch };
+        // A manually-typed rate that diverges from what the engine resolved
+        // is exactly the "actual supplier invoice differs from configured
+        // rule" case (spec §10) — flag it, but never touch master data.
+        if ("rate" in patch && next.configured_rate != null && Number(next.rate) !== Number(next.configured_rate)) {
+          next.is_overridden = true;
+        }
+        return computePOItem(next);
+      })
     );
   };
 
@@ -324,17 +363,51 @@ export default function CreatePurchaseOrder() {
   const delRow = (idx: number) =>
     setItems((r) => (r.length <= 1 ? [blankPOItem()] : r.filter((_, i) => i !== idx)));
 
+  /** Purchase Pricing Engine — resolves rate/discounts/NDP/mode/scheme for a
+   *  product+supplier pair. Returns null when nothing is configured, so the
+   *  caller keeps today's manual (MRP-fallback) behavior untouched. */
+  const resolveRowPricing = async (productId: string, mrpFallback: number) => {
+    const resolved = await resolvePurchasePrice(productId, supplierId || null);
+    if (!resolved) return null;
+    const r = resolveRateForMode(resolved.mode, {
+      mrp: resolved.mrp ?? mrpFallback,
+      ndp: resolved.ndp,
+      fixedRate: resolved.fixedRate,
+      primaryDiscountPct: resolved.primaryDiscountPct,
+      additionalDiscountPct: resolved.additionalDiscountPct,
+    });
+    return {
+      rate: r.rate,
+      primaryDiscountPct: r.primaryDiscountPct,
+      additionalDiscountPct: r.additionalDiscountPct,
+      resolved,
+    };
+  };
+
   const pickProduct = async (idx: number, p: Product) => {
     const qty = items[idx].qty || 1;
+    const priced = await resolveRowPricing(p.id, Number(p.mrp));
     updateRow(idx, {
       product_id: p.id,
       part_number: p.part_number,
       description: p.name,
-      rate: Number(p.mrp),
+      rate: priced ? priced.rate : Number(p.mrp),
+      discount_percent: priced ? priced.primaryDiscountPct : 0,
+      additional_discount_percent: priced ? priced.additionalDiscountPct : 0,
       gst_percent: Number(p.gst_pct),
       qty,
       unit_id: null,
       stock_qty: null,
+      resolved_purchase_pricing_mode: priced?.resolved.mode ?? null,
+      resolved_ndp: priced?.resolved.ndp ?? null,
+      resolved_primary_discount_pct: priced?.primaryDiscountPct ?? null,
+      resolved_additional_discount_pct: priced?.additionalDiscountPct ?? null,
+      purchase_scheme_id: priced?.resolved.schemeId ?? null,
+      purchase_scheme_type: priced?.resolved.schemeType ?? null,
+      purchase_scheme_config: priced?.resolved.schemeConfig ?? null,
+      source_price_list_id: priced?.resolved.sourcePriceListId ?? null,
+      configured_rate: priced ? priced.rate : null,
+      is_overridden: false,
     });
     setSearchIdx(null);
     setSearchTerm("");
@@ -351,6 +424,33 @@ export default function CreatePurchaseOrder() {
           stock_qty: toStockQty(qty, defaultUnit.unit_id, pu),
         });
       }
+    }
+  };
+
+  /** Re-resolves every already-picked line's pricing against a newly
+   *  selected supplier (spec Test 10) — never overwrites a line the user
+   *  has already manually overridden. */
+  const reResolveForSupplier = async () => {
+    const rows = items;
+    for (let i = 0; i < rows.length; i++) {
+      const it = rows[i];
+      if (!it.product_id || it.is_overridden) continue;
+      const priced = await resolveRowPricing(it.product_id, Number(it.rate));
+      if (!priced) continue;
+      updateRow(i, {
+        rate: priced.rate,
+        discount_percent: priced.primaryDiscountPct,
+        additional_discount_percent: priced.additionalDiscountPct,
+        resolved_purchase_pricing_mode: priced.resolved.mode,
+        resolved_ndp: priced.resolved.ndp,
+        resolved_primary_discount_pct: priced.primaryDiscountPct,
+        resolved_additional_discount_pct: priced.additionalDiscountPct,
+        purchase_scheme_id: priced.resolved.schemeId,
+        purchase_scheme_type: priced.resolved.schemeType,
+        purchase_scheme_config: priced.resolved.schemeConfig,
+        source_price_list_id: priced.resolved.sourcePriceListId,
+        configured_rate: priced.rate,
+      });
     }
   };
 
@@ -393,6 +493,7 @@ export default function CreatePurchaseOrder() {
         status,
         remarks: remarks || null,
         transport_name: transportName || null,
+        transporter_id: transporterId,
         transport_mode: (transportMode as any) || null,
         lr_number: lrNumber || null,
         vehicle_number: vehicleNumber || null,
@@ -520,6 +621,7 @@ export default function CreatePurchaseOrder() {
   };
 
   const supplierQuickCreateAllowed = canCreateParty(role, permissions) && !hasGRN && !isApprovalLocked;
+  const productQuickCreateAllowed = canCreateProduct(role, permissions);
 
   useDocumentShortcuts(
     {
@@ -646,6 +748,8 @@ export default function CreatePurchaseOrder() {
                 onSelect={(s, source) => {
                   setSupplierId(s.id);
                   setSupplierQuery(s.name);
+                  if (!paymentTerms && s.payment_terms) setPaymentTerms(s.payment_terms);
+                  setTimeout(reResolveForSupplier, 10);
                   if (source === "keyboard") setTimeout(() => focusCell(0, "part"), 10);
                 }}
                 renderRow={(s, highlighted) => (
@@ -690,7 +794,30 @@ export default function CreatePurchaseOrder() {
               </select>
             </DocumentHeaderValue>
 
-            <DocumentHeaderInputField label="Transport" value={transportName} onChange={(e) => setTransportName(e.target.value)} placeholder="Transporter name" />
+            <DocumentHeaderLabel>Transport</DocumentHeaderLabel>
+            <DocumentHeaderValue>
+              <DocumentEntitySearchField
+                results={transporterResults}
+                getKey={(t) => t.id}
+                query={transporterQuery}
+                onQueryChange={(v) => {
+                  setTransporterQuery(v);
+                  setTransportName(v);
+                  const match = transporters.find((t) => t.name.toLowerCase() === v.trim().toLowerCase());
+                  setTransporterId(match ? match.id : null);
+                }}
+                onSelect={(t) => {
+                  setTransporterId(t.id);
+                  setTransporterQuery(t.name);
+                  setTransportName(t.name);
+                }}
+                renderRow={(t) => <span>{t.name}</span>}
+                placeholder="Type to search transporter…"
+                inputClassName="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+                onQuickCreate={() => setQuickCreateTransporterOpen(true)}
+                quickCreateLabel="Transporter"
+              />
+            </DocumentHeaderValue>
             <DocumentHeaderLabel align="right">Mode</DocumentHeaderLabel>
             <DocumentHeaderValue>
               <select
@@ -777,7 +904,7 @@ export default function CreatePurchaseOrder() {
                   className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
                   placeholder="Part #"
                 />
-                {searchIdx === idx && searchResults.length > 0 && (
+                {searchIdx === idx && (searchResults.length > 0 || (productQuickCreateAllowed && searchTerm.trim())) && (
                   <div className="absolute z-50 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto scroll-smooth">
                     {searchResults.map((p, i) => (
                       <button
@@ -799,6 +926,19 @@ export default function CreatePurchaseOrder() {
                         </div>
                       </button>
                     ))}
+                    {productQuickCreateAllowed && searchTerm.trim() && (
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setQuickCreateProductRowIdx(idx);
+                          setQuickCreateProductOpen(true);
+                        }}
+                        className="w-full text-left px-2 py-1.5 text-[12px] text-primary hover:bg-muted bg-popover"
+                      >
+                        + Create New Part {searchTerm.trim() && `"${searchTerm.trim().toUpperCase()}"`}
+                      </button>
+                    )}
                   </div>
                 )}
               </td>
@@ -817,6 +957,11 @@ export default function CreatePurchaseOrder() {
                   }}
                   onKeyDown={(e) => handleKey(e, idx, "qty")}
                 />
+                {it.purchase_scheme_type && it.purchase_scheme_type !== "none" && (Number(it.free_qty) || 0) > 0 && (
+                  <div className="text-[9px] text-emerald-600 px-1 leading-none pb-0.5">
+                    +{it.free_qty} free
+                  </div>
+                )}
               </td>
               <td className="px-0.5 py-0.5">
                 {it.product_id && unitsByProduct[it.product_id]?.length ? (
@@ -848,10 +993,24 @@ export default function CreatePurchaseOrder() {
                 <DocumentGridCellInput align="right" data-row={idx} data-col="rate" type="number" step="any" value={it.rate || ""} onChange={(e) => updateRow(idx, { rate: +e.target.value })}
                   disabled={isApprovalLocked && !!it.id}
                   onKeyDown={(e) => handleKey(e, idx, "rate")} />
+                {it.is_overridden && it.configured_rate != null && (
+                  <button
+                    type="button"
+                    onClick={() => updateRow(idx, { rate: it.configured_rate!, is_overridden: false })}
+                    className="text-[9px] text-amber-600 px-1 leading-none pb-0.5 hover:underline"
+                    title="Click to revert to the configured rate"
+                  >
+                    ⚠ Configured ₹{fmt(it.configured_rate)} — click to use
+                  </button>
+                )}
               </td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput align="right" data-row={idx} data-col="disc" type="number" step="any" value={it.discount_percent || ""} onChange={(e) => updateRow(idx, { discount_percent: +e.target.value })}
                   onKeyDown={(e) => handleKey(e, idx, "disc")} />
+              </td>
+              <td className="px-0.5 py-0.5">
+                <DocumentGridCellInput align="right" data-row={idx} data-col="adisc" type="number" step="any" value={it.additional_discount_percent || ""} onChange={(e) => updateRow(idx, { additional_discount_percent: +e.target.value })}
+                  onKeyDown={(e) => handleKey(e, idx, "adisc")} />
               </td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput align="right" data-row={idx} data-col="gst" type="number" step="any" value={it.gst_percent || ""} onChange={(e) => updateRow(idx, { gst_percent: +e.target.value })}
@@ -925,9 +1084,8 @@ export default function CreatePurchaseOrder() {
                 { label: "Taxable Amount", value: fmt(totals.taxable), bold: true },
                 { label: "CGST", value: fmt(cgst) },
                 { label: "SGST", value: fmt(sgst) },
-                { label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) },
               ]}
-              grandTotal={`₹${fmt(finalTotal)}`}
+              grandTotal={`₹${fmt(totals.grand_total)}`}
             />
 
             {/* Action buttons (duplicated below totals for quick access) — omits Print/Template/Import/Export, matching the original's "quick decision actions only" bottom row */}
@@ -935,7 +1093,7 @@ export default function CreatePurchaseOrder() {
               {toolbarActions
                 .filter((a) => !a.hidden && a.key !== "print")
                 .map((a) => (
-                  <DocumentToolbarButton key={a.key} action={a} extraClassName="flex-1 min-w-[100px]" />
+                  <DocumentToolbarButton key={a.key} action={a} extraClassName="flex-1" />
                 ))}
             </div>
           </div>
@@ -1002,6 +1160,36 @@ export default function CreatePurchaseOrder() {
             setSupplierId(party.id);
             setSupplierQuery(party.name);
             setTimeout(() => focusCell(0, "part"), 10);
+          }}
+        />
+      )}
+
+      {user && businessId && productQuickCreateAllowed && quickCreateProductRowIdx !== null && (
+        <ProductFormDialog
+          open={quickCreateProductOpen}
+          onOpenChange={setQuickCreateProductOpen}
+          businessId={businessId}
+          userId={user.id}
+          presetPartNumber={items[quickCreateProductRowIdx]?.part_number || searchTerm}
+          onSaved={(product) => {
+            const idx = quickCreateProductRowIdx;
+            setQuickCreateProductRowIdx(null);
+            if (idx !== null) pickProduct(idx, product);
+          }}
+        />
+      )}
+
+      {user && businessId && (
+        <TransporterFormDialog
+          open={quickCreateTransporterOpen}
+          onOpenChange={setQuickCreateTransporterOpen}
+          businessId={businessId}
+          userId={user.id}
+          onCreated={(t) => {
+            setTransporters((prev) => [...prev, t].sort((a, b) => a.name.localeCompare(b.name)));
+            setTransporterId(t.id);
+            setTransporterQuery(t.name);
+            setTransportName(t.name);
           }}
         />
       )}

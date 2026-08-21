@@ -18,7 +18,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import {
   fetchPartyLedger,
   fetchLedgerStatement,
-  fmtInr,
+  fmtInrPrecise as fmtInr,
   type PartyLedgerLine,
 } from "@/lib/accounting";
 import { fetchParties } from "@/lib/parties";

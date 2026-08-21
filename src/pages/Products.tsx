@@ -15,8 +15,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -24,15 +22,9 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Product, ProductCategory, ProductTrackingType, bulkDeleteProducts, hasTradingHistory } from "@/lib/products";
-import {
-  fetchCategories, fetchUnits, fetchProductUnits, saveProductUnits,
-  type MeasurementCategory, type Unit,
-} from "@/lib/units";
-import { fetchHsnDetail, searchHsnByDescription, type HsnMasterListItem } from "@/lib/hsnMaster";
-import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
-import BinLocationPicker from "@/components/inventory/BinLocationPicker";
-import { useInventorySettings } from "@/lib/inventorySettings";
+import { Product, bulkDeleteProducts } from "@/lib/products";
+import { fetchUnits, type Unit } from "@/lib/units";
+import ProductFormDialog from "@/components/products/ProductFormDialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,31 +37,6 @@ interface SortState {
 }
 
 const DEFAULT_PAGE_SIZE = 100;
-
-const EMPTY_FORM = {
-  part_number: "",
-  name: "",
-  vehicle_model: "",
-  category: "spare" as ProductCategory,
-  mrp: "0",
-  dealer_rate: "0",
-  stock: "0",
-  low_stock_threshold: "5",
-  gst_pct: "18",
-  hsn_code: "",
-  barcode: "",
-  weight_kg: "",
-  tracking_type: "none" as ProductTrackingType,
-  status: "active",
-  // Measurement Engine (Layer B) — all optional; legacy products keep working without these
-  measurement_category_id: "",
-  base_unit_id: "",
-  purchase_unit_id: "",
-  purchase_unit_factor: "1",
-  sales_unit_id: "",
-  sales_unit_factor: "1",
-  default_bin_id: null as string | null,
-};
 
 // ─── Optimized columns (no select *) ─────────────────────────────────────────
 
@@ -92,7 +59,15 @@ const PRODUCT_COLUMNS = `
   tracking_type,
   measurement_category_id,
   base_unit_id,
-  default_bin_id
+  default_bin_id,
+  purchase_pricing_mode,
+  purchase_ndp,
+  purchase_fixed_rate,
+  purchase_primary_discount_pct,
+  purchase_additional_discount_pct,
+  purchase_effective_from,
+  purchase_effective_till,
+  purchase_config_active
 `.trim();
 
 // ─── Server-side fetch with pagination, search, sort ─────────────────────────
@@ -193,7 +168,6 @@ const SkeletonRow = ({ index }: { index: number }) => (
 const Products = () => {
   const { user } = useAuth();
   const { business } = useBusiness();
-  const { enableBinManagement } = useInventorySettings();
   const [syncingCost, setSyncingCost] = useState(false);
   const syncCostFromPurchases = async () => {
     if (!business) return;
@@ -284,82 +258,19 @@ const Products = () => {
     }
   };
 
-  // Dialog
+  // Dialog — the form itself lives in ProductFormDialog (extracted so a
+  // Purchase Order's "+ Create New Part" quick-create reuses the exact same
+  // full master form, never a second smaller one).
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  // Once a product has traded, its Stock field is no longer an opening-stock
-  // figure -- changing it is a stock adjustment, which has to go through
-  // create_inventory_adjustment to get a movement row, accounting and an
-  // audit trail. The database already refuses to restate the opening voucher
-  // past that point (sync_product_opening_stock's lock); this stops the form
-  // from silently changing products.stock behind that lock, which wrote no
-  // movement row at all.
-  const [openingLocked, setOpeningLocked] = useState(false);
 
-  // Storage location: default_bin_id is the only thing persisted on the product —
-  // this warehouse select is just a local filter for which bins BinLocationPicker offers.
-  const [warehouses, setWarehouses] = useState<{ id: string; warehouse_name: string; is_default: boolean }[]>([]);
-  const [defaultBinWarehouseId, setDefaultBinWarehouseId] = useState("");
-
-  useEffect(() => {
-    if (!businessId) return;
-    supabase
-      .from("warehouses")
-      .select("id, warehouse_name, is_default")
-      .eq("business_id", businessId)
-      .eq("status", "active")
-      .order("warehouse_name", { ascending: true })
-      .then(({ data }) => setWarehouses((data as unknown as { id: string; warehouse_name: string; is_default: boolean }[]) ?? []));
-  }, [businessId]);
-
-  // HSN picker — form.hsn_code is the committed value; hsnQuery is just the
-  // display/search text, so typing without selecting never silently changes
-  // the product's actual HSN reference.
-  const [hsnQuery, setHsnQuery] = useState("");
-  const [hsnResults, setHsnResults] = useState<HsnMasterListItem[]>([]);
-  const runHsnSearch = async (q: string) => {
-    setHsnQuery(q);
-    try {
-      setHsnResults(await searchHsnByDescription(q));
-    } catch {
-      setHsnResults([]);
-    }
-  };
-  const pickHsn = (item: HsnMasterListItem) => {
-    setForm((f) => ({ ...f, hsn_code: item.hsn_code, gst_pct: item.current_rate != null ? String(item.current_rate) : f.gst_pct }));
-    setHsnQuery(item.description ? `${item.hsn_code} — ${item.description}` : item.hsn_code);
-    setHsnResults([]);
-    setNameHsnResults([]);
-  };
-
-  // Auto-suggest HSN by typed product name, new products only, and only
-  // until an HSN is actually picked — no point re-suggesting once the field
-  // above already has a committed value.
-  const [nameHsnResults, setNameHsnResults] = useState<HsnMasterListItem[]>([]);
-  const debouncedName = useDebounce(form.name, 300);
-  useEffect(() => {
-    if (editing || open === false || form.hsn_code || debouncedName.trim().length < 3) {
-      setNameHsnResults([]);
-      return;
-    }
-    let cancelled = false;
-    searchHsnByDescription(debouncedName)
-      .then((r) => { if (!cancelled) setNameHsnResults(r); })
-      .catch(() => { if (!cancelled) setNameHsnResults([]); });
-    return () => { cancelled = true; };
-  }, [debouncedName, editing, open, form.hsn_code]);
-
-  // Measurement Engine (Layer A + B) — categories/units come entirely from the
-  // Unit Master, never hard-coded, so any custom unit a business adds shows up automatically.
-  const [measCategories, setMeasCategories] = useState<MeasurementCategory[]>([]);
+  // Only needed here for the list table's stock-unit symbol display —
+  // ProductFormDialog fetches its own copy for the dialog's unit pickers.
   const [measUnits, setMeasUnits] = useState<Unit[]>([]);
   useEffect(() => {
-    fetchCategories().then(setMeasCategories).catch(() => {});
     fetchUnits().then(setMeasUnits).catch(() => {});
   }, []);
-  const unitsInCategory = (categoryId: string) => measUnits.filter((u) => u.category_id === categoryId);
-  const [saving, setSaving] = useState(false);
+
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -500,181 +411,12 @@ const Products = () => {
 
   const openNew = () => {
     setEditing(null);
-    setOpeningLocked(false);
-    setForm(EMPTY_FORM);
-    setHsnQuery("");
-    setHsnResults([]);
-    setDefaultBinWarehouseId(warehouses.find((w) => w.is_default)?.id ?? warehouses[0]?.id ?? "");
     setOpen(true);
   };
 
-  const openEdit = async (p: Product) => {
+  const openEdit = (p: Product) => {
     setEditing(p);
-    // Assume locked until proven otherwise, so a slow or failed lookup can
-    // never leave the field open on a product that has actually traded.
-    setOpeningLocked(true);
-    hasTradingHistory(p.id)
-      .then(setOpeningLocked)
-      .catch(() => setOpeningLocked(true));
-    setForm({
-      part_number: p.part_number,
-      name: p.name,
-      vehicle_model: p.vehicle_model || "",
-      category: p.category,
-      mrp: String(p.mrp),
-      dealer_rate: String(p.dealer_rate),
-      stock: String(p.stock),
-      low_stock_threshold: String(p.low_stock_threshold),
-      gst_pct: String(p.gst_pct),
-      hsn_code: p.hsn_code || "",
-      barcode: p.barcode || "",
-      weight_kg: p.weight_kg != null ? String(p.weight_kg) : "",
-      tracking_type: p.tracking_type ?? "none",
-      status: p.status,
-      measurement_category_id: p.measurement_category_id || "",
-      base_unit_id: p.base_unit_id || "",
-      purchase_unit_id: "",
-      purchase_unit_factor: "1",
-      sales_unit_id: "",
-      sales_unit_factor: "1",
-      default_bin_id: p.default_bin_id ?? null,
-    });
-    setHsnQuery(p.hsn_code || "");
-    setHsnResults([]);
-    setDefaultBinWarehouseId(warehouses.find((w) => w.is_default)?.id ?? warehouses[0]?.id ?? "");
-    if (p.default_bin_id) {
-      supabase
-        .from("warehouse_bins" as never)
-        .select("rack:warehouse_racks!inner(zone:warehouse_zones!inner(warehouse_id))")
-        .eq("id", p.default_bin_id)
-        .single()
-        .then(({ data }) => {
-          const whId = (data as any)?.rack?.zone?.warehouse_id;
-          if (whId) setDefaultBinWarehouseId(whId);
-        });
-    }
     setOpen(true);
-    try {
-      const pu = await fetchProductUnits(p.id);
-      const purchase = pu.find((u) => u.is_purchase);
-      const sales = pu.find((u) => u.is_sales);
-      setForm((f) => ({
-        ...f,
-        purchase_unit_id: purchase?.unit_id || "",
-        purchase_unit_factor: purchase ? String(purchase.conversion_factor) : "1",
-        sales_unit_id: sales?.unit_id || "",
-        sales_unit_factor: sales ? String(sales.conversion_factor) : "1",
-      }));
-    } catch {
-      // non-fatal — product still opens for editing even if unit mapping fetch fails
-    }
-    // Show the HSN's description alongside its code once it loads, instead of
-    // the bare code — fetched separately (not via searchHsnByDescription,
-    // which only returns active entries) so an inactive-but-still-referenced
-    // HSN still displays correctly.
-    if (p.hsn_code) {
-      try {
-        const detail = await fetchHsnDetail(p.hsn_code);
-        if (detail?.description) setHsnQuery(`${detail.hsn_code} — ${detail.description}`);
-      } catch {
-        // non-fatal — code alone is still shown
-      }
-    }
-  };
-
-  const save = async () => {
-    if (!user) return;
-    if (!form.part_number.trim() || !form.name.trim())
-      return toast.error("Part number and name required");
-    setSaving(true);
-    try {
-      const payload = {
-        user_id: user.id,
-        business_id: businessId,
-        part_number: form.part_number.trim(),
-        name: form.name.trim(),
-        vehicle_model: form.vehicle_model.trim() || null,
-        category: form.category,
-        mrp: parseFloat(form.mrp) || 0,
-        dealer_rate: parseFloat(form.dealer_rate) || 0,
-        stock: parseFloat(form.stock) || 0,
-        low_stock_threshold: parseFloat(form.low_stock_threshold) || 0,
-        gst_pct: parseFloat(form.gst_pct) || 0,
-        hsn_code: form.hsn_code.trim() || null,
-        barcode: form.barcode.trim() || null,
-        weight_kg: form.weight_kg.trim() ? parseFloat(form.weight_kg) : null,
-        tracking_type: form.tracking_type,
-        status: form.status,
-        measurement_category_id: form.measurement_category_id || null,
-        base_unit_id: form.base_unit_id || null,
-        default_bin_id: form.default_bin_id || null,
-      };
-      let productId = editing?.id;
-      if (editing) {
-        // Never send stock for a product that has traded, even if the field
-        // was somehow edited (stale lock lookup, devtools, a re-render race).
-        // The disabled input is the affordance; this is the guarantee.
-        const { stock: _stock, ...lockedPayload } = payload;
-        const { error } = await supabase
-          .from("products")
-          .update(openingLocked ? lockedPayload : payload)
-          .eq("id", editing.id);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.from("products").insert(payload).select("id").single();
-        if (error) throw error;
-        productId = data.id;
-      }
-
-      // Layer B: persist purchase/sales unit mapping (only if a base unit was chosen)
-      if (productId && form.base_unit_id) {
-        const rows = [
-          {
-            product_id: productId,
-            unit_id: form.base_unit_id,
-            conversion_factor: 1,
-            is_purchase: !form.purchase_unit_id,
-            is_sales: !form.sales_unit_id,
-            is_stock: true,
-            barcode: null, mrp: null, purchase_rate: null, sales_rate: null,
-            dealer_rate: null, rd_rate: null, discount: null, scheme: null,
-          },
-          ...(form.purchase_unit_id && form.purchase_unit_id !== form.base_unit_id
-            ? [{
-                product_id: productId,
-                unit_id: form.purchase_unit_id,
-                conversion_factor: parseFloat(form.purchase_unit_factor) || 1,
-                is_purchase: true, is_sales: false, is_stock: false,
-                barcode: null, mrp: null, purchase_rate: null, sales_rate: null,
-                dealer_rate: null, rd_rate: null, discount: null, scheme: null,
-              }]
-            : []),
-          ...(form.sales_unit_id && form.sales_unit_id !== form.base_unit_id
-            ? [{
-                product_id: productId,
-                unit_id: form.sales_unit_id,
-                conversion_factor: parseFloat(form.sales_unit_factor) || 1,
-                is_purchase: false, is_sales: true, is_stock: false,
-                barcode: null, mrp: null, purchase_rate: null, sales_rate: null,
-                dealer_rate: null, rd_rate: null, discount: null, scheme: null,
-              }]
-            : []),
-        ];
-        await saveProductUnits(productId, rows as any);
-      }
-
-      toast.success(editing ? "Product updated" : "Product added");
-      setOpen(false);
-      load();
-    } catch (e: any) {
-      if (e.code === "23505") {
-        toast.error(`Part number "${form.part_number.trim()}" is already in use — choose a different one.`);
-      } else {
-        toast.error(e.message ?? "Failed to save product");
-      }
-    } finally {
-      setSaving(false);
-    }
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -886,356 +628,16 @@ const Products = () => {
         />
       </div>
 
-      {/* Add / Edit dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display">
-              {editing ? "Edit Product" : "Add Product"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid md:grid-cols-2 gap-3 py-2">
-            <div className="space-y-1.5">
-              <Label>Part Number *</Label>
-              <Input
-                value={form.part_number}
-                onChange={(e) => setForm({ ...form, part_number: e.target.value })}
-                placeholder="e.g. N1234"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Product Name *</Label>
-              <DocumentEntitySearchField
-                results={nameHsnResults}
-                getKey={(h) => h.hsn_code}
-                query={form.name}
-                onQueryChange={(v) => setForm({ ...form, name: v })}
-                onSelect={(h) => pickHsn(h)}
-                placeholder="e.g. Brake Shoe Set"
-                inputClassName="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                renderRow={(h) => (
-                  <>
-                    <span className="font-mono font-semibold">{h.hsn_code}</span>
-                    {h.description && <span className="text-muted-foreground"> — {h.description}</span>}
-                    {h.current_rate != null && <span className="ml-1 text-muted-foreground">({h.current_rate}%)</span>}
-                  </>
-                )}
-              />
-              {nameHsnResults.length > 0 && (
-                <p className="text-[11px] text-muted-foreground">Matching HSN codes found — pick one to auto-fill HSN &amp; GST%.</p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Vehicle Model</Label>
-              <Input
-                value={form.vehicle_model}
-                onChange={(e) => setForm({ ...form, vehicle_model: e.target.value })}
-                placeholder="e.g. Apache RTR 160"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Category</Label>
-              <Select
-                value={form.category}
-                onValueChange={(v) => setForm({ ...form, category: v as ProductCategory })}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="spare">Spare Parts</SelectItem>
-                  <SelectItem value="lubricant">Lubricant</SelectItem>
-                  <SelectItem value="accessory">Accessory</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>MRP (₹)</Label>
-              <Input
-                type="number"
-                value={form.mrp}
-                onChange={(e) => setForm({ ...form, mrp: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Dealer Rate (₹)</Label>
-              <Input
-                type="number"
-                value={form.dealer_rate}
-                onChange={(e) => setForm({ ...form, dealer_rate: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{editing ? "Stock" : "Opening Stock"}</Label>
-              <Input
-                type="number"
-                value={form.stock}
-                disabled={openingLocked}
-                onChange={(e) => setForm({ ...form, stock: e.target.value })}
-              />
-              {openingLocked ? (
-                <p className="text-xs text-muted-foreground">
-                  This product has already been traded, so its stock can only change through a
-                  movement that leaves an audit trail.{" "}
-                  <Link to="/inventory/adjustments" className="underline underline-offset-2">
-                    Post a Stock Adjustment
-                  </Link>{" "}
-                  instead.
-                </p>
-              ) : editing ? (
-                <p className="text-xs text-muted-foreground">
-                  Opening stock — editable until this product is first traded. Changing it restates
-                  its opening entry (Dr Opening Stock / Cr Capital Account).
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Low-stock alert at</Label>
-              <Input
-                type="number"
-                value={form.low_stock_threshold}
-                onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>HSN / SAC Code</Label>
-              <DocumentEntitySearchField
-                results={hsnResults}
-                getKey={(h) => h.hsn_code}
-                query={hsnQuery}
-                onQueryChange={runHsnSearch}
-                onSelect={(h) => pickHsn(h)}
-                placeholder="Search by code or description…"
-                inputClassName="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                renderRow={(h) => (
-                  <>
-                    <span className="font-mono font-semibold">{h.hsn_code}</span>
-                    {h.description && <span className="text-muted-foreground"> — {h.description}</span>}
-                    {h.current_rate != null && <span className="ml-1 text-muted-foreground">({h.current_rate}%)</span>}
-                  </>
-                )}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>GST %</Label>
-              <Input
-                type="number"
-                value={form.gst_pct}
-                onChange={(e) => setForm({ ...form, gst_pct: e.target.value })}
-              />
-              <p className="text-[11px] text-muted-foreground">Auto-filled from HSN; editable for exceptions.</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Barcode</Label>
-              <Input
-                value={form.barcode}
-                onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                placeholder="Optional"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Weight (kg)</Label>
-              <Input
-                type="number"
-                value={form.weight_kg}
-                onChange={(e) => setForm({ ...form, weight_kg: e.target.value })}
-                placeholder="Optional"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Tracking</Label>
-              <Select
-                value={form.tracking_type}
-                onValueChange={(v) => setForm({ ...form, tracking_type: v as ProductTrackingType })}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="batch">Batch tracked</SelectItem>
-                  <SelectItem value="serial">Serial tracked</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(v) => setForm({ ...form, status: v })}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {enableBinManagement && (
-              <>
-                <div className="md:col-span-2 border-t pt-3 mt-1">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    Storage Location (optional)
-                  </p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Warehouse</Label>
-                  <Select value={defaultBinWarehouseId} onValueChange={(v) => { setDefaultBinWarehouseId(v); setForm({ ...form, default_bin_id: null }); }}>
-                    <SelectTrigger><SelectValue placeholder="Select warehouse…" /></SelectTrigger>
-                    <SelectContent>
-                      {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Default Rack / Bin</Label>
-                  <BinLocationPicker
-                    warehouseId={defaultBinWarehouseId || null}
-                    value={form.default_bin_id}
-                    onChange={(binId) => setForm({ ...form, default_bin_id: binId })}
-                    placeholder="Auto (put-away bin picked at GRN time)"
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="md:col-span-2 border-t pt-3 mt-1">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Measurement (optional)
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Measurement Category</Label>
-              <Select
-                value={form.measurement_category_id}
-                onValueChange={(v) => setForm({ ...form, measurement_category_id: v, base_unit_id: "", purchase_unit_id: "", sales_unit_id: "" })}
-              >
-                <SelectTrigger><SelectValue placeholder="e.g. Weight, Volume, Quantity" /></SelectTrigger>
-                <SelectContent>
-                  {measCategories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Base / Stock Unit</Label>
-              <Select
-                value={form.base_unit_id}
-                onValueChange={(v) => setForm({ ...form, base_unit_id: v })}
-                disabled={!form.measurement_category_id}
-              >
-                <SelectTrigger><SelectValue placeholder="Select category first" /></SelectTrigger>
-                <SelectContent>
-                  {unitsInCategory(form.measurement_category_id).map((u) => (
-                    <SelectItem key={u.id} value={u.id}>{u.name} ({u.symbol})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {form.base_unit_id && (
-              <>
-                <div className="space-y-1.5">
-                  <Label>Purchase Unit</Label>
-                  <Select value={form.purchase_unit_id} onValueChange={(v) => setForm({ ...form, purchase_unit_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Same as base unit" /></SelectTrigger>
-                    <SelectContent>
-                      {unitsInCategory(form.measurement_category_id).map((u) => (
-                        <SelectItem key={u.id} value={u.id}>{u.name} ({u.symbol})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>1 Purchase Unit = ? Base Units</Label>
-                  <Input
-                    type="number"
-                    value={form.purchase_unit_factor}
-                    onChange={(e) => setForm({ ...form, purchase_unit_factor: e.target.value })}
-                    disabled={!form.purchase_unit_id || form.purchase_unit_id === form.base_unit_id}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Sales Unit</Label>
-                  <Select value={form.sales_unit_id} onValueChange={(v) => setForm({ ...form, sales_unit_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Same as base unit" /></SelectTrigger>
-                    <SelectContent>
-                      {unitsInCategory(form.measurement_category_id).map((u) => (
-                        <SelectItem key={u.id} value={u.id}>{u.name} ({u.symbol})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>1 Sales Unit = ? Base Units</Label>
-                  <Input
-                    type="number"
-                    value={form.sales_unit_factor}
-                    onChange={(e) => setForm({ ...form, sales_unit_factor: e.target.value })}
-                    disabled={!form.sales_unit_id || form.sales_unit_id === form.base_unit_id}
-                  />
-                </div>
-                <p className="md:col-span-2 text-[11px] text-muted-foreground -mt-1">
-                  e.g. Engine Oil — Base: Liter · Purchase: Drum (1 Drum = 210 Liter) · Sales: Can (1 Can = 5 Liter).
-                  Stock is always tracked in the base unit; purchase/sales screens convert automatically.
-                </p>
-
-                {/* Layer C2: read-only conversion chain visual */}
-                <div className="md:col-span-2 rounded-md border bg-muted/30 px-3 py-3">
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    Conversion Chain
-                  </p>
-                  <div className="flex items-center flex-wrap gap-2 text-xs">
-                    {form.purchase_unit_id && form.purchase_unit_id !== form.base_unit_id && (
-                      <>
-                        <span className="px-2 py-1 rounded bg-primary/10 text-primary font-medium">
-                          1 {unitsInCategory(form.measurement_category_id).find((u) => u.id === form.purchase_unit_id)?.symbol}
-                          <span className="text-muted-foreground font-normal"> Purchase</span>
-                        </span>
-                        <span className="text-muted-foreground">→</span>
-                      </>
-                    )}
-                    <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-700 font-medium">
-                      {form.purchase_unit_id && form.purchase_unit_id !== form.base_unit_id
-                        ? form.purchase_unit_factor
-                        : form.sales_unit_id && form.sales_unit_id !== form.base_unit_id
-                        ? form.sales_unit_factor
-                        : 1}{" "}
-                      {unitsInCategory(form.measurement_category_id).find((u) => u.id === form.base_unit_id)?.symbol}
-                      <span className="text-muted-foreground font-normal"> Stock</span>
-                    </span>
-                    {form.sales_unit_id && form.sales_unit_id !== form.base_unit_id && (
-                      <>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-700 font-medium">
-                          1 {unitsInCategory(form.measurement_category_id).find((u) => u.id === form.sales_unit_id)?.symbol}
-                          <span className="text-muted-foreground font-normal"> Sales</span>
-                        </span>
-                      </>
-                    )}
-                    {!form.purchase_unit_id && !form.sales_unit_id && (
-                      <span className="text-muted-foreground">Stock unit only — no separate purchase/sales unit configured.</span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-2">
-                    Purchase and GRN screens will let staff enter quantities in the Purchase Unit; the system stores everything against the Stock Unit automatically.
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={save}
-              disabled={saving}
-              className="gradient-primary text-white border-0 hover:opacity-90"
-            >
-              {saving ? "Saving…" : editing ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {user && businessId && (
+        <ProductFormDialog
+          open={open}
+          onOpenChange={setOpen}
+          businessId={businessId}
+          userId={user.id}
+          editing={editing}
+          onSaved={() => load()}
+        />
+      )}
 
       {/* ── Single delete confirmation ── */}
       <AlertDialog open={!!singleDeleteTarget} onOpenChange={(o) => !o && setSingleDeleteTarget(null)}>

@@ -30,6 +30,15 @@ base_unit_id: string | null;
 default_bin_id?: string | null;
 created_at: string;
 updated_at: string;
+purchase_pricing_mode?: string | null;
+purchase_ndp?: number | null;
+purchase_fixed_rate?: number | null;
+purchase_primary_discount_pct?: number | null;
+purchase_additional_discount_pct?: number | null;
+purchase_scheme_id?: string | null;
+purchase_effective_from?: string | null;
+purchase_effective_till?: string | null;
+purchase_config_active?: boolean;
 }
 
 /**
