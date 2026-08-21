@@ -3,6 +3,7 @@ import type { OrderStatus } from "@/lib/orders";
 import { logActivity } from "@/lib/orders";
 import { logAudit } from "@/lib/audit";
 import type { Party } from "@/lib/parties";
+import { resolvePartyOutstanding } from "@/lib/parties";
 
 /**
  * Order Control Center (Phase 1) data layer. Kept separate from `orders.ts`
@@ -332,16 +333,21 @@ export interface PartyGroup {
   readyToDispatchValue: number;
 }
 
-/** Groups the queue by party, sorted by the FIFO rank of each party's most urgent order (fifoCompare already sorted each party's own orders first). */
-export function groupByParty(rows: QueueRow[], partyDetails?: Map<string, Party>): PartyGroup[] {
+/** Groups the queue by party, sorted by the FIFO rank of each party's most urgent order (fifoCompare already sorted each party's own orders first).
+ *  `ledgerBalances` (from `fetchPartyOutstandingBalances()`) is the single
+ *  source of truth for the credit-status gate — see
+ *  rdpro_party_outstanding_balance_ghost_data memory. Falls back to the raw
+ *  `parties.outstanding_balance` column only when no map is supplied. */
+export function groupByParty(rows: QueueRow[], partyDetails?: Map<string, Party>, ledgerBalances?: Map<string, number>): PartyGroup[] {
   const map = new Map<string, PartyGroup>();
   for (const r of rows) {
     const pid = r.party_id ?? "—";
     if (!map.has(pid)) {
       const detail = r.party_id ? partyDetails?.get(r.party_id) : undefined;
       let creditStatus: CreditStatus = null;
-      if (detail?.credit_limit != null && detail.credit_limit > 0 && detail.outstanding_balance != null) {
-        creditStatus = detail.outstanding_balance > detail.credit_limit ? "over_limit" : "ok";
+      if (detail?.credit_limit != null && detail.credit_limit > 0) {
+        const outstanding = resolvePartyOutstanding(detail, ledgerBalances ?? new Map());
+        creditStatus = outstanding > detail.credit_limit ? "over_limit" : "ok";
       }
       map.set(pid, {
         party_id: pid,
@@ -456,8 +462,8 @@ export interface PartyReportSection {
 }
 
 /** Shapes the queue into the Party Wise report used identically by Print, PDF, and Excel so all three can never disagree on the numbers. */
-export function buildPartyWiseReport(rows: QueueRow[], partyDetails: Map<string, Party>): PartyReportSection[] {
-  return groupByParty(rows, partyDetails).map((g) => {
+export function buildPartyWiseReport(rows: QueueRow[], partyDetails: Map<string, Party>, ledgerBalances?: Map<string, number>): PartyReportSection[] {
+  return groupByParty(rows, partyDetails, ledgerBalances).map((g) => {
     const detail = g.party_id !== "—" ? partyDetails.get(g.party_id) : undefined;
     const reportRows: PartyReportRow[] = [];
     for (const order of g.orders) {

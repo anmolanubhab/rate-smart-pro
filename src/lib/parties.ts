@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { fetchLedgersWithBalance, naturalSignedValue } from "@/lib/accounting";
 
 export type DiscountType = "RD" | "CD";
 
@@ -100,6 +101,58 @@ const { data, error } = await query.order("name", { ascending: true });
 
 if (error) throw error;
 return (data || []) as Party[];
+}
+
+// ─── Single source of truth: a party's real "outstanding balance" ───────────
+//
+// parties.outstanding_balance is only BEST-EFFORT kept in sync with a
+// party's linked ledger by the DB trigger apply_ledger_balance_delta()
+// (fires whenever a posted voucher touches that ledger) -- it is not
+// itself authoritative, and can go stale if anything else ever writes the
+// column directly. Every screen in RD-Pro that shows "how much does this
+// party owe / how much do we owe them" must go through the functions
+// below, which always prefer the party's real linked ledger
+// (ledger_accounts.party_id) over the stored column, using the exact same
+// signed-balance convention (naturalSignedValue) every other accounting
+// report already uses -- so the sign interpretation can never drift
+// between screens. The stored column is only ever a fallback, for the
+// (large) majority of parties that don't have a linked ledger at all
+// (only preferred_customer/preferred_supplier parties get one, via
+// ensurePartyLedgers()).
+//
+// See memory: rdpro_party_outstanding_balance_ghost_data.md — the bug this
+// was built to prevent from recurring (commit c1c9443).
+
+/** Every party-linked ledger's live, signed balance for the active
+ *  business, keyed by party_id. Use `resolvePartyOutstanding()` (or
+ *  `fetchPartyOutstandingBalance()` for a single party) to read from it —
+ *  never read `parties.outstanding_balance` directly in a new call site. */
+export async function fetchPartyOutstandingBalances(userId: string): Promise<Map<string, number>> {
+  const ledgers = await fetchLedgersWithBalance(userId);
+  const map = new Map<string, number>();
+  for (const l of ledgers) {
+    if (l.party_id) map.set(l.party_id, naturalSignedValue(l));
+  }
+  return map;
+}
+
+/** Convenience wrapper for a screen that only needs one party's balance —
+ *  still goes through the same map/function above, so there is exactly one
+ *  implementation of "how a party's outstanding balance is computed"
+ *  anywhere in the app. */
+export async function fetchPartyOutstandingBalance(userId: string, partyId: string): Promise<number | null> {
+  const map = await fetchPartyOutstandingBalances(userId);
+  return map.has(partyId) ? map.get(partyId)! : null;
+}
+
+/** `ledgerBalances` is the map from `fetchPartyOutstandingBalances()`.
+ *  Returns the live ledger balance when this party has one, otherwise
+ *  falls back to the stored (best-effort) column. */
+export function resolvePartyOutstanding(
+  party: Pick<Party, "id" | "outstanding_balance">,
+  ledgerBalances: Map<string, number>
+): number {
+  return ledgerBalances.get(party.id) ?? Number(party.outstanding_balance ?? 0);
 }
 
 export async function fetchSegments() {

@@ -42,10 +42,10 @@ export default function DealerOutstanding() {
     if (!portalUser) return;
     (async () => {
       setLoading(true);
-      const [{ data: party }, { data: invs }] = await Promise.all([
+      const [{ data: party }, { data: invs }, { data: balance }] = await Promise.all([
         supabase
           .from("parties")
-          .select("credit_limit, outstanding_balance")
+          .select("credit_limit")
           .eq("id", portalUser.party_id)
           .maybeSingle(),
         supabase
@@ -56,9 +56,16 @@ export default function DealerOutstanding() {
           .neq("status", "cancelled")
           .order("invoice_date", { ascending: false })
           .limit(200),
+        // Single source of truth for a party's outstanding balance — see
+        // get_party_outstanding_balance() (prefers the linked ledger over
+        // the raw parties.outstanding_balance column, which is only a
+        // best-effort mirror). Portal sessions can't read ledger_accounts
+        // directly (RLS is business-member-only), so this RPC is the
+        // portal-reachable equivalent of src/lib/parties.ts's admin-side helper.
+        supabase.rpc("get_party_outstanding_balance" as never, { _party_id: portalUser.party_id } as never),
       ]);
       setCreditLimit(Number((party as { credit_limit?: number } | null)?.credit_limit) || 0);
-      setOutstanding(Number((party as { outstanding_balance?: number } | null)?.outstanding_balance) || 0);
+      setOutstanding(Number(balance) || 0);
       setInvoices((invs as Invoice[]) ?? []);
       setLoading(false);
     })();

@@ -147,8 +147,15 @@ export default function DealerOrder() {
 
       // Credit-limit check — skip entirely if the party has no limit set
       // (0 or null means "no limit configured", not "zero credit").
+      // Outstanding comes from get_party_outstanding_balance() (linked-ledger
+      // balance, not the raw parties.outstanding_balance column, which is
+      // only a best-effort mirror) — see rdpro_party_outstanding_balance_ghost_data memory.
       const creditLimit = Number((party as { credit_limit?: number } | null)?.credit_limit) || 0;
-      const currentOutstanding = Number((party as { outstanding_balance?: number } | null)?.outstanding_balance) || 0;
+      const { data: outstandingData } = await supabase.rpc(
+        "get_party_outstanding_balance" as never,
+        { _party_id: portalUser.party_id } as never
+      );
+      const currentOutstanding = Number(outstandingData) || 0;
       if (creditLimit > 0 && currentOutstanding + totals.grand_total > creditLimit) {
         const available = Math.max(0, creditLimit - currentOutstanding);
         throw new Error(

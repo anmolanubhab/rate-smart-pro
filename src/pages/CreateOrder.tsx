@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { fetchParties, Party } from "@/lib/parties";
+import { fetchParties, Party, fetchPartyOutstandingBalances, resolvePartyOutstanding } from "@/lib/parties";
 import { searchProducts, Product } from "@/lib/products";
 import { fetchActiveWarehouses, resolveDefaultWarehouseId, type Warehouse } from "@/lib/warehouses";
 import { getActiveBusinessIdSync, onActiveBusinessChange } from "@/lib/activeBusiness";
@@ -89,6 +89,7 @@ const CreateOrder = () => {
   const baseTitle = printOnLoad ? "Order" : "Order Entry — Spare Parts OMS";
 
   const [parties, setParties] = useState<Party[]>([]);
+  const [ledgerBalances, setLedgerBalances] = useState<Map<string, number>>(new Map());
   const [partyId, setPartyId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
   const [quickCreateCustomerOpen, setQuickCreateCustomerOpen] = useState(false);
@@ -277,6 +278,9 @@ const CreateOrder = () => {
         if (pendingQuery) checkExactPartyMatch(pendingQuery, data);
       })
       .catch((e) => toast.error(e.message));
+    // Single source of truth for the "Current Balance" line — see
+    // fetchPartyOutstandingBalances() / rdpro_party_outstanding_balance_ghost_data memory.
+    fetchPartyOutstandingBalances(user.id).then(setLedgerBalances).catch(() => {});
 
     if (!editId) {
       nextOrderNumber(user.id).then(setOrderNumber).catch(() => {});
@@ -835,8 +839,10 @@ const CreateOrder = () => {
             <>
               <DocumentHeaderLabel>Current Balance</DocumentHeaderLabel>
               <DocumentHeaderValue className="italic">
-                ₹{fmt(Number(party.outstanding_balance) || 0)}{" "}
-                <span className="text-muted-foreground not-italic">Dr</span>
+                ₹{fmt(Math.abs(resolvePartyOutstanding(party, ledgerBalances)))}{" "}
+                <span className="text-muted-foreground not-italic">
+                  {resolvePartyOutstanding(party, ledgerBalances) < 0 ? "Cr" : "Dr"}
+                </span>
               </DocumentHeaderValue>
               <DocumentHeaderLabel align="right">GSTIN</DocumentHeaderLabel>
               <DocumentHeaderValue>{party.gst || "—"}</DocumentHeaderValue>

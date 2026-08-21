@@ -19,8 +19,7 @@ import PartyFormDialog from "@/components/parties/PartyFormDialog";
 import { ProductsPagination } from "@/components/ProductsPagination";
 import { useDebounce } from "@/hooks/useDebounce";
 import PartyExcelUpload from "@/components/PartyExcelUpload";
-import { fetchParties, Party } from "@/lib/parties";
-import { fetchLedgersWithBalance, naturalSignedValue } from "@/lib/accounting";
+import { fetchParties, Party, fetchPartyOutstandingBalances, resolvePartyOutstanding } from "@/lib/parties";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,26 +75,6 @@ async function fetchPartiesPage(
   const { data, error, count } = await q;
   if (error) throw error;
   return { items: ((data ?? []) as unknown as Party[]), total: count ?? 0 };
-}
-
-// parties.outstanding_balance is trigger-maintained from a party's linked
-// ledger, but it's also a plain column PartyExcelUpload (and, until
-// recently, PartyFormDialog) can write directly -- so it can silently go
-// stale relative to the real ledger. Every party WITH a linked ledger
-// (ledger_accounts.party_id) has its outstanding balance recomputed live
-// here from that ledger, via the exact same signed-balance function every
-// other accounting report uses (naturalSignedValue) -- never the stored
-// column, when a better source exists. Parties with no linked ledger yet
-// (the vast majority -- only preferred_customer/preferred_supplier
-// parties get one) fall back to the stored value, since there's nothing
-// better to show for them.
-async function fetchPartyLedgerBalances(userId: string): Promise<Map<string, number>> {
-  const ledgers = await fetchLedgersWithBalance(userId);
-  const map = new Map<string, number>();
-  for (const l of ledgers) {
-    if (l.party_id) map.set(l.party_id, naturalSignedValue(l));
-  }
-  return map;
 }
 
 async function fetchSummaryCounts(userId: string, businessId: string | null, ledgerBalances: Map<string, number>) {
@@ -180,7 +159,7 @@ const Parties = () => {
     try {
       const [pageResult, ledgerMap] = await Promise.all([
         fetchPartiesPage(user.id, businessId, page, pageSize, debouncedSearch, sort),
-        fetchPartyLedgerBalances(user.id),
+        fetchPartyOutstandingBalances(user.id),
       ]);
       const counts = await fetchSummaryCounts(user.id, businessId, ledgerMap);
       setParties(pageResult.items);
@@ -314,12 +293,10 @@ const Parties = () => {
     }
   };
 
-  // Prefer the live ledger balance (fetchPartyLedgerBalances) over the
-  // stored parties.outstanding_balance column, whenever this party has a
-  // linked ledger -- see that function's doc comment for why the column
-  // alone can't be trusted.
+  // Single source of truth for "how much does this party owe" -- see
+  // src/lib/parties.ts's resolvePartyOutstanding() doc comment.
   const effectiveOutstanding = useCallback(
-    (p: Party) => ledgerBalances.get(p.id) ?? Number(p.outstanding_balance ?? 0),
+    (p: Party) => resolvePartyOutstanding(p, ledgerBalances),
     [ledgerBalances]
   );
 
