@@ -25,7 +25,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts } from "@/lib/accounting";
 import { getLedgerAccountOptions, getAllActiveLedgerOptions, NON_CASH_BANK_LEDGER_TYPES, type LedgerOption } from "@/lib/ledgerFiltering";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
-import { canOverrideAdjustmentLedger, canUnlockVouchers, canBackdateVoucher } from "@/lib/permissions";
+import { canOverrideAdjustmentLedger, canUnlockVouchers, canBackdateVoucher, canCreateParty } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import {
   calculateTotals, validateVoucher, validateContraLegs, validateContraInstrument,
@@ -43,6 +43,7 @@ import VoucherHeaderBar from "./VoucherHeaderBar";
 import VoucherLedgerGrid from "./VoucherLedgerGrid";
 import VoucherSummaryBar from "./VoucherSummaryBar";
 import QuickCreateLedgerDialog from "./QuickCreateLedgerDialog";
+import PartyFormDialog from "@/components/parties/PartyFormDialog";
 import BillAllocationPanel from "./BillAllocationPanel";
 
 const emptyRow = (): VoucherItem => ({ ledger_account_id: "", ledger_name: "", debit: 0, credit: 0, remarks: "" });
@@ -61,7 +62,7 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   const copyFromId = !isEdit ? searchParams.get("copyFrom") : null;
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { business, role, financialRights } = useBusiness();
+  const { business, role, financialRights, permissions } = useBusiness();
   const qc = useQueryClient();
   const voucherLockOpts = {
     canEditLockedVoucher: canUnlockVouchers(role, financialRights),
@@ -84,6 +85,12 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   const [status, setStatus] = useState<"draft" | "posted">("draft");
   const [newLedgerOpen, setNewLedgerOpen] = useState(false);
   const [newLedgerRowIdx, setNewLedgerRowIdx] = useState(0);
+  // Quick Create Master: Ctrl+N/Alt+N is context-aware -- a party-filtered
+  // row (Payment/Receipt's row 0) opens QuickCreateParty instead of the
+  // ledger dialog above, per the target row's rowFilterFor() result.
+  const [newPartyOpen, setNewPartyOpen] = useState(false);
+  const [newPartyRowIdx, setNewPartyRowIdx] = useState(0);
+  const [newPartyPresetType, setNewPartyPresetType] = useState<"customer" | "supplier">("customer");
   const [billAllocationOpen, setBillAllocationOpen] = useState(false);
   const [billAllocations, setBillAllocations] = useState<BillAllocationLine[]>([]);
 
@@ -510,6 +517,25 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
 
   const isDirty = items.some((r) => r.ledger_account_id || r.debit || r.credit);
 
+  // Shared by the Ctrl+N/Alt+N shortcut (targets the first still-blank row)
+  // and the ledger grid's own "+ Create New" dropdown entry (targets
+  // whichever row's picker is open) -- one dispatch rule, not two.
+  const openQuickCreateForRow = (rowIdx: number) => {
+    const filter = rowFilterFor(config, rowIdx);
+    if (filter === "supplier" || filter === "customer") {
+      if (!canCreateParty(role, permissions)) {
+        toast.error("You don't have permission to create a new party.");
+        return;
+      }
+      setNewPartyRowIdx(rowIdx);
+      setNewPartyPresetType(filter);
+      setNewPartyOpen(true);
+    } else {
+      setNewLedgerRowIdx(rowIdx);
+      setNewLedgerOpen(true);
+    }
+  };
+
   useVoucherShortcuts(
     {
       onSwitchType: (t) => {
@@ -520,11 +546,10 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
       onEditDate: () => dateInputRef.current?.focus(),
       onSave: handleSaveShortcut,
       onEscape: () => navigate("/accounts/vouchers"),
-      onNewLedger: () => {
+      onQuickCreate: () => {
         // Target the first row still missing a ledger — the one the operator is naturally filling next.
         const emptyIdx = items.findIndex((r) => !r.ledger_account_id);
-        setNewLedgerRowIdx(emptyIdx >= 0 ? emptyIdx : items.length - 1);
-        setNewLedgerOpen(true);
+        openQuickCreateForRow(emptyIdx >= 0 ? emptyIdx : items.length - 1);
       },
       onBillAllocation: config.billAllocation ? () => setBillAllocationOpen(true) : undefined,
     },
@@ -686,6 +711,7 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
           onAddRow={addRow}
           onRemoveRow={removeRow}
           lockedRowIndex={ledgerLocked ? 0 : null}
+          onQuickCreate={openQuickCreateForRow}
         />
 
         {isContra && contraLegErrors.length > 0 && items.some((r) => r.ledger_account_id) && (
@@ -744,20 +770,52 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
       </fieldset>
 
       {business && user && (
-        <QuickCreateLedgerDialog
-          open={newLedgerOpen}
-          onOpenChange={setNewLedgerOpen}
-          businessId={business.id}
-          userId={user.id}
-          onCreated={(l) => {
-            updateRow(newLedgerRowIdx, { ledger_account_id: l.id, ledger_name: l.name });
-            qc.invalidateQueries({ queryKey: ["ledgers"] });
-            qc.invalidateQueries({ queryKey: ["ledgers-supplier"] });
-            qc.invalidateQueries({ queryKey: ["ledgers-customer"] });
-            qc.invalidateQueries({ queryKey: ["ledgers-bank-cash"] });
-            qc.invalidateQueries({ queryKey: ["ledgers-all-active"] });
-          }}
-        />
+        <>
+          <QuickCreateLedgerDialog
+            open={newLedgerOpen}
+            onOpenChange={setNewLedgerOpen}
+            businessId={business.id}
+            userId={user.id}
+            role={role}
+            permissions={permissions}
+            onCreated={(l) => {
+              updateRow(newLedgerRowIdx, { ledger_account_id: l.id, ledger_name: l.name });
+              qc.invalidateQueries({ queryKey: ["ledgers"] });
+              qc.invalidateQueries({ queryKey: ["ledgers-supplier"] });
+              qc.invalidateQueries({ queryKey: ["ledgers-customer"] });
+              qc.invalidateQueries({ queryKey: ["ledgers-bank-cash"] });
+              qc.invalidateQueries({ queryKey: ["ledgers-all-active"] });
+            }}
+          />
+          <PartyFormDialog
+            open={newPartyOpen}
+            onOpenChange={setNewPartyOpen}
+            businessId={business.id}
+            userId={user.id}
+            presetType={newPartyPresetType}
+            onSaved={async (party) => {
+              // This row's field is a ledger picker filtered to
+              // customer/supplier-type ledgers (see getLedgerAccountOptions
+              // in src/lib/ledgerFiltering.ts) -- ensurePartyLedgers()
+              // inside QuickCreateParty already created the party's linked
+              // ledger the same way every party save does, so look that
+              // ledger up and plug it into the row exactly like a direct
+              // ledger quick-create would.
+              const { data } = await supabase
+                .from("ledger_accounts")
+                .select("id, name")
+                .eq("party_id", party.id)
+                .eq("business_id", business.id)
+                .maybeSingle();
+              if (data) {
+                updateRow(newPartyRowIdx, { ledger_account_id: (data as any).id, ledger_name: (data as any).name });
+              }
+              qc.invalidateQueries({ queryKey: ["ledgers"] });
+              qc.invalidateQueries({ queryKey: ["ledgers-supplier"] });
+              qc.invalidateQueries({ queryKey: ["ledgers-customer"] });
+            }}
+          />
+        </>
       )}
 
       {config.billAllocation && business && partyId && (

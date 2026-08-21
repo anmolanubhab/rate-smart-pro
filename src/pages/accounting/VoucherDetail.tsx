@@ -117,6 +117,16 @@ export default function VoucherDetail() {
     }
   };
 
+  // Opening Balance vouchers have no entry form of their own (only the
+  // migration wizard creates them) -- correcting one is meant to go through
+  // an ordinary Journal voucher, so Smart Edit routes there instead of a
+  // type-matched engine form. voucher_items are generic ledger/dr/cr rows
+  // regardless of the original voucher_type, so the Journal form's
+  // ?copyFrom= prefill works unchanged.
+  const smartEditPath =
+    VOUCHER_TYPE_CONFIGS[voucher?.voucher_type as keyof typeof VOUCHER_TYPE_CONFIGS]?.path ??
+    (voucher?.voucher_type === "opening_balance" ? "/vouchers/journal" : null);
+
   // Smart Edit: posted vouchers can't be edited in place (updateVoucher
   // rejects anything that isn't "draft" — see voucherService.ts), so this
   // cancels the posted voucher and sends the user to a fresh entry screen
@@ -124,15 +134,13 @@ export default function VoucherDetail() {
   // trail stays intact (a real cancelled record plus a real new one)
   // while the user experience is "edit this voucher".
   const handleSmartEdit = async () => {
-    if (!user?.id || !id || !voucher) return;
-    const engineConfig = VOUCHER_TYPE_CONFIGS[voucher.voucher_type as keyof typeof VOUCHER_TYPE_CONFIGS];
-    if (!engineConfig) return;
+    if (!user?.id || !id || !voucher || !smartEditPath) return;
     setBusy(true);
     try {
       await cancelVoucher(user.id, id, "Edited — replaced by a corrected voucher", voucherLockOpts);
       qc.invalidateQueries({ queryKey: ["voucher-detail", id] });
       qc.invalidateQueries({ queryKey: ["vouchers-list"] });
-      navigate(`${engineConfig.path}?copyFrom=${id}`);
+      navigate(`${smartEditPath}?copyFrom=${id}`);
     } catch (e: any) {
       toast.error(e.message);
       setBusy(false);
@@ -273,7 +281,7 @@ export default function VoucherDetail() {
             )}
             {voucher.status === "posted" && (
               <>
-                {VOUCHER_TYPE_CONFIGS[voucher.voucher_type as keyof typeof VOUCHER_TYPE_CONFIGS] && (
+                {smartEditPath && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -289,6 +297,20 @@ export default function VoucherDetail() {
                   onClick={() => setCancelOpen(true)}
                 >
                   <Ban className="h-3.5 w-3.5 mr-1" /> Cancel
+                </Button>
+                {/* deleteVoucher() already supports a posted voucher (checks
+                    document_dependency_report(), then removes items before
+                    the header so the balance-reversal trigger still fires
+                    correctly) -- no voucher this app creates should be
+                    permanently un-removable, so this is offered here the
+                    same way it already is for drafts below. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
                 </Button>
               </>
             )}

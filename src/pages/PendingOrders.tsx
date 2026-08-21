@@ -24,7 +24,7 @@ import { exportPartyWiseReportPdf, exportPartyWiseReportExcel, exportCustomerSha
 import { PendingOrderReportPrintView, type ReportCompanyInfo } from "@/components/pending/PendingOrderReportPrintView";
 import { OrderDetailsPanel } from "@/components/pending/OrderDetailsPanel";
 import { exportReport } from "@/lib/gstExport";
-import { fetchParties, type Party } from "@/lib/parties";
+import { fetchParties, fetchPartyOutstandingBalances, type Party } from "@/lib/parties";
 import { fetchActiveWarehouses, type Warehouse } from "@/lib/warehouses";
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
@@ -111,6 +111,7 @@ const PendingOrders = () => {
 
   const [rows, setRows] = useState<QueueRow[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
+  const [ledgerBalances, setLedgerBalances] = useState<Map<string, number>>(new Map());
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -142,14 +143,18 @@ const PendingOrders = () => {
     if (!user || !business) return;
     setLoading(true);
     try {
-      const [queue, partyList, warehouseList] = await Promise.all([
+      const [queue, partyList, warehouseList, ledgerMap] = await Promise.all([
         fetchPendingOrderQueue(businessId ?? null),
         fetchParties(user.id, "customer"),
         businessId ? fetchActiveWarehouses(businessId) : Promise.resolve([]),
+        // Single source of truth for the over-limit credit-status gate — see
+        // fetchPartyOutstandingBalances() / rdpro_party_outstanding_balance_ghost_data memory.
+        fetchPartyOutstandingBalances(user.id).catch(() => new Map<string, number>()),
       ]);
       setRows(queue);
       setParties(partyList);
       setWarehouses(warehouseList);
+      setLedgerBalances(ledgerMap);
     } catch (e: any) {
       toast.error(e.message ?? "Could not load the order queue");
     } finally {
@@ -212,7 +217,7 @@ const PendingOrders = () => {
   }, [rows, search, activeBuckets, filters]);
 
   const sorted = useMemo(() => [...filtered].sort(fifoCompare), [filtered]);
-  const partyGroups = useMemo(() => groupByParty(sorted, partyDetails), [sorted, partyDetails]);
+  const partyGroups = useMemo(() => groupByParty(sorted, partyDetails, ledgerBalances), [sorted, partyDetails, ledgerBalances]);
   const itemDemand = useMemo(() => computeItemDemand(sorted), [sorted]);
   const selectedRows = useMemo(() => sorted.filter((r) => selectedOrders.has(r.id)), [sorted, selectedOrders]);
   const consolidatedPickList = useMemo(() => buildConsolidatedPickList(selectedRows), [selectedRows]);
@@ -431,23 +436,23 @@ const PendingOrders = () => {
   };
 
   const onExportExcel = () => {
-    const sections = buildPartyWiseReport(sorted, partyDetails);
+    const sections = buildPartyWiseReport(sorted, partyDetails, ledgerBalances);
     exportPartyWiseReportExcel(sections);
   };
   const onExportCustomerShare = () => {
-    const sections = buildPartyWiseReport(sorted, partyDetails);
+    const sections = buildPartyWiseReport(sorted, partyDetails, ledgerBalances);
     if (sections.length > 1) {
       toast.warning(`This file covers ${sections.length} parties — filter to one party first if this is going to a specific customer.`);
     }
     exportCustomerShareReportExcel(sections);
   };
   const onExportPdf = async () => {
-    const sections = buildPartyWiseReport(sorted, partyDetails);
+    const sections = buildPartyWiseReport(sorted, partyDetails, ledgerBalances);
     const info = await getCompanyInfo();
     exportPartyWiseReportPdf(sections, info, fd(new Date().toISOString()));
   };
   const onPrintReport = async () => {
-    const sections = buildPartyWiseReport(sorted, partyDetails);
+    const sections = buildPartyWiseReport(sorted, partyDetails, ledgerBalances);
     await getCompanyInfo();
     setPrintSections(sections);
   };

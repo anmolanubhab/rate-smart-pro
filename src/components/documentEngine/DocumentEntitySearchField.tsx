@@ -17,6 +17,13 @@ interface DocumentEntitySearchFieldProps<T> {
   inputRef?: React.RefObject<HTMLInputElement>;
   inputClassName?: string;
   disabled?: boolean;
+  /** Quick Create Master: when provided, renders a "+ Create New {label}"
+   *  row at the bottom of the dropdown (shown even with zero results, so a
+   *  not-found search immediately offers creation) — screens that omit
+   *  this prop see no behavior change. Context-aware wiring (which entity,
+   *  which permission) is entirely the caller's responsibility. */
+  onQuickCreate?: () => void;
+  quickCreateLabel?: string;
 }
 
 /**
@@ -40,17 +47,25 @@ export function DocumentEntitySearchField<T>({
   inputRef,
   inputClassName,
   disabled,
+  onQuickCreate,
+  quickCreateLabel = "New",
 }: DocumentEntitySearchFieldProps<T>) {
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const fallbackRef = useRef<HTMLInputElement>(null);
   const ref = inputRef ?? fallbackRef;
 
+  // The "+ Create New" row (when onQuickCreate is provided) is one extra
+  // virtual index past the last real result, so Up/Down/Enter navigate it
+  // exactly like any other row instead of needing a second key-handling path.
+  const lastIndex = results.length - 1 + (onQuickCreate ? 1 : 0);
+  const hasAnyRow = results.length > 0 || !!onQuickCreate;
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (open && results.length > 0) {
+    if (open && hasAnyRow) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setHighlightedIndex((prev) => Math.min(prev + 1, results.length - 1));
+        setHighlightedIndex((prev) => Math.min(prev + 1, lastIndex));
         return;
       }
       if (e.key === "ArrowUp") {
@@ -60,6 +75,11 @@ export function DocumentEntitySearchField<T>({
       }
       if (e.key === "Enter") {
         e.preventDefault();
+        if (onQuickCreate && highlightedIndex === results.length) {
+          onQuickCreate();
+          setOpen(false);
+          return;
+        }
         const selected = results[highlightedIndex];
         if (selected) {
           onSelect(selected, "keyboard");
@@ -102,7 +122,7 @@ export function DocumentEntitySearchField<T>({
           "h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
         }
       />
-      {open && results.length > 0 && (
+      {open && hasAnyRow && (
         <div className="absolute z-50 left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-elegant max-h-64 overflow-auto">
           {results.map((item, i) => {
             const isHighlighted = highlightedIndex === i;
@@ -123,6 +143,17 @@ export function DocumentEntitySearchField<T>({
               </button>
             );
           })}
+          {onQuickCreate && (
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onQuickCreate(); setOpen(false); }}
+              className={`w-full text-left px-2 py-1 text-[12px] font-medium text-primary ${
+                highlightedIndex === results.length ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+              }`}
+            >
+              + Create New {quickCreateLabel}
+            </button>
+          )}
         </div>
       )}
     </div>

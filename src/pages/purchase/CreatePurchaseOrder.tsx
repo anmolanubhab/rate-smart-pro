@@ -62,6 +62,8 @@ import { DocumentToolbar, DocumentToolbarButton, type DocumentToolbarAction } fr
 import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
 import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
+import PartyFormDialog from "@/components/parties/PartyFormDialog";
+import { canCreateParty } from "@/lib/permissions";
 import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
 import { DocumentImportExportButtons } from "@/components/documentEngine/DocumentImportExportButtons";
@@ -117,6 +119,7 @@ export default function CreatePurchaseOrder() {
   // Supplier (from parties, type = supplier)
   const [suppliers, setSuppliers] = useState<Party[]>([]);
   const [supplierId, setSupplierId] = useState("");
+  const [quickCreateSupplierOpen, setQuickCreateSupplierOpen] = useState(false);
   const [supplierQuery, setSupplierQuery] = useState("");
 
   // Warehouse
@@ -516,13 +519,16 @@ export default function CreatePurchaseOrder() {
     }
   };
 
+  const supplierQuickCreateAllowed = canCreateParty(role, permissions) && !hasGRN && !isApprovalLocked;
+
   useDocumentShortcuts(
     {
       onSaveDraft: () => handleSave("draft"),
       onSubmit: () => handleSave("pending_approval"),
       onAddRow: addRow,
+      onQuickCreate: supplierQuickCreateAllowed ? () => setQuickCreateSupplierOpen(true) : undefined,
     },
-    [items, supplierId, user, poNumber, poDate],
+    [items, supplierId, user, poNumber, poDate, supplierQuickCreateAllowed],
   );
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -655,6 +661,8 @@ export default function CreatePurchaseOrder() {
                 placeholder="Type to search supplier…"
                 inputRef={supplierInputRef}
                 inputClassName="h-6 text-[12px] font-mono font-semibold px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
+                onQuickCreate={supplierQuickCreateAllowed ? () => setQuickCreateSupplierOpen(true) : undefined}
+                quickCreateLabel="Supplier"
               />
             </DocumentHeaderValue>
 
@@ -981,6 +989,22 @@ export default function CreatePurchaseOrder() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {user && businessId && supplierQuickCreateAllowed && (
+        <PartyFormDialog
+          open={quickCreateSupplierOpen}
+          onOpenChange={setQuickCreateSupplierOpen}
+          businessId={businessId}
+          userId={user.id}
+          presetType="supplier"
+          onSaved={async (party) => {
+            if (user) setSuppliers(await fetchParties(user.id, "supplier"));
+            setSupplierId(party.id);
+            setSupplierQuery(party.name);
+            setTimeout(() => focusCell(0, "part"), 10);
+          }}
+        />
+      )}
 
     </DocumentRoot>
   );

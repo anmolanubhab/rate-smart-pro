@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchLedgersWithBalance, computeInventoryAdjustedProfitLoss, computeClosingStockValue, hasRealStockLedger, fmtInrPrecise, balanceSheetPresentationSign, buildBusinessHeaderLines } from "@/lib/accounting";
+import { fetchLedgersWithBalance, fetchAccountGroupTree, getGroupChildren, sumGroupBalance, computeInventoryAdjustedProfitLoss, computeClosingStockValue, hasRealStockLedger, fmtInrPrecise, balanceSheetPresentationSign, buildBusinessHeaderLines } from "@/lib/accounting";
 import { fetchProducts } from "@/lib/products";
 import { useFormatDate } from "@/lib/dateFormat";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
@@ -20,11 +20,20 @@ export default function BalanceSheet() {
   const { business } = useBusiness();
   const fd = useFormatDate();
   const navigate = useNavigate();
-  const { data: ledgers = [], isLoading } = useQuery({
+  const { data: ledgers = [], isLoading: ledgersLoading } = useQuery({
     queryKey: ["balance-sheet", user?.id, business?.id],
     enabled: !!user?.id,
     queryFn: () => fetchLedgersWithBalance(user!.id),
   });
+  // The Balance Sheet must derive its top-level rows from the group tree,
+  // not from hardcoded "Current Assets"/"Current Liabilities" strings --
+  // this is that tree (business-scoped, arbitrary depth).
+  const { data: groups = [], isLoading: groupsLoading } = useQuery({
+    queryKey: ["balance-sheet-groups", business?.id],
+    enabled: !!business?.id,
+    queryFn: () => fetchAccountGroupTree(business!.id),
+  });
+  const isLoading = ledgersLoading || groupsLoading;
   // Same closing-stock-as-of-today figure ProfitLoss.tsx feeds into
   // computeInventoryAdjustedProfitLoss, so both reports' Net Profit/Loss
   // always agree. It's added below as a synthetic Stock-in-Hand Asset row
@@ -39,80 +48,86 @@ export default function BalanceSheet() {
   });
 
   const data = useMemo(() => {
-    const nature = (l: any) => l.group?.nature;
     // Phase 2: once this business has closed a financial year, Stock-in-Hand
     // and Closing Stock are real, properly-grouped ledgers already present
-    // in `ledgers` -- the asset loop and computeProfitLoss's income loop
+    // in `ledgers` -- the asset rollup and computeProfitLoss's income loop
     // pick them up on their own. Falling back to the synthetic figure only
     // when no real ledger exists yet is what keeps every business that
     // hasn't closed a period looking exactly as it did before Phase 2.
     const stockIsReal = hasRealStockLedger(ledgers);
     const closingStock = stockIsReal ? 0 : computeClosingStockValue(products);
     const { profit } = computeInventoryAdjustedProfitLoss(ledgers, 0, closingStock);
-    // Capital has no seeded children (see fetchAccountGroupTree's doc
-    // comment) -- ledgers post straight to it, so any capital-nature
-    // ledger's group_id already IS the real Capital group's id. Used only
-    // to make the synthetic Net Profit/Loss line's group name (not a real
-    // ledger, so it has no group_id of its own) drill into that same group.
-    const capitalGroupId = ledgers.find((l) => nature(l) === "capital")?.group_id ?? null;
-
-    // Signed natural-value convention: asset/expense ledgers are Dr-positive,
-    // liability/capital/income ledgers are Cr-positive. Summing these SIGNED
-    // contributions -- not Math.abs(balance) per nature -- is what makes
-    // Assets == Liabilities + Capital + Current P&L an unconditional
-    // identity. It falls directly out of the fact that every posted
-    // voucher's dr - cr is zero, so the sum of every ledger's signed balance
-    // across the whole business is always zero too; abs() per nature breaks
-    // that the moment any single ledger ends up on its non-natural side.
-    //
-    // That accounting identity guarantees Total Assets (signed) and Total
-    // Liabilities+Capital+Profit (signed) are always the SAME number. If
-    // that shared number happens to be negative -- which it currently is,
-    // traced to a capital-introduction voucher that had its Bank/Capital
-    // ledgers swapped -- both sides would display as all-negative even
-    // though the sheet is perfectly balanced. `sign` (see
-    // balanceSheetPresentationSign's doc comment) corrects that for DISPLAY
-    // only, as a single uniform multiply applied to every row and total
-    // alike, so it can never change which rows sum into which totals -- it
-    // is not Math.abs() and is not touching the accounting calculation
-    // above, only how its already-correct result is shown.
     const sign = balanceSheetPresentationSign(ledgers);
 
-    // side_tone reflects whether a ledger sits on its natural side --
-    // computed from `signed` (the internal, pre-flip accounting value), NOT
-    // from the flipped display amount. Those are different questions: after
-    // a global flip, a genuinely-anomalous ledger's number can turn positive
-    // for display purposes, but it's still worth color-coding as anomalous.
+    if (groups.length === 0) return { rows: [] as any[], asset: 0, liab: 0 };
+
+    // The Balance Sheet's top-level rows are the group tree's own
+    // second-level groups (Fixed Assets / Investments / Current Assets /
+    // Branch & Divisions under the hidden Assets root; Current Liabilities /
+    // Loans (Liability) under the hidden Liabilities root) -- never a
+    // hardcoded name list. Each row's amount is that group's FULL rolled-up
+    // total (getGroupChildren -> sumGroupBalance, both pure aggregation over
+    // the same signed ledger balances every other report already uses).
+    // Drilling into a row goes to /accounts/group/:id, which walks
+    // arbitrarily deeper (Cash-in-Hand, Bank Accounts, Sundry Debtors, ...)
+    // -- this is Section 9's "expandable Balance Sheet", reusing the
+    // existing drill-down screen rather than duplicating it here.
+    const assetsRoot = groups.find((g) => g.parent_id === null && g.nature === "asset");
+    const liabRoot = groups.find((g) => g.parent_id === null && g.nature === "liability");
+    const capRoot = groups.find((g) => g.parent_id === null && g.nature === "capital" && g.name !== "Profit & Loss A/c");
+    const pnlGroup = groups.find((g) => g.parent_id === null && g.name === "Profit & Loss A/c");
+
     const rows: any[] = [];
     let asset = 0, liab = 0;
-    ledgers.filter(l => nature(l) === "asset" && (l.balance ?? 0) !== 0).forEach(l => {
-      const signed = l.balance ?? 0;
-      asset += signed;
-      rows.push({ side: "Assets", group: l.group?.name ?? "—", item: l.name, amount: signed * sign, side_tone: signed >= 0 ? "success" : "danger", _party_id: l.party_id, _group_id: l.group_id, _ledger_id: l.id });
-    });
+
+    if (assetsRoot) {
+      for (const child of getGroupChildren(assetsRoot.id, groups, ledgers)) {
+        if (child.amount === 0) continue;
+        asset += child.amount;
+        rows.push({
+          side: "Assets", group: child.name, item: "", amount: child.amount * sign,
+          side_tone: child.amount >= 0 ? "success" : "danger",
+          _party_id: child.party_id ?? null,
+          _group_id: child.kind === "group" ? child.id : null,
+          _ledger_id: child.kind === "ledger" ? child.id : "",
+        });
+      }
+    }
     if (!stockIsReal && closingStock !== 0) {
       asset += closingStock;
       rows.push({ side: "Assets", group: "Stock-in-Hand", item: "Closing Stock", amount: closingStock * sign, side_tone: "success", _party_id: null, _group_id: null, _ledger_id: "" });
     }
-    ledgers.filter(l => nature(l) === "liability" && (l.balance ?? 0) !== 0).forEach(l => {
-      const signed = -(l.balance ?? 0);
-      liab += signed;
-      rows.push({ side: "Liabilities", group: l.group?.name ?? "—", item: l.name, amount: signed * sign, side_tone: signed >= 0 ? "warning" : "danger", _party_id: l.party_id, _group_id: l.group_id, _ledger_id: l.id });
-    });
-    ledgers.filter(l => nature(l) === "capital" && (l.balance ?? 0) !== 0).forEach(l => {
-      const signed = -(l.balance ?? 0);
-      liab += signed;
-      rows.push({ side: "Liabilities", group: "Capital", item: l.name, amount: signed * sign, side_tone: signed >= 0 ? "warning" : "danger", _party_id: l.party_id, _group_id: l.group_id, _ledger_id: l.id });
-    });
+
+    if (liabRoot) {
+      for (const child of getGroupChildren(liabRoot.id, groups, ledgers)) {
+        if (child.amount === 0) continue;
+        liab += child.amount;
+        rows.push({
+          side: "Liabilities", group: child.name, item: "", amount: child.amount * sign,
+          side_tone: child.amount >= 0 ? "warning" : "danger",
+          _party_id: child.party_id ?? null,
+          _group_id: child.kind === "group" ? child.id : null,
+          _ledger_id: child.kind === "ledger" ? child.id : "",
+        });
+      }
+    }
+    if (capRoot) {
+      const capAmount = sumGroupBalance(capRoot.id, groups, ledgers);
+      if (capAmount !== 0) {
+        liab += capAmount;
+        rows.push({ side: "Liabilities", group: capRoot.name, item: "", amount: capAmount * sign, side_tone: capAmount >= 0 ? "warning" : "danger", _group_id: capRoot.id });
+      }
+    }
     if (profit !== 0) {
       liab += profit;
       // Tone reflects true profit/loss semantics (green for a profit, red
       // for a loss) regardless of how the presentation sign happens to flip
-      // the displayed magnitude.
-      rows.push({ side: "Liabilities", group: "Capital", item: profit >= 0 ? "Net Profit" : "Net Loss", amount: profit * sign, side_tone: profit >= 0 ? "success" : "danger", _group_id: capitalGroupId });
+      // the displayed magnitude. Its own top-level line (not folded into
+      // Capital Account), matching the reference Balance Sheet layout.
+      rows.push({ side: "Liabilities", group: "Profit & Loss A/c", item: "", amount: profit * sign, side_tone: profit >= 0 ? "success" : "danger", _group_id: pnlGroup?.id ?? null });
     }
     return { rows, asset: asset * sign, liab: liab * sign };
-  }, [ledgers, products]);
+  }, [ledgers, products, groups]);
 
   // Local UI state only -- RD-Pro has no report-view preference system to
   // persist this into, and the task doesn't ask for one. Resets to Standard

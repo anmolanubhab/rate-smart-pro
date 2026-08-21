@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchPartyLedger, fmtInr } from "@/lib/accounting";
 import { fetchAvailableAdvance } from "@/lib/receivePayment";
+import { fetchPartyOutstandingBalance } from "@/lib/parties";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ export default function PartyDashboard() {
   const [ledgerLines, setLedgerLines] = useState<Awaited<ReturnType<typeof fetchPartyLedger>>["lines"]>([]);
   const [closingBalance, setClosingBalance] = useState(0);
   const [availableAdvance, setAvailableAdvance] = useState(0);
+  const [outstanding, setOutstanding] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { document.title = party ? `${party.name} — RD Pro` : "Party — RD Pro"; }, [party]);
@@ -58,7 +60,7 @@ export default function PartyDashboard() {
     if (!partyId || !user || !business) return;
     (async () => {
       setLoading(true);
-      const [{ data: p }, { data: ord }, { data: inv }, ledgerRes, advanceRes] = await Promise.all([
+      const [{ data: p }, { data: ord }, { data: inv }, ledgerRes, advanceRes, outstandingVal] = await Promise.all([
         // parties/orders/sales_invoices are membership-gated in RLS, which
         // answers "may this user touch this company at all" — not "is this
         // the ACTIVE company". A bare .eq("id", partyId) therefore opened
@@ -69,6 +71,10 @@ export default function PartyDashboard() {
         supabase.from("sales_invoices").select("id, invoice_number, grand_total, invoice_date, status").eq("party_id", partyId).eq("business_id", business.id).order("invoice_date", { ascending: false }).limit(10),
         fetchPartyLedger(user.id, partyId).catch(() => ({ ledger: null, lines: [], closingBalance: 0 })),
         business ? fetchAvailableAdvance(business.id, partyId).catch(() => ({ total: 0, advances: [] })) : Promise.resolve({ total: 0, advances: [] }),
+        // Single source of truth for the "Outstanding"/credit-limit tile —
+        // prefers the linked ledger over the raw parties.outstanding_balance
+        // column (rdpro_party_outstanding_balance_ghost_data memory).
+        fetchPartyOutstandingBalance(user.id, partyId).catch(() => null),
       ]);
 
       setParty((p as PartyRow) ?? null);
@@ -77,6 +83,7 @@ export default function PartyDashboard() {
       setLedgerLines(ledgerRes.lines.slice(0, 8));
       setClosingBalance(ledgerRes.closingBalance);
       setAvailableAdvance(advanceRes.total);
+      setOutstanding(outstandingVal ?? Number((p as PartyRow | null)?.outstanding_balance) ?? 0);
 
       if (p?.party_group_id) {
         const { data: g } = await supabase.from("party_groups").select("id, name").eq("id", p.party_group_id).eq("business_id", business.id).maybeSingle();
@@ -95,7 +102,6 @@ export default function PartyDashboard() {
     return <div className="p-8 text-center text-sm text-muted-foreground">Party not found.</div>;
   }
 
-  const outstanding = Number(party.outstanding_balance) || 0;
   const creditLimit = Number(party.credit_limit) || 0;
   const availableCredit = creditLimit > 0 ? Math.max(0, creditLimit - outstanding) : null;
   const overdueInvoices = invoices.filter((i) => daysOverdue(i.invoice_date) > 0);

@@ -86,6 +86,7 @@ export const TemplateRegistry: Record<string, OutputCenterConfig> = {
   trial_balance: { id: "trial_balance", category: "statement", label: "Trial Balance", enabledActions: STATEMENT_ACTIONS },
   balance_sheet: { id: "balance_sheet", category: "statement", label: "Balance Sheet", enabledActions: STATEMENT_ACTIONS },
   profit_loss: { id: "profit_loss", category: "statement", label: "Profit & Loss", enabledActions: STATEMENT_ACTIONS },
+  group_summary: { id: "group_summary", category: "statement", label: "Group Summary", enabledActions: STATEMENT_ACTIONS },
 };
 
 export function getOutputCenterConfig(documentTypeId: string): OutputCenterConfig | undefined {

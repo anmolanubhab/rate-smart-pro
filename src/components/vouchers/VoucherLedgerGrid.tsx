@@ -28,6 +28,10 @@ interface Props {
   onRemoveRow: (idx: number) => void;
   /** Row index whose ledger cell is locked (e.g. Financial Adjustment category default). */
   lockedRowIndex?: number | null;
+  /** Quick Create Master: renders a "+ Create New" entry at the bottom of a
+   *  row's dropdown when provided. Context-aware dispatch (Party vs Ledger)
+   *  is the caller's job — this component just reports which row asked. */
+  onQuickCreate?: (rowIndex: number) => void;
 }
 
 interface DropdownRect {
@@ -66,7 +70,7 @@ function computeDropdownRect(input: HTMLInputElement): DropdownRect {
  * such an ancestor, which used to cut the dropdown down to ~1 visible row.
  */
 export default function VoucherLedgerGrid({
-  items, minRows, ledgersLoading, ledgerOptionsForRow, onUpdateRow, onAddRow, onRemoveRow, lockedRowIndex,
+  items, minRows, ledgersLoading, ledgerOptionsForRow, onUpdateRow, onAddRow, onRemoveRow, lockedRowIndex, onQuickCreate,
 }: Props) {
   const { handleKey: handleGridKey } = useDocumentGridNavigation(COLS);
 
@@ -197,7 +201,7 @@ export default function VoucherLedgerGrid({
       <div className="px-5 py-3 border-b border-border flex items-center justify-between">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Ledger Entries</h2>
         <Button variant="outline" size="sm" onClick={onAddRow}>
-          <Plus className="h-3.5 w-3.5 mr-1" /> Add Row (Alt+N)
+          <Plus className="h-3.5 w-3.5 mr-1" /> Add Row
         </Button>
       </div>
 
@@ -279,7 +283,7 @@ export default function VoucherLedgerGrid({
         )}
       />
 
-      {searchIdx !== null && dropdownRect && results(searchIdx).length > 0 && createPortal(
+      {searchIdx !== null && dropdownRect && (results(searchIdx).length > 0 || onQuickCreate) && createPortal(
         <div
           className="fixed z-[100] bg-popover border border-border rounded-lg shadow-elegant overflow-auto"
           style={{ top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, maxHeight: dropdownRect.maxHeight }}
@@ -302,6 +306,15 @@ export default function VoucherLedgerGrid({
               )}
             </button>
           ))}
+          {onQuickCreate && (
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onQuickCreate(searchIdx); closeDropdown(); }}
+              className="w-full text-left px-3 py-1.5 text-[13px] font-medium text-primary hover:bg-muted bg-popover"
+            >
+              + Create New{results(searchIdx).length === 0 ? ` (no match for "${searchTerm}")` : ""}
+            </button>
+          )}
         </div>,
         document.body
       )}

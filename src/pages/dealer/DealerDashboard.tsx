@@ -20,7 +20,6 @@ type RecentOrder = {
 type PartyInfo = {
   name: string | null;
   credit_limit: number | null;
-  outstanding_balance: number | null;
 };
 
 const inr = (n: number | null | undefined) =>
@@ -32,6 +31,7 @@ export default function DealerDashboard() {
   const [party, setParty] = useState<PartyInfo | null>(null);
   const [orders, setOrders] = useState<RecentOrder[]>([]);
   const [mtdCount, setMtdCount] = useState<number>(0);
+  const [outstanding, setOutstanding] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,10 +44,10 @@ export default function DealerDashboard() {
       monthStart.setHours(0, 0, 0, 0);
       const monthIso = monthStart.toISOString().slice(0, 10);
 
-      const [partyRes, ordersRes, mtdRes] = await Promise.all([
+      const [partyRes, ordersRes, mtdRes, outstandingRes] = await Promise.all([
         supabase
           .from("parties")
-          .select("name, credit_limit, outstanding_balance")
+          .select("name, credit_limit")
           .eq("id", portalUser.party_id)
           .eq("business_id", portalUser.business_id)
           .maybeSingle(),
@@ -64,12 +64,16 @@ export default function DealerDashboard() {
           .eq("party_id", portalUser.party_id)
           .eq("business_id", portalUser.business_id)
           .gte("order_date", monthIso),
+        // Single source of truth for a party's outstanding balance — see
+        // get_party_outstanding_balance() (rdpro_party_outstanding_balance_ghost_data memory).
+        supabase.rpc("get_party_outstanding_balance" as never, { _party_id: portalUser.party_id } as never),
       ]);
 
       if (cancelled) return;
       setParty((partyRes.data as PartyInfo) ?? null);
       setOrders((ordersRes.data as RecentOrder[]) ?? []);
       setMtdCount(mtdRes.count ?? 0);
+      setOutstanding(Number(outstandingRes.data) || 0);
       setLoading(false);
     })();
     return () => {
@@ -77,7 +81,6 @@ export default function DealerDashboard() {
     };
   }, [portalUser]);
 
-  const outstanding = party?.outstanding_balance ?? 0;
   const creditLimit = party?.credit_limit ?? 0;
   const available = Math.max(0, creditLimit - outstanding);
   const lastOrder = orders[0];

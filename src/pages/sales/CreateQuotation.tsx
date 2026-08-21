@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { fetchParties, Party } from "@/lib/parties";
+import { fetchParties, Party, fetchPartyOutstandingBalances, resolvePartyOutstanding } from "@/lib/parties";
 import { searchProducts, Product } from "@/lib/products";
 import { computeItem, computeTotals, OrderItem } from "@/lib/orders";
 import {
@@ -73,6 +73,7 @@ const CreateQuotation = () => {
   const baseTitle = printOnLoad ? "Quotation" : "Quotation Entry — RD Pro";
 
   const [parties, setParties] = useState<Party[]>([]);
+  const [ledgerBalances, setLedgerBalances] = useState<Map<string, number>>(new Map());
   const [partyId, setPartyId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
 
@@ -162,6 +163,9 @@ const CreateQuotation = () => {
         if (partyQuery) checkExactPartyMatch(partyQuery, data);
       })
       .catch((e) => toast.error(e.message));
+    // Single source of truth for the "Current Balance" line — see
+    // fetchPartyOutstandingBalances() / rdpro_party_outstanding_balance_ghost_data memory.
+    fetchPartyOutstandingBalances(user.id).then(setLedgerBalances).catch(() => {});
 
     if (!editId) {
       const biz = business?.id ?? getActiveBusinessIdSync();
@@ -489,7 +493,10 @@ const CreateQuotation = () => {
             <>
               <DocumentHeaderLabel>Current Balance</DocumentHeaderLabel>
               <DocumentHeaderValue className="italic">
-                ₹{fmt(Number(party.outstanding_balance) || 0)} <span className="text-muted-foreground not-italic">Dr</span>
+                ₹{fmt(Math.abs(resolvePartyOutstanding(party, ledgerBalances)))}{" "}
+                <span className="text-muted-foreground not-italic">
+                  {resolvePartyOutstanding(party, ledgerBalances) < 0 ? "Cr" : "Dr"}
+                </span>
               </DocumentHeaderValue>
               <DocumentHeaderLabel align="right">GSTIN</DocumentHeaderLabel>
               <DocumentHeaderValue>{party.gst || "—"}</DocumentHeaderValue>

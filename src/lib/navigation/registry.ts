@@ -61,6 +61,7 @@ import {
   HelpCircle,
   Keyboard,
   Mail,
+  Network,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -702,6 +703,26 @@ export const NAV_ITEMS: NavItem[] = [
     gatewayPath: ["Masters", "Accounts"],
   },
   {
+    id: "accounts-groups",
+    title: "Account Groups",
+    description: "Group hierarchy that ledgers, Balance Sheet, and P&L are built from",
+    route: "/accounts/groups",
+    icon: Network,
+    module: "Accounts",
+    aliases: ["group master", "tally groups"],
+    gatewayPath: ["Masters", "Accounts"],
+  },
+  {
+    id: "accounts-chart-of-accounts",
+    title: "Chart of Accounts",
+    description: "Groups and ledgers in one tree — create, edit, move, or open any report",
+    route: "/accounts/chart-of-accounts",
+    icon: Network,
+    module: "Accounts",
+    aliases: ["coa"],
+    gatewayPath: ["Masters", "Accounts"],
+  },
+  {
     id: "accounts-day-book",
     title: "Day Book",
     description: "All transactions for a given day",
@@ -772,6 +793,17 @@ export const NAV_ITEMS: NavItem[] = [
     description: "Balance sheet report",
     route: "/accounts/balance-sheet",
     icon: FileSpreadsheet,
+    module: "Accounts",
+    parentId: "accounts-reports-group",
+    showInSidebar: false,
+    gatewayPath: ["Reports", "Accounting"],
+  },
+  {
+    id: "accounts-group-summary",
+    title: "Group Summary",
+    description: "Every group's balance, expand/collapse, drill-down to ledgers",
+    route: "/accounts/group-summary",
+    icon: Network,
     module: "Accounts",
     parentId: "accounts-reports-group",
     showInSidebar: false,

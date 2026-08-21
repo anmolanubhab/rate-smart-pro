@@ -1,0 +1,44 @@
+-- Product decision (user-requested, 2026-08-21): no voucher the app creates
+-- should be permanently unmodifiable through the app itself. Opening Balance
+-- migration vouchers previously got a special hard lock
+-- (enforce_opening_balance_voucher_lock, defined in
+-- 20260818160000_phase3_opening_balance_migration.sql -- BEFORE UPDATE OR
+-- DELETE on both vouchers and voucher_items once posted) that blocked
+-- Cancel/Edit/Delete unconditionally -- the only voucher type in the app
+-- with no way back.
+--
+-- Removing this lock does NOT weaken correctness: every other voucher type
+-- already goes through the same standard, safe mechanism these vouchers now
+-- use too --
+--   - Cancel: vouchers_sync_balance_on_status_change() applies the exact
+--     negated per-line delta via apply_ledger_balance_delta() on
+--     posted->cancelled, so every ledger nets back to zero by construction
+--     (real Dr=Cr reversal, not a special case).
+--   - Delete: deleteVoucher() (src/lib/voucherService.ts) already checks
+--     document_dependency_report() before deleting a posted voucher, then
+--     removes items before the header so the same balance-reversal trigger
+--     fires correctly. prevent_posted_voucher_delete() additionally still
+--     blocks a HARD delete while status is still 'posted' for any voucher
+--     with a reference_type (opening-balance ones included) -- cancel first,
+--     then delete, exactly the two-step pattern already used everywhere
+--     else in the app.
+--   - Edit: Smart Edit (cancel + recreate via ?copyFrom=) works for any
+--     voucher shape since voucher_items are generic ledger/dr/cr rows; see
+--     src/pages/accounting/VoucherDetail.tsx, which now offers Edit/Delete
+--     for opening_balance vouchers too, routing Edit to the Journal voucher
+--     entry form (there is no dedicated opening-balance entry form outside
+--     the migration wizard).
+--
+-- Confirmed via a full pg_proc sweep this was the ONLY unconditional
+-- "can never be touched again" trigger in the schema; the financial-year
+-- close lock (enforce_financial_year_lock) is untouched -- that is a
+-- legitimate, different, period-based rule (any voucher dated in an
+-- already-closed year), not a migration-specific one. Verified end-to-end
+-- against two disposable opening_balance vouchers: cancel correctly
+-- reversed ledger balances to their pre-voucher values, and the
+-- cancel-then-delete sequence left zero residue (Trial Balance unchanged
+-- across all businesses).
+
+DROP TRIGGER IF EXISTS trg_lock_opening_balance_items ON public.voucher_items;
+DROP TRIGGER IF EXISTS trg_lock_opening_balance_voucher ON public.vouchers;
+DROP FUNCTION IF EXISTS public.enforce_opening_balance_voucher_lock();

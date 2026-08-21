@@ -11,6 +11,12 @@ export interface DocumentShortcutHandlers {
   onAddRow?: () => void;
   /** Ctrl/Cmd+Alt+N — jump to a fresh "new document" page. */
   onNewDocument?: () => void;
+  /** Ctrl/Cmd+N (no Alt — confirmed unbound on every Document Engine screen,
+   *  unlike bare Alt+N which is already "add row") — Quick Create Master
+   *  for whichever entity field currently has focus. Opt-in: only screens
+   *  that pass this handler get the shortcut; omitting it is a no-op, same
+   *  as every other handler here. */
+  onQuickCreate?: () => void;
   /** Escape — close/back to list. */
   onEscape?: () => void;
   /** F2 — edit the focused/selected row (list pages). */
@@ -43,6 +49,13 @@ export function useDocumentShortcuts(handlers: DocumentShortcutHandlers, deps: R
         if (handlers.onNewDocument) {
           e.preventDefault();
           handlers.onNewDocument();
+        }
+        return;
+      }
+      if (ctrlOrCmd && !e.altKey && e.key.toLowerCase() === "n") {
+        if (handlers.onQuickCreate) {
+          e.preventDefault();
+          handlers.onQuickCreate();
         }
         return;
       }

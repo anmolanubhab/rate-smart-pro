@@ -55,6 +55,9 @@ const PendingOrders = lazy(() => import("./pages/PendingOrders"));
 const Dispatch = lazy(() => import("./pages/Dispatch"));
 
 const LedgerAccounts = lazy(() => import("./pages/accounts/LedgerAccounts"));
+const AccountGroups = lazy(() => import("./pages/accounts/AccountGroups"));
+const ChartOfAccounts = lazy(() => import("./pages/accounts/ChartOfAccounts"));
+const GroupSummary = lazy(() => import("./pages/accounts/GroupSummary"));
 const VoucherCenter = lazy(() => import("./pages/accounts/VoucherCenter"));
 const DayBook = lazy(() => import("./pages/accounts/DayBook"));
 const CashBook = lazy(() => import("./pages/accounts/CashBook"));
@@ -367,6 +370,9 @@ const App = () => (
               <Route path="/settings" element={L(<Settings />)} />
               <Route path="/profile" element={L(<Profile />)} />
               <Route path="/accounts/ledgers" element={L(<LedgerAccounts />)} />
+              <Route path="/accounts/groups" element={L(<AccountGroups />)} />
+              <Route path="/accounts/chart-of-accounts" element={L(<ChartOfAccounts />)} />
+              <Route path="/accounts/group-summary" element={L(<GroupSummary />)} />
               <Route path="/accounts/vouchers" element={L(<VoucherCenter />)} />
               <Route path="/accounts/day-book" element={L(<DayBook />)} />
               <Route path="/accounts/cash-book" element={L(<CashBook />)} />

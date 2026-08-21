@@ -10,8 +10,12 @@ export interface VoucherShortcutHandlers {
   onSave?: () => void;
   /** Escape — exit to the Voucher Center. */
   onEscape?: () => void;
-  /** Ctrl+N — open the quick "create ledger" dialog. */
-  onNewLedger?: () => void;
+  /** Ctrl+N (and Alt+N, free in this engine) — Quick Create Master for
+   *  whichever row/field currently has focus. The caller decides which
+   *  dialog to open (Party vs Ledger) based on that row's filter
+   *  (rowFilterFor) — this hook only fires the one callback for either
+   *  key combo, generalized from the old ledger-only "Ctrl+N" binding. */
+  onQuickCreate?: () => void;
   /** Ctrl+B — open the bill allocation panel (Payment/Receipt only). */
   onBillAllocation?: () => void;
 }
@@ -84,10 +88,10 @@ export function useVoucherShortcuts(handlers: VoucherShortcutHandlers, deps: Rea
         return;
       }
 
-      if (ctrlOrCmd && e.key.toLowerCase() === "n") {
-        if (handlers.onNewLedger) {
+      if ((ctrlOrCmd || e.altKey) && e.key.toLowerCase() === "n") {
+        if (handlers.onQuickCreate) {
           e.preventDefault();
-          handlers.onNewLedger();
+          handlers.onQuickCreate();
         }
         return;
       }
