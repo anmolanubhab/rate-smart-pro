@@ -16,7 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AlertCircle, Building2, MapPin, BookOpen, Tag, Globe, FileText, History } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { ensurePartyLedgers } from "@/lib/accounting";
+import { ensurePartyLedgers, syncPartyLedgerName } from "@/lib/accounting";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -298,6 +298,26 @@ export default function PartyFormDialog({ open, onOpenChange, businessId, userId
       if (editing) {
         const { error } = await supabase.from("parties").update(payload).eq("id", editing.id);
         if (error) throw error;
+        // The party's linked ledger_accounts row keeps its own `name`
+        // snapshot (taken when the ledger was first created by
+        // ensure_party_ledger) rather than reading the party's name live --
+        // Voucher Center, Ledger Accounts, and every report display that
+        // ledger name. Left unsynced, a renamed party (e.g. a test party
+        // corrected to the real supplier name) keeps showing its old name
+        // everywhere accounting entries reference it, even though the
+        // party record itself is right.
+        if (form.name.trim() !== editing.name) {
+          try {
+            await syncPartyLedgerName(editing.id, businessId, form.name.trim());
+          } catch (ledgerErr: any) {
+            // Non-fatal: the party record itself already saved successfully
+            // above. Surface it rather than swallowing it, since a failure
+            // here means the ledger name silently drifts from the party
+            // name again -- the exact bug this sync exists to prevent.
+            console.error("Failed to sync ledger name after party rename:", ledgerErr);
+            toast.warning("Party saved, but its ledger name could not be synced. It may still show the old name in Voucher Center and reports.");
+          }
+        }
       } else {
         // Only a brand-new party gets these two written -- it has no
         // linked ledger yet, so 0 is simply correct (see the comment
