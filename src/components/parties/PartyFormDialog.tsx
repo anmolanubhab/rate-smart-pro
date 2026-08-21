@@ -225,7 +225,20 @@ export default function PartyFormDialog({ open, onOpenChange, businessId, userId
     if (!form.name.trim()) return toast.error("Party name is required");
     setSaving(true);
     try {
-      const payload = {
+      // outstanding_balance is trigger-maintained from the party's linked
+      // ledger (apply_ledger_balance_delta(), fired on every posted
+      // voucher) the moment one exists -- re-sending whatever this dialog
+      // loaded at open time on every EDIT save would clobber a fresher
+      // trigger write with a stale snapshot (exactly what produced a party
+      // showing ₹10,300 outstanding while its real ledger sat at ₹0).
+      // opening_balance carries the same risk despite being read-only in
+      // this form (nothing mutates it after load, but it can still go
+      // stale between open and save, e.g. via the Opening Balance
+      // Migration wizard). Both are safe to include on CREATE (a brand
+      // new party has no ledger yet, so 0 is simply correct), but must be
+      // omitted from an UPDATE payload so editing any other field never
+      // re-persists a stale ledger-adjacent number.
+      const payload: Record<string, unknown> = {
         user_id: userId,
         business_id: businessId,
         name: form.name.trim(),
@@ -239,7 +252,6 @@ export default function PartyFormDialog({ open, onOpenChange, businessId, userId
         shipping_address: form.shipping_address.trim() || null,
         beat: form.beat.trim() || null,
         credit_limit: parseFloat(form.credit_limit) || 0,
-        outstanding_balance: parseFloat(form.outstanding_balance) || 0,
         notes: form.notes.trim() || null,
         party_group_id: form.party_group_id || null,
         use_group_defaults: form.use_group_defaults,
@@ -263,7 +275,6 @@ export default function PartyFormDialog({ open, onOpenChange, businessId, userId
         country: form.country.trim() || null,
         maps_link: form.maps_link.trim() || null,
         ledger_name: form.ledger_name.trim() || null,
-        opening_balance: parseFloat(form.opening_balance) || 0,
         balance_type: form.balance_type,
         credit_enabled: form.credit_enabled,
         credit_days: parseInt(form.credit_days, 10) || 0,
@@ -285,7 +296,14 @@ export default function PartyFormDialog({ open, onOpenChange, businessId, userId
         const { error } = await supabase.from("parties").update(payload).eq("id", editing.id);
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from("parties").insert(payload).select("id").single();
+        // Only a brand-new party gets these two written -- it has no
+        // linked ledger yet, so 0 is simply correct (see the comment
+        // above `payload`).
+        const { data, error } = await supabase.from("parties").insert({
+          ...payload,
+          outstanding_balance: parseFloat(form.outstanding_balance) || 0,
+          opening_balance: parseFloat(form.opening_balance) || 0,
+        }).select("id").single();
         if (error) throw error;
         savedId = (data as any).id;
       }

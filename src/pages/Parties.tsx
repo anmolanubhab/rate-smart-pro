@@ -20,6 +20,7 @@ import { ProductsPagination } from "@/components/ProductsPagination";
 import { useDebounce } from "@/hooks/useDebounce";
 import PartyExcelUpload from "@/components/PartyExcelUpload";
 import { fetchParties, Party } from "@/lib/parties";
+import { fetchLedgersWithBalance, naturalSignedValue } from "@/lib/accounting";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,12 +78,32 @@ async function fetchPartiesPage(
   return { items: ((data ?? []) as unknown as Party[]), total: count ?? 0 };
 }
 
-async function fetchSummaryCounts(userId: string, businessId: string | null) {
+// parties.outstanding_balance is trigger-maintained from a party's linked
+// ledger, but it's also a plain column PartyExcelUpload (and, until
+// recently, PartyFormDialog) can write directly -- so it can silently go
+// stale relative to the real ledger. Every party WITH a linked ledger
+// (ledger_accounts.party_id) has its outstanding balance recomputed live
+// here from that ledger, via the exact same signed-balance function every
+// other accounting report uses (naturalSignedValue) -- never the stored
+// column, when a better source exists. Parties with no linked ledger yet
+// (the vast majority -- only preferred_customer/preferred_supplier
+// parties get one) fall back to the stored value, since there's nothing
+// better to show for them.
+async function fetchPartyLedgerBalances(userId: string): Promise<Map<string, number>> {
+  const ledgers = await fetchLedgersWithBalance(userId);
+  const map = new Map<string, number>();
+  for (const l of ledgers) {
+    if (l.party_id) map.set(l.party_id, naturalSignedValue(l));
+  }
+  return map;
+}
+
+async function fetchSummaryCounts(userId: string, businessId: string | null, ledgerBalances: Map<string, number>) {
   // These are the OUTSTANDING / credit-limit aggregates on the page header.
   if (!businessId) return { total: 0, active: 0, blocked: 0, totalCredit: 0, totalOutstanding: 0 };
   const q = supabase
     .from("parties")
-    .select("outstanding_balance, credit_limit")
+    .select("id, outstanding_balance, credit_limit")
     .eq("business_id", businessId)
     .eq("user_id", userId);
   const { data, error } = await q;
@@ -93,7 +114,7 @@ async function fetchSummaryCounts(userId: string, businessId: string | null) {
     active: all.length,
     blocked: 0,
     totalCredit: all.reduce((s, p) => s + Number(p.credit_limit ?? 0), 0),
-    totalOutstanding: all.reduce((s, p) => s + Number(p.outstanding_balance ?? 0), 0),
+    totalOutstanding: all.reduce((s, p) => s + (ledgerBalances.get(p.id) ?? Number(p.outstanding_balance ?? 0)), 0),
   };
 }
 
@@ -140,6 +161,7 @@ const Parties = () => {
   const [total, setTotal]       = useState(0);
   const [loading, setLoading]   = useState(true);
   const [summary, setSummary]   = useState({ total: 0, active: 0, blocked: 0, totalCredit: 0, totalOutstanding: 0 });
+  const [ledgerBalances, setLedgerBalances] = useState<Map<string, number>>(new Map());
   const [exporting, setExporting] = useState(false);
 
   const [page, setPage]         = useState(1);
@@ -156,13 +178,15 @@ const Parties = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const [pageResult, counts] = await Promise.all([
+      const [pageResult, ledgerMap] = await Promise.all([
         fetchPartiesPage(user.id, businessId, page, pageSize, debouncedSearch, sort),
-        fetchSummaryCounts(user.id, businessId),
+        fetchPartyLedgerBalances(user.id),
       ]);
+      const counts = await fetchSummaryCounts(user.id, businessId, ledgerMap);
       setParties(pageResult.items);
       setTotal(pageResult.total);
       setSummary(counts);
+      setLedgerBalances(ledgerMap);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -270,7 +294,7 @@ const Parties = () => {
         ...rows.map(p => [
           p.name, p.phone||"", p.gst||"", p.address||"",
           p.billing_address||"", p.shipping_address||"",
-          p.beat||"", p.credit_limit??0, p.outstanding_balance??0,
+          p.beat||"", p.credit_limit??0, effectiveOutstanding(p),
           p.default_discount??0, p.agreed_discount??0, p.notes||""
         ].map(esc).join(","))
       ].join("\n");
@@ -290,10 +314,19 @@ const Parties = () => {
     }
   };
 
+  // Prefer the live ledger balance (fetchPartyLedgerBalances) over the
+  // stored parties.outstanding_balance column, whenever this party has a
+  // linked ledger -- see that function's doc comment for why the column
+  // alone can't be trusted.
+  const effectiveOutstanding = useCallback(
+    (p: Party) => ledgerBalances.get(p.id) ?? Number(p.outstanding_balance ?? 0),
+    [ledgerBalances]
+  );
+
   // ── Status badge ──────────────────────────────────────────────────────────
 
   const StatusBadge = ({ p }: { p: Party }) => {
-    const over = Number(p.outstanding_balance) > Number(p.credit_limit) && Number(p.credit_limit) > 0;
+    const over = effectiveOutstanding(p) > Number(p.credit_limit) && Number(p.credit_limit) > 0;
     if (over) return <Badge variant="outline" className="border-destructive/30 text-destructive bg-destructive/5 text-xs">Over Limit</Badge>;
     return <Badge variant="outline" className="border-emerald-500/30 text-emerald-600 bg-emerald-500/5 text-xs">Active</Badge>;
   };
@@ -382,7 +415,8 @@ const Parties = () => {
                 </tr>
               ) : (
                 parties.map((p) => {
-                  const overLimit = Number(p.outstanding_balance) > Number(p.credit_limit) && Number(p.credit_limit) > 0;
+                  const outstanding = effectiveOutstanding(p);
+                  const overLimit = outstanding > Number(p.credit_limit) && Number(p.credit_limit) > 0;
                   return (
                     <tr key={p.id} className="border-t border-border hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-2.5 font-medium">
@@ -405,7 +439,7 @@ const Parties = () => {
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
                         <span className={overLimit ? "text-destructive font-semibold" : ""}>
-                          {Number(p.outstanding_balance) > 0 ? `₹${Number(p.outstanding_balance).toLocaleString()}` : "—"}
+                          {outstanding !== 0 ? `₹${Math.abs(outstanding).toLocaleString()} ${outstanding < 0 ? "Cr" : "Dr"}` : "—"}
                         </span>
                       </td>
                       <td className="px-4 py-2.5"><StatusBadge p={p} /></td>
