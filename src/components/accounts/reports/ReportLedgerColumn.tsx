@@ -54,7 +54,12 @@ export default function ReportLedgerColumn({
                     ₹ {fmt(g.subtotal)}
                   </td>
                 </tr>
-                {g.items.map((it, idx) => {
+                {/* An empty item string means the bucket's header amount IS
+                    the whole story (e.g. Balance Sheet's top-level group
+                    rollup rows, where there's nothing finer to show without
+                    a real drill-down) -- rendering it would just repeat the
+                    header's own amount on a blank line. */}
+                {g.items.filter((it) => it.item !== "").map((it, idx) => {
                   const clickable = !!(it._party_id || it._ledger_id);
                   return (
                     <tr key={idx} className={clickable ? "cursor-pointer hover:bg-muted/30" : ""} onClick={() => clickable && onLedgerClick?.(it)}>

@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { computeTrialBalance, computeProfitLoss, computeInventoryAdjustedProfitLoss, netProfitWithInventory, computeClosingStockValue, rollForwardOpeningBalance, hasRealStockLedger, type LedgerRow } from "./accounting";
+import {
+  computeTrialBalance, computeProfitLoss, computeInventoryAdjustedProfitLoss, netProfitWithInventory,
+  computeClosingStockValue, rollForwardOpeningBalance, hasRealStockLedger,
+  getGroupChildren, sumGroupBalance, buildAccountHierarchy, getGroupPath,
+  type LedgerRow, type AccountGroupNode,
+} from "./accounting";
 
 const ledger = (over: Partial<LedgerRow>): LedgerRow => ({
   id: over.id ?? Math.random().toString(),
@@ -310,5 +315,112 @@ describe("hasRealStockLedger (Phase 2 — period-close adoption gate)", () => {
 
   it("is false on an empty ledger set", () => {
     expect(hasRealStockLedger([])).toBe(false);
+  });
+});
+
+describe("Tally-style group hierarchy rollup (Phase 1 reshape: Current Assets / Current Liabilities / Capital Account / Profit & Loss A/c)", () => {
+  // Mirrors the shape the reshape migration + seed_accounting_defaults now
+  // create: a hidden nature root, one visible "display" group per Balance
+  // Sheet row (Current Assets, Fixed Assets, Current Liabilities, Loans
+  // (Liability)), and leaf groups nested a level deeper under those.
+  const g = (over: Partial<AccountGroupNode>): AccountGroupNode => ({
+    id: over.id ?? Math.random().toString(),
+    name: over.name ?? "Group",
+    parent_id: over.parent_id ?? null,
+    nature: over.nature ?? "asset",
+    allow_ledger_creation: over.allow_ledger_creation ?? true,
+  });
+
+  const assets = g({ id: "assets", name: "Assets", parent_id: null, nature: "asset" });
+  const currentAssets = g({ id: "cur-assets", name: "Current Assets", parent_id: "assets", nature: "asset" });
+  const fixedAssets = g({ id: "fixed-assets", name: "Fixed Assets", parent_id: "assets", nature: "asset" });
+  const cashInHand = g({ id: "cash", name: "Cash-in-Hand", parent_id: "cur-assets", nature: "asset" });
+  const bankAccounts = g({ id: "bank", name: "Bank Accounts", parent_id: "cur-assets", nature: "asset" });
+
+  const liabilities = g({ id: "liab", name: "Liabilities", parent_id: null, nature: "liability" });
+  const currentLiabilities = g({ id: "cur-liab", name: "Current Liabilities", parent_id: "liab", nature: "liability" });
+  const sundryCreditors = g({ id: "creditors", name: "Sundry Creditors", parent_id: "cur-liab", nature: "liability" });
+
+  const capitalAccount = g({ id: "cap", name: "Capital Account", parent_id: null, nature: "capital" });
+  const pnl = g({ id: "pnl", name: "Profit & Loss A/c", parent_id: null, nature: "capital", allow_ledger_creation: false });
+
+  const groups = [assets, currentAssets, fixedAssets, cashInHand, bankAccounts, liabilities, currentLiabilities, sundryCreditors, capitalAccount, pnl];
+
+  const ledger = (over: Partial<LedgerRow>): LedgerRow => ({
+    id: over.id ?? Math.random().toString(),
+    name: over.name ?? "Ledger",
+    ledger_type: over.ledger_type ?? "asset",
+    group_id: over.group_id ?? null,
+    party_id: over.party_id ?? null,
+    opening_balance: 0,
+    opening_balance_type: "dr",
+    is_system: false,
+    status: "active",
+    group: over.group ?? null,
+    balance: over.balance,
+  });
+
+  const ledgers = [
+    ledger({ name: "Cash Account", group_id: "cash", group: { name: "Cash-in-Hand", nature: "asset" }, balance: 10000 }),
+    ledger({ name: "HDFC Bank", group_id: "bank", group: { name: "Bank Accounts", nature: "asset" }, balance: 25000 }),
+    ledger({ name: "Office Furniture", group_id: "fixed-assets", group: { name: "Fixed Assets", nature: "asset" }, balance: 5000 }),
+    ledger({ name: "Tata Motors Ltd.", group_id: "creditors", group: { name: "Sundry Creditors", nature: "liability" }, balance: -15000 }),
+    ledger({ name: "Capital Account", group_id: "cap", group: { name: "Capital Account", nature: "capital" }, balance: -25000 }),
+  ];
+
+  it("rolls Cash-in-Hand + Bank Accounts up into Current Assets, and Current Assets + Fixed Assets up into Assets", () => {
+    expect(sumGroupBalance("cur-assets", groups, ledgers)).toBe(35000);
+    expect(sumGroupBalance("assets", groups, ledgers)).toBe(40000);
+  });
+
+  it("Balance Sheet's top-level rows (getGroupChildren of the hidden Assets root) are Current Assets + Fixed Assets, not the leaf ledgers", () => {
+    const rows = getGroupChildren("assets", groups, ledgers);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "group", name: "Current Assets", amount: 35000 }),
+        expect.objectContaining({ kind: "group", name: "Fixed Assets", amount: 5000 }),
+      ])
+    );
+    // Cash-in-Hand/Bank Accounts must NOT appear as their own top-level rows
+    // anymore -- they only surface one click deeper, via AccountGroupDrillDown.
+    expect(rows.some((r) => r.name === "Cash-in-Hand")).toBe(false);
+  });
+
+  it("Current Liabilities rolls up Sundry Creditors the same way", () => {
+    const rows = getGroupChildren("liab", groups, ledgers);
+    expect(rows).toEqual([expect.objectContaining({ kind: "group", name: "Current Liabilities", amount: 15000 })]);
+  });
+
+  it("Capital Account and Profit & Loss A/c are separate top-level groups (P&L never folds into Capital)", () => {
+    expect(capitalAccount.parent_id).toBeNull();
+    expect(pnl.parent_id).toBeNull();
+    expect(pnl.id).not.toBe(capitalAccount.id);
+    expect(sumGroupBalance("cap", groups, ledgers)).toBe(25000);
+  });
+
+  it("getGroupPath returns the full ancestor chain for a deeply nested leaf", () => {
+    const path = getGroupPath("cash", groups).map((n) => n.name);
+    expect(path).toEqual(["Assets", "Current Assets", "Cash-in-Hand"]);
+  });
+
+  it("buildAccountHierarchy keeps Dr=Cr balanced at every node depth, not just the grand total", () => {
+    const tree = buildAccountHierarchy(groups, ledgers);
+    const assetsNode = tree.find((n) => n.name === "Assets")!;
+    const curAssetsNode = assetsNode.children.find((n) => n.kind === "group" && n.name === "Current Assets") as any;
+    // Node-level: Current Assets' own dr total = Cash-in-Hand(10000) + Bank Accounts(25000)
+    expect(curAssetsNode.dr).toBe(35000);
+    expect(curAssetsNode.cr).toBe(0);
+    // Whole-tree invariant: total Dr across every root still equals total Cr.
+    const totalDr = tree.reduce((s, n) => s + n.dr, 0);
+    const totalCr = tree.reduce((s, n) => s + n.cr, 0);
+    expect(totalDr).toBeCloseTo(totalCr, 2);
+  });
+
+  it("an empty allow_ledger_creation=false group (Profit & Loss A/c) still returns a node instead of vanishing", () => {
+    const tree = buildAccountHierarchy(groups, ledgers);
+    const pnlNode = tree.find((n) => n.name === "Profit & Loss A/c");
+    expect(pnlNode).toBeDefined();
+    expect(pnlNode!.dr).toBe(0);
+    expect(pnlNode!.cr).toBe(0);
   });
 });

@@ -587,15 +587,86 @@ export interface AccountGroupNode {
   name: string;
   parent_id: string | null;
   nature: string | null;
+  group_code?: string | null;
+  account_type?: string | null;
+  report_type?: "BALANCE_SHEET" | "PROFIT_LOSS" | null;
+  normal_balance?: "DEBIT" | "CREDIT" | null;
+  allow_ledger_creation?: boolean;
+  display_order?: number;
+  is_system?: boolean;
 }
 
 export async function fetchAccountGroupTree(businessId: string): Promise<AccountGroupNode[]> {
   const { data, error } = await supabase
     .from("account_groups")
-    .select("id, name, parent_id, nature")
+    .select("id, name, parent_id, nature, group_code, account_type, report_type, normal_balance, allow_ledger_creation, display_order, is_system")
     .eq("business_id", businessId);
   if (error) throw error;
   return (data ?? []) as AccountGroupNode[];
+}
+
+/** Create a custom (non-system) account group under an optional parent.
+ *  Nature is inherited from the parent when nesting under an existing
+ *  group (Tally never lets a sub-group disagree with its parent's
+ *  classification) -- only top-level groups (no parent) pick their own. */
+export async function createAccountGroup(input: {
+  businessId: string;
+  userId: string;
+  name: string;
+  parentId: string | null;
+  nature: string;
+  groupCode?: string | null;
+  allowLedgerCreation?: boolean;
+  displayOrder?: number;
+}): Promise<{ id: string }> {
+  const { data, error } = await supabase
+    .from("account_groups")
+    .insert({
+      business_id: input.businessId,
+      user_id: input.userId,
+      name: input.name.trim(),
+      parent_id: input.parentId,
+      nature: input.nature,
+      group_code: input.groupCode || null,
+      allow_ledger_creation: input.allowLedgerCreation ?? true,
+      display_order: input.displayOrder ?? 0,
+      is_system: false,
+    } as never)
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as { id: string };
+}
+
+export async function updateAccountGroup(
+  groupId: string,
+  patch: { name?: string; parentId?: string | null; groupCode?: string | null; allowLedgerCreation?: boolean; displayOrder?: number }
+): Promise<void> {
+  const update: Record<string, unknown> = {};
+  if (patch.name !== undefined) update.name = patch.name.trim();
+  if (patch.parentId !== undefined) update.parent_id = patch.parentId;
+  if (patch.groupCode !== undefined) update.group_code = patch.groupCode || null;
+  if (patch.allowLedgerCreation !== undefined) update.allow_ledger_creation = patch.allowLedgerCreation;
+  if (patch.displayOrder !== undefined) update.display_order = patch.displayOrder;
+  const { error } = await supabase.from("account_groups").update(update as never).eq("id", groupId);
+  if (error) throw error;
+}
+
+/** DB-enforced: refuses is_system groups and groups that still have child
+ *  groups or ledgers attached (see delete_account_group() migration). */
+export async function deleteAccountGroup(groupId: string): Promise<void> {
+  const { error } = await supabase.rpc("delete_account_group" as never, { _group_id: groupId } as never);
+  if (error) throw error;
+}
+
+/** Bulk-reassign ledgers to a different group -- the remediation step a
+ *  blocked deleteAccountGroup() points the caller at. */
+export async function moveLedgersToGroup(ledgerIds: string[], targetGroupId: string): Promise<void> {
+  const { error } = await supabase.rpc("move_ledgers_to_group" as never, {
+    _ledger_ids: ledgerIds,
+    _target_group_id: targetGroupId,
+  } as never);
+  if (error) throw error;
 }
 
 /** All descendant group ids of `groupId` (not including itself). */

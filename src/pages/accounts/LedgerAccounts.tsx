@@ -2,17 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Pencil, Trash2, Search, ArrowRightLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import MockTablePage from "@/components/accounts/MockTablePage";
 import { DocumentActionMenu, type DocumentRowAction } from "@/components/documentEngine/DocumentActionMenu";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
-import { fetchLedgersWithBalance, seedAccounts, ensurePartyLedgers, deleteLedger, fmtInr, type LedgerRow } from "@/lib/accounting";
+import { fetchLedgersWithBalance, fetchAccountGroupTree, seedAccounts, ensurePartyLedgers, deleteLedger, fmtInr, type LedgerRow } from "@/lib/accounting";
 import { useNavigate } from "react-router-dom"; // NEW
 import { useLedgerEditRouter } from "@/hooks/useLedgerEditRouter";
 import { resolveLinkedEntity } from "@/lib/ledgerEditRouter";
 import QuickCreateLedgerDialog from "@/components/vouchers/QuickCreateLedgerDialog";
+import ReassignLedgersDialog from "@/components/accounts/ReassignLedgersDialog";
 
 /** 👤 entity-linked (Party Master owns it) / ⚙ system / 📒 plain accounting
  *  ledger — lets an accountant tell at a glance which editor "Edit" will
@@ -29,6 +31,16 @@ export default function LedgerAccounts() {
   const [editingLedger, setEditingLedger] = useState<LedgerRow | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  // Bulk "Move Ledgers" -- lets an accountant reassign several ledgers to a
+  // different group in one action instead of editing each one individually
+  // (e.g. reorganizing after a Group Master restructure).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [moveOpen, setMoveOpen] = useState(false);
+  const { data: groups = [] } = useQuery({
+    queryKey: ["account-groups", business?.id],
+    enabled: !!business?.id,
+    queryFn: () => fetchAccountGroupTree(business!.id),
+  });
   // Party-linked ledgers (customer/supplier) are edited on the Party Master,
   // never here -- keeps a single editable source per entity. See
   // src/hooks/useLedgerEditRouter.ts.
@@ -71,6 +83,7 @@ export default function LedgerAccounts() {
   const rows = useMemo(() => filteredLedgers.map((l) => {
     const bal = l.balance ?? 0;
     return {
+      selected: selected.has(l.id),
       name: `${kindIcon(l)} ${l.name}`,
       type: l.ledger_type,
       group: l.group?.name ?? "—",
@@ -82,7 +95,14 @@ export default function LedgerAccounts() {
       _party_id: l.party_id,   // NEW
       _ledger: l,
     };
-  }), [filteredLedgers]);
+  }), [filteredLedgers, selected]);
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   const receivables = ledgers.filter(l => l.ledger_type === "customer").reduce((s, l) => s + Math.max(0, l.balance ?? 0), 0);
   const payables = ledgers.filter(l => l.ledger_type === "supplier").reduce((s, l) => s + Math.max(0, -(l.balance ?? 0)), 0);
@@ -119,6 +139,11 @@ export default function LedgerAccounts() {
               className="pl-9 w-64"
             />
           </div>
+          {selected.size > 0 && (
+            <Button variant="outline" onClick={() => setMoveOpen(true)}>
+              <ArrowRightLeft className="h-4 w-4 mr-1" /> Move {selected.size} Ledger{selected.size > 1 ? "s" : ""}
+            </Button>
+          )}
           <Button onClick={() => setOpen(true)}>
             <Plus className="h-4 w-4 mr-1" /> New Ledger
           </Button>
@@ -136,6 +161,11 @@ export default function LedgerAccounts() {
         },
       ]}
       columns={[
+        {
+          key: "selected", label: "",
+          onCellClick: (row) => toggleSelect((row._ledger as LedgerRow).id),
+          render: (row) => <Checkbox checked={row.selected} />,
+        },
         { key: "name", label: "Ledger Name" },
         { key: "type", label: "Type" },
         { key: "group", label: "Group" },
@@ -175,6 +205,20 @@ export default function LedgerAccounts() {
         userId={user.id}
         ledger={editingLedger}
         onCreated={() => qc.invalidateQueries({ queryKey: ["ledgers"] })}
+      />
+    )}
+
+    {moveOpen && (
+      <ReassignLedgersDialog
+        ledgerIds={Array.from(selected)}
+        label={`${selected.size} ledger${selected.size > 1 ? "s" : ""}`}
+        groups={groups}
+        onClose={() => setMoveOpen(false)}
+        onDone={() => {
+          setMoveOpen(false);
+          setSelected(new Set());
+          qc.invalidateQueries({ queryKey: ["ledgers"] });
+        }}
       />
     )}
     </>
