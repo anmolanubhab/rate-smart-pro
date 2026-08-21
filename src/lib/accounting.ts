@@ -149,6 +149,31 @@ export async function assertLedgerNameAvailable(businessId: string, name: string
   }
 }
 
+/**
+ * Renames the ledger_accounts row(s) definitively linked to one party
+ * (via the party_id foreign key added in
+ * 20260421082816_019602b4-51b2-4bec-b74b-8f259a6f74d0.sql) after that
+ * party is renamed. Party.name and ledger_accounts.name are independent
+ * columns -- ensure_party_ledger() only sets the ledger's name once, at
+ * creation, so a later party rename otherwise leaves the ledger (and
+ * therefore Voucher Center, Ledger Accounts, and every report that reads
+ * ledger_accounts.name) showing the old name forever.
+ *
+ * Scoped by both party_id and business_id, matching exactly what the
+ * one-time backfill migration
+ * (20260821140000_backfill_stale_party_ledger_names.sql) does for
+ * already-stale rows. Only `name` is written -- ledger id, balance, group,
+ * and every voucher posting referencing this ledger are untouched.
+ */
+export async function syncPartyLedgerName(partyId: string, businessId: string, newName: string) {
+  const { error } = await supabase
+    .from("ledger_accounts")
+    .update({ name: newName } as never)
+    .eq("party_id", partyId)
+    .eq("business_id", businessId);
+  if (error) throw error;
+}
+
 export async function updateLedger(ledgerId: string, patch: LedgerEditPatch, businessId?: string | null) {
   // Renaming a ledger or moving its opening balance is an accounting change;
   // scoped so a raw ledger UUID can't be edited from another company.
