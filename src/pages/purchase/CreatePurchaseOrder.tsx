@@ -62,7 +62,7 @@ import { DocumentToolbar, DocumentToolbarButton, type DocumentToolbarAction } fr
 import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
 import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
-import QuickCreateParty from "@/components/quickCreate/QuickCreateParty";
+import PartyFormDialog from "@/components/parties/PartyFormDialog";
 import { canCreateParty } from "@/lib/permissions";
 import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
@@ -990,16 +990,14 @@ export default function CreatePurchaseOrder() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {user && businessId && (
-        <QuickCreateParty
+      {user && businessId && supplierQuickCreateAllowed && (
+        <PartyFormDialog
           open={quickCreateSupplierOpen}
           onOpenChange={setQuickCreateSupplierOpen}
           businessId={businessId}
           userId={user.id}
-          role={role}
-          permissions={permissions}
           presetType="supplier"
-          onCreated={async (party) => {
+          onSaved={async (party) => {
             if (user) setSuppliers(await fetchParties(user.id, "supplier"));
             setSupplierId(party.id);
             setSupplierQuery(party.name);

@@ -33,7 +33,7 @@ import { DocumentToolbar, type DocumentToolbarAction } from "@/components/docume
 import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
 import { DocumentHeaderGrid, DocumentHeaderInputField, DocumentHeaderLabel, DocumentHeaderValue } from "@/components/documentEngine/DocumentHeader";
 import { DocumentEntitySearchField } from "@/components/documentEngine/DocumentEntitySearchField";
-import QuickCreateParty from "@/components/quickCreate/QuickCreateParty";
+import PartyFormDialog from "@/components/parties/PartyFormDialog";
 import { canCreateParty } from "@/lib/permissions";
 import { DocumentGridTable, DocumentGridCellInput, type DocumentGridColumn } from "@/components/documentEngine/DocumentGrid";
 import { DocumentTotals } from "@/components/documentEngine/DocumentTotals";
@@ -744,16 +744,14 @@ const CreateOrder = () => {
         }}
       />
 
-      {user && business && (
-        <QuickCreateParty
+      {user && business && customerQuickCreateAllowed && (
+        <PartyFormDialog
           open={quickCreateCustomerOpen}
           onOpenChange={setQuickCreateCustomerOpen}
           businessId={business.id}
           userId={user.id}
-          role={role}
-          permissions={permissions}
           presetType="customer"
-          onCreated={async (newParty) => {
+          onSaved={async (newParty) => {
             setParties(await fetchParties(user.id, "customer"));
             setPartyId(newParty.id);
             setPartyQuery(newParty.name);

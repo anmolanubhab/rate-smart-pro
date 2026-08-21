@@ -25,7 +25,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts } from "@/lib/accounting";
 import { getLedgerAccountOptions, getAllActiveLedgerOptions, NON_CASH_BANK_LEDGER_TYPES, type LedgerOption } from "@/lib/ledgerFiltering";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
-import { canOverrideAdjustmentLedger, canUnlockVouchers, canBackdateVoucher } from "@/lib/permissions";
+import { canOverrideAdjustmentLedger, canUnlockVouchers, canBackdateVoucher, canCreateParty } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import {
   calculateTotals, validateVoucher, validateContraLegs, validateContraInstrument,
@@ -43,7 +43,7 @@ import VoucherHeaderBar from "./VoucherHeaderBar";
 import VoucherLedgerGrid from "./VoucherLedgerGrid";
 import VoucherSummaryBar from "./VoucherSummaryBar";
 import QuickCreateLedgerDialog from "./QuickCreateLedgerDialog";
-import QuickCreateParty from "@/components/quickCreate/QuickCreateParty";
+import PartyFormDialog from "@/components/parties/PartyFormDialog";
 import BillAllocationPanel from "./BillAllocationPanel";
 
 const emptyRow = (): VoucherItem => ({ ledger_account_id: "", ledger_name: "", debit: 0, credit: 0, remarks: "" });
@@ -523,6 +523,10 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
   const openQuickCreateForRow = (rowIdx: number) => {
     const filter = rowFilterFor(config, rowIdx);
     if (filter === "supplier" || filter === "customer") {
+      if (!canCreateParty(role, permissions)) {
+        toast.error("You don't have permission to create a new party.");
+        return;
+      }
       setNewPartyRowIdx(rowIdx);
       setNewPartyPresetType(filter);
       setNewPartyOpen(true);
@@ -783,15 +787,13 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
               qc.invalidateQueries({ queryKey: ["ledgers-all-active"] });
             }}
           />
-          <QuickCreateParty
+          <PartyFormDialog
             open={newPartyOpen}
             onOpenChange={setNewPartyOpen}
             businessId={business.id}
             userId={user.id}
-            role={role}
-            permissions={permissions}
             presetType={newPartyPresetType}
-            onCreated={async (party) => {
+            onSaved={async (party) => {
               // This row's field is a ledger picker filtered to
               // customer/supplier-type ledgers (see getLedgerAccountOptions
               // in src/lib/ledgerFiltering.ts) -- ensurePartyLedgers()
