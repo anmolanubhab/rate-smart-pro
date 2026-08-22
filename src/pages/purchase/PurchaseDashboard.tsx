@@ -20,7 +20,7 @@ import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { useFormatDate } from "@/lib/dateFormat";
 
 const fmtInr = (n: number) =>
-  new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(n));
+  new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 const quickLinks = [
   { label: "Purchase Orders", icon: ClipboardList, href: "/purchase/orders", desc: "Create & manage POs" },

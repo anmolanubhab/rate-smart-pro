@@ -3,8 +3,49 @@ import {
   computeTrialBalance, computeProfitLoss, computeInventoryAdjustedProfitLoss, netProfitWithInventory,
   computeClosingStockValue, rollForwardOpeningBalance, hasRealStockLedger,
   getGroupChildren, sumGroupBalance, buildAccountHierarchy, getGroupPath,
+  fmtInr, fmtInrPrecise,
   type LedgerRow, type AccountGroupNode,
 } from "./accounting";
+
+// Regression coverage for the 2026-08-22 precision fix: fmtInr used to
+// Math.round() every value to a whole rupee (₹11,374.73 displayed as
+// "₹11,375"), silently dropping paise from every KPI card and MockTablePage
+// currency column app-wide. It must now always show exactly 2 decimals and
+// never round the underlying number.
+describe("fmtInr — the canonical currency formatter never drops paise", () => {
+  it("acceptance examples from the precision rule", () => {
+    expect(fmtInr(0)).toBe("0.00");
+    expect(fmtInr(11375)).toBe("11,375.00");
+    expect(fmtInr(7519.43)).toBe("7,519.43");
+    expect(fmtInr(162920.98)).toBe("1,62,920.98");
+    expect(fmtInr(1078.24)).toBe("1,078.24");
+  });
+
+  it("never rounds paise away, in either direction", () => {
+    expect(fmtInr(11374.73)).toBe("11,374.73");
+    expect(fmtInr(11374.73)).not.toBe("11,375.00");
+    expect(fmtInr(0.01)).toBe("0.01");
+  });
+
+  it("fmtInrPrecise is the same canonical formatter, not a second engine", () => {
+    expect(fmtInrPrecise).toBe(fmtInr);
+  });
+
+  it("null/undefined/NaN-ish input degrades to a formatted zero, not a crash", () => {
+    expect(fmtInr(Number(null))).toBe("0.00");
+    expect(fmtInr(NaN)).toBe("0.00");
+  });
+
+  it("2026-08-22 regression: Balance Sheet Print Preview showed raw floating-point noise instead of this", () => {
+    // Exact doubles the group-rollup arithmetic produced -- Balance Sheet's
+    // Preview modal / PDF / Excel used to print these verbatim
+    // (DocumentPreview.tsx's generic table did `String(row[c.key])`,
+    // ignoring the column's format entirely) instead of routing them
+    // through fmtInr like the on-screen MockTablePage view already did.
+    expect(fmtInr(167271.83000000002)).toBe("1,67,271.83");
+    expect(fmtInr(24171.169999999984)).toBe("24,171.17");
+  });
+});
 
 const ledger = (over: Partial<LedgerRow>): LedgerRow => ({
   id: over.id ?? Math.random().toString(),

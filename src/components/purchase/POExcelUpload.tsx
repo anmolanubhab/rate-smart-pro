@@ -56,7 +56,7 @@ const pick = (row: any, keys: string[]): any => {
 };
 
 const fmtInr = (n: number) =>
-  Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ─── Component ────────────────────────────────────────────────────────────────
 

@@ -131,7 +131,9 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
           <Button variant="outline" onClick={doExport} disabled={rows.length === 0}>
             <Download className="h-4 w-4 mr-2" />Export
           </Button>
-          <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />New Return</Button>
+          <Button onClick={() => (kind === "purchase" ? navigate("/purchase/returns/new") : setOpen(true))}>
+            <Plus className="h-4 w-4 mr-2" />New Return
+          </Button>
         </div>
       </div>
 
@@ -157,9 +159,9 @@ export default function ReturnsListPanel({ kind, hideHeader }: Props) {
             ) : rows.map((r) => (
               <TableRow
                 key={r.id}
-                className={r.voucher_id ? "cursor-pointer hover:bg-muted/40" : undefined}
-                onClick={() => r.voucher_id && navigate(`/accounting/vouchers/${r.voucher_id}`)}
-                title={r.voucher_id ? "View voucher (print, cancel, audit trail)" : undefined}
+                className={kind === "purchase" || r.voucher_id ? "cursor-pointer hover:bg-muted/40" : undefined}
+                onClick={() => (kind === "purchase" ? navigate(`/purchase/returns/edit/${r.id}`) : r.voucher_id && navigate(`/accounting/vouchers/${r.voucher_id}`))}
+                title={kind === "purchase" ? "Open this return" : r.voucher_id ? "View voucher (print, cancel, audit trail)" : undefined}
               >
                 <TableCell className="font-mono text-sm">{r.return_number}</TableCell>
                 <TableCell>{fd(r.return_date)}</TableCell>

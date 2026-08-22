@@ -18,6 +18,7 @@ import {
   convertQuotationToOrder, type QuotationStatus,
 } from "@/lib/quotations";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { useRoundOffSettings, resolveRoundOff } from "@/lib/roundOffSettings";
 import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/documentEngine/DocumentRoot";
 import { DocumentToolbar, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
 import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
@@ -222,8 +223,14 @@ const CreateQuotation = () => {
   const totals = useMemo(() => computeTotals(items, 0), [items]);
   const cgst = +(totals.gst_total / 2).toFixed(2);
   const sgst = +(totals.gst_total / 2).toFixed(2);
-  const roundOff = +(Math.round(totals.grand_total) - totals.grand_total).toFixed(2);
-  const finalTotal = Math.round(totals.grand_total);
+  // Quotations aren't posted to the ledger, so there's no round_off_<type>
+  // flag for them -- gate only on the master Round Off switch (Settings ->
+  // Accounting) rather than rounding unconditionally.
+  const roundOffSettings = useRoundOffSettings();
+  const { roundOffAmount: roundOff, finalTotal } = useMemo(
+    () => resolveRoundOff(totals.grand_total, roundOffSettings, true),
+    [totals.grand_total, roundOffSettings]
+  );
   const totalQty = items.reduce((s, r) => s + (Number(r.qty) || 0), 0);
 
   const updateRow = (idx: number, patch: Partial<Row>) => {
@@ -670,7 +677,7 @@ const CreateQuotation = () => {
                 { label: "Taxable Amount", value: fmt(totals.taxable), bold: true },
                 { label: "CGST", value: fmt(cgst) },
                 { label: "SGST", value: fmt(sgst) },
-                { label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) },
+                ...(roundOff !== 0 ? [{ label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) }] : []),
               ]}
               grandTotal={`₹${fmt(finalTotal)}`}
             />

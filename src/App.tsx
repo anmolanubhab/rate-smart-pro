@@ -151,6 +151,7 @@ const PurchaseSchemes = lazy(() => import("./pages/purchase/PurchaseSchemes"));
 
 // Phase 3 — Purchase mock screens
 const PurchaseReturns = lazy(() => import("./pages/purchase/PurchaseReturns"));
+const CreatePurchaseReturn = lazy(() => import("./pages/purchase/CreatePurchaseReturn"));
 const VendorClaimRegister = lazy(() => import("./pages/purchase/VendorClaimRegister"));
 const PurchaseApprovals = lazy(() => import("./pages/purchase/PurchaseApprovals"));
 const SupplierLedger = lazy(() => import("./pages/purchase/SupplierLedger"));
@@ -471,6 +472,8 @@ const App = () => (
               <Route path="/purchase/reports" element={L(<PurchaseReports />)} />
               {/* Phase 3 — Purchase mocks */}
               <Route path="/purchase/returns" element={L(<PurchaseReturns />)} />
+              <Route path="/purchase/returns/new" element={L(<CreatePurchaseReturn />)} />
+              <Route path="/purchase/returns/edit/:id" element={L(<CreatePurchaseReturn />)} />
               <Route path="/purchase/vendor-claims" element={L(<VendorClaimRegister />)} />
               <Route path="/purchase/approvals" element={L(<PurchaseApprovals />)} />
               <Route path="/purchase/supplier-ledger" element={L(<SupplierLedger />)} />

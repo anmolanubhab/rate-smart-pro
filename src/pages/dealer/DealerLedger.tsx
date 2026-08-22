@@ -15,7 +15,7 @@ type Row = {
   balance: number;
 };
 
-const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+const inr = (n: number) => `₹ ${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function DealerLedger() {
   const { portalUser } = useDealerAuth();

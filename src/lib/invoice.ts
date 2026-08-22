@@ -14,7 +14,7 @@ export type InvoicePayload = {
 };
 
 export const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(n));
+  new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 const fmtDate = (d?: string | null) => {
   if (!d) return "";

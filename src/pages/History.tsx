@@ -25,7 +25,7 @@ type Calc = {
   created_at: string;
 };
 
-const fmt = (n: number) => new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n)));
+const fmt = (n: number) => new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 const History = () => {
   const { user } = useAuth();

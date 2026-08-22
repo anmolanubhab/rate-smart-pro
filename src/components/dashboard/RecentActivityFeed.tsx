@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { useFormatDate } from "@/lib/dateFormat";
 
 const inr = (n: number) =>
-  "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
+  "₹" + new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 function FeedCard({
   title,

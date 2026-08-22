@@ -9,7 +9,8 @@ import { createVoucher, postVoucher, cancelVoucher, repostVoucherItems, type Vou
 import { assertHsnCompliance } from "@/lib/accountingLock";
 import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
 import { resolveIsInterstate, splitGstAmount, splitGstRate } from "@/lib/gstCalc";
-import { computePurchaseLine, type PurchasePricingMode, type PurchaseSchemeType, type PurchaseSchemeConfig } from "@/lib/purchaseCalc";
+import { computePurchaseLine, resolveRateForMode, type PurchasePricingMode, type PurchaseSchemeType, type PurchaseSchemeConfig } from "@/lib/purchaseCalc";
+import { resolvePurchasePrice } from "@/lib/purchasePricing/resolvePurchasePrice";
 
 export type PurchaseInvoiceStatus = "unpaid" | "partially_paid" | "paid" | "cancelled";
 
@@ -53,6 +54,7 @@ export interface PurchaseInvoice {
   business_id: string;
   invoice_number: string;
   supplier_invoice_number: string | null;
+  supplier_invoice_date: string | null;
   supplier_id: string | null;
   purchase_order_id: string | null;
   goods_receipt_id: string | null;
@@ -176,6 +178,7 @@ export interface SaveInvoiceInput {
   id?: string;
   invoice_number?: string;
   supplier_invoice_number?: string | null;
+  supplier_invoice_date?: string | null;
   supplier_id: string;
   purchase_order_id?: string | null;
   goods_receipt_id?: string | null;
@@ -526,6 +529,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
       _supplier_id: input.supplier_id,
       _invoice_number: invoiceNumber,
       _supplier_invoice_number: input.supplier_invoice_number ?? null,
+      _supplier_invoice_date: input.supplier_invoice_date ?? null,
       _purchase_order_id: input.purchase_order_id ?? null,
       _goods_receipt_id: input.goods_receipt_id ?? null,
       _invoice_date: input.invoice_date,
@@ -569,6 +573,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
       business_id: newRow.business_id,
       invoice_number: newRow.invoice_number,
       supplier_invoice_number: newRow.supplier_invoice_number,
+      supplier_invoice_date: newRow.supplier_invoice_date,
       supplier_id: newRow.supplier_id,
       purchase_order_id: newRow.purchase_order_id,
       goods_receipt_id: newRow.goods_receipt_id,
@@ -616,6 +621,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
         business_id: businessId,
         invoice_number: invoiceNumber,
         supplier_invoice_number: input.supplier_invoice_number ?? null,
+        supplier_invoice_date: input.supplier_invoice_date ?? null,
         supplier_id: input.supplier_id,
         purchase_order_id: input.purchase_order_id ?? null,
         goods_receipt_id: input.goods_receipt_id ?? null,
@@ -639,6 +645,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
       .from("purchase_invoices")
       .update({
         supplier_invoice_number: input.supplier_invoice_number ?? null,
+        supplier_invoice_date: input.supplier_invoice_date ?? null,
         supplier_id: input.supplier_id,
         purchase_order_id: input.purchase_order_id ?? null,
         goods_receipt_id: input.goods_receipt_id ?? null,
@@ -722,6 +729,7 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     business_id: row.business_id,
     invoice_number: row.invoice_number,
     supplier_invoice_number: row.supplier_invoice_number,
+    supplier_invoice_date: row.supplier_invoice_date,
     supplier_id: row.supplier_id,
     purchase_order_id: row.purchase_order_id,
     goods_receipt_id: row.goods_receipt_id,
@@ -768,10 +776,23 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
       } catch (e: any) {
         console.error("Repost direct-invoice stock failed:", e.message);
       }
+    } else {
+      // GRN-linked invoices never post their own stock (the GRN does) -- an
+      // edit to a GRN-linked invoice's items has no stock side to repost here,
+      // same asymmetry as the create path above. But the GRN link itself may
+      // be new (an invoice first saved without one, then edited to link a
+      // GRN) or the rejected qty may not have raised its debit note the first
+      // time (create path is best-effort) -- either way, this was previously
+      // only called from the isNew/atomic-create branch above, so an edit
+      // that adds/keeps a GRN link silently never got its QC debit notes.
+      // autoCreateQcDebitNotesForGrn is idempotent per (GRN item, reason
+      // bucket), so calling it again here is safe.
+      try {
+        await autoCreateQcDebitNotesForGrn(businessId, data.id, data.goods_receipt_id);
+      } catch (e: any) {
+        console.error("QC debit-note posting failed:", e.message);
+      }
     }
-    // GRN-linked invoices never post their own stock (the GRN does) -- an
-    // edit to a GRN-linked invoice's items has no stock side to repost here,
-    // same asymmetry as the create path above.
   }
 
   return data;
@@ -1024,46 +1045,95 @@ export async function fetchInvoiceItems(invoiceId: string, businessId?: string |
  * enterprise-ERP pattern: invoice unchanged, rejections handled as claims.
  */
 export async function fetchGrnItemsForInvoice(grnId: string): Promise<PurchaseInvoiceItem[]> {
-  const { data, error } = await supabase
-    .from("goods_receipt_items")
-    .select(`
-      product_id, received_qty, unit_id,
-      product:products(part_number, name, dealer_rate, gst_pct),
-      purchase_order_item:purchase_order_items(rate, discount_percent, additional_discount_percent, gst_percent, resolved_purchase_pricing_mode, resolved_ndp, resolved_primary_discount_pct, resolved_additional_discount_pct, purchase_scheme_id, source_price_list_id, is_overridden, configured_rate)
-    `)
-    .eq("goods_receipt_id", grnId);
+  const [{ data, error }, { data: grnRow }] = await Promise.all([
+    supabase
+      .from("goods_receipt_items")
+      .select(`
+        product_id, received_qty, unit_id,
+        product:products(part_number, name, dealer_rate, gst_pct),
+        purchase_order_item:purchase_order_items(rate, discount_percent, additional_discount_percent, gst_percent, resolved_purchase_pricing_mode, resolved_ndp, resolved_primary_discount_pct, resolved_additional_discount_pct, purchase_scheme_id, source_price_list_id, is_overridden, configured_rate)
+      `)
+      .eq("goods_receipt_id", grnId),
+    supabase.from("goods_receipts").select("supplier_id").eq("id", grnId).maybeSingle(),
+  ]);
   if (error) throw error;
-  return (data ?? [])
-    .filter((r: any) => Number(r.received_qty) > 0)
-    .map((r: any) =>
-      computeInvoiceItem({
-        product_id: r.product_id,
-        part_number: r.product?.part_number ?? "",
-        description: r.product?.name ?? "",
-        qty: Number(r.received_qty),
+  const supplierId = (grnRow as any)?.supplier_id ?? null;
+
+  return Promise.all(
+    (data ?? [])
+      .filter((r: any) => Number(r.received_qty) > 0)
+      .map(async (r: any) => {
+        const poItem = r.purchase_order_item;
         // The rate actually negotiated on the PO — not the product master's
         // generic dealer_rate, which drifts from what was agreed per-PO and
         // silently produced ₹0 invoices when unset (see fetchPendingPOItemsForInvoice,
         // the direct-PO path, which already used purchase_order_items.rate correctly).
-        rate: Number(r.purchase_order_item?.rate ?? r.product?.dealer_rate ?? 0),
-        // Same reasoning as the rate above — the PO's negotiated discount(s)
-        // must carry forward too, or a GRN-based invoice silently re-prices
-        // at full rate (the bug: "Purchase Invoice mein 1.5% nahi le raha hay").
-        discount_percent: Number(r.purchase_order_item?.discount_percent) || 0,
-        additional_discount_percent: Number(r.purchase_order_item?.additional_discount_percent) || 0,
-        gst_percent: Number(r.purchase_order_item?.gst_percent ?? r.product?.gst_pct ?? 18),
-        unit_id: r.unit_id ?? null,
-        stock_qty: null,
-        resolved_purchase_pricing_mode: r.purchase_order_item?.resolved_purchase_pricing_mode ?? null,
-        resolved_ndp: r.purchase_order_item?.resolved_ndp ?? null,
-        resolved_primary_discount_pct: r.purchase_order_item?.resolved_primary_discount_pct ?? null,
-        resolved_additional_discount_pct: r.purchase_order_item?.resolved_additional_discount_pct ?? null,
-        purchase_scheme_id: r.purchase_order_item?.purchase_scheme_id ?? null,
-        source_price_list_id: r.purchase_order_item?.source_price_list_id ?? null,
-        is_overridden: r.purchase_order_item?.is_overridden ?? false,
-        configured_rate: r.purchase_order_item?.configured_rate ?? null,
+        // Same reasoning for the PO's negotiated discount(s) — must carry
+        // forward too, or a GRN-based invoice silently re-prices at full
+        // rate (the bug: "Purchase Invoice mein 1.5% nahi le raha hay").
+        if (poItem) {
+          return computeInvoiceItem({
+            product_id: r.product_id,
+            part_number: r.product?.part_number ?? "",
+            description: r.product?.name ?? "",
+            qty: Number(r.received_qty),
+            rate: Number(poItem.rate ?? r.product?.dealer_rate ?? 0),
+            discount_percent: Number(poItem.discount_percent) || 0,
+            additional_discount_percent: Number(poItem.additional_discount_percent) || 0,
+            gst_percent: Number(poItem.gst_percent ?? r.product?.gst_pct ?? 18),
+            unit_id: r.unit_id ?? null,
+            stock_qty: null,
+            resolved_purchase_pricing_mode: poItem.resolved_purchase_pricing_mode ?? null,
+            resolved_ndp: poItem.resolved_ndp ?? null,
+            resolved_primary_discount_pct: poItem.resolved_primary_discount_pct ?? null,
+            resolved_additional_discount_pct: poItem.resolved_additional_discount_pct ?? null,
+            purchase_scheme_id: poItem.purchase_scheme_id ?? null,
+            source_price_list_id: poItem.source_price_list_id ?? null,
+            is_overridden: poItem.is_overridden ?? false,
+            configured_rate: poItem.configured_rate ?? null,
+          });
+        }
+
+        // No PO reference (standalone-GRN line, added by searching a product
+        // directly) — resolve the supplier+part's configured rate/discount
+        // the exact same way CreatePurchaseOrder.tsx does, instead of
+        // silently falling back to the product's generic dealer_rate at 0%
+        // discount. This is the standalone-GRN counterpart of the
+        // PO-linked fix documented above.
+        const mrpFallback = Number(r.product?.dealer_rate) || 0;
+        const resolved = r.product_id ? await resolvePurchasePrice(r.product_id, supplierId) : null;
+        const priced = resolved
+          ? resolveRateForMode(resolved.mode, {
+              mrp: resolved.mrp ?? mrpFallback,
+              ndp: resolved.ndp,
+              fixedRate: resolved.fixedRate,
+              primaryDiscountPct: resolved.primaryDiscountPct,
+              additionalDiscountPct: resolved.additionalDiscountPct,
+            })
+          : null;
+
+        return computeInvoiceItem({
+          product_id: r.product_id,
+          part_number: r.product?.part_number ?? "",
+          description: r.product?.name ?? "",
+          qty: Number(r.received_qty),
+          rate: priced ? priced.rate : mrpFallback,
+          discount_percent: priced ? priced.primaryDiscountPct : 0,
+          additional_discount_percent: priced ? priced.additionalDiscountPct : 0,
+          gst_percent: Number(r.product?.gst_pct ?? 18),
+          unit_id: r.unit_id ?? null,
+          stock_qty: null,
+          resolved_purchase_pricing_mode: resolved?.mode ?? null,
+          resolved_ndp: resolved?.ndp ?? null,
+          resolved_primary_discount_pct: priced?.primaryDiscountPct ?? null,
+          resolved_additional_discount_pct: priced?.additionalDiscountPct ?? null,
+          purchase_scheme_id: resolved?.schemeId ?? null,
+          source_price_list_id: resolved?.sourcePriceListId ?? null,
+          is_overridden: false,
+          configured_rate: priced ? priced.rate : null,
+        });
       })
-    );
+  );
 }
 
 export async function fetchPurchaseInvoice(id: string, businessId?: string | null): Promise<PurchaseInvoice & {
@@ -1088,6 +1158,7 @@ export async function fetchPurchaseInvoice(id: string, businessId?: string | nul
     business_id: r.business_id,
     invoice_number: r.invoice_number,
     supplier_invoice_number: r.supplier_invoice_number,
+    supplier_invoice_date: r.supplier_invoice_date,
     supplier_id: r.supplier_id,
     purchase_order_id: r.purchase_order_id,
     goods_receipt_id: r.goods_receipt_id,

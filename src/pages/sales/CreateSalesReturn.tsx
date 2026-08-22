@@ -17,6 +17,7 @@ import {
   type ReturnableInvoice, type SalesReturnItem, type SalesReturnStatus,
 } from "@/lib/salesReturns";
 import { computeTotals } from "@/lib/orders";
+import { useRoundOffSettings, resolveRoundOff } from "@/lib/roundOffSettings";
 import { useFormatDate } from "@/lib/dateFormat";
 import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/documentEngine/DocumentRoot";
 import { DocumentToolbar, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
@@ -239,8 +240,14 @@ const CreateSalesReturn = () => {
 
   const totals = useMemo(() => computeTotals(items.filter((it) => Number(it.qty) > 0), 0), [items]);
   const gstHalf = +(totals.gst_total / 2).toFixed(2);
-  const roundOff = +(Math.round(totals.grand_total) - totals.grand_total).toFixed(2);
-  const finalTotal = Math.round(totals.grand_total);
+  // create_sales_return()/post_sales_return() only round when Settings ->
+  // Accounting -> Round Off is ON for Credit Note -- mirror that here so the
+  // preview never shows an adjustment the backend won't actually post.
+  const roundOffSettings = useRoundOffSettings();
+  const { roundOffAmount: roundOff, finalTotal } = useMemo(
+    () => resolveRoundOff(totals.grand_total, roundOffSettings, roundOffSettings.applyCreditNote),
+    [totals.grand_total, roundOffSettings]
+  );
 
   const validRows = () => items.filter((it) => Number(it.qty) > 0);
 
@@ -523,7 +530,7 @@ const CreateSalesReturn = () => {
                 { label: "Discount", value: `− ${fmt(totals.discount_total)}` },
                 { label: "CGST", value: fmt(gstHalf) },
                 { label: "SGST", value: fmt(gstHalf) },
-                { label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) },
+                ...(roundOff !== 0 ? [{ label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) }] : []),
               ]}
               grandTotalLabel="Net Credit Note Amount"
               grandTotal={`₹${fmt(finalTotal)}`}

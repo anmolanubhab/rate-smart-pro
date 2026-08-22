@@ -52,9 +52,9 @@ export default function SalesRegister() {
     const avg = count ? total / count : 0;
     return [
       { label: "Invoices", value: count },
-      { label: "Total Sales", value: `₹ ${total.toLocaleString("en-IN")}` },
-      { label: "GST Collected", value: `₹ ${gst.toLocaleString("en-IN")}`, tone: "warning" },
-      { label: "Avg. Invoice", value: `₹ ${avg.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` },
+      { label: "Total Sales", value: `₹ ${total.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+      { label: "GST Collected", value: `₹ ${gst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, tone: "warning" },
+      { label: "Avg. Invoice", value: `₹ ${avg.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
     ];
   };
 

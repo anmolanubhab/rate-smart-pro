@@ -12,6 +12,8 @@ export const GRN_NOT_FOUND = "Goods receipt not found";
 
 export type GRNStatus = "draft" | "received" | "closed" | "cancelled";
 
+export type TransportMode = "road" | "rail" | "air" | "courier" | "self_pickup" | "other";
+
 export interface GoodsReceipt {
   id: string;
   business_id: string;
@@ -22,6 +24,16 @@ export interface GoodsReceipt {
   grn_date: string;
   status: GRNStatus;
   remarks: string | null;
+  transporter_id: string | null;
+  transport_name: string | null;
+  transport_mode: TransportMode | null;
+  lr_number: string | null;
+  lr_date: string | null;
+  vehicle_number: string | null;
+  supplier_challan_number: string | null;
+  supplier_challan_date: string | null;
+  supplier_invoice_number: string | null;
+  supplier_invoice_date: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -235,14 +247,17 @@ export interface GRNLine {
   product_name: string;
   part_number: string;
   tracking_type: ProductTrackingType;
+  /** Reference/expected qty — only meaningful when purchase_order_item_id is set (line was loaded from a linked PO). 0 for a manually-added line with no PO reference. Never blocks or caps received_qty. */
   ordered_qty: number;
   received_qty: number;
   damaged_qty: number;
-  /** Physical-verification shortage within received_qty — distinct from short_qty (ordered vs received PO gap). */
+  /** Physical-verification shortage within received_qty — distinct from short_qty (reference vs received gap). */
   shortage_qty: number;
   accepted_qty: number;
   pending_qty: number;
+  /** Reference-gap qty (ordered_qty - received_qty). Purely informational; 0 when there's no PO reference for this line. */
   short_qty: number;
+  /** Reference-gap qty (received_qty - ordered_qty). Purely informational; 0 when there's no PO reference for this line — a manually-received line is never "excess" against nothing. */
   excess_qty: number;
   quality_remarks: string;
   qc_reason_category: string | null;
@@ -254,6 +269,30 @@ export interface GRNLine {
   bin_id: string | null;
   tracking?: GRNBatchSerialResult;
 }
+
+/** A blank line for standalone/manual receiving — no PO reference, product picked via search. */
+export const blankGRNLine = (): GRNLine => ({
+  purchase_order_item_id: null,
+  product_id: "",
+  product_name: "",
+  part_number: "",
+  tracking_type: "none",
+  ordered_qty: 0,
+  received_qty: 0,
+  damaged_qty: 0,
+  shortage_qty: 0,
+  accepted_qty: 0,
+  pending_qty: 0,
+  short_qty: 0,
+  excess_qty: 0,
+  quality_remarks: "",
+  qc_reason_category: null,
+  unit_id: null,
+  stock_accepted_qty: null,
+  stock_shortage_qty: null,
+  stock_received_qty: null,
+  bin_id: null,
+});
 
 /**
  * Pending items for a PO, capped to what's actually still owed — same
@@ -374,6 +413,16 @@ export interface SaveGRNInput {
   warehouse_id: string;
   grn_date: string;
   remarks: string | null;
+  transporter_id?: string | null;
+  transport_name?: string | null;
+  transport_mode?: TransportMode | null;
+  lr_number?: string | null;
+  lr_date?: string | null;
+  vehicle_number?: string | null;
+  supplier_challan_number?: string | null;
+  supplier_challan_date?: string | null;
+  supplier_invoice_number?: string | null;
+  supplier_invoice_date?: string | null;
   status: "draft" | "received";
   items: GRNLine[];
 }
@@ -418,25 +467,12 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
   const businessId = getActiveBusinessIdSync();
   if (!businessId) throw new Error("No active business selected");
 
-  // Received qty must never exceed what the PO still actually owes --
-  // re-derive the true pending ceiling server-side rather than trusting
-  // whatever the client computed, in case another GRN was posted against
-  // the same PO in the meantime.
-  if (input.purchase_order_id) {
-    // fetchPendingPOItemsForGRN only counts *other* GRNs already in
-    // 'received' status against this PO -- a draft (create or re-edit,
-    // doesn't matter which) was never 'received', so its own qty was
-    // never subtracted out of this ceiling in the first place. No special
-    // casing needed between create and edit.
-    const pending = await fetchPendingPOItemsForGRN(input.purchase_order_id);
-    const pendingByProduct = new Map(pending.map((p) => [p.product_id, p.ordered_qty]));
-    for (const it of input.items) {
-      const ceiling = pendingByProduct.get(it.product_id);
-      if (ceiling !== undefined && Number(it.received_qty) > ceiling + 1e-6) {
-        throw new Error(`${it.part_number}: received qty (${it.received_qty}) can't exceed the PO's pending qty (${ceiling}).`);
-      }
-    }
-  }
+  // GRN records what physically arrived -- received_qty is never capped to
+  // a linked PO's pending quantity. A supplier can ship more or less than
+  // was ordered; that shows up as short_qty/excess_qty (purely informational,
+  // computed client-side against each line's reference ordered_qty) and is
+  // reconciled later by Pending Purchase Management / Purchase Return, not
+  // blocked here.
 
   let grnId = input.id;
   if (grnId) {
@@ -462,6 +498,16 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
         warehouse_id: input.warehouse_id,
         grn_date: input.grn_date,
         remarks: input.remarks,
+        transporter_id: input.transporter_id ?? null,
+        transport_name: input.transport_name ?? null,
+        transport_mode: input.transport_mode ?? null,
+        lr_number: input.lr_number ?? null,
+        lr_date: input.lr_date ?? null,
+        vehicle_number: input.vehicle_number ?? null,
+        supplier_challan_number: input.supplier_challan_number ?? null,
+        supplier_challan_date: input.supplier_challan_date ?? null,
+        supplier_invoice_number: input.supplier_invoice_number ?? null,
+        supplier_invoice_date: input.supplier_invoice_date ?? null,
         status: input.status,
       })
       .eq("id", grnId);
@@ -478,6 +524,16 @@ export async function saveGRN(input: SaveGRNInput): Promise<GoodsReceipt> {
         grn_date: input.grn_date,
         status: input.status,
         remarks: input.remarks,
+        transporter_id: input.transporter_id ?? null,
+        transport_name: input.transport_name ?? null,
+        transport_mode: input.transport_mode ?? null,
+        lr_number: input.lr_number ?? null,
+        lr_date: input.lr_date ?? null,
+        vehicle_number: input.vehicle_number ?? null,
+        supplier_challan_number: input.supplier_challan_number ?? null,
+        supplier_challan_date: input.supplier_challan_date ?? null,
+        supplier_invoice_number: input.supplier_invoice_number ?? null,
+        supplier_invoice_date: input.supplier_invoice_date ?? null,
         created_by: input.userId,
       })
       .select()
@@ -631,6 +687,16 @@ export async function duplicateGRN(id: string, userId: string): Promise<GoodsRec
       grn_date: new Date().toISOString().slice(0, 10),
       status: "draft",
       remarks: original.remarks,
+      transporter_id: original.transporter_id,
+      transport_name: original.transport_name,
+      transport_mode: original.transport_mode,
+      lr_number: original.lr_number,
+      lr_date: original.lr_date,
+      vehicle_number: original.vehicle_number,
+      supplier_challan_number: original.supplier_challan_number,
+      supplier_challan_date: original.supplier_challan_date,
+      supplier_invoice_number: original.supplier_invoice_number,
+      supplier_invoice_date: original.supplier_invoice_date,
       created_by: userId,
     })
     .select()

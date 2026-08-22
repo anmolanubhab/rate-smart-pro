@@ -59,8 +59,6 @@ import {
 } from "@/lib/purchaseOrders";
 import { resolvePurchasePrice } from "@/lib/purchasePricing/resolvePurchasePrice";
 import { resolveRateForMode } from "@/lib/purchaseCalc";
-import { fetchTransporters, type Transporter } from "@/lib/transporters";
-import TransporterFormDialog from "@/components/purchase/TransporterFormDialog";
 import { DocumentRoot, DocumentSheet, DocumentSheetBanner } from "@/components/documentEngine/DocumentRoot";
 import { DocumentToolbar, DocumentToolbarButton, type DocumentToolbarAction } from "@/components/documentEngine/DocumentToolbar";
 import { DocumentStatusBadge } from "@/components/documentEngine/DocumentStatusBadge";
@@ -114,18 +112,8 @@ export default function CreatePurchaseOrder() {
   const [poDate, setPODate] = useState(new Date().toISOString().slice(0, 10));
   const [expectedDelivery, setExpectedDelivery] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [transportName, setTransportName] = useState("");
-  const [transporterId, setTransporterId] = useState<string | null>(null);
-  const [transporters, setTransporters] = useState<Transporter[]>([]);
-  const [transporterQuery, setTransporterQuery] = useState("");
-  const [quickCreateTransporterOpen, setQuickCreateTransporterOpen] = useState(false);
   const [quickCreateProductOpen, setQuickCreateProductOpen] = useState(false);
   const [quickCreateProductRowIdx, setQuickCreateProductRowIdx] = useState<number | null>(null);
-  const [transportMode, setTransportMode] = useState<string>("");
-  const [lrNumber, setLrNumber] = useState("");
-  const [vehicleNumber, setVehicleNumber] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("");
-  const [termsConditions, setTermsConditions] = useState("");
   const [taxMode, setTaxMode] = useState<"inclusive" | "exclusive">("exclusive");
 
   // Supplier (from parties, type = supplier)
@@ -174,7 +162,7 @@ export default function CreatePurchaseOrder() {
   // ordered from would corrupt the supplier ledger / receiving history --
   // same "can't rewrite the past" reasoning as the item-edit block in
   // savePurchaseOrder(), applied to the one header field where it actually
-  // matters (dates/remarks/transport can still be corrected).
+  // matters (dates/remarks can still be corrected).
   const [hasGRN, setHasGRN] = useState(false);
   const [savedPO, setSavedPO] = useState<PurchaseOrder | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
@@ -205,12 +193,6 @@ export default function CreatePurchaseOrder() {
     if (supplier && supplier.name.trim().toLowerCase() === q) return [];
     return suppliers.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 12);
   }, [suppliers, supplierQuery, supplier]);
-
-  const transporterResults = useMemo(() => {
-    const q = transporterQuery.trim().toLowerCase();
-    if (!q) return transporters.slice(0, 12);
-    return transporters.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 12);
-  }, [transporters, transporterQuery]);
 
   // Mirrors the server-side edit-lock in savePurchaseOrder(): once a PO has
   // moved past draft/pending_approval, supplier/warehouse/rate become
@@ -250,7 +232,6 @@ export default function CreatePurchaseOrder() {
     if (!user || !businessId) return;
 
     fetchParties(user.id, "supplier").then(setSuppliers).catch(() => {});
-    fetchTransporters(businessId).then(setTransporters).catch(() => {});
     supabase
       .from("warehouses")
       .select("id, warehouse_name")
@@ -281,13 +262,6 @@ export default function CreatePurchaseOrder() {
           setRemarks(po.remarks || "");
           setSupplierId(po.supplier_id || "");
           setWarehouseId(po.warehouse_id || null);
-          setTransportName(po.transport_name || "");
-          setTransporterId(po.transporter_id || null);
-          setTransportMode(po.transport_mode || "");
-          setLrNumber(po.lr_number || "");
-          setVehicleNumber(po.vehicle_number || "");
-          setPaymentTerms(po.payment_terms || "");
-          setTermsConditions(po.terms_conditions || "");
           setTaxMode(po.tax_mode || "exclusive");
           setCurrentStatus(po.status);
           setSavedPO(po);
@@ -312,13 +286,6 @@ export default function CreatePurchaseOrder() {
   useEffect(() => {
     if (supplier) setSupplierQuery(supplier.name);
   }, [supplierId]);
-
-  // Set transporter query when transporter loads
-  useEffect(() => {
-    if (!transporterId) return;
-    const t = transporters.find((x) => x.id === transporterId);
-    if (t) setTransporterQuery(t.name);
-  }, [transporterId, transporters]);
 
   // Product search
   useEffect(() => {
@@ -492,13 +459,6 @@ export default function CreatePurchaseOrder() {
         expected_delivery_date: expectedDelivery || null,
         status,
         remarks: remarks || null,
-        transport_name: transportName || null,
-        transporter_id: transporterId,
-        transport_mode: (transportMode as any) || null,
-        lr_number: lrNumber || null,
-        vehicle_number: vehicleNumber || null,
-        payment_terms: paymentTerms || null,
-        terms_conditions: termsConditions || null,
         tax_mode: taxMode,
         items: validItems(),
       });
@@ -748,7 +708,6 @@ export default function CreatePurchaseOrder() {
                 onSelect={(s, source) => {
                   setSupplierId(s.id);
                   setSupplierQuery(s.name);
-                  if (!paymentTerms && s.payment_terms) setPaymentTerms(s.payment_terms);
                   setTimeout(reResolveForSupplier, 10);
                   if (source === "keyboard") setTimeout(() => focusCell(0, "part"), 10);
                 }}
@@ -794,51 +753,6 @@ export default function CreatePurchaseOrder() {
               </select>
             </DocumentHeaderValue>
 
-            <DocumentHeaderLabel>Transport</DocumentHeaderLabel>
-            <DocumentHeaderValue>
-              <DocumentEntitySearchField
-                results={transporterResults}
-                getKey={(t) => t.id}
-                query={transporterQuery}
-                onQueryChange={(v) => {
-                  setTransporterQuery(v);
-                  setTransportName(v);
-                  const match = transporters.find((t) => t.name.toLowerCase() === v.trim().toLowerCase());
-                  setTransporterId(match ? match.id : null);
-                }}
-                onSelect={(t) => {
-                  setTransporterId(t.id);
-                  setTransporterQuery(t.name);
-                  setTransportName(t.name);
-                }}
-                renderRow={(t) => <span>{t.name}</span>}
-                placeholder="Type to search transporter…"
-                inputClassName="h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
-                onQuickCreate={() => setQuickCreateTransporterOpen(true)}
-                quickCreateLabel="Transporter"
-              />
-            </DocumentHeaderValue>
-            <DocumentHeaderLabel align="right">Mode</DocumentHeaderLabel>
-            <DocumentHeaderValue>
-              <select
-                value={transportMode}
-                onChange={(e) => setTransportMode(e.target.value)}
-                className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
-              >
-                <option value="">Select mode…</option>
-                <option value="road">Road</option>
-                <option value="rail">Rail</option>
-                <option value="air">Air</option>
-                <option value="courier">Courier</option>
-                <option value="self_pickup">Self Pickup</option>
-                <option value="other">Other</option>
-              </select>
-            </DocumentHeaderValue>
-
-            <DocumentHeaderInputField label="LR Number" value={lrNumber} onChange={(e) => setLrNumber(e.target.value)} />
-            <DocumentHeaderInputField label="Vehicle Number" labelAlign="right" value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} />
-
-            <DocumentHeaderInputField label="Payment Terms" value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. Net 30 days" />
             <DocumentHeaderLabel align="right">Tax Mode</DocumentHeaderLabel>
             <DocumentHeaderValue>
               <select
@@ -850,8 +764,6 @@ export default function CreatePurchaseOrder() {
                 <option value="inclusive">Inclusive of Tax</option>
               </select>
             </DocumentHeaderValue>
-
-            <DocumentHeaderInputField label="Terms & Conditions" value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)} placeholder="Printed on the PO document…" valueSpan={10} />
 
             <DocumentHeaderLabel align="right">Expected Delivery</DocumentHeaderLabel>
             <DocumentHeaderValue>
@@ -1175,21 +1087,6 @@ export default function CreatePurchaseOrder() {
             const idx = quickCreateProductRowIdx;
             setQuickCreateProductRowIdx(null);
             if (idx !== null) pickProduct(idx, product);
-          }}
-        />
-      )}
-
-      {user && businessId && (
-        <TransporterFormDialog
-          open={quickCreateTransporterOpen}
-          onOpenChange={setQuickCreateTransporterOpen}
-          businessId={businessId}
-          userId={user.id}
-          onCreated={(t) => {
-            setTransporters((prev) => [...prev, t].sort((a, b) => a.name.localeCompare(b.name)));
-            setTransporterId(t.id);
-            setTransporterQuery(t.name);
-            setTransportName(t.name);
           }}
         />
       )}

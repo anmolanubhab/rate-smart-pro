@@ -12,6 +12,7 @@ import { PrintSurface } from "@/components/print/printEngine/PrintSurface";
 import { resolveTemplate } from "@/components/print/templates/registry";
 import type { DocumentOrReportUdm } from "@/lib/documentUdm/types";
 import type { OutputAction } from "@/lib/outputCenter/types";
+import { fmtInr } from "@/lib/accounting";
 
 export interface DocumentPreviewProps {
   open: boolean;
@@ -32,6 +33,19 @@ export interface DocumentPreviewProps {
   onWhatsApp?: () => void;
   onCopyShareLink?: () => void;
   busy?: OutputAction | null;
+}
+
+// The generic report table below is the last stop before a raw stored
+// number reaches the screen -- previously it just did String(row[c.key]),
+// ignoring `format` entirely, so any currency column printed the exact
+// floating-point value (e.g. "167271.83000000002") straight from the
+// database/calculation. Uses the same canonical fmtInr() every other
+// currency display in the app now goes through -- not a second formatter.
+function formatCell(col: { format?: "number" | "currency" | "badge" }, v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (col.format === "currency") return `₹ ${fmtInr(Number(v) || 0)}`;
+  if (col.format === "number") return Number(v).toLocaleString("en-IN");
+  return String(v);
 }
 
 const ZOOM_STEP = 0.1;
@@ -128,7 +142,7 @@ export function DocumentPreview({
                       <tr key={idx} className="border-b border-black/10">
                         {udm.columns.map((c) => (
                           <td key={c.key} className={`p-1.5 ${c.align === "right" ? "text-right tabular-nums" : c.align === "center" ? "text-center" : ""}`}>
-                            {String(row[c.key] ?? "—")}
+                            {formatCell(c, row[c.key])}
                           </td>
                         ))}
                       </tr>
