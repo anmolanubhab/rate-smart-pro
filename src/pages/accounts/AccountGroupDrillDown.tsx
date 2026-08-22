@@ -32,11 +32,13 @@ import type { ReportUdm } from "@/lib/documentUdm/types";
 const columns = [
   { key: "name", label: "Name" },
   { key: "kind_label", label: "Type" },
-  // Paise-exact render, and multiplied by the same balanceSheetPresentationSign
+  // format:"currency", multiplied by the same balanceSheetPresentationSign
   // the Balance Sheet itself applies -- see BalanceSheet.tsx's comment. This
   // is what keeps "Ledger -> Group Drill-down -> Balance Sheet" reconciling
   // to the identical displayed figure at every level, not just internally.
-  { key: "amount", label: "Amount", align: "right" as const, render: (row: any) => `₹ ${fmtInrPrecise(row.amount)}` },
+  // Using the shared format (not a bespoke render) is what makes this
+  // column render correctly in the Preview modal and PDF/Excel exports too.
+  { key: "amount", label: "Amount", align: "right" as const, format: "currency" as const },
 ];
 
 export default function AccountGroupDrillDown() {

@@ -31,7 +31,7 @@ import { fetchGstRegistrations } from "@/lib/gstRegistrations";
 import { fetchGstComplianceConfig } from "@/lib/accountingLock";
 
 const fmtInr = (n: number) =>
-  `₹ ${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(n))}`;
+  `₹ ${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0)}`;
 
 const toneClass = (tone: "default" | "warning" | "danger" | "success") => {
   if (tone === "success") return "text-emerald-600";
@@ -141,9 +141,9 @@ export default function GstDashboard() {
         const b = byMonth.get(m)!;
         return {
           month: monthLabel(m),
-          output: Math.round(b.output),
-          itc: Math.round(b.itc),
-          net: Math.round(Math.max(b.output - b.itc, 0)),
+          output: b.output,
+          itc: b.itc,
+          net: Math.max(b.output - b.itc, 0),
         };
       });
     },

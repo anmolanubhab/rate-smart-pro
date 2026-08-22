@@ -14,6 +14,7 @@ import { PrintSurface } from "@/components/print/printEngine/PrintSurface";
 import { udmPageProfileToLegacy } from "@/lib/documentUdm/fromPrintProfile";
 import { applyPrintPageStyle, contentWidthMm } from "@/components/print/printPageStyle";
 import { exportToExcel, exportToPdf } from "@/lib/gstExport";
+import { fmtInr } from "@/lib/accounting";
 import type { DocumentUdm, ReportUdm, DocumentOrReportUdm, UdmPageProfile } from "@/lib/documentUdm/types";
 import type { DefaultPrintAction } from "@/lib/printPreferences";
 
@@ -238,7 +239,7 @@ export function buildTabularPdfBlob(udm: ReportUdm): Blob {
   }
   const fmtCell = (col: (typeof udm.columns)[number], v: unknown) => {
     if (v === null || v === undefined) return "—";
-    if (col.format === "currency") return `Rs. ${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+    if (col.format === "currency") return `Rs. ${fmtInr(Number(v) || 0)}`;
     if (col.format === "number") return Number(v).toLocaleString("en-IN");
     return String(v);
   };

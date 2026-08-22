@@ -182,6 +182,27 @@ export default function GRNDetail() {
           </div>
         </div>
 
+        {(grn.supplier_invoice_number || grn.supplier_invoice_date || grn.supplier_challan_number || grn.supplier_challan_date) && (
+          <div className="px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-4 border-b border-border text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Supplier Invoice No.</p>
+              <p className="font-semibold mt-0.5 font-mono">{grn.supplier_invoice_number ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Supplier Invoice Date</p>
+              <p className="font-semibold mt-0.5">{grn.supplier_invoice_date ? fd(grn.supplier_invoice_date) : "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Supplier Challan #</p>
+              <p className="font-semibold mt-0.5 font-mono">{grn.supplier_challan_number ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Challan Date</p>
+              <p className="font-semibold mt-0.5">{grn.supplier_challan_date ? fd(grn.supplier_challan_date) : "—"}</p>
+            </div>
+          </div>
+        )}
+
         {grn.remarks && (
           <div className="px-6 py-3 border-b border-border text-sm text-muted-foreground">
             <span className="font-semibold text-foreground">Remarks: </span>{grn.remarks}
@@ -195,7 +216,7 @@ export default function GRNDetail() {
                 <th className="px-4 py-3 text-left">Product</th>
                 <th className="px-4 py-3 text-left">Part Number</th>
                 <th className="px-4 py-3 text-right">Ordered</th>
-                <th className="px-4 py-3 text-right">Received</th>
+                <th className="px-4 py-3 text-right">Bill Qty</th>
                 <th className="px-4 py-3 text-right">Damaged</th>
                 <th className="px-4 py-3 text-right">Shortage</th>
                 <th className="px-4 py-3 text-right">Accepted</th>

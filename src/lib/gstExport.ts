@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { MockColumn } from "@/components/accounts/MockTablePage";
+import { fmtInr } from "@/lib/accounting";
 
 function triggerDownload(content: BlobPart, filename: string, mime: string) {
   const blob = new Blob([content], { type: mime });
@@ -164,7 +165,7 @@ export function exportToPdf(
 
   const fmtCell = (col: MockColumn, v: any) => {
     if (v === null || v === undefined) return "—";
-    if (col.format === "currency") return `Rs. ${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+    if (col.format === "currency") return `Rs. ${fmtInr(Number(v) || 0)}`;
     if (col.format === "number") return Number(v).toLocaleString("en-IN");
     return String(v);
   };

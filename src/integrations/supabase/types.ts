@@ -3228,11 +3228,21 @@ export type Database = {
           grn_date: string
           grn_number: string
           id: string
+          lr_date: string | null
+          lr_number: string | null
           purchase_order_id: string | null
           remarks: string | null
           status: string
+          supplier_challan_date: string | null
+          supplier_challan_number: string | null
           supplier_id: string
+          supplier_invoice_date: string | null
+          supplier_invoice_number: string | null
+          transport_mode: string | null
+          transport_name: string | null
+          transporter_id: string | null
           updated_at: string
+          vehicle_number: string | null
           warehouse_id: string
         }
         Insert: {
@@ -3242,11 +3252,21 @@ export type Database = {
           grn_date?: string
           grn_number: string
           id?: string
+          lr_date?: string | null
+          lr_number?: string | null
           purchase_order_id?: string | null
           remarks?: string | null
           status?: string
+          supplier_challan_date?: string | null
+          supplier_challan_number?: string | null
           supplier_id: string
+          supplier_invoice_date?: string | null
+          supplier_invoice_number?: string | null
+          transport_mode?: string | null
+          transport_name?: string | null
+          transporter_id?: string | null
           updated_at?: string
+          vehicle_number?: string | null
           warehouse_id: string
         }
         Update: {
@@ -3256,11 +3276,21 @@ export type Database = {
           grn_date?: string
           grn_number?: string
           id?: string
+          lr_date?: string | null
+          lr_number?: string | null
           purchase_order_id?: string | null
           remarks?: string | null
           status?: string
+          supplier_challan_date?: string | null
+          supplier_challan_number?: string | null
           supplier_id?: string
+          supplier_invoice_date?: string | null
+          supplier_invoice_number?: string | null
+          transport_mode?: string | null
+          transport_name?: string | null
+          transporter_id?: string | null
           updated_at?: string
+          vehicle_number?: string | null
           warehouse_id?: string
         }
         Relationships: [
@@ -3276,6 +3306,13 @@ export type Database = {
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goods_receipts_transporter_id_fkey"
+            columns: ["transporter_id"]
+            isOneToOne: false
+            referencedRelation: "transporters"
             referencedColumns: ["id"]
           },
           {
@@ -9570,6 +9607,7 @@ export type Database = {
           status: string | null
           subtotal: number | null
           supplier_id: string | null
+          supplier_invoice_date: string | null
           supplier_invoice_number: string | null
           updated_by: string | null
           voucher_id: string | null
@@ -9594,6 +9632,7 @@ export type Database = {
           status?: string | null
           subtotal?: number | null
           supplier_id?: string | null
+          supplier_invoice_date?: string | null
           supplier_invoice_number?: string | null
           updated_by?: string | null
           voucher_id?: string | null
@@ -9618,6 +9657,7 @@ export type Database = {
           status?: string | null
           subtotal?: number | null
           supplier_id?: string | null
+          supplier_invoice_date?: string | null
           supplier_invoice_number?: string | null
           updated_by?: string | null
           voucher_id?: string | null
@@ -9758,8 +9798,6 @@ export type Database = {
           expected_delivery_date: string | null
           grand_total: number
           id: string
-          lr_number: string | null
-          payment_terms: string | null
           pending_qty: number
           po_date: string
           po_number: string
@@ -9770,12 +9808,8 @@ export type Database = {
           supplier_id: string | null
           tax_mode: string
           tax_total: number
-          terms_conditions: string | null
           total_qty: number
-          transport_mode: string | null
-          transport_name: string | null
           updated_at: string
-          vehicle_number: string | null
           warehouse_id: string | null
         }
         Insert: {
@@ -9789,8 +9823,6 @@ export type Database = {
           expected_delivery_date?: string | null
           grand_total?: number
           id?: string
-          lr_number?: string | null
-          payment_terms?: string | null
           pending_qty?: number
           po_date?: string
           po_number: string
@@ -9801,12 +9833,8 @@ export type Database = {
           supplier_id?: string | null
           tax_mode?: string
           tax_total?: number
-          terms_conditions?: string | null
           total_qty?: number
-          transport_mode?: string | null
-          transport_name?: string | null
           updated_at?: string
-          vehicle_number?: string | null
           warehouse_id?: string | null
         }
         Update: {
@@ -9820,8 +9848,6 @@ export type Database = {
           expected_delivery_date?: string | null
           grand_total?: number
           id?: string
-          lr_number?: string | null
-          payment_terms?: string | null
           pending_qty?: number
           po_date?: string
           po_number?: string
@@ -9832,12 +9858,8 @@ export type Database = {
           supplier_id?: string | null
           tax_mode?: string
           tax_total?: number
-          terms_conditions?: string | null
           total_qty?: number
-          transport_mode?: string | null
-          transport_name?: string | null
           updated_at?: string
-          vehicle_number?: string | null
           warehouse_id?: string | null
         }
         Relationships: [

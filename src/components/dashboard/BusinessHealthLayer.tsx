@@ -18,7 +18,7 @@ import { fetchLedgersWithBalance, fetchPeriodIncomeExpense, netProfitWithInvento
 const EPOCH = "1970-01-01";
 
 const inr = (n: number) =>
-  "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
+  "₹" + new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 type StatusTone = "healthy" | "warning" | "critical" | "neutral";
 type DeltaTone = "up" | "down" | "flat";

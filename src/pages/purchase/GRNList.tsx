@@ -112,7 +112,7 @@ export default function GRNList() {
         <div>
           <p className="text-sm text-muted-foreground font-medium">Purchase</p>
           <h1 className="font-display text-2xl md:text-3xl font-bold mt-1">Goods Receipt Notes</h1>
-          <p className="text-muted-foreground mt-1 text-sm">Every GRN recorded against a purchase order — click one to view what was received.</p>
+          <p className="text-muted-foreground mt-1 text-sm">Every Goods Receipt Note — what physically arrived from each supplier, with or without a linked purchase order.</p>
         </div>
         <Button onClick={() => navigate("/purchase/grn/new")}><Plus className="h-4 w-4 mr-2" />New GRN</Button>
       </header>

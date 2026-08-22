@@ -35,7 +35,7 @@ type Calc = {
   created_at: string;
 };
 
-const fmt = (n: number) => new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(n));
+const fmt = (n: number) => new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 const fmtPct = (n: number | null) => Number(n || 0).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 
 export default function LegacyCalculatorPanel() {

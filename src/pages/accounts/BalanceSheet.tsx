@@ -154,10 +154,12 @@ export default function BalanceSheet() {
     { key: "side", label: "Side", format: "badge" as const },
     { key: "group", label: "Group", onCellClick: onGroupClick },
     { key: "item", label: "Particulars" },
-    // Paise-exact render, not format:"currency" -- MockTablePage's default
-    // currency formatter rounds to whole rupees, which would silently
-    // truncate amounts like ₹427.50 that this report must preserve exactly.
-    { key: "amount", label: "Amount", align: "right" as const, render: (row: any) => `₹ ${fmtInrPrecise(row.amount)}` },
+    // format:"currency" (not a bespoke render) -- fmtInr is now the same
+    // paise-exact formatter everywhere (accounting.ts), so this column
+    // renders identically on screen, in the Preview modal, and in PDF/Excel
+    // exports (a `render` function only MockTablePage understood used to
+    // leave those latter two printing the raw floating-point number).
+    { key: "amount", label: "Amount", align: "right" as const, format: "currency" as const },
   ];
 
   // T-Format's Preview/PDF/Excel export -- these renderers (DocumentPreview,

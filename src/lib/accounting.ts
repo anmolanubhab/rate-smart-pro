@@ -550,8 +550,15 @@ export async function fetchPeriodIncomeExpense(
   return { income, expense, netSales, netPurchases };
 }
 
+// The one canonical currency formatter every accounting screen should use
+// (Ledger Accounts KPI cards, MockTablePage's format="currency" columns,
+// dozens of report pages) -- always exactly 2 decimals, never rounded to a
+// whole rupee. Previously used Math.round()+0 decimals, which silently
+// dropped paise from every balance/total it touched (₹11,374.73 displayed
+// as "₹11,375") -- display formatting is not the accounting Round Off
+// feature (src/lib/roundOffSettings.ts) and must never behave like it.
 export const fmtInr = (n: number) =>
-  new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
+  new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 /** Centered business-identity header block (name, address, contact, GSTIN)
  *  shown above every formal financial statement (Balance Sheet, Trial
@@ -580,14 +587,10 @@ export function buildBusinessHeaderLines(business?: {
   ].filter(Boolean);
 }
 
-/** Same Indian-digit-grouping format as fmtInr, but never rounds to whole
- *  rupees -- up to 2 decimal places are preserved exactly (matching the
- *  paise-exact convention printService.ts/gstExport.ts already use for
- *  PDF/Excel). Used by the Balance Sheet report specifically, where paise
- *  (e.g. CGST/SGST Output at ₹427.50) must survive unrounded on screen the
- *  same way they already do in Print/PDF/Excel. */
-export const fmtInrPrecise = (n: number) =>
-  new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(n) || 0);
+/** Alias kept for existing call sites (Trial Balance, Balance Sheet, Group
+ *  Summary, Party/Supplier Ledger) -- fmtInr itself is now exactly as
+ *  precise, so there's only one canonical currency formatter. */
+export const fmtInrPrecise = fmtInr;
 
 // ─── Account group drill-down (Balance Sheet Tally-style navigation) ──────────
 //

@@ -193,6 +193,10 @@ export default function PurchaseInvoiceDetail() {
             <p className="font-semibold mt-0.5 font-mono">{invoice.supplier_invoice_number ?? "—"}</p>
           </div>
           <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Supplier's Invoice Date</p>
+            <p className="font-semibold mt-0.5">{invoice.supplier_invoice_date ? fd(invoice.supplier_invoice_date) : "—"}</p>
+          </div>
+          <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Purchase Order</p>
             <p className="font-semibold mt-0.5 font-mono">{invoice.po_number ?? "—"}</p>
           </div>

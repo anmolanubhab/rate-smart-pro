@@ -7,6 +7,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
 import { fetchParties, type Party } from "@/lib/parties";
+import { searchProducts, type Product } from "@/lib/products";
+import { fetchProductUnits, purchaseUnitOf, toStockQty, type ProductUnit } from "@/lib/units";
+import { resolvePurchasePrice } from "@/lib/purchasePricing/resolvePurchasePrice";
+import { resolveRateForMode } from "@/lib/purchaseCalc";
+import { useRoundOffSettings, resolveRoundOff } from "@/lib/roundOffSettings";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,11 +53,12 @@ export default function CreatePurchaseInvoice() {
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState("");
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
+  const [supplierInvoiceDate, setSupplierInvoiceDate] = useState("");
   const [remarks, setRemarks] = useState("");
 
   const [suppliers, setSuppliers] = useState<Party[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<{ id: string; po_number: string; supplier_id: string | null }[]>([]);
-  const [grns, setGrns] = useState<{ id: string; grn_number: string; supplier_id: string | null; purchase_order_id: string | null }[]>([]);
+  const [grns, setGrns] = useState<{ id: string; grn_number: string; supplier_id: string | null; purchase_order_id: string | null; supplier_invoice_number: string | null; supplier_invoice_date: string | null }[]>([]);
 
   const [supplierId, setSupplierId] = useState("");
   const [purchaseOrderId, setPurchaseOrderId] = useState("");
@@ -72,7 +78,7 @@ export default function CreatePurchaseInvoice() {
       const [partyData, poData, { data: grnData }] = await Promise.all([
         fetchParties(user.id, "supplier"),
         fetchOpenPOsForInvoice(businessId),
-        supabase.from("goods_receipts").select("id, grn_number, supplier_id, purchase_order_id")
+        supabase.from("goods_receipts").select("id, grn_number, supplier_id, purchase_order_id, supplier_invoice_number, supplier_invoice_date")
           .eq("business_id", businessId).eq("status", "received").order("grn_date", { ascending: false }).limit(100),
       ]);
       setSuppliers(partyData ?? []);
@@ -108,6 +114,11 @@ export default function CreatePurchaseInvoice() {
     const grn = grns.find((g) => g.id === id);
     if (grn?.supplier_id) setSupplierId(grn.supplier_id);
     if (grn?.purchase_order_id) setPurchaseOrderId(grn.purchase_order_id);
+    // Reuse the supplier invoice number already captured on the GRN at
+    // receiving time, if any -- convenience prefill, never overwrites
+    // something the user already typed into this invoice.
+    if (grn?.supplier_invoice_number && !supplierInvoiceNumber) setSupplierInvoiceNumber(grn.supplier_invoice_number);
+    if (grn?.supplier_invoice_date && !supplierInvoiceDate) setSupplierInvoiceDate(grn.supplier_invoice_date);
     try {
       const prefilled = await fetchGrnItemsForInvoice(id);
       setItems(prefilled.length ? prefilled : [blankInvoiceItem()]);
@@ -137,7 +148,98 @@ export default function CreatePurchaseInvoice() {
   const addRow = () => setItems((r) => [...r, blankInvoiceItem()]);
   const delRow = (idx: number) => setItems((r) => (r.length <= 1 ? [blankInvoiceItem()] : r.filter((_, i) => i !== idx)));
 
+  // ─── Manual/direct line entry — a Purchase Invoice needs neither a PO nor
+  // a GRN (spec: "GRN system use nahi karna chahta to direct Purchase
+  // Invoice bhi le sake"). Product search here is what actually makes that
+  // usable: without a captured product_id, create_purchase_invoice_atomic's
+  // own direct-stock-posting branch (goods_receipt_id IS NULL) silently
+  // skips every line, so stock never moved for a manually-typed row. ─────
+  const [searchIdx, setSearchIdx] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [searchHighlight, setSearchHighlight] = useState(0);
+  const [unitsByProduct, setUnitsByProduct] = useState<Record<string, ProductUnit[]>>({});
+
+  useEffect(() => {
+    if (searchIdx === null || !user || !searchTerm.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      searchProducts(user.id, searchTerm, 8)
+        .then((r) => { setSearchResults(r); setSearchHighlight(0); })
+        .catch(() => setSearchResults([]));
+    }, 180);
+    return () => clearTimeout(t);
+  }, [searchTerm, searchIdx, user]);
+
+  const loadProductUnits = async (productId: string): Promise<ProductUnit[]> => {
+    if (unitsByProduct[productId]) return unitsByProduct[productId];
+    try {
+      const pu = await fetchProductUnits(productId);
+      setUnitsByProduct((m) => ({ ...m, [productId]: pu }));
+      return pu;
+    } catch {
+      return [];
+    }
+  };
+
+  /** Same resolution CreatePurchaseOrder.tsx/PurchaseGRN.tsx already use —
+   *  supplier+part configured rate/discount (Purchase Pricing Engine), not
+   *  the product's generic dealer_rate at 0%. Falls back to manual-entry
+   *  behavior when nothing is configured. */
+  const pickProduct = async (idx: number, p: Product) => {
+    const resolved = await resolvePurchasePrice(p.id, supplierId || null);
+    const priced = resolved
+      ? resolveRateForMode(resolved.mode, {
+          mrp: resolved.mrp ?? Number(p.mrp),
+          ndp: resolved.ndp,
+          fixedRate: resolved.fixedRate,
+          primaryDiscountPct: resolved.primaryDiscountPct,
+          additionalDiscountPct: resolved.additionalDiscountPct,
+        })
+      : null;
+    updateRow(idx, {
+      product_id: p.id,
+      part_number: p.part_number,
+      description: p.name,
+      rate: priced ? priced.rate : Number(p.mrp),
+      discount_percent: priced ? priced.primaryDiscountPct : 0,
+      additional_discount_percent: priced ? priced.additionalDiscountPct : 0,
+      gst_percent: Number(p.gst_pct),
+      unit_id: null,
+      resolved_purchase_pricing_mode: resolved?.mode ?? null,
+      resolved_ndp: resolved?.ndp ?? null,
+      resolved_primary_discount_pct: priced?.primaryDiscountPct ?? null,
+      resolved_additional_discount_pct: priced?.additionalDiscountPct ?? null,
+      purchase_scheme_id: resolved?.schemeId ?? null,
+      source_price_list_id: resolved?.sourcePriceListId ?? null,
+      is_overridden: false,
+      configured_rate: priced ? priced.rate : null,
+    });
+    setSearchIdx(null);
+    setSearchTerm("");
+    setSearchResults([]);
+
+    const pu = await loadProductUnits(p.id);
+    if (pu.length) {
+      const defaultUnit = purchaseUnitOf(pu);
+      if (defaultUnit) updateRow(idx, { unit_id: defaultUnit.unit_id });
+    }
+  };
+
   const totals = useMemo(() => computeInvoiceTotals(items), [items]);
+
+  // savePurchaseInvoice() -> applyPurchaseInvoiceRoundOff() computes and
+  // posts this exact same adjustment server-side (Settings -> Accounting ->
+  // Round Off, gated on round_off_purchase_invoice) -- mirrored here purely
+  // for display, so the totals shown before saving match what actually gets
+  // saved and posted.
+  const roundOffSettings = useRoundOffSettings();
+  const { roundOffAmount: roundOff, finalTotal: grandTotal } = useMemo(
+    () => resolveRoundOff(totals.grand_total, roundOffSettings, roundOffSettings.applyPurchaseInvoice),
+    [totals.grand_total, roundOffSettings]
+  );
 
   const handleSave = async () => {
     if (!user || !businessId || saving) return;
@@ -153,6 +255,7 @@ export default function CreatePurchaseInvoice() {
         purchase_order_id: purchaseOrderId || null,
         goods_receipt_id: grnId || null,
         supplier_invoice_number: supplierInvoiceNumber || null,
+        supplier_invoice_date: supplierInvoiceDate || null,
         invoice_date: invoiceDate,
         due_date: dueDate || null,
         remarks: remarks || null,
@@ -188,7 +291,7 @@ export default function CreatePurchaseInvoice() {
       onAddRow: addRow,
       onEscape: () => navigate("/purchase/invoices"),
     },
-    [items, supplierId, purchaseOrderId, grnId, invoiceNumber, invoiceDate, dueDate, supplierInvoiceNumber, remarks],
+    [items, supplierId, purchaseOrderId, grnId, invoiceNumber, invoiceDate, dueDate, supplierInvoiceNumber, supplierInvoiceDate, remarks],
   );
 
   const toolbarActions: DocumentToolbarAction[] = [
@@ -256,7 +359,7 @@ export default function CreatePurchaseInvoice() {
           </DocumentHeaderValue>
 
           <DocumentHeaderInputField label="Due Date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          <DocumentHeaderValue />
+          <DocumentHeaderInputField label="Supplier's Invoice Date" labelAlign="right" type="date" value={supplierInvoiceDate} onChange={(e) => setSupplierInvoiceDate(e.target.value)} />
 
           <DocumentHeaderLabel span={2}>Remarks</DocumentHeaderLabel>
           <DocumentHeaderValue span={10}>
@@ -284,14 +387,58 @@ export default function CreatePurchaseInvoice() {
           renderRow={(item, idx) => (
             <>
               <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{idx + 1}</td>
-              <td className="px-0.5 py-0.5">
-                <DocumentGridCellInput value={item.part_number} onChange={(e) => updateRow(idx, { part_number: e.target.value })} />
+              <td className="px-0.5 py-0.5 relative">
+                <DocumentGridCellInput
+                  value={searchIdx === idx ? searchTerm : item.part_number}
+                  onChange={(e) => {
+                    updateRow(idx, { part_number: e.target.value.toUpperCase() });
+                    setSearchIdx(idx);
+                    setSearchTerm(e.target.value);
+                    setSearchHighlight(0);
+                  }}
+                  onFocus={() => { setSearchIdx(idx); setSearchTerm(item.part_number); setSearchHighlight(0); }}
+                  onBlur={() => setTimeout(() => setSearchIdx((s) => (s === idx ? null : s)), 150)}
+                  onKeyDown={(e) => {
+                    if (searchIdx !== idx || searchResults.length === 0) return;
+                    if (e.key === "ArrowDown") { e.preventDefault(); setSearchHighlight((p) => Math.min(p + 1, searchResults.length - 1)); }
+                    else if (e.key === "ArrowUp") { e.preventDefault(); setSearchHighlight((p) => Math.max(p - 1, 0)); }
+                    else if (e.key === "Enter") { e.preventDefault(); const s = searchResults[searchHighlight]; if (s) pickProduct(idx, s); }
+                    else if (e.key === "Escape") { setSearchIdx(null); setSearchResults([]); }
+                  }}
+                  placeholder="Search product…"
+                  className="h-6 text-[12px] font-mono px-1 rounded-none border-0 bg-transparent focus-visible:ring-0 focus-visible:bg-background focus-visible:border focus-visible:border-primary uppercase"
+                />
+                {searchIdx === idx && searchResults.length > 0 && (
+                  <div className="absolute z-50 left-0 mt-0.5 w-80 bg-popover border border-border rounded shadow-elegant max-h-56 overflow-auto scroll-smooth">
+                    {searchResults.map((p, i) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); pickProduct(idx, p); }}
+                        className={`w-full text-left px-2 py-1.5 text-[12px] border-b border-border last:border-0 ${searchHighlight === i ? "bg-primary text-primary-foreground" : "hover:bg-muted bg-popover"}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-semibold">{p.part_number}</span>
+                          <span className={`text-[10px] ${searchHighlight === i ? "text-primary-foreground/80" : "text-muted-foreground"}`}>Stk {p.stock}</span>
+                        </div>
+                        <div className="text-[11px] truncate">{p.name}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput value={item.description} onChange={(e) => updateRow(idx, { description: e.target.value })} />
               </td>
               <td className="px-0.5 py-0.5">
-                <DocumentGridCellInput align="right" type="number" value={item.qty || ""} onChange={(e) => updateRow(idx, { qty: +e.target.value })} />
+                <DocumentGridCellInput
+                  align="right" type="number" value={item.qty || ""}
+                  onChange={(e) => {
+                    const qty = +e.target.value;
+                    const pu = item.product_id ? unitsByProduct[item.product_id] : undefined;
+                    updateRow(idx, { qty, stock_qty: pu?.length && item.unit_id ? toStockQty(qty, item.unit_id, pu) : item.stock_qty });
+                  }}
+                />
               </td>
               <td className="px-0.5 py-0.5">
                 <DocumentGridCellInput align="right" type="number" value={item.rate || ""} onChange={(e) => updateRow(idx, { rate: +e.target.value })} />
@@ -324,8 +471,9 @@ export default function CreatePurchaseInvoice() {
               { label: "Taxable Amount", value: `₹${fmt(totals.taxable)}` },
               { label: "Discount", value: `− ₹${fmt(totals.discount_total)}` },
               { label: "Tax (GST)", value: `₹${fmt(totals.tax_total)}` },
+              ...(roundOff !== 0 ? [{ label: "Round Off", value: `${roundOff >= 0 ? "+ " : "− "}₹${fmt(Math.abs(roundOff))}` }] : []),
             ]}
-            grandTotal={`₹${fmt(totals.grand_total)}`}
+            grandTotal={`₹${fmt(grandTotal)}`}
           />
         </div>
       </DocumentSheet>

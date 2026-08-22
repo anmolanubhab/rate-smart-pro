@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
+import { fmtInr } from "@/lib/accounting";
 
 export type MockColumn = {
   key: string;
@@ -13,8 +14,8 @@ export type MockColumn = {
    *  unchanged. */
   onCellClick?: (row: Record<string, any>) => void;
   /** Optional full override of a cell's display content, bypassing the
-   *  format-based rendering below entirely (e.g. a paise-exact currency
-   *  string instead of this table's default whole-rupee fmtInr). Existing
+   *  format-based rendering below entirely (e.g. a custom currency string
+   *  shaped differently from this table's default fmtInr rendering). Existing
    *  callers that don't set this keep today's behavior unchanged. */
   render?: (row: Record<string, any>) => ReactNode;
 };
@@ -36,7 +37,14 @@ interface Props {
   rowActions?: (row: Record<string, any>) => ReactNode;
 }
 
-const fmtInr = (n: number) =>
+// "currency" columns use the canonical fmtInr (src/lib/accounting.ts) --
+// always exactly 2 decimals, never silently rounded to a whole rupee.
+// "number" is a separate, deliberately whole-number format for quantities/
+// counts/day-buckets (Qty, Days, Movements, Product Count, etc.) -- those
+// must not pick up currency-style ".00" decimals just because they share a
+// generic numeric column type with a few rate/% columns that are still
+// tagged "number" for historical reasons.
+const fmtNum = (n: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
 
 const toneClass = (t?: MockKpi["tone"]) =>
@@ -99,7 +107,7 @@ export default function MockTablePage({
                     let display: ReactNode = v;
                     if (c.render) display = c.render(r);
                     else if (c.format === "currency") display = `₹ ${fmtInr(v)}`;
-                    else if (c.format === "number") display = fmtInr(v);
+                    else if (c.format === "number") display = fmtNum(v);
                     else if (c.format === "badge") {
                       const tone = r[`${c.key}_tone`] || "default";
                       display = (

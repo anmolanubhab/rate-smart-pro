@@ -56,7 +56,6 @@ export interface POItem {
   configured_rate?: number | null;
 }
 
-export type TransportMode = "road" | "rail" | "air" | "courier" | "self_pickup" | "other";
 export type TaxMode = "inclusive" | "exclusive";
 
 export interface PurchaseOrder {
@@ -69,13 +68,6 @@ export interface PurchaseOrder {
   expected_delivery_date: string | null;
   status: POStatus;
   remarks: string | null;
-  transport_name: string | null;
-  transporter_id?: string | null;
-  transport_mode: TransportMode | null;
-  lr_number: string | null;
-  vehicle_number: string | null;
-  payment_terms: string | null;
-  terms_conditions: string | null;
   tax_mode: TaxMode;
   subtotal: number;
   discount_total: number;
@@ -214,13 +206,6 @@ export interface SavePOInput {
   expected_delivery_date?: string | null;
   status: POStatus;
   remarks?: string | null;
-  transport_name?: string | null;
-  transporter_id?: string | null;
-  transport_mode?: TransportMode | null;
-  lr_number?: string | null;
-  vehicle_number?: string | null;
-  payment_terms?: string | null;
-  terms_conditions?: string | null;
   tax_mode?: TaxMode;
   items: POItem[];
 }
@@ -245,13 +230,6 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
           expected_delivery_date: input.expected_delivery_date ?? null,
           status: input.status,
           remarks: input.remarks ?? null,
-          transport_name: input.transport_name ?? null,
-          transporter_id: input.transporter_id ?? null,
-          transport_mode: input.transport_mode ?? null,
-          lr_number: input.lr_number ?? null,
-          vehicle_number: input.vehicle_number ?? null,
-          payment_terms: input.payment_terms ?? null,
-          terms_conditions: input.terms_conditions ?? null,
           tax_mode: input.tax_mode ?? "exclusive",
           subtotal: totals.subtotal,
           discount_total: totals.discount_total,
@@ -333,13 +311,6 @@ export async function savePurchaseOrder(input: SavePOInput): Promise<PurchaseOrd
         expected_delivery_date: input.expected_delivery_date ?? null,
         status: input.status,
         remarks: input.remarks ?? null,
-        transport_name: input.transport_name ?? null,
-          transporter_id: input.transporter_id ?? null,
-        transport_mode: input.transport_mode ?? null,
-        lr_number: input.lr_number ?? null,
-        vehicle_number: input.vehicle_number ?? null,
-        payment_terms: input.payment_terms ?? null,
-        terms_conditions: input.terms_conditions ?? null,
         tax_mode: input.tax_mode ?? "exclusive",
         subtotal: totals.subtotal,
         discount_total: totals.discount_total,
@@ -544,12 +515,6 @@ export async function duplicatePurchaseOrder(id: string, userId: string): Promis
       expected_delivery_date: null,
       status: "draft",
       remarks: original.remarks,
-      transport_name: original.transport_name,
-      transport_mode: original.transport_mode,
-      lr_number: original.lr_number,
-      vehicle_number: original.vehicle_number,
-      payment_terms: original.payment_terms,
-      terms_conditions: original.terms_conditions,
       tax_mode: original.tax_mode,
       subtotal: original.subtotal,
       discount_total: original.discount_total,

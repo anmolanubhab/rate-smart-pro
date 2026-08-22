@@ -3,11 +3,16 @@
 // Business-wide Round Off accounting configuration (Settings → Accounting →
 // Round Off): a global on/off + rounding method, plus a per-voucher-type
 // enforcement flag, on the same one-row-per-business accounting_settings row
-// every other business-wide toggle lives on (see inventorySettings.ts). Only
-// Sales Invoice is actually wired today (generateInvoiceFromDispatch /
-// generateInvoiceFromOrder in salesInvoices.ts) -- the other module flags are
-// recorded for when Purchase Invoice/Debit Note/Credit Note/Sales Order/
-// Purchase Order round off gets built.
+// every other business-wide toggle lives on (see inventorySettings.ts).
+// Wired today: Sales Invoice (salesInvoices.ts), Purchase Invoice
+// (purchaseInvoices.ts), Sales Return / Credit Note (create_sales_return()
+// and post_sales_return() RPCs), Purchase Return / Debit Note
+// (create_purchase_return(), create_qc_debit_note() RPCs) -- each gated
+// independently by its own round_off_<type> flag, never a global auto-round.
+// Sales Order/Purchase Order flags exist but nothing posts against them yet.
+// Quotation isn't a posted accounting document and has no dedicated flag --
+// its screen gates only on the master round_off_enabled switch (see
+// resolveRoundOff below).
 
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -123,4 +128,25 @@ export function calculateRoundOff(rawTotal: number, method: RoundOffMethod): { r
   }
   const roundOffAmount = +(finalTotal - rawTotal).toFixed(2);
   return { roundOffAmount, finalTotal: +finalTotal.toFixed(2) };
+}
+
+/**
+ * The one gate every document screen/RPC should apply before touching a
+ * total: OFF (master switch or the document type's own flag) means the
+ * exact calculated amount, untouched -- no rounding line, no adjustment.
+ * ON means calculateRoundOff() runs. Centralizes the
+ * "!settings.enabled || !applyFlag -> exact amount" check that
+ * applyPurchaseInvoiceRoundOff() (purchaseInvoices.ts) and every
+ * round-off-aware RPC already apply inline, so new call sites can't
+ * reintroduce a bare Math.round().
+ */
+export function resolveRoundOff(
+  rawTotal: number,
+  settings: RoundOffSettings,
+  applyFlag: boolean
+): { roundOffAmount: number; finalTotal: number } {
+  if (!settings.enabled || !applyFlag) {
+    return { roundOffAmount: 0, finalTotal: +rawTotal.toFixed(2) };
+  }
+  return calculateRoundOff(rawTotal, settings.method);
 }
