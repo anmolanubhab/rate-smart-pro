@@ -4,7 +4,7 @@ import { fetchOrder, fetchOrderItems, computeTotals } from "@/lib/orders";
 import { cancelVoucher } from "@/lib/voucherService";
 import { assertHsnCompliance } from "@/lib/accountingLock";
 import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
-import { resolveIsInterstate, splitGstAmount, splitGstRate, assertRegularGstScheme } from "@/lib/gstCalc";
+import { resolveIsInterstate, splitGstAmount, splitGstRate, assertRegularGstScheme, assertGstStateResolvable } from "@/lib/gstCalc";
 
 /**
  * Rounds a raw invoice total per the business's Round Off settings (Settings
@@ -192,16 +192,25 @@ export async function generateInvoiceFromDispatch(opts: {
   // default of 0 regardless of gst_pct, which is why GST Engine Milestone 4's
   // reports summed to zero output tax despite real invoices existing.
   const [{ data: biz, error: bizErr }, { data: party, error: partyErr }] = await Promise.all([
-    supabase.from("businesses").select("gst_number").eq("id", opts.businessId ?? "").maybeSingle(),
-    supabase.from("parties").select("gst").eq("id", order.party_id ?? "").maybeSingle(),
+    supabase.from("businesses").select("gst_number, state_code").eq("id", opts.businessId ?? "").maybeSingle(),
+    supabase.from("parties").select("gst, state_code").eq("id", order.party_id ?? "").maybeSingle(),
   ]);
   if (bizErr) throw bizErr;
   if (partyErr) throw partyErr;
-  const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst);
 
   // 3. Build invoice line items from dispatch_items
   const dispatchItems: any[] = (dispatch as any).dispatch_items || [];
   if (!dispatchItems.length) throw new Error("Dispatch has no items");
+
+  // Block posting rather than silently defaulting to intrastate when GST
+  // actually applies to this invoice (any line has a nonzero GST %) but
+  // either side's state can't be determined -- checked before computing
+  // any split, and skipped entirely for a genuinely GST-free invoice.
+  const hasAnyGst = dispatchItems.some((di: any) => Number(di.order_items?.gst_pct ?? 0) > 0);
+  if (hasAnyGst) {
+    await assertGstStateResolvable(biz?.gst_number, biz?.state_code, party?.gst, party?.state_code, "this Sales Invoice");
+  }
+  const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst, party?.state_code, biz?.state_code);
 
   // Compute totals from dispatched qtys
   const lineItems = dispatchItems.map((di: any) => {
@@ -413,12 +422,18 @@ export async function generateInvoiceFromOrder(opts: {
   // Same fix as generateInvoiceFromDispatch — resolved once per invoice via
   // the GST Engine, not left at the column default of 0.
   const [{ data: biz, error: bizErr }, { data: party, error: partyErr }] = await Promise.all([
-    supabase.from("businesses").select("gst_number").eq("id", opts.businessId ?? "").maybeSingle(),
-    supabase.from("parties").select("gst").eq("id", order.party_id ?? "").maybeSingle(),
+    supabase.from("businesses").select("gst_number, state_code").eq("id", opts.businessId ?? "").maybeSingle(),
+    supabase.from("parties").select("gst, state_code").eq("id", order.party_id ?? "").maybeSingle(),
   ]);
   if (bizErr) throw bizErr;
   if (partyErr) throw partyErr;
-  const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst);
+  // Block posting rather than silently defaulting to intrastate when GST
+  // actually applies (gst_total > 0) but either side's state can't be
+  // determined -- skipped entirely for a genuinely GST-free order.
+  if (totals.gst_total > 0) {
+    await assertGstStateResolvable(biz?.gst_number, biz?.state_code, party?.gst, party?.state_code, "this Sales Invoice");
+  }
+  const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst, party?.state_code, biz?.state_code);
 
   // HSN Lock groundwork, done before the invoice header is created so a
   // blocked invoice never gets a half-created row: resolve each line's
@@ -516,6 +531,230 @@ export async function generateInvoiceFromOrder(opts: {
   if (orderUpdateErr) throw orderUpdateErr;
 
   return inv as SalesInvoice;
+}
+
+// ─── Direct Sales Invoice (Adaptive Workflow — Phase 2) ─────────────────────
+//
+// Third entry point into sales_invoices/sales_invoice_items, alongside
+// generateInvoiceFromDispatch/generateInvoiceFromOrder above. Deliberately
+// reuses every centralized piece those two already use (numbering, GST
+// split, HSN compliance, round-off) and lets the existing
+// sales_invoice_autopost() DB trigger do all posting -- no new ledger/GST/
+// stock/voucher logic here. order_id and dispatch_id are always null: the
+// absence of a parent workflow document is this path's whole point, not
+// something to fake with placeholder rows.
+//
+// Two correctness issues specific to this path (both would NOT show up in
+// the two existing functions, which is why they're handled here explicitly
+// rather than by copying that code as-is):
+//
+// 1. STOCK-REDUCTION ORDERING. sales_invoice_autopost()'s stock-deduction
+//    loop (only runs when sales_config.stock_reduction_point = 'invoice')
+//    reads sales_invoice_items WHERE invoice_id = NEW.id. The two existing
+//    functions insert the header with status:'posted' directly, then insert
+//    items in a second round-trip -- fine for them today because every
+//    business currently exercising that path has stock_reduction_point =
+//    'dispatch' (stock already moved at Dispatch time), so the trigger's
+//    'invoice' branch never runs for their invoices. A Direct Invoice has no
+//    Dispatch stage, so it REQUIRES stock_reduction_point = 'invoice' (see
+//    the guard below) -- which means, verified against this exact trigger's
+//    SQL, inserting the header already-'posted' would fire autopost before
+//    sales_invoice_items exist and silently skip stock reduction entirely.
+//    Fixed by always inserting as 'draft', inserting items, THEN updating to
+//    'posted' -- the same safe ordering already proven by this codebase's
+//    own invoice-approval flow (create draft -> items -> approve/post
+//    later), not a new mechanism.
+//
+// 2. IDEMPOTENCY. generateInvoiceFromDispatch/FromOrder are naturally
+//    double-submit-safe (a dispatch/order can only be invoiced once, checked
+//    against dispatch.invoice_id / an existing non-cancelled invoice for
+//    that order_id). A Direct Invoice has no parent document to check
+//    against, and two independently-composed invoices with identical items
+//    for the same party are a legitimate, valid scenario -- so nothing about
+//    *content* can detect a duplicate submission. `clientRequestId` (a
+//    caller-generated UUID, one per compose session) plus the partial unique
+//    index on (business_id, client_request_id) is the actual protection: a
+//    genuine double-submit reuses the same token and is rejected/detected;
+//    two different real invoices use different tokens and both succeed.
+
+export interface DirectSalesInvoiceLineInput {
+  product_id: string | null;
+  part_number: string;
+  description?: string | null;
+  hsn?: string | null;
+  mrp: number;
+  net_rate: number;
+  qty: number;
+  discount_pct: number;
+  gst_pct: number;
+  unit_id?: string | null;
+  stock_qty?: number | null;
+}
+
+export interface CreateDirectSalesInvoiceInput {
+  businessId: string;
+  userId: string;
+  partyId: string;
+  invoiceDate: string;
+  items: DirectSalesInvoiceLineInput[];
+  shippingCharges?: number;
+  remarks?: string | null;
+  notes?: string | null;
+  /** Final desired status once items are safely attached. Default 'posted'. */
+  status?: "draft" | "posted";
+  /** Caller-generated UUID, one per compose/submit attempt -- see idempotency note above. */
+  clientRequestId: string;
+}
+
+export async function createDirectSalesInvoice(opts: CreateDirectSalesInvoiceInput): Promise<SalesInvoice> {
+  if (!opts.items.length) throw new Error("At least one item is required");
+  await assertRegularGstScheme(opts.businessId, undefined, "Direct Sales Invoice");
+
+  // Idempotency pre-check: a prior identical submission already landed.
+  const { data: existing } = await supabase
+    .from("sales_invoices")
+    .select("*")
+    .eq("business_id", opts.businessId)
+    .eq("client_request_id", opts.clientRequestId)
+    .maybeSingle();
+  if (existing) return existing as unknown as SalesInvoice;
+
+  const [{ data: salesCfg }, { data: biz }, { data: party }] = await Promise.all([
+    supabase.from("sales_config").select("enable_direct_invoice, stock_reduction_point").eq("business_id", opts.businessId).maybeSingle(),
+    supabase.from("businesses").select("gst_number, state_code").eq("id", opts.businessId).maybeSingle(),
+    supabase.from("parties").select("name, gst, state_code, address, billing_address, shipping_address, phone").eq("id", opts.partyId).maybeSingle(),
+  ]);
+
+  const cfg = salesCfg as { enable_direct_invoice: boolean; stock_reduction_point: "dispatch" | "invoice" } | null;
+  if (cfg && !cfg.enable_direct_invoice) {
+    throw new Error("Direct Sales Invoice isn't enabled for this business. Turn it on in Settings → Sales Configuration.");
+  }
+  if (!cfg || cfg.stock_reduction_point !== "invoice") {
+    throw new Error(
+      "Direct Sales Invoice requires Stock Reduction Point set to \"On Invoice Posting\" (Settings → Sales Configuration) — " +
+      "a direct invoice has no Dispatch stage, so stock can only be reduced at invoice time."
+    );
+  }
+
+  const gstBearing = opts.items.some((it) => Number(it.gst_pct) > 0);
+  if (gstBearing) {
+    await assertGstStateResolvable(biz?.gst_number, biz?.state_code, party?.gst, party?.state_code, "this Sales Invoice");
+  }
+  const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst, party?.state_code, biz?.state_code);
+
+  const lineItems = opts.items.map((it) => {
+    const lineNet = +(it.net_rate * it.qty).toFixed(2);
+    const gstAmount = +(lineNet * it.gst_pct / 100).toFixed(2);
+    const total = +(lineNet + gstAmount).toFixed(2);
+    const gstSplit = splitGstAmount(gstAmount, isInterstate);
+    const rateSplit = splitGstRate(it.gst_pct, isInterstate);
+    return { ...it, _lineNet: lineNet, _gst: gstAmount, total, ...rateSplit, ...gstSplit };
+  });
+
+  const subtotal = +lineItems.reduce((s, i) => s + Number(i.mrp) * Number(i.qty), 0).toFixed(2);
+  const discount_total = +lineItems.reduce((s, i) => s + (Number(i.mrp) - i.net_rate) * Number(i.qty), 0).toFixed(2);
+  const gst_total = +lineItems.reduce((s, i) => s + i._gst, 0).toFixed(2);
+  const taxable = +lineItems.reduce((s, i) => s + i._lineNet, 0).toFixed(2);
+  const rawGrandTotal = +(taxable + gst_total + (opts.shippingCharges || 0)).toFixed(2);
+  const { round_off_amount, grand_total } = await applySalesInvoiceRoundOff(opts.businessId, rawGrandTotal);
+
+  await assertHsnCompliance(
+    opts.businessId,
+    lineItems.map((it) => ({ product_id: it.product_id, part_number: it.part_number })),
+    lineItems.filter((it) => it.product_id).map((it) => ({ id: it.product_id as string, hsn_code: it.hsn ?? null }))
+  );
+
+  // Always inserted as 'draft' first -- see ordering note above. Retries on
+  // an invoice-number collision (existing numbering RPC has no locking of
+  // its own; the DB's unique index on (business_id, invoice_number) is the
+  // real backstop, same as every other path -- this just makes the retry
+  // automatic instead of surfacing the race as a save error).
+  let inv: Record<string, any> | null = null;
+  const maxAttempts = 5;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const invoice_number = await nextInvoiceNumber(opts.userId, opts.businessId);
+    const { data, error } = await supabase
+      .from("sales_invoices")
+      .insert({
+        user_id: opts.userId,
+        business_id: opts.businessId,
+        invoice_number,
+        invoice_date: opts.invoiceDate,
+        order_id: null,
+        dispatch_id: null,
+        party_id: opts.partyId,
+        party_name: party?.name ?? null,
+        party_snapshot: party ? { name: party.name, gst: party.gst, address: party.address, phone: party.phone } : null,
+        billing_address: party?.billing_address ?? party?.address ?? null,
+        shipping_address: party?.shipping_address ?? party?.address ?? null,
+        notes: opts.notes ?? null,
+        remarks: opts.remarks ?? "Direct Sales Invoice",
+        subtotal, discount_total, gst_total,
+        shipping_charges: opts.shippingCharges || 0,
+        grand_total, round_off_amount,
+        status: "draft",
+        client_request_id: opts.clientRequestId,
+      } as any)
+      .select()
+      .single();
+    if (!error) { inv = data; break; }
+    if ((error as any).code === "23505" && (error as any).message?.includes("idx_sales_invoice_number")) continue;
+    if ((error as any).code === "23505" && (error as any).message?.includes("idx_sales_invoices_client_request_id")) {
+      const { data: winner } = await supabase
+        .from("sales_invoices").select("*")
+        .eq("business_id", opts.businessId).eq("client_request_id", opts.clientRequestId)
+        .maybeSingle();
+      if (winner) return winner as unknown as SalesInvoice;
+    }
+    throw error;
+  }
+  if (!inv) throw new Error("Could not allocate a unique invoice number after several attempts — please try again.");
+
+  const invRows = lineItems.map((it, idx) => ({
+    user_id: opts.userId,
+    business_id: opts.businessId,
+    invoice_id: inv!.id,
+    product_id: it.product_id,
+    part_number: it.part_number,
+    description: it.description ?? null,
+    hsn: it.hsn ?? null,
+    mrp: it.mrp,
+    rate: it.net_rate,
+    qty: it.qty,
+    discount_pct: it.discount_pct,
+    net_rate: it.net_rate,
+    gst_pct: it.gst_pct,
+    cgst_rate: it.cgst_rate,
+    sgst_rate: it.sgst_rate,
+    igst_rate: it.igst_rate,
+    cgst_amount: it.cgst_amount,
+    sgst_amount: it.sgst_amount,
+    igst_amount: it.igst_amount,
+    total: it.total,
+    position: idx,
+    unit_id: it.unit_id ?? null,
+    stock_qty: it.stock_qty ?? it.qty,
+  }));
+  const { error: itemsErr } = await supabase.from("sales_invoice_items").insert(invRows);
+  if (itemsErr) {
+    // Safe: header is still 'draft', so autopost never fired -- no voucher/
+    // stock to unwind, a plain delete is a complete rollback.
+    await supabase.from("sales_invoices").delete().eq("id", inv.id);
+    throw itemsErr;
+  }
+
+  const finalStatus = opts.status ?? "posted";
+  if (finalStatus === "posted") {
+    const { data: posted, error: postErr } = await supabase
+      .from("sales_invoices")
+      .update({ status: "posted" } as any)
+      .eq("id", inv.id)
+      .select()
+      .single();
+    if (postErr) throw postErr;
+    return posted as unknown as SalesInvoice;
+  }
+  return inv as unknown as SalesInvoice;
 }
 
 /**

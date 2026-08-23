@@ -29,9 +29,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchGstRegistrations } from "@/lib/gstRegistrations";
 import { fetchGstComplianceConfig } from "@/lib/accountingLock";
+import { fmtInr as fmtInrRaw } from "@/lib/accounting";
 
-const fmtInr = (n: number) =>
-  `₹ ${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0)}`;
+// GST Dashboard is the one place that has always shown the "₹ " symbol
+// baked into the formatted string (KPI cards, chart tooltip) rather than
+// prefixing it separately at each call site -- keep that call shape, but
+// delegate the actual number formatting to the same canonical fmtInr used
+// by every other GST report, so all screens round/format identically.
+const fmtInr = (n: number) => `₹ ${fmtInrRaw(n)}`;
 
 const toneClass = (tone: "default" | "warning" | "danger" | "success") => {
   if (tone === "success") return "text-emerald-600";

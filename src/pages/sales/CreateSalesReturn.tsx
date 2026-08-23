@@ -4,6 +4,8 @@ import { Save, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { useInterstateFlag } from "@/hooks/useInterstateFlag";
+import { splitGstAmount } from "@/lib/gstCalc";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -239,7 +241,11 @@ const CreateSalesReturn = () => {
   };
 
   const totals = useMemo(() => computeTotals(items.filter((it) => Number(it.qty) > 0), 0), [items]);
-  const gstHalf = +(totals.gst_total / 2).toFixed(2);
+  // Interstate-aware split (was hardcoded 50/50 CGST/SGST regardless of the
+  // buyer's state) -- same resolveIsInterstate()/splitGstAmount() central
+  // engine used at actual return posting time.
+  const { isInterstate } = useInterstateFlag(business?.gst_number, party?.gst);
+  const { cgst_amount: gstCgst, sgst_amount: gstSgst, igst_amount: gstIgst } = splitGstAmount(totals.gst_total, isInterstate);
   // create_sales_return()/post_sales_return() only round when Settings ->
   // Accounting -> Round Off is ON for Credit Note -- mirror that here so the
   // preview never shows an adjustment the backend won't actually post.
@@ -528,8 +534,9 @@ const CreateSalesReturn = () => {
               lines={[
                 { label: "Taxable Value", value: fmt(totals.taxable) },
                 { label: "Discount", value: `− ${fmt(totals.discount_total)}` },
-                { label: "CGST", value: fmt(gstHalf) },
-                { label: "SGST", value: fmt(gstHalf) },
+                ...(isInterstate
+                  ? [{ label: "IGST", value: fmt(gstIgst) }]
+                  : [{ label: "CGST", value: fmt(gstCgst) }, { label: "SGST", value: fmt(gstSgst) }]),
                 ...(roundOff !== 0 ? [{ label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) }] : []),
               ]}
               grandTotalLabel="Net Credit Note Amount"

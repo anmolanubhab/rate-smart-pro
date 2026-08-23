@@ -3,6 +3,8 @@ import ReportRunner, { ReportFilters } from "@/components/reports/ReportRunner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import type { MockColumn, MockKpi } from "@/components/accounts/MockTablePage";
+import { fmtInr } from "@/lib/accounting";
+import { round2, sumRound2, isB2B } from "@/lib/gstCalc";
 
 const columns: MockColumn[] = [
   { key: "invoice_date", label: "Date" },
@@ -60,18 +62,19 @@ export default function Gstr1() {
     return invoices.map((inv) => {
       const buyerGstin = inv.parties?.gst ?? null;
       const s = splitByInvoice.get(inv.id) ?? { cgst: 0, sgst: 0, igst: 0 };
+      const b2b = isB2B(buyerGstin);
       return {
         invoice_date: inv.invoice_date,
         invoice_number: inv.invoice_number,
         party_name: inv.parties?.name ?? "—",
         gstin: buyerGstin || "—",
-        supply_type: buyerGstin && buyerGstin.length === 15 ? "B2B" : "B2C",
-        supply_type_tone: buyerGstin && buyerGstin.length === 15 ? "success" : "default",
-        taxable: Math.round(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
-        cgst: Math.round(s.cgst),
-        sgst: Math.round(s.sgst),
-        igst: Math.round(s.igst),
-        total: Math.round(Number(inv.grand_total ?? 0)),
+        supply_type: b2b ? "B2B" : "B2C",
+        supply_type_tone: b2b ? "success" : "default",
+        taxable: round2(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
+        cgst: round2(s.cgst),
+        sgst: round2(s.sgst),
+        igst: round2(s.igst),
+        total: round2(Number(inv.grand_total ?? 0)),
       };
     });
   };
@@ -79,12 +82,12 @@ export default function Gstr1() {
   const computeKpis = (rows: Record<string, any>[]): MockKpi[] => {
     const b2b = rows.filter((r) => r.supply_type === "B2B");
     const b2c = rows.filter((r) => r.supply_type === "B2C");
-    const totalTax = rows.reduce((s, r) => s + Number(r.cgst) + Number(r.sgst) + Number(r.igst), 0);
+    const totalTax = sumRound2(rows.map((r) => Number(r.cgst) + Number(r.sgst) + Number(r.igst)));
     return [
       { label: "Total Invoices", value: rows.length },
       { label: "B2B (with GSTIN)", value: b2b.length },
       { label: "B2C", value: b2c.length },
-      { label: "Total Tax", value: `₹ ${totalTax.toLocaleString("en-IN")}`, tone: "warning" },
+      { label: "Total Tax", value: `₹ ${fmtInr(totalTax)}`, tone: "warning" },
     ];
   };
 

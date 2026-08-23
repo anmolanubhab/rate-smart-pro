@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
-import { getGstRegistrationType } from "@/lib/gstCalc";
+import { getGstRegistrationType, round2 } from "@/lib/gstCalc";
+import { fmtInr } from "@/lib/accounting";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,10 @@ import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutput
 import type { MockColumn } from "@/components/accounts/MockTablePage";
 import type { ReportUdm } from "@/lib/documentUdm/types";
 
-const inr = (n: number) => `₹ ${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+// Same canonical formatter as every other GST report/page -- fixed 2
+// decimals, never a variable decimal count depending on whether the value
+// happens to be a whole rupee.
+const inr = (n: number) => `₹ ${fmtInr(n)}`;
 
 function isoMonthStart() {
   const d = new Date();
@@ -132,10 +136,13 @@ export default function Gstr3B() {
     { key: "sgst", label: "SGST", align: "right", format: "currency" },
     { key: "igst", label: "IGST", align: "right", format: "currency" },
   ];
+  // Paise-safe (round2), matching exactly what the on-screen cards above
+  // show via the same `inr()` formatter -- export must never disagree with
+  // the screen just because it used a different (whole-rupee) rounding rule.
   const exportRows = [
-    { section: "Outward Taxable Supplies", taxable: Math.round(outward.taxable), cgst: Math.round(outward.cgst), sgst: Math.round(outward.sgst), igst: Math.round(outward.igst) },
-    { section: "Eligible Input Tax Credit", taxable: Math.round(itc.taxable), cgst: Math.round(itc.cgst), sgst: Math.round(itc.sgst), igst: Math.round(itc.igst) },
-    { section: "Net Tax Payable", taxable: 0, cgst: Math.round(Math.max(netCgst, 0)), sgst: Math.round(Math.max(netSgst, 0)), igst: Math.round(Math.max(netIgst, 0)) },
+    { section: "Outward Taxable Supplies", taxable: round2(outward.taxable), cgst: round2(outward.cgst), sgst: round2(outward.sgst), igst: round2(outward.igst) },
+    { section: "Eligible Input Tax Credit", taxable: round2(itc.taxable), cgst: round2(itc.cgst), sgst: round2(itc.sgst), igst: round2(itc.igst) },
+    { section: "Net Tax Payable", taxable: 0, cgst: round2(Math.max(netCgst, 0)), sgst: round2(Math.max(netSgst, 0)), igst: round2(Math.max(netIgst, 0)) },
   ];
 
   return (

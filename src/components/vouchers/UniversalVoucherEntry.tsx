@@ -23,6 +23,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts } from "@/lib/accounting";
+import { resolveIsInterstate, splitGstAmount, round2 } from "@/lib/gstCalc";
 import { getLedgerAccountOptions, getAllActiveLedgerOptions, NON_CASH_BANK_LEDGER_TYPES, type LedgerOption } from "@/lib/ledgerFiltering";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
 import { canOverrideAdjustmentLedger, canUnlockVouchers, canBackdateVoucher, canCreateParty } from "@/lib/permissions";
@@ -195,7 +196,7 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
     if (base <= 0) { toast.error("Enter a base amount to calculate GST on"); return; }
     const rate = Number(selectedCategory.default_gst_rate) || 0;
     if (rate <= 0) { toast.error("This category has no default GST rate configured"); return; }
-    const gstAmount = Math.round(base * rate) / 100;
+    const gstAmount = round2((base * rate) / 100);
     try {
       if (type === "Credit Note") {
         const invoice = linkableInvoices.find((i: any) => i.id === linkedInvoiceId);
@@ -203,19 +204,14 @@ export default function UniversalVoucherEntry({ type }: { type: EngineVoucherTyp
           supabase.from("businesses").select("gst_number").eq("id", business.id).single(),
           supabase.from("parties").select("gst").eq("id", (invoice as any)?.party_id).maybeSingle(),
         ]);
-        const { data: split, error } = await supabase.rpc("gst_split_amounts" as never, {
-          _seller_gstin: biz?.gst_number ?? null,
-          _buyer_gstin: party?.gst ?? null,
-          _gst_total: gstAmount,
-        } as never);
-        if (error) throw error;
-        const row: any = Array.isArray(split) ? split[0] : split;
+        const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst);
+        const split = splitGstAmount(gstAmount, isInterstate);
         const mk = (name: string, credit: number): VoucherItem => ({
           ledger_account_id: findLedgerId(name), ledger_name: name, debit: 0, credit, remarks: "GST (auto)",
         });
-        const newRows: VoucherItem[] = row.is_interstate
-          ? [mk("IGST Output", Number(row.igst))]
-          : [mk("CGST Output", Number(row.cgst)), mk("SGST Output", Number(row.sgst))];
+        const newRows: VoucherItem[] = isInterstate
+          ? [mk("IGST Output", split.igst_amount)]
+          : [mk("CGST Output", split.cgst_amount), mk("SGST Output", split.sgst_amount)];
         setItems((prev) => [...prev, ...newRows]);
       } else {
         setItems((prev) => [...prev, {

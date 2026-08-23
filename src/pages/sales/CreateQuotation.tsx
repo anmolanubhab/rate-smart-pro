@@ -4,6 +4,8 @@ import { Save, FileCheck2, Plus, Trash2, ArrowRightCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { useInterstateFlag } from "@/hooks/useInterstateFlag";
+import { splitGstAmount } from "@/lib/gstCalc";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { fetchParties, Party, fetchPartyOutstandingBalances, resolvePartyOutstanding } from "@/lib/parties";
@@ -221,8 +223,12 @@ const CreateQuotation = () => {
   }, [searchTerm, searchIdx, user]);
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
-  const cgst = +(totals.gst_total / 2).toFixed(2);
-  const sgst = +(totals.gst_total / 2).toFixed(2);
+  // Interstate-aware split (was hardcoded 50/50 CGST/SGST regardless of the
+  // buyer's state, which mislabeled an interstate quote on-screen) -- same
+  // resolveIsInterstate()/splitGstAmount() central engine used at actual
+  // invoice posting time (see src/lib/gstCalc.ts).
+  const { isInterstate } = useInterstateFlag(business?.gst_number, party?.gst);
+  const { cgst_amount: cgst, sgst_amount: sgst, igst_amount: igst } = splitGstAmount(totals.gst_total, isInterstate);
   // Quotations aren't posted to the ledger, so there's no round_off_<type>
   // flag for them -- gate only on the master Round Off switch (Settings ->
   // Accounting) rather than rounding unconditionally.
@@ -675,8 +681,9 @@ const CreateQuotation = () => {
                 { label: "Subtotal (MRP)", value: fmt(totals.subtotal) },
                 { label: "Discount", value: `− ${fmt(totals.discount_total)}` },
                 { label: "Taxable Amount", value: fmt(totals.taxable), bold: true },
-                { label: "CGST", value: fmt(cgst) },
-                { label: "SGST", value: fmt(sgst) },
+                ...(isInterstate
+                  ? [{ label: "IGST", value: fmt(igst) }]
+                  : [{ label: "CGST", value: fmt(cgst) }, { label: "SGST", value: fmt(sgst) }]),
                 ...(roundOff !== 0 ? [{ label: "Round Off", value: (roundOff >= 0 ? "+ " : "− ") + fmt(Math.abs(roundOff)) }] : []),
               ]}
               grandTotal={`₹${fmt(finalTotal)}`}

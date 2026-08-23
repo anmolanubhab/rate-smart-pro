@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useBusiness } from "@/hooks/useBusiness";
 import { isOwner } from "@/lib/permissions";
 import { fetchSalesConfig, upsertSalesConfig, SalesConfig } from "@/lib/salesConfig";
+import { useInvalidateWorkflowConfig } from "@/hooks/useWorkflowConfig";
 import {
   PRESETS, STAGE_LABEL, applyPreset, getEnabledStages, reconcileDependencies,
   validateWorkflowSettings, type SalesWorkflowSettings, type WorkflowPreset,
@@ -13,8 +14,14 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, AlertTriangle, ArrowRight } from "lucide-react";
+import { Save, AlertTriangle, ArrowRight, Zap, Boxes, Layers } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+
+const SALES_MODE_OPTIONS: { key: "direct" | "order_based" | "both"; label: string; hint: string; icon: typeof Zap }[] = [
+  { key: "direct", label: "Directly create invoices", hint: "Party → Sales Invoice. Best for quick, walk-in style billing.", icon: Zap },
+  { key: "order_based", label: "Use Orders and Dispatch", hint: "Quotation → Order → Picking → Dispatch → Invoice.", icon: Boxes },
+  { key: "both", label: "Use both", hint: "Bill directly for regular customers, use the full process for large orders.", icon: Layers },
+];
 
 const PRESET_OPTIONS: { key: WorkflowPreset; label: string; hint: string }[] = [
   { key: "basic", label: "Basic", hint: "Order → Invoice → Payment" },
@@ -80,6 +87,7 @@ export default function SalesConfigPage() {
   const [cfg, setCfg] = useState<SalesConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const canEdit = isOwner(role) || role === "admin";
+  const invalidateWorkflowConfig = useInvalidateWorkflowConfig();
 
   useEffect(() => {
     document.title = "Sales Configuration — RD Pro";
@@ -97,6 +105,23 @@ export default function SalesConfigPage() {
 
   const set = <K extends keyof SalesConfig>(k: K, v: SalesConfig[K]) =>
     setCfg((c) => (c ? { ...c, [k]: v } : c));
+
+  // Derived from two independent fields (never merged into one flag):
+  // enable_direct_invoice = is "Directly create invoices" available at all;
+  // default_sales_mode = which is primary when both are available. Deliberately
+  // never touches enable_sales_order here -- Direct Sales Invoice doesn't exist
+  // yet (Phase 2), so turning Orders off in this selector would leave a
+  // business with no way to invoice at all until that ships. Existing Sales
+  // Order → Dispatch → Invoice workflow is left completely alone by this control.
+  const salesMode: "direct" | "order_based" | "both" = !cfg.enable_direct_invoice
+    ? "order_based"
+    : cfg.default_sales_mode === "direct" ? "direct" : "both";
+
+  const setSalesMode = (mode: "direct" | "order_based" | "both") => {
+    if (mode === "order_based") { setCfg((c) => (c ? { ...c, enable_direct_invoice: false, default_sales_mode: "order_based" } : c)); return; }
+    if (mode === "direct") { setCfg((c) => (c ? { ...c, enable_direct_invoice: true, default_sales_mode: "direct" } : c)); return; }
+    setCfg((c) => (c ? { ...c, enable_direct_invoice: true, default_sales_mode: "order_based" } : c));
+  };
 
   const setPreset = (preset: WorkflowPreset) => {
     if (preset === "custom") { set("workflow_preset", "custom"); return; }
@@ -123,6 +148,10 @@ export default function SalesConfigPage() {
         entity_type: "sales_config", entity_id: saved.id,
         new_value: saved,
       });
+      // Adaptive Workflow (Phase 4): navigation/route guards read this same
+      // config via react-query -- invalidate so Sidebar/Quick Create/
+      // Command Search/route access reflect the change without a reload.
+      invalidateWorkflowConfig();
       toast.success("Sales configuration saved");
     } catch (e: any) { toast.error(e.message); }
     finally { setSaving(false); }
@@ -138,16 +167,46 @@ export default function SalesConfigPage() {
         </p>
       </header>
 
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+        <div>
+          <h2 className="font-semibold text-lg">How do you normally make sales?</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            This sets what's available and prioritized for billing. It doesn't remove anything —
+            you can always change it later, and it won't affect invoices you've already created.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {SALES_MODE_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              disabled={!canEdit}
+              onClick={() => setSalesMode(o.key)}
+              className={`text-left rounded-xl border p-3 transition-colors disabled:opacity-50 ${
+                salesMode === o.key ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40"
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <o.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-sm font-semibold">{o.label}</p>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{o.hint}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
         <div>
-          <h2 className="font-semibold text-lg">Workflow Configuration</h2>
+          <h2 className="font-semibold text-lg">Advanced: Workflow Configuration</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Choose which sales stages this company uses. Not every business needs every stage —
             pick a preset or customize individually.
           </p>
           <p className="text-xs text-amber-600 dark:text-amber-500 mt-1.5">
-            Reference/planning only for now — these stage toggles and Invoice Timing update the
-            diagram below but don't yet hide fields or change screen behavior elsewhere in the app.
+            Quotation, Picking and Dispatch control whether those sections appear in the menu and
+            are reachable at all — the rest (Lead, Order Approval, Packing, Closing) and Invoice
+            Timing update the diagram below for planning but don't change screen behavior yet.
           </p>
         </div>
 

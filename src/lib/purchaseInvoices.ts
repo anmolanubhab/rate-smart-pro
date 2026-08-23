@@ -8,7 +8,7 @@ import { seedAccounts, ensurePartyLedgers } from "@/lib/accounting";
 import { createVoucher, postVoucher, cancelVoucher, repostVoucherItems, type VoucherItem } from "@/lib/voucherService";
 import { assertHsnCompliance } from "@/lib/accountingLock";
 import { fetchRoundOffSettings, calculateRoundOff } from "@/lib/roundOffSettings";
-import { resolveIsInterstate, splitGstAmount, splitGstRate } from "@/lib/gstCalc";
+import { resolveIsInterstate, splitGstAmount, splitGstRate, assertGstStateResolvable } from "@/lib/gstCalc";
 import { computePurchaseLine, resolveRateForMode, type PurchasePricingMode, type PurchaseSchemeType, type PurchaseSchemeConfig } from "@/lib/purchaseCalc";
 import { resolvePurchasePrice } from "@/lib/purchasePricing/resolvePurchasePrice";
 
@@ -245,38 +245,44 @@ async function buildPurchaseInvoiceLedgerItems(
 
   if (invoice.tax_total > 0) {
     // Single source of truth for intra-state vs inter-state determination
-    // -- same rule the sales-side trigger uses, via the shared
-    // gst_split_amounts() DB function (see consolidate_gst_split_calculation
-    // migration). Falls back to the old combined "GST Input" ledger if
-    // this business hasn't been seeded with the split ledgers yet.
+    // -- routed through the same central resolveIsInterstate()/
+    // splitGstAmount() helpers (src/lib/gstCalc.ts) used everywhere else,
+    // rather than calling the gst_split_amounts DB RPC directly (that used
+    // to be a second, independently-maintained split call site that could
+    // drift from the client-side split used for the invoice's own line
+    // items). Falls back to the old combined "GST Input" ledger if this
+    // business hasn't been seeded with the split ledgers yet, or if the
+    // interstate/intrastate lookup itself fails -- a ledger-posting path
+    // must never block an already-saved invoice on a transient RPC error.
     const [{ data: biz }, { data: supplier }] = await Promise.all([
-      supabase.from("businesses").select("gst_number").eq("id", businessId).maybeSingle(),
-      supabase.from("parties").select("gst").eq("id", invoice.supplier_id).maybeSingle(),
+      supabase.from("businesses").select("gst_number, state_code").eq("id", businessId).maybeSingle(),
+      supabase.from("parties").select("gst, state_code").eq("id", invoice.supplier_id).maybeSingle(),
     ]);
-    const { data: split, error: splitErr } = await supabase.rpc("gst_split_amounts" as never, {
-      _seller_gstin: biz?.gst_number ?? null,
-      _buyer_gstin: supplier?.gst ?? null,
-      _gst_total: invoice.tax_total,
-    } as never);
-    const s = (Array.isArray(split) ? split[0] : split) as { cgst: number; sgst: number; igst: number; is_interstate: boolean } | undefined;
+    let s: { cgst_amount: number; sgst_amount: number; igst_amount: number; is_interstate: boolean } | undefined;
+    try {
+      const isInterstate = await resolveIsInterstate(biz?.gst_number, supplier?.gst, supplier?.state_code, biz?.state_code);
+      s = { ...splitGstAmount(invoice.tax_total, isInterstate), is_interstate: isInterstate };
+    } catch (e) {
+      console.error("buildPurchaseInvoiceLedgerItems: interstate resolution failed", (e as Error)?.message);
+    }
 
-    if (!splitErr && s?.is_interstate && igstInLedger) {
+    if (s?.is_interstate && igstInLedger) {
       items.push({
         ledger_account_id: igstInLedger.id,
-        debit: Number(s.igst),
+        debit: s.igst_amount,
         credit: 0,
         remarks: `IGST on ${invoice.invoice_number}`,
       });
-    } else if (!splitErr && s && !s.is_interstate && cgstInLedger && sgstInLedger) {
+    } else if (s && !s.is_interstate && cgstInLedger && sgstInLedger) {
       items.push({
         ledger_account_id: cgstInLedger.id,
-        debit: Number(s.cgst),
+        debit: s.cgst_amount,
         credit: 0,
         remarks: `CGST on ${invoice.invoice_number}`,
       });
       items.push({
         ledger_account_id: sgstInLedger.id,
-        debit: Number(s.sgst),
+        debit: s.sgst_amount,
         credit: 0,
         remarks: `SGST on ${invoice.invoice_number}`,
       });
@@ -516,6 +522,19 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
   const validItemsAtomic = validItemsForCheck;
   const isNew = !input.id;
 
+  // Block posting rather than silently defaulting to intrastate when GST
+  // actually applies to this invoice (any line has a nonzero tax amount)
+  // but either side's state can't be determined -- checked once here before
+  // either the atomic RPC (new invoice) or the edit-path split below runs.
+  // Skipped entirely for a genuinely GST-free invoice.
+  if (validItemsAtomic.some((it) => Number(it.tax_amount) > 0)) {
+    const [{ data: gstBiz }, { data: gstSupplier }] = await Promise.all([
+      supabase.from("businesses").select("gst_number, state_code").eq("id", businessId).maybeSingle(),
+      supabase.from("parties").select("gst, state_code").eq("id", input.supplier_id).maybeSingle(),
+    ]);
+    await assertGstStateResolvable(gstBiz?.gst_number, gstBiz?.state_code, gstSupplier?.gst, gstSupplier?.state_code, "this Purchase Invoice");
+  }
+
   if (isNew && input.createdBy) {
     // Atomic path: header + items + voucher + (direct) stock all happen
     // inside one DB transaction (create_purchase_invoice_atomic) instead of
@@ -671,12 +690,12 @@ export async function savePurchaseInvoice(input: SaveInvoiceInput): Promise<Purc
     // regardless of actual state, which is wrong for any interstate supplier
     // (found while building GST Engine Milestone 4's reconciliation report).
     const [{ data: biz, error: bizErr }, { data: supplier, error: supplierErr }] = await Promise.all([
-      supabase.from("businesses").select("gst_number").eq("id", businessId).maybeSingle(),
-      supabase.from("parties").select("gst").eq("id", input.supplier_id).maybeSingle(),
+      supabase.from("businesses").select("gst_number, state_code").eq("id", businessId).maybeSingle(),
+      supabase.from("parties").select("gst, state_code").eq("id", input.supplier_id).maybeSingle(),
     ]);
     if (bizErr) throw bizErr;
     if (supplierErr) throw supplierErr;
-    const isInterstate = await resolveIsInterstate(supplier?.gst, biz?.gst_number);
+    const isInterstate = await resolveIsInterstate(supplier?.gst, biz?.gst_number, biz?.state_code, supplier?.state_code);
 
     // HSN Lock: snapshot each line's product HSN at save time (hsnByProduct
     // built above, alongside the compliance check), so a later HSN change on

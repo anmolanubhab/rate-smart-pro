@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { useInterstateFlag } from "@/hooks/useInterstateFlag";
+import { splitGstAmount } from "@/lib/gstCalc";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { fetchParties, Party, fetchPartyOutstandingBalances, resolvePartyOutstanding } from "@/lib/parties";
@@ -357,8 +359,11 @@ const CreateOrder = () => {
   }, [searchTerm, searchIdx, user]);
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
-  const cgst = +(totals.gst_total / 2).toFixed(2);
-  const sgst = +(totals.gst_total / 2).toFixed(2);
+  // Interstate-aware split (was hardcoded 50/50 CGST/SGST regardless of the
+  // buyer's state) -- same resolveIsInterstate()/splitGstAmount() central
+  // engine used at actual invoice posting time.
+  const { isInterstate } = useInterstateFlag(business?.gst_number, party?.gst);
+  const { cgst_amount: cgst, sgst_amount: sgst, igst_amount: igst } = splitGstAmount(totals.gst_total, isInterstate);
   // No round-off line here on purpose. Sales Order round off is not built yet
   // (see the header note in src/lib/roundOffSettings.ts — only Sales Invoice is
   // wired, and accounting_settings.round_off_sales_order defaults to false), and
@@ -1105,8 +1110,9 @@ const CreateOrder = () => {
                 { label: "Subtotal (MRP)", value: fmt(totals.subtotal) },
                 { label: "Discount", value: `− ${fmt(totals.discount_total)}` },
                 { label: "Taxable Amount", value: fmt(totals.taxable), bold: true },
-                { label: "CGST", value: fmt(cgst) },
-                { label: "SGST", value: fmt(sgst) },
+                ...(isInterstate
+                  ? [{ label: "IGST", value: fmt(igst) }]
+                  : [{ label: "CGST", value: fmt(cgst) }, { label: "SGST", value: fmt(sgst) }]),
               ]}
               grandTotal={`₹${fmt(totals.grand_total)}`}
             />

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Save, X, Plus, Trash2 } from "lucide-react";
+import { Save, X, Plus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
+import { fetchPurchaseConfig, type PurchaseConfig } from "@/lib/purchaseConfig";
+import { canGranular } from "@/lib/permissions";
 import { fetchParties, type Party } from "@/lib/parties";
 import { searchProducts, type Product } from "@/lib/products";
 import { fetchProductUnits, purchaseUnitOf, toStockQty, type ProductUnit } from "@/lib/units";
@@ -45,8 +47,30 @@ export default function CreatePurchaseInvoice() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { business } = useBusiness();
+  const { business, role, permissions } = useBusiness();
   const businessId = business?.id ?? getActiveBusinessIdSync();
+  const permitted = canGranular(role, "purchase.create", permissions);
+
+  // Phase 1's purchase_config, wired in at page/action level for Phase 3 --
+  // full navigation-level wiring (hiding PO/GRN across the app) is Phase 4.
+  // Business capability (this config) and RBAC (permitted, above) are two
+  // independent layers, never merged -- see src/lib/workflowAccess.ts.
+  const [purchaseConfig, setPurchaseConfig] = useState<PurchaseConfig | null>(null);
+  useEffect(() => {
+    if (!businessId) return;
+    fetchPurchaseConfig(businessId).then(setPurchaseConfig).catch(() => {});
+  }, [businessId]);
+  const showPoField = purchaseConfig?.enable_purchase_order ?? true;
+  const showGrnField = purchaseConfig?.enable_goods_receipt ?? true;
+  const directInvoiceAllowed = purchaseConfig?.enable_direct_invoice ?? true;
+  // Collapse the PO/GRN pickers behind a disclosure when this business's
+  // primary path is direct entry -- still fully available (never a hard
+  // restriction, per Phase 1's default-vs-available rule), just not the
+  // first thing a small trader sees.
+  const [showLinkSection, setShowLinkSection] = useState(true);
+  useEffect(() => {
+    if (purchaseConfig?.default_purchase_mode === "direct") setShowLinkSection(false);
+  }, [purchaseConfig?.default_purchase_mode]);
   const duplicateFromId = (location.state as { duplicateFromId?: string } | null)?.duplicateFromId;
 
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -243,6 +267,11 @@ export default function CreatePurchaseInvoice() {
 
   const handleSave = async () => {
     if (!user || !businessId || saving) return;
+    if (!permitted) { toast.error("You don't have permission to create Purchase Invoices."); return; }
+    if (!purchaseOrderId && !grnId && !directInvoiceAllowed) {
+      toast.error("Direct Purchase Invoice isn't turned on for this business. Link a Purchase Order/GRN, or ask an owner/admin to enable it in Settings → Purchase Configuration.");
+      return;
+    }
     if (!supplierId) { toast.error("Select a supplier"); return; }
     const validItems = items.filter((it) => it.part_number.trim() && Number(it.qty) > 0);
     if (!validItems.length) { toast.error("Add at least one line item"); return; }
@@ -295,7 +324,7 @@ export default function CreatePurchaseInvoice() {
   );
 
   const toolbarActions: DocumentToolbarAction[] = [
-    { key: "save", label: "Save & Post", icon: Save, shortcut: "Ctrl+Enter", onClick: handleSave, disabled: saving || loading, variant: "primary" },
+    { key: "save", label: "Save & Post", icon: Save, shortcut: "Ctrl+Enter", onClick: handleSave, disabled: saving || loading || !permitted, variant: "primary" },
     { key: "close", label: "Close", icon: X, onClick: () => navigate("/purchase/invoices"), variant: "ghost", className: "text-muted-foreground" },
   ];
 
@@ -334,29 +363,54 @@ export default function CreatePurchaseInvoice() {
             />
           </DocumentHeaderValue>
 
-          <DocumentHeaderLabel>Link Purchase Order</DocumentHeaderLabel>
-          <DocumentHeaderValue>
-            <select
-              value={purchaseOrderId}
-              onChange={(e) => handlePOChange(e.target.value)}
-              disabled={poLockedByGrn}
-              className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60"
-            >
-              <option value="">No PO — direct entry</option>
-              {purchaseOrders.map((po) => <option key={po.id} value={po.id}>{po.po_number}</option>)}
-            </select>
-          </DocumentHeaderValue>
-          <DocumentHeaderLabel align="right">Link GRN</DocumentHeaderLabel>
-          <DocumentHeaderValue>
-            <select
-              value={grnId}
-              onChange={(e) => handleGrnChange(e.target.value)}
-              className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
-            >
-              <option value="">No GRN — manual entry</option>
-              {grns.map((g) => <option key={g.id} value={g.id}>{g.grn_number}</option>)}
-            </select>
-          </DocumentHeaderValue>
+          {(showPoField || showGrnField) && (
+            <DocumentHeaderValue span={12} className="!py-0">
+              <button
+                type="button"
+                onClick={() => setShowLinkSection((v) => !v)}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground py-1"
+              >
+                {showLinkSection ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                Link to Purchase Order / GRN (optional)
+                {!showLinkSection && (purchaseOrderId || grnId) && <span className="text-primary">— linked</span>}
+              </button>
+            </DocumentHeaderValue>
+          )}
+          {showLinkSection && (
+            <>
+              {showPoField && (
+                <>
+                  <DocumentHeaderLabel>Link Purchase Order</DocumentHeaderLabel>
+                  <DocumentHeaderValue>
+                    <select
+                      value={purchaseOrderId}
+                      onChange={(e) => handlePOChange(e.target.value)}
+                      disabled={poLockedByGrn}
+                      className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary disabled:opacity-60"
+                    >
+                      <option value="">No PO — direct entry</option>
+                      {purchaseOrders.map((po) => <option key={po.id} value={po.id}>{po.po_number}</option>)}
+                    </select>
+                  </DocumentHeaderValue>
+                </>
+              )}
+              {showGrnField && (
+                <>
+                  <DocumentHeaderLabel align={showPoField ? "right" : "left"}>Link GRN</DocumentHeaderLabel>
+                  <DocumentHeaderValue>
+                    <select
+                      value={grnId}
+                      onChange={(e) => handleGrnChange(e.target.value)}
+                      className="w-full h-6 text-[12px] font-mono px-1 rounded-none border-0 border-b border-dotted border-border bg-transparent focus-visible:ring-0 focus-visible:border-primary"
+                    >
+                      <option value="">No GRN — manual entry</option>
+                      {grns.map((g) => <option key={g.id} value={g.id}>{g.grn_number}</option>)}
+                    </select>
+                  </DocumentHeaderValue>
+                </>
+              )}
+            </>
+          )}
 
           <DocumentHeaderInputField label="Due Date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           <DocumentHeaderInputField label="Supplier's Invoice Date" labelAlign="right" type="date" value={supplierInvoiceDate} onChange={(e) => setSupplierInvoiceDate(e.target.value)} />

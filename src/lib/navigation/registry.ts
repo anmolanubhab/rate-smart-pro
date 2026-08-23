@@ -189,6 +189,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Sales",
     keywords: ["quote", "estimate", "proforma"],
     gatewayPath: ["Transactions", "Sales"],
+    workflowGate: { module: "sales", key: "enable_quotation" },
   },
   {
     id: "sales-quotations-new",
@@ -200,6 +201,7 @@ export const NAV_ITEMS: NavItem[] = [
     quickAction: { label: "New Quotation", shortcut: "⌘⌥N" },
     keywords: ["quote", "estimate", "proforma"],
     gatewayPath: ["Transactions", "Sales"],
+    workflowGate: { module: "sales", key: "enable_quotation" },
   },
   {
     id: "orders-new",
@@ -211,6 +213,7 @@ export const NAV_ITEMS: NavItem[] = [
     quickAction: { label: "Create Order", shortcut: "⌘N" },
     perm: "voucher.create",
     gatewayPath: ["Transactions", "Sales"],
+    workflowGate: { module: "sales", key: "enable_sales_order" },
   },
   {
     id: "orders",
@@ -220,6 +223,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ShoppingCart,
     module: "Sales",
     gatewayPath: ["Orders"],
+    workflowGate: { module: "sales", key: "enable_sales_order" },
   },
   {
     id: "pending",
@@ -230,6 +234,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Sales",
     keywords: ["awaiting", "open orders"],
     gatewayPath: ["Orders"],
+    workflowGate: { module: "sales", key: "enable_sales_order" },
   },
   {
     id: "sales-picking-list",
@@ -240,6 +245,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Sales",
     keywords: ["pick", "warehouse", "pending dispatch"],
     gatewayPath: ["Orders"],
+    workflowGate: { module: "sales", key: "enable_picking" },
   },
   {
     id: "dispatch",
@@ -250,6 +256,19 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Sales",
     keywords: ["shipment", "delivery"],
     gatewayPath: ["Orders"],
+    workflowGate: { module: "sales", key: "enable_dispatch_module" },
+  },
+  {
+    id: "sales-invoices-new",
+    title: "New Sales Invoice",
+    description: "Bill a party directly -- no Quotation/Order/Dispatch required",
+    route: "/sales/invoices/new",
+    icon: PlusSquare,
+    module: "Sales",
+    quickAction: { label: "New Sales Invoice" },
+    perm: "voucher.create",
+    gatewayPath: ["Transactions", "Sales"],
+    workflowGate: { module: "sales", key: "enable_direct_invoice" },
   },
   {
     id: "sales-invoices",
@@ -365,6 +384,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Purchase",
     aliases: ["po"],
     gatewayPath: ["Transactions", "Purchase"],
+    workflowGate: { module: "purchase", key: "enable_purchase_order" },
   },
   {
     id: "purchase-orders-new",
@@ -376,6 +396,7 @@ export const NAV_ITEMS: NavItem[] = [
     quickAction: { label: "Create Purchase" },
     perm: "purchase.create",
     gatewayPath: ["Transactions", "Purchase"],
+    workflowGate: { module: "purchase", key: "enable_purchase_order" },
   },
   {
     id: "purchase-price-lists",
@@ -404,6 +425,19 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Purchase",
     aliases: ["grn"],
     gatewayPath: ["Transactions", "Purchase"],
+    workflowGate: { module: "purchase", key: "enable_goods_receipt" },
+  },
+  {
+    id: "purchase-invoices-new",
+    title: "New Purchase Invoice",
+    description: "Record a purchase directly -- no Purchase Order/GRN required",
+    route: "/purchase/invoices/new",
+    icon: PlusSquare,
+    module: "Purchase",
+    quickAction: { label: "New Purchase Invoice" },
+    perm: "purchase.create",
+    gatewayPath: ["Transactions", "Purchase"],
+    workflowGate: { module: "purchase", key: "enable_direct_invoice" },
   },
   {
     id: "purchase-invoices",
@@ -441,6 +475,7 @@ export const NAV_ITEMS: NavItem[] = [
     module: "Purchase",
     perm: "purchase.approve",
     gatewayPath: ["Transactions", "Purchase"],
+    workflowGate: { module: "purchase", key: "enable_purchase_order" },
   },
   {
     id: "purchase-payments",
@@ -469,6 +504,17 @@ export const NAV_ITEMS: NavItem[] = [
     icon: BookOpen,
     module: "Purchase",
     gatewayPath: ["Reports", "Purchase"],
+  },
+  {
+    id: "purchase-config",
+    title: "Purchase Configuration",
+    description: "Configure purchase workflow defaults",
+    route: "/settings/purchase-config",
+    icon: SettingsIcon,
+    module: "Purchase",
+    keywords: ["config", "settings"],
+    perm: "settings.edit",
+    gatewayPath: ["Configuration"],
   },
 
   // ==========================================================================
