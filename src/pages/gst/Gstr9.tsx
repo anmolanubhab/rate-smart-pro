@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { MockColumn } from "@/components/accounts/MockTablePage";
 import type { ReportUdm } from "@/lib/documentUdm/types";
+import { fmtInr } from "@/lib/accounting";
+import { round2, sumRound2 } from "@/lib/gstCalc";
 
 const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
@@ -59,17 +61,17 @@ export default function Gstr9() {
 
   const summaryRows = (annual ?? []).map((r) => ({
     period: `${MONTHS[(r.period_month + 8) % 12]} ${r.period_year}`,
-    sales_taxable: Math.round(r.sales_taxable), sales_tax: Math.round(r.sales_cgst + r.sales_sgst + r.sales_igst),
-    purchase_taxable: Math.round(r.purchase_taxable), purchase_tax: Math.round(r.purchase_cgst + r.purchase_sgst + r.purchase_igst),
+    sales_taxable: round2(r.sales_taxable), sales_tax: round2(r.sales_cgst + r.sales_sgst + r.sales_igst),
+    purchase_taxable: round2(r.purchase_taxable), purchase_tax: round2(r.purchase_cgst + r.purchase_sgst + r.purchase_igst),
   }));
 
   const reconRows = (recon ?? []).map((r) => ({
-    metric: r.metric, as_per_books: Math.round(r.as_per_books),
-    as_per_filed_returns: Math.round(r.as_per_filed_returns), difference: Math.round(r.difference),
+    metric: r.metric, as_per_books: round2(r.as_per_books),
+    as_per_filed_returns: round2(r.as_per_filed_returns), difference: round2(r.difference),
   }));
 
-  const annualTotalSales = summaryRows.reduce((s, r) => s + r.sales_taxable, 0);
-  const annualTotalPurchase = summaryRows.reduce((s, r) => s + r.purchase_taxable, 0);
+  const annualTotalSales = sumRound2(summaryRows.map((r) => r.sales_taxable));
+  const annualTotalPurchase = sumRound2(summaryRows.map((r) => r.purchase_taxable));
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -99,8 +101,8 @@ export default function Gstr9() {
               : `FY ${fyStartYear}-${fyStartYear + 1} (Apr–Mar), month-wise from posted invoices.`
         }
         kpis={[
-          { label: "Total Sales Taxable", value: `₹ ${annualTotalSales.toLocaleString("en-IN")}` },
-          { label: "Total Purchase Taxable", value: `₹ ${annualTotalPurchase.toLocaleString("en-IN")}` },
+          { label: "Total Sales Taxable", value: `₹ ${fmtInr(annualTotalSales)}` },
+          { label: "Total Purchase Taxable", value: `₹ ${fmtInr(annualTotalPurchase)}` },
         ]}
         columns={summaryColumns}
         rows={summaryRows}

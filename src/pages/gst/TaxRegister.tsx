@@ -3,6 +3,8 @@ import ReportRunner, { ReportFilters } from "@/components/reports/ReportRunner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import type { MockColumn, MockKpi } from "@/components/accounts/MockTablePage";
+import { fmtInr } from "@/lib/accounting";
+import { round2, sumRound2 } from "@/lib/gstCalc";
 
 const columns: MockColumn[] = [
   { key: "date", label: "Date" },
@@ -56,9 +58,9 @@ export default function TaxRegister() {
       rows.push({
         date: inv.invoice_date, doc_number: inv.invoice_number, party_name: inv.parties?.name ?? "—",
         direction: "Output", direction_tone: "success",
-        taxable: Math.round(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
-        cgst: Math.round(s.cgst), sgst: Math.round(s.sgst), igst: Math.round(s.igst),
-        total_tax: Math.round(s.cgst + s.sgst + s.igst),
+        taxable: round2(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
+        cgst: round2(s.cgst), sgst: round2(s.sgst), igst: round2(s.igst),
+        total_tax: round2(s.cgst + s.sgst + s.igst),
       });
     }
 
@@ -93,9 +95,9 @@ export default function TaxRegister() {
       rows.push({
         date: inv.invoice_date, doc_number: inv.invoice_number, party_name: inv.parties?.name ?? "—",
         direction: "Input", direction_tone: "warning",
-        taxable: Math.round(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
-        cgst: Math.round(s.cgst), sgst: Math.round(s.sgst), igst: Math.round(s.igst),
-        total_tax: Math.round(s.cgst + s.sgst + s.igst),
+        taxable: round2(Number(inv.subtotal ?? 0) - Number(inv.discount_total ?? 0)),
+        cgst: round2(s.cgst), sgst: round2(s.sgst), igst: round2(s.igst),
+        total_tax: round2(s.cgst + s.sgst + s.igst),
       });
     }
 
@@ -103,13 +105,13 @@ export default function TaxRegister() {
   };
 
   const computeKpis = (rows: Record<string, any>[]): MockKpi[] => {
-    const output = rows.filter((r) => r.direction === "Output").reduce((s, r) => s + Number(r.total_tax), 0);
-    const input = rows.filter((r) => r.direction === "Input").reduce((s, r) => s + Number(r.total_tax), 0);
+    const output = sumRound2(rows.filter((r) => r.direction === "Output").map((r) => Number(r.total_tax)));
+    const input = sumRound2(rows.filter((r) => r.direction === "Input").map((r) => Number(r.total_tax)));
     return [
       { label: "Entries", value: rows.length },
-      { label: "Output Tax", value: `₹ ${output.toLocaleString("en-IN")}`, tone: "success" },
-      { label: "Input Tax", value: `₹ ${input.toLocaleString("en-IN")}`, tone: "warning" },
-      { label: "Net", value: `₹ ${(output - input).toLocaleString("en-IN")}` },
+      { label: "Output Tax", value: `₹ ${fmtInr(output)}`, tone: "success" },
+      { label: "Input Tax", value: `₹ ${fmtInr(input)}`, tone: "warning" },
+      { label: "Net", value: `₹ ${fmtInr(round2(output - input))}` },
     ];
   };
 

@@ -34,6 +34,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchLedgersWithBalance, ensurePartyLedgers, seedAccounts, fmtInr } from "@/lib/accounting";
+import { resolveIsInterstate, splitGstAmount, round2 } from "@/lib/gstCalc";
 import { getLedgerAccountOptions, type LedgerOption } from "@/lib/ledgerFiltering";
 import { fetchFinancialNoteSettings } from "@/lib/accountingLock";
 import { canOverrideAdjustmentLedger, canUnlockVouchers, canBackdateVoucher } from "@/lib/permissions";
@@ -228,7 +229,7 @@ export default function VoucherForm() {
     if (base <= 0) { toast.error("Enter a base amount to calculate GST on"); return; }
     const rate = Number(selectedCategory.default_gst_rate) || 0;
     if (rate <= 0) { toast.error("This category has no default GST rate configured"); return; }
-    const gstAmount = Math.round(base * rate) / 100;
+    const gstAmount = round2((base * rate) / 100);
 
     try {
       if (vType === "Credit Note") {
@@ -237,18 +238,13 @@ export default function VoucherForm() {
           supabase.from("businesses").select("gst_number").eq("id", business.id).single(),
           supabase.from("parties").select("gst").eq("id", (invoice as any)?.party_id).maybeSingle(),
         ]);
-        const { data: split, error } = await supabase.rpc("gst_split_amounts" as never, {
-          _seller_gstin: biz?.gst_number ?? null,
-          _buyer_gstin: party?.gst ?? null,
-          _gst_total: gstAmount,
-        } as never);
-        if (error) throw error;
-        const row: any = Array.isArray(split) ? split[0] : split;
-        const newRows: VoucherItem[] = row.is_interstate
-          ? [{ ledger_account_id: findLedgerId("IGST Output"), debit: 0, credit: Number(row.igst), remarks: "GST (auto)" }]
+        const isInterstate = await resolveIsInterstate(biz?.gst_number, party?.gst);
+        const split = splitGstAmount(gstAmount, isInterstate);
+        const newRows: VoucherItem[] = isInterstate
+          ? [{ ledger_account_id: findLedgerId("IGST Output"), debit: 0, credit: split.igst_amount, remarks: "GST (auto)" }]
           : [
-              { ledger_account_id: findLedgerId("CGST Output"), debit: 0, credit: Number(row.cgst), remarks: "GST (auto)" },
-              { ledger_account_id: findLedgerId("SGST Output"), debit: 0, credit: Number(row.sgst), remarks: "GST (auto)" },
+              { ledger_account_id: findLedgerId("CGST Output"), debit: 0, credit: split.cgst_amount, remarks: "GST (auto)" },
+              { ledger_account_id: findLedgerId("SGST Output"), debit: 0, credit: split.sgst_amount, remarks: "GST (auto)" },
             ];
         setItems((prev) => [...prev, ...newRows]);
       } else {

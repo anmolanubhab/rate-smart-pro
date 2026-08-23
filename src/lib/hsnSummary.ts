@@ -5,6 +5,7 @@
 // HSN Compliance Engine Phase 9 plan.
 
 import { supabase } from "@/integrations/supabase/client";
+import { round2 } from "@/lib/gstCalc";
 
 export interface HsnSummaryRow {
   hsn: string;
@@ -53,12 +54,12 @@ async function finalizeGroups(groups: Map<string, GroupAcc>): Promise<HsnSummary
       description: infoByCode.get(g.hsn)?.description ?? null,
       uqc: infoByCode.get(g.hsn)?.default_uqc ?? null,
       gst_pct: g.gst_pct,
-      qty: Math.round(g.qty),
-      taxable: Math.round(g.taxable),
-      cgst: Math.round(g.cgst),
-      sgst: Math.round(g.sgst),
-      igst: Math.round(g.igst),
-      tax: Math.round(g.cgst + g.sgst + g.igst),
+      qty: round2(g.qty),
+      taxable: round2(g.taxable),
+      cgst: round2(g.cgst),
+      sgst: round2(g.sgst),
+      igst: round2(g.igst),
+      tax: round2(g.cgst + g.sgst + g.igst),
     }));
 }
 

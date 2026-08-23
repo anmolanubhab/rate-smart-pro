@@ -35,6 +35,11 @@ const ThermalTemplate: DocumentTemplateRenderer = ({ udm }) => {
   const roundOff = t.roundOff ?? 0;
   const fmt = (n?: number | null) =>
     Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Money-specific: same 2dp formatting as fmt(), plus the ₹ symbol every
+  // other GST/money screen in the app shows. Kept separate from fmt()
+  // because fmt() is also used for qty/rate/weight, which must never carry
+  // a currency symbol.
+  const money = (n?: number | null) => `₹ ${fmt(n)}`;
 
   const isLedger = itemGridMode === "ledger";
   const totalDebit = isLedger ? items.reduce((s, it) => s + (Number(it.debit) || 0), 0) : 0;
@@ -82,7 +87,7 @@ const ThermalTemplate: DocumentTemplateRenderer = ({ udm }) => {
             isLedger ? (
               <div key={`${it.description}-${idx}`} className="flex justify-between py-0.5">
                 <span>{it.description}</span>
-                <span className="tabular-nums">{it.debit ? `Dr ${fmt(it.debit)}` : it.credit ? `Cr ${fmt(it.credit)}` : ""}</span>
+                <span className="tabular-nums">{it.debit ? `Dr ${money(it.debit)}` : it.credit ? `Cr ${money(it.credit)}` : ""}</span>
               </div>
             ) : (
               <div key={`${it.partNumber}-${idx}`} className="py-0.5">
@@ -92,7 +97,7 @@ const ThermalTemplate: DocumentTemplateRenderer = ({ udm }) => {
                     {fmt(it.qty)} {it.unit ?? ""} {showRate ? `x ${fmt(it.rate)}` : ""}
                     {showWeight && it.weight != null ? ` · ${fmt(it.weight)} kg` : ""}
                   </span>
-                  {showAmount && <span className="tabular-nums font-semibold">{fmt(it.amount)}</span>}
+                  {showAmount && <span className="tabular-nums font-semibold">{money(it.amount)}</span>}
                 </div>
               </div>
             )
@@ -103,34 +108,34 @@ const ThermalTemplate: DocumentTemplateRenderer = ({ udm }) => {
         {isLedger && items.length > 0 && (
           <div className="flex justify-between font-bold border-t border-dashed border-black mt-1 pt-1">
             <span>{L.total}</span>
-            <span className="tabular-nums">{fmt(totalDebit)} / {fmt(totalCredit)}</span>
+            <span className="tabular-nums">{money(totalDebit)} / {money(totalCredit)}</span>
           </div>
         )}
       </div>
 
       {showFooter && showAmount && (
         <div className="border-b border-dashed border-black pb-1 mb-1">
-          <div className="flex justify-between"><span>{L.subtotal}</span><span className="tabular-nums">{fmt(t.subtotal)}</span></div>
+          <div className="flex justify-between"><span>{L.subtotal}</span><span className="tabular-nums">{money(t.subtotal)}</span></div>
           {showDiscount && (
-            <div className="flex justify-between"><span>{L.discount}</span><span className="tabular-nums">{fmt(t.discount)}</span></div>
+            <div className="flex justify-between"><span>{L.discount}</span><span className="tabular-nums">{money(t.discount)}</span></div>
           )}
           {hasGstSplit ? (
             isInterstate ? (
-              <div className="flex justify-between"><span>{L.igst}</span><span className="tabular-nums">{fmt(t.igst)}</span></div>
+              <div className="flex justify-between"><span>{L.igst}</span><span className="tabular-nums">{money(t.igst)}</span></div>
             ) : (
               <>
-                <div className="flex justify-between"><span>{L.cgst}</span><span className="tabular-nums">{fmt(t.cgst)}</span></div>
-                <div className="flex justify-between"><span>{L.sgst}</span><span className="tabular-nums">{fmt(t.sgst)}</span></div>
+                <div className="flex justify-between"><span>{L.cgst}</span><span className="tabular-nums">{money(t.cgst)}</span></div>
+                <div className="flex justify-between"><span>{L.sgst}</span><span className="tabular-nums">{money(t.sgst)}</span></div>
               </>
             )
           ) : showGst ? (
-            <div className="flex justify-between"><span>{L.tax}</span><span className="tabular-nums">{fmt(t.tax)}</span></div>
+            <div className="flex justify-between"><span>{L.tax}</span><span className="tabular-nums">{money(t.tax)}</span></div>
           ) : null}
           {roundOff !== 0 && (
-            <div className="flex justify-between"><span>{L.roundOff}</span><span className="tabular-nums">{roundOff > 0 ? "+ " : "− "}{fmt(Math.abs(roundOff))}</span></div>
+            <div className="flex justify-between"><span>{L.roundOff}</span><span className="tabular-nums">{roundOff > 0 ? "+ " : "− "}{money(Math.abs(roundOff))}</span></div>
           )}
           <div className="flex justify-between font-extrabold text-[11px] border-t border-dashed border-black mt-1 pt-1">
-            <span>{L.grandTotal}</span><span className="tabular-nums">{fmt(t.grandTotal)}</span>
+            <span>{L.grandTotal}</span><span className="tabular-nums">{money(t.grandTotal)}</span>
           </div>
         </div>
       )}

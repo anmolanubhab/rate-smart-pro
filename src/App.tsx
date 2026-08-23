@@ -16,6 +16,7 @@ import NotFound from "./pages/NotFound";
 import DealerGuard from "@/components/dealer/DealerGuard";
 import SalesmanGuard from "@/components/salesman/SalesmanGuard";
 import PlatformGuard from "@/components/platform/PlatformGuard";
+import WorkflowGuard from "@/components/workflow/WorkflowGuard";
 
 
 const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
@@ -110,7 +111,9 @@ const Maintenance = lazy(() => import("./pages/settings/Maintenance"));
 const CompanySelection = lazy(() => import("./pages/companies/CompanySelection"));
 const VerifyCompanyAccess = lazy(() => import("./pages/companies/VerifyCompanyAccess"));
 const SalesConfig = lazy(() => import("./pages/settings/SalesConfig"));
+const PurchaseConfig = lazy(() => import("./pages/settings/PurchaseConfig"));
 const SalesInvoices = lazy(() => import("./pages/sales/Invoices"));
+const CreateSalesInvoiceDirect = lazy(() => import("./pages/sales/CreateSalesInvoiceDirect"));
 const ReceivePayment = lazy(() => import("./pages/sales/ReceivePayment"));
 const PickingList = lazy(() => import("./pages/sales/PickingList"));
 const Quotations = lazy(() => import("./pages/sales/Quotations"));
@@ -298,6 +301,13 @@ const L = (el: React.ReactNode) => (
   </AppLayout>
 );
 
+// Adaptive Workflow (Phase 4): route-level enforcement for a workflow-gated
+// page, layered inside L() rather than replacing it -- same AppLayout auth/
+// business/role gate still runs first, WorkflowGuard adds the business-
+// capability + RBAC check on top. See src/components/workflow/WorkflowGuard.tsx.
+const LG = (el: React.ReactNode, gate: { module: "sales" | "purchase"; gateKey: string; perm?: string }) =>
+  L(<WorkflowGuard module={gate.module} gateKey={gate.gateKey} perm={gate.perm}>{el}</WorkflowGuard>);
+
 // Bare route (no AppLayout) — for pre-company screens
 const B = (el: React.ReactNode) => (
   <Suspense fallback={<RouteFallback />}>{el}</Suspense>
@@ -350,11 +360,11 @@ const App = () => (
               <Route path="/reports/sales-performance" element={L(<SalesPerformanceReport />)} />
               <Route path="/reports/party-part-sales" element={L(<PartyPartSalesReport />)} />
               <Route path="/products/bulk-gst" element={L(<BulkGstAssign />)} />
-              <Route path="/orders" element={L(<Orders />)} />
-              <Route path="/orders/new" element={L(<CreateOrder />)} />
+              <Route path="/orders" element={LG(<Orders />, { module: "sales", gateKey: "enable_sales_order" })} />
+              <Route path="/orders/new" element={LG(<CreateOrder />, { module: "sales", gateKey: "enable_sales_order", perm: "voucher.create" })} />
               <Route path="/orders/edit/:id" element={L(<CreateOrder />)} />
-              <Route path="/pending" element={L(<PendingOrders />)} />
-              <Route path="/dispatch" element={L(<Dispatch />)} />
+              <Route path="/pending" element={LG(<PendingOrders />, { module: "sales", gateKey: "enable_sales_order" })} />
+              <Route path="/dispatch" element={LG(<Dispatch />, { module: "sales", gateKey: "enable_dispatch_module" })} />
               <Route path="/excel-import" element={L(<ExcelImport />)} />
               <Route path="/inventory" element={L(<Inventory />)} />
               <Route path="/reports" element={L(<Reports />)} />
@@ -442,27 +452,29 @@ const App = () => (
               <Route path="/settings/accounting-lock" element={L(<AccountingLock />)} />
               <Route path="/settings/financial-note-categories" element={L(<FinancialNoteCategories />)} />
               <Route path="/settings/sales-config" element={L(<SalesConfig />)} />
+              <Route path="/settings/purchase-config" element={L(<PurchaseConfig />)} />
               <Route path="/settings/danger-zone" element={L(<DangerZone />)} />
               <Route path="/settings/backup-restore" element={L(<BackupRestore />)} />
               <Route path="/settings/maintenance" element={L(<Maintenance />)} />
               <Route path="/sales/invoices" element={L(<SalesInvoices />)} />
+              <Route path="/sales/invoices/new" element={L(<CreateSalesInvoiceDirect />)} />
               <Route path="/sales/receive-payment" element={L(<ReceivePayment />)} />
-              <Route path="/sales/picking-list" element={L(<PickingList />)} />
-              <Route path="/sales/quotations" element={L(<Quotations />)} />
-              <Route path="/sales/quotations/new" element={L(<CreateQuotation />)} />
+              <Route path="/sales/picking-list" element={LG(<PickingList />, { module: "sales", gateKey: "enable_picking" })} />
+              <Route path="/sales/quotations" element={LG(<Quotations />, { module: "sales", gateKey: "enable_quotation" })} />
+              <Route path="/sales/quotations/new" element={LG(<CreateQuotation />, { module: "sales", gateKey: "enable_quotation" })} />
               <Route path="/sales/quotations/edit/:id" element={L(<CreateQuotation />)} />
               <Route path="/sales/returns" element={L(<SalesReturns />)} />
               <Route path="/sales/returns/new" element={L(<CreateSalesReturn />)} />
               <Route path="/sales/returns/edit/:id" element={L(<CreateSalesReturn />)} />
               <Route path="/approval-center" element={L(<ApprovalCenter />)} />
               <Route path="/purchase" element={L(<PurchaseDashboard />)} />
-              <Route path="/purchase/orders" element={L(<PurchaseOrders />)} />
-              <Route path="/purchase/orders/new" element={L(<CreatePurchaseOrder />)} />
+              <Route path="/purchase/orders" element={LG(<PurchaseOrders />, { module: "purchase", gateKey: "enable_purchase_order" })} />
+              <Route path="/purchase/orders/new" element={LG(<CreatePurchaseOrder />, { module: "purchase", gateKey: "enable_purchase_order", perm: "purchase.create" })} />
               <Route path="/purchase/orders/edit/:id" element={L(<CreatePurchaseOrder />)} />
               <Route path="/purchase/price-lists" element={L(<PurchasePriceLists />)} />
               <Route path="/purchase/schemes" element={L(<PurchaseSchemes />)} />
-              <Route path="/purchase/grn" element={L(<GRNList />)} />
-              <Route path="/purchase/grn/new" element={L(<PurchaseGRN />)} />
+              <Route path="/purchase/grn" element={LG(<GRNList />, { module: "purchase", gateKey: "enable_goods_receipt" })} />
+              <Route path="/purchase/grn/new" element={LG(<PurchaseGRN />, { module: "purchase", gateKey: "enable_goods_receipt" })} />
               <Route path="/purchase/grn/edit/:id" element={L(<PurchaseGRN />)} />
               <Route path="/purchase/grn/:id" element={L(<GRNDetail />)} />
               <Route path="/purchase/invoices" element={L(<PurchaseInvoices />)} />

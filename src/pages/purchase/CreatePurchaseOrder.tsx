@@ -28,6 +28,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
+import { useInterstateFlag } from "@/hooks/useInterstateFlag";
+import { splitGstAmount } from "@/lib/gstCalc";
 import { canGranular } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { getActiveBusinessIdSync } from "@/lib/activeBusiness";
@@ -101,7 +103,7 @@ const GRID_COLUMNS: DocumentGridColumn[] = [
 
 export default function CreatePurchaseOrder() {
   const { user, loading: authLoading } = useAuth();
-  const { role, permissions } = useBusiness();
+  const { role, permissions, business } = useBusiness();
   const canApprove = canGranular(role, "purchase.approve", permissions);
   const businessId = getActiveBusinessIdSync();
   const navigate = useNavigate();
@@ -204,8 +206,11 @@ export default function CreatePurchaseOrder() {
   const isQtyLocked = isApprovalLocked && Number(savedPO?.received_qty ?? 0) > 0;
 
   const totals = useMemo(() => computePOTotals(items), [items]);
-  const cgst = +(totals.tax_total / 2).toFixed(2);
-  const sgst = +(totals.tax_total / 2).toFixed(2);
+  // Interstate-aware split (was hardcoded 50/50 CGST/SGST regardless of the
+  // supplier's state) -- same resolveIsInterstate()/splitGstAmount() central
+  // engine used at actual purchase-invoice posting time.
+  const { isInterstate } = useInterstateFlag(business?.gst_number, supplier?.gst);
+  const { cgst_amount: cgst, sgst_amount: sgst, igst_amount: igst } = splitGstAmount(totals.tax_total, isInterstate);
   // No auto round-off — the Grand Total must match the supplier's invoice
   // paisa-to-paisa, not a rupee-rounded approximation. What's shown here is
   // exactly what savePurchaseOrder() persists (computePOTotals' own
@@ -994,8 +999,9 @@ export default function CreatePurchaseOrder() {
                 { label: "Subtotal (Gross)", value: fmt(totals.subtotal) },
                 { label: "Discount", value: `− ${fmt(totals.discount_total)}` },
                 { label: "Taxable Amount", value: fmt(totals.taxable), bold: true },
-                { label: "CGST", value: fmt(cgst) },
-                { label: "SGST", value: fmt(sgst) },
+                ...(isInterstate
+                  ? [{ label: "IGST", value: fmt(igst) }]
+                  : [{ label: "CGST", value: fmt(cgst) }, { label: "SGST", value: fmt(sgst) }]),
               ]}
               grandTotal={`₹${fmt(totals.grand_total)}`}
             />

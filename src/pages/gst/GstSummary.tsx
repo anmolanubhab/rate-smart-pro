@@ -6,6 +6,8 @@ import type { ReportUdm } from "@/lib/documentUdm/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useBusiness } from "@/hooks/useBusiness";
 import { supabase } from "@/integrations/supabase/client";
+import { fmtInr } from "@/lib/accounting";
+import { round2, sumRound2 } from "@/lib/gstCalc";
 
 type Row = {
   rate: string;
@@ -86,17 +88,20 @@ export default function GstSummary() {
         .sort((a, b) => a[0] - b[0])
         .map(([pct, v]) => ({
           rate: `${pct}%`,
-          taxable: Math.round(v.taxable),
-          cgst: Math.round(v.cgst),
-          sgst: Math.round(v.sgst),
-          igst: Math.round(v.igst),
-          total: Math.round(v.taxable + v.cgst + v.sgst + v.igst),
+          taxable: round2(v.taxable),
+          cgst: round2(v.cgst),
+          sgst: round2(v.sgst),
+          igst: round2(v.igst),
+          total: round2(v.taxable + v.cgst + v.sgst + v.igst),
         }));
     },
   });
 
-  const out = rows.reduce((s, r) => s + r.cgst + r.sgst + r.igst, 0);
-  const taxableTotal = rows.reduce((s, r) => s + r.taxable, 0);
+  // Sum the raw row values (already full-precision from round2 above), then
+  // round once for the KPI card -- never sum values that were separately
+  // pre-truncated to whole rupees.
+  const out = sumRound2(rows.map((r) => r.cgst + r.sgst + r.igst));
+  const taxableTotal = sumRound2(rows.map((r) => r.taxable));
 
   return (
     <MockTablePage
@@ -110,10 +115,10 @@ export default function GstSummary() {
             : "Slab-wise output tax for the current month, from posted sales invoices."
       }
       kpis={[
-        { label: "Taxable Value", value: `₹ ${taxableTotal.toLocaleString("en-IN")}` },
-        { label: "Output Tax", value: `₹ ${out.toLocaleString("en-IN")}`, tone: "warning" },
+        { label: "Taxable Value", value: `₹ ${fmtInr(taxableTotal)}` },
+        { label: "Output Tax", value: `₹ ${fmtInr(out)}`, tone: "warning" },
         { label: "ITC Available", value: "Not tracked yet", tone: "success" },
-        { label: "Net Payable", value: `₹ ${out.toLocaleString("en-IN")}`, tone: "danger" },
+        { label: "Net Payable", value: `₹ ${fmtInr(out)}`, tone: "danger" },
       ]}
       columns={columns}
       rows={rows}

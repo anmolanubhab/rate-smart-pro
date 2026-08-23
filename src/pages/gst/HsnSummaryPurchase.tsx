@@ -3,6 +3,8 @@ import ReportRunner, { ReportFilters } from "@/components/reports/ReportRunner";
 import { useBusiness } from "@/hooks/useBusiness";
 import { fetchPurchaseHsnSummary } from "@/lib/hsnSummary";
 import type { MockColumn, MockKpi } from "@/components/accounts/MockTablePage";
+import { fmtInr } from "@/lib/accounting";
+import { sumRound2 } from "@/lib/gstCalc";
 
 const columns: MockColumn[] = [
   { key: "hsn", label: "HSN Code" },
@@ -39,13 +41,13 @@ export default function HsnSummaryPurchase() {
   };
 
   const computeKpis = (rows: Record<string, any>[]): MockKpi[] => {
-    const totalTaxable = rows.reduce((s, r) => s + Number(r.taxable), 0);
-    const totalTax = rows.reduce((s, r) => s + Number(r.tax), 0);
+    const totalTaxable = sumRound2(rows.map((r) => Number(r.taxable)));
+    const totalTax = sumRound2(rows.map((r) => Number(r.tax)));
     const missingHsn = rows.filter((r) => r.hsn === "(HSN not set)").length;
     return [
       { label: "HSN Groups", value: rows.length },
-      { label: "Total Taxable", value: `₹ ${totalTaxable.toLocaleString("en-IN")}` },
-      { label: "Total Input Tax", value: `₹ ${totalTax.toLocaleString("en-IN")}`, tone: "warning" },
+      { label: "Total Taxable", value: `₹ ${fmtInr(totalTaxable)}` },
+      { label: "Total Input Tax", value: `₹ ${fmtInr(totalTax)}`, tone: "warning" },
       { label: "Groups Missing HSN", value: missingHsn, tone: missingHsn > 0 ? "danger" : "success" },
     ];
   };

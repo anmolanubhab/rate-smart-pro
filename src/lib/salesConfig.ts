@@ -27,6 +27,16 @@ export type SalesConfig = {
   invoice_timing: InvoiceTiming;
   payment_required_before_closing: boolean;
   enable_closing: boolean;
+  // Adaptive Workflow — Phase 1 (Configuration Foundation). Orthogonal to
+  // the stage engine above: enable_direct_invoice is "is Party -> Sales
+  // Invoice (no Order) available at all", not a stage in the sequencing
+  // model (Order remains a mandatory core stage there). enable_sales_order
+  // continues to represent "is the Order-based workflow available" -- reused,
+  // not duplicated. default_sales_mode is which mode is prioritized in the
+  // UI (Phase 4/7 territory) and must never be read as a hard restriction:
+  // both modes are usable whenever their own enable_* flag is on.
+  enable_direct_invoice: boolean;
+  default_sales_mode: "direct" | "order_based";
 };
 
 export const DEFAULT_SALES_CONFIG: Omit<SalesConfig, "business_id" | "id"> = {
@@ -52,6 +62,8 @@ export const DEFAULT_SALES_CONFIG: Omit<SalesConfig, "business_id" | "id"> = {
   invoice_timing: "after_dispatch",
   payment_required_before_closing: true,
   enable_closing: true,
+  enable_direct_invoice: true,
+  default_sales_mode: "order_based",
 };
 
 export async function fetchSalesConfig(businessId: string): Promise<SalesConfig> {

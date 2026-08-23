@@ -16,6 +16,7 @@ import type { NavItem, NavItemWithPath } from "./types";
 import { scoreItem } from "./fuzzy";
 import { useBusiness } from "@/hooks/useBusiness";
 import { canGranular, isOwner, canAccessMaintenance } from "@/lib/permissions";
+import { useSalesWorkflowConfigQuery, usePurchaseWorkflowConfigQuery } from "@/hooks/useWorkflowConfig";
 
 // Explicit sidebar module sequence — business workflow order (transactional
 // modules first, then compliance/analytics, then admin/settings last). Any
@@ -57,18 +58,33 @@ function buildChildrenMap(items: NavItem[]): Map<string, NavItem[]> {
 
 export function useNavigation() {
   const { role, permissions } = useBusiness();
+  // Adaptive Workflow (Phase 4): business-level capability, checked
+  // independently from (never merged with) the RBAC check just below --
+  // see workflowGate's doc comment in types.ts. `undefined` while loading
+  // or if a business has no config row yet defaults to "available" (safe:
+  // matches sales_config/purchase_config's own DEFAULT_*_CONFIG, and avoids
+  // a visible flash where nav briefly hides items before the query resolves).
+  const { data: salesConfig } = useSalesWorkflowConfigQuery();
+  const { data: purchaseConfig } = usePurchaseWorkflowConfigQuery();
 
   const isVisible = useMemo(() => {
     return (item: NavItem) => {
-      if (!item.perm) return true;
       // Reserved sentinels for role-based gates the granular permission
       // matrix can't express (owner-only, maintenance-role-only) — matches
       // the exact checks Settings.tsx uses for these same pages.
-      if (item.perm === "owner") return isOwner(role);
-      if (item.perm === "maintenance") return canAccessMaintenance(role);
-      return canGranular(role, item.perm, permissions);
+      if (item.perm === "owner" && !isOwner(role)) return false;
+      if (item.perm === "maintenance" && !canAccessMaintenance(role)) return false;
+      if (item.perm && item.perm !== "owner" && item.perm !== "maintenance" && !canGranular(role, item.perm, permissions)) {
+        return false;
+      }
+      if (item.workflowGate) {
+        const cfg = item.workflowGate.module === "sales" ? salesConfig : purchaseConfig;
+        const enabled = cfg ? (cfg as unknown as Record<string, boolean>)[item.workflowGate.key] : undefined;
+        if (enabled === false) return false;
+      }
+      return true;
     };
-  }, [role, permissions]);
+  }, [role, permissions, salesConfig, purchaseConfig]);
 
   // Everything below depends only on the static registry + role, so it's
   // rebuilt at most once per role change — not on every render/keystroke.

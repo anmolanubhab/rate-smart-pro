@@ -74,6 +74,20 @@ export interface NavItem {
    * not separate NavItems here, unlike the Classic `parentId` groups.
    */
   gatewayPath?: string[];
+  /**
+   * Adaptive Workflow (Phase 4) -- ties this item's visibility to a
+   * business-level workflow capability, in addition to (never instead of)
+   * `perm`. `key` names the exact boolean column on sales_config /
+   * purchase_config to check (e.g. "enable_dispatch_module",
+   * "enable_direct_invoice"). Checked centrally in useNavigation.ts's
+   * isVisible -- Sidebar, Quick Create, Command Search and the mobile
+   * drawer all derive from that one function, so tagging an item here is
+   * the only wiring a new gated page needs. Omit for items that should
+   * always be visible regardless of workflow configuration (e.g. the
+   * Sales Invoices / Purchase Invoices list pages, which show real
+   * documents no matter how they were created).
+   */
+  workflowGate?: { module: "sales" | "purchase"; key: string };
 }
 
 /** A NavItem enriched with the fully joined breadcrumb path (root → item) */

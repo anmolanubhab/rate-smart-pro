@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { getSectionOrder } from "@/lib/dashboardFocus";
 import QuickLinksPanel from "@/components/dashboard/QuickLinksPanel";
+import { useSalesWorkflowConfigQuery, usePurchaseWorkflowConfigQuery } from "@/hooks/useWorkflowConfig";
 
 const InventoryWidgets = lazy(() => import("@/components/InventoryWidgets"));
 const BusinessHealthLayer = lazy(() => import("@/components/dashboard/BusinessHealthLayer"));
@@ -41,16 +42,22 @@ const TABS = [
 type TabValue = (typeof TABS)[number]["value"];
 const TAB_VALUES = TABS.map((t) => t.value) as string[];
 
+// Adaptive Workflow (Phase 4): each link that opens a workflow-gated route
+// carries the same gate key used by useNavigation.ts/WorkflowGuard, so a
+// disabled stage's shortcut disappears here instead of dead-ending on the
+// "Not available" route guard screen. Links with no `gate` are always shown
+// (Sales/Purchase Invoices, Collection, Supplier Ledger -- real documents,
+// not tied to a specific operational stage).
 const SALES_LINKS = [
-  { label: "Orders", description: "Pending and confirmed sales orders", to: "/orders", icon: ClipboardList },
-  { label: "Dispatch", description: "Pick, pack and dispatch stock", to: "/dispatch", icon: PackageCheck },
+  { label: "Orders", description: "Pending and confirmed sales orders", to: "/orders", icon: ClipboardList, gate: "enable_sales_order" },
+  { label: "Dispatch", description: "Pick, pack and dispatch stock", to: "/dispatch", icon: PackageCheck, gate: "enable_dispatch_module" },
   { label: "Invoices", description: "Sales invoices and tax documents", to: "/sales/invoices", icon: FileText },
   { label: "Collection", description: "Receive payments against invoices", to: "/sales/receive-payment", icon: Wallet },
 ];
 
 const PURCHASE_LINKS = [
-  { label: "Purchase Orders", description: "Raise and track POs to suppliers", to: "/purchase/orders", icon: ClipboardList },
-  { label: "GRN", description: "Goods receipt and put-away", to: "/purchase/grn", icon: PackageCheck },
+  { label: "Purchase Orders", description: "Raise and track POs to suppliers", to: "/purchase/orders", icon: ClipboardList, gate: "enable_purchase_order" },
+  { label: "GRN", description: "Goods receipt and put-away", to: "/purchase/grn", icon: PackageCheck, gate: "enable_goods_receipt" },
   { label: "Supplier Ledger", description: "Outstanding dues by supplier", to: "/purchase/supplier-ledger", icon: Users },
   { label: "Purchase Invoices", description: "Bills recorded against POs/GRNs", to: "/purchase/invoices", icon: ReceiptText },
 ];
@@ -59,6 +66,20 @@ const Dashboard = () => {
   const { user } = useAuth();
   const { dashboardFocus } = useBusiness();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Adaptive Workflow (Phase 4): same safe-default as useNavigation.ts --
+  // an unloaded/missing config row never hides a link, only an explicit
+  // `false` does.
+  const { data: salesConfig } = useSalesWorkflowConfigQuery();
+  const { data: purchaseConfig } = usePurchaseWorkflowConfigQuery();
+  const salesLinks = useMemo(
+    () => SALES_LINKS.filter((l) => !l.gate || (salesConfig as unknown as Record<string, boolean> | undefined)?.[l.gate] !== false),
+    [salesConfig]
+  );
+  const purchaseLinks = useMemo(
+    () => PURCHASE_LINKS.filter((l) => !l.gate || (purchaseConfig as unknown as Record<string, boolean> | undefined)?.[l.gate] !== false),
+    [purchaseConfig]
+  );
 
   const requested = searchParams.get("tab");
   const activeTab: TabValue = (requested && TAB_VALUES.includes(requested) ? requested : "overview") as TabValue;
@@ -161,11 +182,11 @@ const Dashboard = () => {
         </TabsContent>
 
         <TabsContent value="sales" className="mt-6">
-          <QuickLinksPanel title="Sales" subtitle="Jump straight into the sales workflow." links={SALES_LINKS} />
+          <QuickLinksPanel title="Sales" subtitle="Jump straight into the sales workflow." links={salesLinks} />
         </TabsContent>
 
         <TabsContent value="purchase" className="mt-6">
-          <QuickLinksPanel title="Purchase" subtitle="Jump straight into the purchase workflow." links={PURCHASE_LINKS} />
+          <QuickLinksPanel title="Purchase" subtitle="Jump straight into the purchase workflow." links={purchaseLinks} />
         </TabsContent>
 
         <TabsContent value="commerce" className="mt-6">

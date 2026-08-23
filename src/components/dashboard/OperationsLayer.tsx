@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchProducts } from "@/lib/products";
 import { cn } from "@/lib/utils";
+import { useSalesWorkflowConfigQuery } from "@/hooks/useWorkflowConfig";
 
 const inr = (n: number) =>
   "₹" + new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
@@ -60,6 +61,18 @@ export default function OperationsLayer() {
   const { business } = useBusiness();
   const businessId = business?.id ?? null;
   const monthStart = format(startOfMonth(new Date()), "yyyy-MM-dd");
+
+  // Adaptive Workflow (Phase 4): "New Sale" points at whichever entry path
+  // is actually usable/primary for this business, instead of always
+  // assuming Orders -- and Dispatch/Pending disappear entirely rather than
+  // linking to a route WorkflowGuard would just block anyway.
+  const { data: salesConfig } = useSalesWorkflowConfigQuery();
+  const orderEnabled = salesConfig?.enable_sales_order !== false;
+  const dispatchEnabled = salesConfig?.enable_dispatch_module !== false;
+  const directInvoiceEnabled = salesConfig?.enable_direct_invoice !== false;
+  const newSaleTo = orderEnabled && salesConfig?.default_sales_mode !== "direct"
+    ? "/orders/new"
+    : directInvoiceEnabled ? "/sales/invoices/new" : "/orders/new";
 
   const productsQ = useQuery({
     queryKey: ["ops-products", businessId, user?.id],
@@ -202,11 +215,13 @@ export default function OperationsLayer() {
         >
           <div className="grid grid-cols-2 gap-2">
             <Button asChild className="justify-start" variant="outline">
-              <Link to="/orders/new"><Plus className="h-4 w-4" /> New Sale</Link>
+              <Link to={newSaleTo}><Plus className="h-4 w-4" /> New Sale</Link>
             </Button>
-            <Button asChild className="justify-start" variant="outline">
-              <Link to="/dispatch"><Truck className="h-4 w-4" /> New Dispatch</Link>
-            </Button>
+            {dispatchEnabled && (
+              <Button asChild className="justify-start" variant="outline">
+                <Link to="/dispatch"><Truck className="h-4 w-4" /> New Dispatch</Link>
+              </Button>
+            )}
             <Button asChild className="justify-start" variant="outline">
               <Link to="/parties"><Users className="h-4 w-4" /> New Party</Link>
             </Button>
@@ -222,9 +237,11 @@ export default function OperationsLayer() {
             <Button asChild className="justify-start" variant="outline">
               <Link to="/accounts/vouchers"><Wallet className="h-4 w-4" /> New Payment</Link>
             </Button>
-            <Button asChild className="justify-start" variant="outline">
-              <Link to="/pending"><AlertTriangle className="h-4 w-4" /> Pending</Link>
-            </Button>
+            {orderEnabled && (
+              <Button asChild className="justify-start" variant="outline">
+                <Link to="/pending"><AlertTriangle className="h-4 w-4" /> Pending</Link>
+              </Button>
+            )}
           </div>
         </CardShell>
 

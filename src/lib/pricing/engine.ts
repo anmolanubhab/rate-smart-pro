@@ -13,7 +13,7 @@
 // detail; callers only ever import from here.
 
 import { supabase } from "@/integrations/supabase/client";
-import { splitGstAmount } from "@/lib/gstCalc";
+import { splitGstAmount, resolveIsInterstate, round2 as round2Shared } from "@/lib/gstCalc";
 import { fetchPricingPolicy, fetchPricingThresholds } from "@/lib/accountingLock";
 import { resolveBasePrice } from "./basePriceResolver";
 import { resolveApplicableRules } from "./ruleResolver";
@@ -37,7 +37,9 @@ import type {
   PricingTotals,
 } from "./types";
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+// Same round2 as every other GST call site (src/lib/gstCalc.ts) -- kept as
+// a local alias only so the 18 call sites below don't need a mass rename.
+const round2 = round2Shared;
 
 export interface CalculatePricingOptions {
   traceMode?: boolean;
@@ -71,17 +73,20 @@ async function resolveGstSplit(businessId: string, partyId: string | null | unde
     supabase.from("businesses").select("gst_number").eq("id", businessId).maybeSingle(),
     partyId ? supabase.from("parties").select("gst").eq("id", partyId).maybeSingle() : Promise.resolve({ data: null }),
   ]);
-  // Fails soft to false (intrastate) deliberately, unlike the authoritative
-  // salesInvoices.ts/purchaseInvoices.ts write paths (which throw via
-  // gstCalc.resolveIsInterstate): this is a live quotation/order pricing
-  // preview, not the final invoice, and it must not stop rendering an
-  // estimate on a transient RPC error. The real tax split is recomputed
-  // authoritatively when the invoice is actually generated.
-  const { data: interstateData, error } = await supabase.rpc("gst_is_interstate" as never, {
-    _seller_gstin: biz?.gst_number ?? null,
-    _buyer_gstin: (partyRes.data as { gst: string | null } | null)?.gst ?? null,
-  } as never);
-  return error ? false : !!interstateData;
+  // Routed through the same central resolveIsInterstate() as every other
+  // GST call site (rather than calling the gst_is_interstate RPC directly),
+  // but this preview path still fails soft to false (intrastate)
+  // deliberately, unlike the authoritative salesInvoices.ts/
+  // purchaseInvoices.ts write paths (which let resolveIsInterstate throw):
+  // this is a live quotation/order pricing preview, not the final invoice,
+  // and it must not stop rendering an estimate on a transient RPC error.
+  // The real tax split is recomputed authoritatively when the invoice is
+  // actually generated.
+  try {
+    return await resolveIsInterstate(biz?.gst_number, (partyRes.data as { gst: string | null } | null)?.gst);
+  } catch {
+    return false;
+  }
 }
 
 interface LineCalcThresholds {

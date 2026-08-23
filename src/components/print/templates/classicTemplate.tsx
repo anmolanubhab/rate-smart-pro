@@ -46,6 +46,11 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
   const roundOff = t.roundOff ?? 0;
   const fmt = (n?: number | null) =>
     Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Money-specific: same 2dp formatting as fmt(), plus the ₹ symbol every
+  // other GST/money screen in the app shows. Kept separate from fmt()
+  // because fmt() is also used for qty/MRP%/weight/rate/GST%, which must
+  // never carry a currency symbol.
+  const money = (n?: number | null) => `₹ ${fmt(n)}`;
 
   const isLedger = itemGridMode === "ledger";
   const colCount = isLedger
@@ -60,20 +65,20 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
       isInterstate ? (
         <>
           <div className="col-span-6">{L.igst}</div>
-          <div className="col-span-6 text-right tabular-nums">{fmt(t.igst)}</div>
+          <div className="col-span-6 text-right tabular-nums">{money(t.igst)}</div>
         </>
       ) : (
         <>
           <div className="col-span-6">{L.cgst}</div>
-          <div className="col-span-6 text-right tabular-nums">{fmt(t.cgst)}</div>
+          <div className="col-span-6 text-right tabular-nums">{money(t.cgst)}</div>
           <div className="col-span-6">{L.sgst}</div>
-          <div className="col-span-6 text-right tabular-nums">{fmt(t.sgst)}</div>
+          <div className="col-span-6 text-right tabular-nums">{money(t.sgst)}</div>
         </>
       )
     ) : showGst ? (
       <>
         <div className="col-span-6">{L.tax}</div>
-        <div className="col-span-6 text-right tabular-nums">{fmt(t.tax)}</div>
+        <div className="col-span-6 text-right tabular-nums">{money(t.tax)}</div>
       </>
     ) : null;
 
@@ -227,23 +232,23 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
                   <div className="text-[10px] font-semibold tracking-wider">{L.summary}</div>
                   <div className="mt-1 text-[11px] grid grid-cols-12 gap-y-1">
                     <div className="col-span-6">{L.subtotal}</div>
-                    <div className="col-span-6 text-right tabular-nums">{fmt(t.subtotal)}</div>
+                    <div className="col-span-6 text-right tabular-nums">{money(t.subtotal)}</div>
                     {showDiscount && (
                       <>
                         <div className="col-span-6">{L.discount}</div>
-                        <div className="col-span-6 text-right tabular-nums">{fmt(t.discount)}</div>
+                        <div className="col-span-6 text-right tabular-nums">{money(t.discount)}</div>
                       </>
                     )}
                     <TaxSummaryRows />
                     {roundOff !== 0 && (
                       <>
                         <div className="col-span-6">{L.roundOff}</div>
-                        <div className="col-span-6 text-right tabular-nums">{roundOff > 0 ? "+ " : "− "}{fmt(Math.abs(roundOff))}</div>
+                        <div className="col-span-6 text-right tabular-nums">{roundOff > 0 ? "+ " : "− "}{money(Math.abs(roundOff))}</div>
                       </>
                     )}
                     <div className="col-span-12 border-t border-black mt-1 pt-1 flex items-center justify-between">
                       <div className="font-bold uppercase">{L.grandTotal}</div>
-                      <div className="font-extrabold text-[14px] tabular-nums">{fmt(t.grandTotal)}</div>
+                      <div className="font-extrabold text-[14px] tabular-nums">{money(t.grandTotal)}</div>
                     </div>
                   </div>
                 </div>
@@ -297,8 +302,8 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
                   <tr key={`${it.description}-${idx}`} className="border-b border-black last:border-b-0">
                     <td className="p-1.5 align-top">{idx + 1}</td>
                     <td className="p-1.5 align-top font-semibold">{it.description}</td>
-                    <td className="p-1.5 align-top text-right tabular-nums">{it.debit ? fmt(it.debit) : ""}</td>
-                    <td className="p-1.5 align-top text-right tabular-nums">{it.credit ? fmt(it.credit) : ""}</td>
+                    <td className="p-1.5 align-top text-right tabular-nums">{it.debit ? money(it.debit) : ""}</td>
+                    <td className="p-1.5 align-top text-right tabular-nums">{it.credit ? money(it.credit) : ""}</td>
                   </tr>
                 ) : (
                   <tr key={`${it.partNumber}-${idx}`} className="border-b border-black last:border-b-0">
@@ -313,7 +318,7 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
                     {showWeight && <td className="p-1.5 align-top text-right tabular-nums">{it.weight != null ? fmt(it.weight) : "—"}</td>}
                     {showRate && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.rate)}</td>}
                     {showGst && <td className="p-1.5 align-top text-right tabular-nums">{fmt(it.gstPct)}</td>}
-                    {showAmount && <td className="p-1.5 align-top text-right tabular-nums font-semibold">{fmt(it.amount)}</td>}
+                    {showAmount && <td className="p-1.5 align-top text-right tabular-nums font-semibold">{money(it.amount)}</td>}
                   </tr>
                 )
               )
@@ -325,8 +330,8 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
             {isLedger && items.length > 0 && (
               <tr className="border-t-2 border-black font-bold">
                 <td className="p-1.5" colSpan={2}>{L.total}</td>
-                <td className="p-1.5 text-right tabular-nums">{fmt(totalDebit)}</td>
-                <td className="p-1.5 text-right tabular-nums">{fmt(totalCredit)}</td>
+                <td className="p-1.5 text-right tabular-nums">{money(totalDebit)}</td>
+                <td className="p-1.5 text-right tabular-nums">{money(totalCredit)}</td>
               </tr>
             )}
           </tbody>
@@ -362,23 +367,23 @@ const ClassicTemplate: DocumentTemplateRenderer = ({ udm }) => {
               <div className="text-[11px] font-bold mb-1">{L.total}</div>
               <div className="text-[11px] grid grid-cols-12 gap-y-1">
                 <div className="col-span-6">{L.subtotal}</div>
-                <div className="col-span-6 text-right tabular-nums">{fmt(t.subtotal)}</div>
+                <div className="col-span-6 text-right tabular-nums">{money(t.subtotal)}</div>
                 {showDiscount && (
                   <>
                     <div className="col-span-6">{L.discount}</div>
-                    <div className="col-span-6 text-right tabular-nums">{fmt(t.discount)}</div>
+                    <div className="col-span-6 text-right tabular-nums">{money(t.discount)}</div>
                   </>
                 )}
                 <TaxSummaryRows />
                 {!!t.roundOff && (
                   <>
                     <div className="col-span-6">{L.roundOff}</div>
-                    <div className="col-span-6 text-right tabular-nums">{t.roundOff > 0 ? "+ " : "− "}{fmt(Math.abs(t.roundOff))}</div>
+                    <div className="col-span-6 text-right tabular-nums">{t.roundOff > 0 ? "+ " : "− "}{money(Math.abs(t.roundOff))}</div>
                   </>
                 )}
                 <div className="col-span-12 border-t border-black mt-1 pt-1 flex items-center justify-between">
                   <div className="font-bold">{L.grandTotal}</div>
-                  <div className="font-extrabold text-[14px] tabular-nums">{fmt(t.grandTotal)}</div>
+                  <div className="font-extrabold text-[14px] tabular-nums">{money(t.grandTotal)}</div>
                 </div>
               </div>
               {showSignature && (
