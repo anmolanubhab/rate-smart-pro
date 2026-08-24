@@ -12,8 +12,13 @@ export interface StockSummaryParams {
   warehouseId?: string | null;
   brand?: string | null;
   category?: string | null;
+  rack?: string | null;
   search?: string | null;
   stockFilter?: "all" | "positive" | "negative" | "zero";
+  includeZeroBalance?: boolean;
+  excludeNoTransactions?: boolean;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
   limit?: number;
   offset?: number;
 }
@@ -29,6 +34,9 @@ export interface StockSummaryRow {
   unit: string | null;
   warehouse_id: string | null;
   warehouse_name: string | null;
+  rack: string | null;
+  alt_unit_symbol: string | null;
+  alt_qty: number | null;
   mrp: number;
   sale_rate: number;
   purchase_price: number;
@@ -59,6 +67,11 @@ export async function fetchStockSummary(p: StockSummaryParams): Promise<StockSum
     p_stock_filter: p.stockFilter ?? "all",
     p_limit:        p.limit ?? 500,
     p_offset:       p.offset ?? 0,
+    p_rack:                    p.rack ?? null,
+    p_include_zero_balance:    p.includeZeroBalance ?? true,
+    p_exclude_no_transactions: p.excludeNoTransactions ?? false,
+    p_sort_by:                 p.sortBy ?? "name",
+    p_sort_dir:                p.sortDir ?? "asc",
   });
   if (error) throw error;
   return (data ?? []) as StockSummaryRow[];
@@ -97,6 +110,7 @@ export async function fetchMovementRegister(
   movementType?: string | null,
   limit = 500,
   offset = 0,
+  search?: string | null,
 ): Promise<MovementRow[]> {
   const { data, error } = await supabase.rpc("get_stock_movement_register", {
     p_business_id:   businessId,
@@ -107,29 +121,57 @@ export async function fetchMovementRegister(
     p_movement_type: movementType ?? null,
     p_limit:         limit,
     p_offset:        offset,
+    p_include_cancelled: false,
+    p_search:        search ?? null,
   });
   if (error) throw error;
   return (data ?? []) as MovementRow[];
 }
 
-// ─── Group Summary ────────────────────────────────────────────────────────────
+// ─── Group Summary (Stock Summary Level 1 — grouped by category) ──────────────
 export interface GroupSummaryRow {
-  group_id: string | null;
+  group_key: string;
   group_name: string;
   product_count: number;
   opening_qty: number; opening_value: number;
   inward_qty: number;  inward_value: number;
   outward_qty: number; outward_value: number;
   closing_qty: number; closing_value: number;
+  avg_rate: number;
+  total_rows: number;
 }
 
-export async function fetchStockGroupSummary(
-  businessId: string, fromDate?: string | null, toDate?: string,
-): Promise<GroupSummaryRow[]> {
+export interface StockGroupSummaryParams {
+  businessId: string;
+  fromDate?: string | null;
+  toDate?: string;
+  warehouseId?: string | null;
+  search?: string | null;
+  stockFilter?: "all" | "positive" | "negative" | "zero";
+  grouping?: string;
+  includeZeroBalance?: boolean;
+  excludeNoTransactions?: boolean;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchStockGroupSummary(p: StockGroupSummaryParams): Promise<GroupSummaryRow[]> {
   const { data, error } = await supabase.rpc("get_stock_group_summary", {
-    p_business_id: businessId,
-    p_from_date: fromDate ?? null,
-    p_to_date: toDate ?? today(),
+    p_business_id:  p.businessId,
+    p_from_date:    p.fromDate ?? null,
+    p_to_date:      p.toDate ?? today(),
+    p_warehouse_id: p.warehouseId ?? null,
+    p_search:       p.search ?? null,
+    p_stock_filter: p.stockFilter ?? "all",
+    p_limit:        p.limit ?? 30,
+    p_offset:       p.offset ?? 0,
+    p_grouping:                 p.grouping ?? "category",
+    p_include_zero_balance:     p.includeZeroBalance ?? true,
+    p_exclude_no_transactions:  p.excludeNoTransactions ?? false,
+    p_sort_by:                  p.sortBy ?? "name",
+    p_sort_dir:                 p.sortDir ?? "asc",
   });
   if (error) throw error;
   return (data ?? []) as GroupSummaryRow[];

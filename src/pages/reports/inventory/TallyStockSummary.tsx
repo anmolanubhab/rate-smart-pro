@@ -1,889 +1,579 @@
 // src/pages/reports/inventory/TallyStockSummary.tsx
 //
-// Tally-style Stock Summary: three modes (hierarchical Summary / flat
-// Detailed / transaction-wise Ledger) over the SAME data source as the
-// existing flat Stock Summary report (fetchStockSummary -> get_stock_summary
-// RPC) and the existing Movement Register (fetchMovementRegister ->
-// get_stock_movement_register RPC). No new tables, no new stock-calculation
-// logic -- both RPCs already compute Opening/Inward/Outward/Closing (qty and
-// value) from posted inventory_movements only (cancelled vouchers write
-// offsetting reversal movements, so no separate status filter is needed
-// here), and get_stock_movement_register already carries stock_before/
-// stock_after as the authoritative running balance. This page only adds:
-// (a) a Category -> Item hierarchy on top of fetchStockSummary's rows,
-// (b) a Ledger mode UI over fetchMovementRegister, (c) print/export wiring.
+// Dense, Tally-style, keyboard-first drill-down Stock Summary:
+//   Stock Summary (by configurable Group) -> Product List -> Item Stock Ledger -> Source Voucher
+// PLUS a Tally F12-style "Configuration" panel (see src/lib/stockSummaryConfig.ts)
+// that drives which columns render, how items are grouped/sorted, and
+// whether zero-balance/no-transaction items are included — all server-side.
 //
-// Grouping level: Category (products.category) is used as the "Stock
-// Group" level, not the product_groups table -- product_groups.parent_id
-// is a real tree but is completely empty in production (0 rows, no product
-// has group_id set), while `category` is populated on every product today.
-import { Fragment, useEffect, useMemo, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  Search, RefreshCw, Filter, ChevronRight, ChevronDown, X,
-  FolderTree, ListTree, ScrollText, AlertTriangle, Columns3,
-} from "lucide-react";
+// Reuses the existing authoritative stock engine end to end — no parallel
+// calculation logic:
+//   Level 1  get_stock_group_summary  (configurable grouping over get_stock_summary)
+//   Level 2  get_stock_summary        (p_category/p_brand/p_warehouse_id/p_rack = selected group)
+//   Level 3  get_stock_movement_register (p_product_id = selected item)
+//   Level 4  window.open() to the voucher's existing detail route (new tab,
+//            so the drill-down state here is never disturbed — "Back" is
+//            simply switching tabs, filters/offsets untouched)
+//
+// Each level is server-paginated at 30 rows/page. A small breadcrumb stack
+// (see src/lib/drillDown/types.ts) remembers each level's offset/search so
+// stepping back restores exactly where the user left off. Global runtime
+// filters (date range / warehouse / stock status / search) and the
+// Configuration panel are two separate concepts (Requirement #34): runtime
+// filters live in the breadcrumb-adjacent state and have their own "Reset
+// Filters" action; Configuration is column/format/sort/persistence and has
+// its own "Reset to Default" inside the dialog.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight as ChevronRightIcon, ChevronDown, Search, RefreshCw, Settings2, ListTree, LayoutList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { useBusiness } from "@/hooks/useBusiness";
 import { useFormatDate } from "@/lib/dateFormat";
 import {
-  fetchStockSummary, fetchMovementRegister, fetchDistinctBrands, fetchDistinctCategories, fetchWarehouses,
-  StockSummaryRow, MovementRow, fmtInr, fmtQty, fyStart,
+  fetchStockGroupSummary, fetchStockSummary, fetchMovementRegister, fetchWarehouses,
+  GroupSummaryRow, StockSummaryRow, MovementRow, fmtInr, fmtQty, fyStart,
 } from "@/lib/inventoryReports";
+import { useKeyboardRowNav } from "@/hooks/useKeyboardRowNav";
+import type { DrillFrame } from "@/lib/drillDown/types";
+import {
+  StockSummaryConfig, loadStockSummaryConfig, saveStockSummaryConfig,
+} from "@/lib/stockSummaryConfig";
+import { buildGroupColumns, buildProductColumns, buildLedgerColumns } from "@/lib/reportColumns";
+import DenseConfigurableTable from "@/components/inventory-reports/DenseConfigurableTable";
+import StockSummaryConfigDialog from "@/components/inventory-reports/StockSummaryConfigDialog";
 import { DocumentOutputCenter } from "@/components/documentEngine/DocumentOutputCenter";
 import type { ReportUdm, UdmColumn } from "@/lib/documentUdm/types";
-import ReportViewToggle from "@/components/accounts/reports/ReportViewToggle";
 import { buildBusinessHeaderLines } from "@/lib/accounting";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const PAGE_SIZE = 30;
+const INLINE_EXPAND_LIMIT = 15; // Detailed-format inline expansion is a preview, not a paginator — Requirement #19
 
-type Mode = "summary" | "detailed" | "ledger";
-type StockFilter = "all" | "positive" | "negative" | "zero";
+type Level = "group" | "product" | "ledger";
 
-// ─── Hierarchy building (single source of truth for on-screen tree,
-// Preview/PDF, and Excel export) ───────────────────────────────────────────
-interface ItemNode {
-  type: "item";
-  key: string;
-  productId: string;
-  label: string;
-  partNumber: string | null;
-  warehouseName: string | null;
-  opening: number; inward: number; outward: number; closing: number;
-  rate: number; closingValue: number;
-}
-interface GroupNode {
-  type: "group";
-  key: string;
-  label: string;
-  opening: number; inward: number; outward: number; closing: number;
-  closingValue: number;
-  items: ItemNode[];
-}
-
-// avg_rate/closing_value come from inventory_movements.rate/.value, which
-// are unpopulated (always 0) on every posted movement in this schema --
-// never a usable valuation. Falls back to the product's own current
-// purchase_price (already returned by get_stock_summary), the same
-// "as of today" cost basis computeClosingStockValue uses elsewhere, so a
-// non-zero closing quantity never silently displays as unvalued. Shared by
-// the hierarchy builder, the flat Detailed table, and their exports so all
-// three can never show a different Closing Value for the same row.
-function effectiveRate(r: StockSummaryRow): number {
-  return r.avg_rate > 0 ? r.avg_rate : r.purchase_price;
-}
-function effectiveClosingValue(r: StockSummaryRow): number {
-  return r.closing_value !== 0 ? r.closing_value : r.closing_qty * effectiveRate(r);
-}
-
-/** Category -> Item[]. Same product can appear as more than one row when no
- *  warehouse filter is applied (fetchStockSummary returns one row per
- *  product+warehouse it has movement history in) -- each becomes its own
- *  leaf, labeled with its warehouse, so per-warehouse breakdown is visible
- *  rather than silently summed away. */
-function buildHierarchy(rows: StockSummaryRow[]): GroupNode[] {
-  const byCategory = new Map<string, StockSummaryRow[]>();
-  for (const r of rows) {
-    const key = r.category || "Uncategorized";
-    if (!byCategory.has(key)) byCategory.set(key, []);
-    byCategory.get(key)!.push(r);
-  }
-  const groups: GroupNode[] = [];
-  for (const [category, catRows] of byCategory) {
-    const items: ItemNode[] = catRows
-      .slice()
-      .sort((a, b) => a.product_name.localeCompare(b.product_name))
-      .map((r, i) => ({
-        type: "item" as const,
-        key: `${r.product_id}-${r.warehouse_id ?? "nowh"}-${i}`,
-        productId: r.product_id,
-        label: r.product_name,
-        partNumber: r.part_number,
-        warehouseName: r.warehouse_name,
-        opening: r.opening_qty, inward: r.inward_qty, outward: r.outward_qty, closing: r.closing_qty,
-        rate: effectiveRate(r), closingValue: effectiveClosingValue(r),
-      }));
-    groups.push({
-      type: "group",
-      key: category,
-      label: category,
-      opening: items.reduce((s, i) => s + i.opening, 0),
-      inward: items.reduce((s, i) => s + i.inward, 0),
-      outward: items.reduce((s, i) => s + i.outward, 0),
-      closing: items.reduce((s, i) => s + i.closing, 0),
-      closingValue: items.reduce((s, i) => s + i.closingValue, 0),
-      items,
-    });
-  }
-  return groups.sort((a, b) => a.label.localeCompare(b.label));
-}
-
-// Reference types this page has a confirmed real route for -- everything
-// else is shown as inert text rather than a fabricated/dead link.
+// Reference types this page has a confirmed real detail route for —
+// everything else shows as inert text rather than a fabricated/dead link.
 const VOUCHER_ROUTES: Record<string, (id: string) => string> = {
   purchase_invoice: (id) => `/purchase/invoices/${id}`,
   goods_receipt: (id) => `/purchase/grn/${id}`,
   stock_take: (id) => `/inventory/stock-take/${id}`,
 };
 
+const rootFrame: DrillFrame<Level> = { level: "group", entityId: null, label: "Stock Summary", parentId: null, offset: 0, search: "" };
+
+const DEFAULT_FILTERS = () => ({ fromDate: fyStart(), toDate: today(), warehouse: "", stockFilter: "all" as const });
+
 export default function TallyStockSummary() {
   useEffect(() => { document.title = "Stock Summary — RD Pro"; }, []);
   const { business } = useBusiness();
   const bId = business?.id;
   const fd = useFormatDate();
-  const navigate = useNavigate();
 
-  const [mode, setMode] = useState<Mode>("summary");
+  // ── Configuration (Tally F12 panel) — persisted, independent of runtime filters ──
+  const [config, setConfig] = useState<StockSummaryConfig>(() => loadStockSummaryConfig());
+  const [configOpen, setConfigOpen] = useState(false);
+  const applyConfig = (next: StockSummaryConfig) => {
+    setConfig(next);
+    saveStockSummaryConfig(next);
+    setConfigOpen(false);
+  };
 
-  // Filters
-  const [fromDate, setFromDate] = useState(fyStart());
-  const [toDate, setToDate] = useState(today());
-  const [warehouse, setWarehouse] = useState("");
-  const [category, setCategory] = useState("");
-  const [brand, setBrand] = useState("");
-  const [search, setSearch] = useState("");
-  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Filter options
-  const [brands, setBrands] = useState<string[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  // ── Runtime filters (survive every drill / every back; have their own Reset) ──
+  const initialFilters = DEFAULT_FILTERS();
+  const [fromDate, setFromDate] = useState(initialFilters.fromDate);
+  const [toDate, setToDate] = useState(initialFilters.toDate);
+  const [warehouse, setWarehouse] = useState(initialFilters.warehouse);
+  const [stockFilter, setStockFilter] = useState<"all" | "positive" | "negative" | "zero">(initialFilters.stockFilter);
   const [warehouses, setWarehouses] = useState<{ id: string; warehouse_name: string }[]>([]);
 
-  // Column visibility (Detailed/Summary tables)
-  const [showRate, setShowRate] = useState(true);
-  const [showValueSplit, setShowValueSplit] = useState(false);
+  useEffect(() => { if (bId) fetchWarehouses(bId).then(setWarehouses as any).catch(() => {}); }, [bId]);
 
-  // Summary tree expand state
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [expandAllTick, setExpandAllTick] = useState(0); // forces expand of any group not yet in the set
+  const resetFilters = () => {
+    const d = DEFAULT_FILTERS();
+    setFromDate(d.fromDate); setToDate(d.toDate); setWarehouse(d.warehouse); setStockFilter(d.stockFilter);
+    setSearchInput("");
+  };
 
-  // Data
-  const [rows, setRows] = useState<StockSummaryRow[]>([]);
+  // ── Breadcrumb stack ────────────────────────────────────────────────────
+  const [stack, setStack] = useState<DrillFrame<Level>[]>([rootFrame]);
+  const frame = stack[stack.length - 1];
+  const resetToRoot = useCallback(() => setStack([rootFrame]), []);
+  // Runtime filter changes AND a grouping-dimension change restart the drill
+  // at the top level — a different period/warehouse/grouping can change
+  // which groups/items even exist, or make the current entityId meaningless
+  // (e.g. drilled into category "spare" but grouping just switched to brand).
+  useEffect(() => { resetToRoot(); }, [fromDate, toDate, warehouse, stockFilter, config.grouping]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [searchInput, setSearchInput] = useState("");
+  useEffect(() => { setSearchInput(frame.search); }, [stack.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setStack((s) => {
+        const last = s[s.length - 1];
+        if (last.search === searchInput) return s;
+        return [...s.slice(0, -1), { ...last, search: searchInput, offset: 0 }];
+      });
+    }, 300); // debounce
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // ── Data per level ───────────────────────────────────────────────────────
+  const [groupRows, setGroupRows] = useState<GroupSummaryRow[]>([]);
+  const [productRows, setProductRows] = useState<StockSummaryRow[]>([]);
+  const [ledgerRows, setLedgerRows] = useState<MovementRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [totalRows, setTotalRows] = useState(0);
 
-  // Ledger mode
-  const [ledgerProduct, setLedgerProduct] = useState<{ id: string; name: string; partNumber: string | null } | null>(null);
-  const [ledgerRows, setLedgerRows] = useState<MovementRow[]>([]);
-  const [ledgerLoading, setLedgerLoading] = useState(false);
-  const [ledgerOffset, setLedgerOffset] = useState(0);
-  const LEDGER_PAGE = 200;
-
-  useEffect(() => {
-    if (!bId) return;
-    fetchDistinctBrands(bId).then(setBrands).catch(() => {});
-    fetchDistinctCategories(bId).then(setCategories).catch(() => {});
-    fetchWarehouses(bId).then(setWarehouses as any).catch(() => {});
-  }, [bId]);
-
-  // Reasonable cap for building the full hierarchy/detailed table in one
-  // shot (same convention the existing flat Stock Summary page uses at
-  // limit:1000) -- total_rows on each row tells the user if more exist
-  // beyond this cap, rather than silently truncating without saying so.
-  const FETCH_LIMIT = 3000;
+  // Resolves a group's group_key into the right get_stock_summary filter for
+  // whichever dimension is currently configured as the grouping. The
+  // "Ungrouped"/"Unassigned" sentinel (get_stock_group_summary's fallback for
+  // a NULL category/brand/rack/warehouse) can't be expressed as an ILIKE
+  // filter against that same NULL column, so it deliberately resolves to "no
+  // filter" here — consistent with the top-level drill-down, which already
+  // treats that sentinel as "show everything" (see activateRow) rather than
+  // silently returning zero rows.
+  const groupDrillParams = useCallback((groupKey: string): Partial<{ category: string; brand: string; rack: string; warehouseId: string }> => {
+    if (groupKey === "Ungrouped" || groupKey === "Unassigned") return {};
+    if (config.grouping === "brand") return { brand: groupKey };
+    if (config.grouping === "rack") return { rack: groupKey };
+    if (config.grouping === "warehouse") {
+      const w = warehouses.find((x) => x.warehouse_name === groupKey);
+      return w ? { warehouseId: w.id } : {};
+    }
+    return { category: groupKey };
+  }, [config.grouping, warehouses]);
 
   const load = useCallback(async () => {
     if (!bId) return;
     setLoading(true); setError(null);
     try {
-      const data = await fetchStockSummary({
-        businessId: bId, fromDate, toDate,
-        warehouseId: warehouse || null, brand: brand || null,
-        category: category || null, search: search || null, stockFilter,
-        limit: FETCH_LIMIT, offset: 0,
-      });
-      setRows(data);
+      if (frame.level === "group") {
+        const rows = await fetchStockGroupSummary({
+          businessId: bId, fromDate, toDate, warehouseId: warehouse || null,
+          search: frame.search || null, stockFilter, limit: PAGE_SIZE, offset: frame.offset,
+          grouping: config.grouping, includeZeroBalance: config.showZeroBalanceItems,
+          excludeNoTransactions: config.excludeNoTransactionItems,
+          sortBy: config.sortBy, sortDir: config.sortDir,
+        });
+        setGroupRows(rows);
+        setTotalRows(rows[0]?.total_rows ?? rows.length);
+      } else if (frame.level === "product") {
+        const dp = frame.entityId ? groupDrillParams(frame.entityId) : {};
+        const rows = await fetchStockSummary({
+          businessId: bId, fromDate, toDate,
+          warehouseId: dp.warehouseId ?? (warehouse || null),
+          category: dp.category ?? null, brand: dp.brand ?? null, rack: dp.rack ?? null,
+          search: frame.search || null, stockFilter,
+          includeZeroBalance: config.showZeroBalanceItems, excludeNoTransactions: config.excludeNoTransactionItems,
+          sortBy: config.sortBy, sortDir: config.sortDir,
+          limit: PAGE_SIZE, offset: frame.offset,
+        });
+        setProductRows(rows);
+        setTotalRows(rows[0]?.total_rows ?? rows.length);
+      } else {
+        const rows = await fetchMovementRegister(
+          bId, fromDate, toDate, frame.entityId, warehouse || null, null, PAGE_SIZE, frame.offset, frame.search || null,
+        );
+        // Register returns newest-first; ledger reads oldest-first with a running balance.
+        setLedgerRows(rows.slice().reverse());
+        setTotalRows(rows[0]?.total_rows ?? rows.length);
+      }
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
-  }, [bId, fromDate, toDate, warehouse, brand, category, search, stockFilter]);
+  }, [bId, fromDate, toDate, warehouse, stockFilter, frame.level, frame.entityId, frame.offset, frame.search, config.grouping, config.showZeroBalanceItems, config.excludeNoTransactionItems, config.sortBy, config.sortDir, groupDrillParams]);
 
   useEffect(() => { load(); }, [load]);
 
-  const totalRowsAvailable = rows[0]?.total_rows ?? rows.length;
-  const truncated = totalRowsAvailable > rows.length;
+  const rowCount = frame.level === "group" ? groupRows.length : frame.level === "product" ? productRows.length : ledgerRows.length;
 
-  const hierarchy = useMemo(() => buildHierarchy(rows), [rows]);
+  // ── Drill actions ────────────────────────────────────────────────────────
+  const drillInto = useCallback((nextFrame: DrillFrame<Level>) => {
+    setStack((s) => [...s, nextFrame]);
+  }, []);
+  const goBack = useCallback(() => { setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)); }, []);
+  const goToBreadcrumb = useCallback((index: number) => { setStack((s) => s.slice(0, index + 1)); }, []);
+  const setPage = useCallback((offset: number) => {
+    setStack((s) => [...s.slice(0, -1), { ...s[s.length - 1], offset }]);
+  }, []);
 
-  const grandTotal = useMemo(() => ({
-    opening: hierarchy.reduce((s, g) => s + g.opening, 0),
-    inward: hierarchy.reduce((s, g) => s + g.inward, 0),
-    outward: hierarchy.reduce((s, g) => s + g.outward, 0),
-    closing: hierarchy.reduce((s, g) => s + g.closing, 0),
-    closingValue: hierarchy.reduce((s, g) => s + g.closingValue, 0),
-  }), [hierarchy]);
+  const activateRow = useCallback((index: number) => {
+    if (frame.level === "group") {
+      const g = groupRows[index];
+      if (!g) return;
+      drillInto({ level: "product", entityId: g.group_key === "Ungrouped" || g.group_key === "Unassigned" ? null : g.group_key, label: g.group_name, parentId: null, offset: 0, search: "" });
+    } else if (frame.level === "product") {
+      const p = productRows[index];
+      if (!p) return;
+      drillInto({ level: "ledger", entityId: p.product_id, label: p.product_name, parentId: frame.entityId, offset: 0, search: "" });
+    } else {
+      const m = ledgerRows[index];
+      if (!m) return;
+      const route = VOUCHER_ROUTES[m.reference_type]?.(m.reference_id);
+      if (route) window.open(route, "_blank", "noopener");
+    }
+  }, [frame, groupRows, productRows, ledgerRows, drillInto]);
 
-  const expandAll = () => { setExpandedGroups(new Set(hierarchy.map((g) => g.key))); };
-  const collapseAll = () => { setExpandedGroups(new Set()); };
-  useEffect(() => { if (mode === "summary") expandAll(); /* default: fully expanded */ }, [rows.length, mode]); // eslint-disable-line react-hooks/exhaustive-deps
-  const toggleGroup = (key: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
+  // ── Detailed-format inline expand/collapse (coexists with drill-through — Requirement #18) ──
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [groupChildren, setGroupChildren] = useState<Record<string, StockSummaryRow[]>>({});
+  const [expandingKey, setExpandingKey] = useState<string | null>(null);
+
+  const loadGroupChildren = useCallback(async (groupKey: string) => {
+    if (!bId || groupChildren[groupKey]) return;
+    const dp = groupDrillParams(groupKey);
+    const rows = await fetchStockSummary({
+      businessId: bId, fromDate, toDate,
+      warehouseId: dp.warehouseId ?? (warehouse || null),
+      category: dp.category ?? null, brand: dp.brand ?? null, rack: dp.rack ?? null,
+      stockFilter, includeZeroBalance: config.showZeroBalanceItems, excludeNoTransactions: config.excludeNoTransactionItems,
+      sortBy: config.sortBy, sortDir: config.sortDir,
+      limit: INLINE_EXPAND_LIMIT, offset: 0,
+    });
+    setGroupChildren((c) => ({ ...c, [groupKey]: rows }));
+  }, [bId, fromDate, toDate, warehouse, stockFilter, config.showZeroBalanceItems, config.excludeNoTransactionItems, config.sortBy, config.sortDir, groupDrillParams, groupChildren]);
+
+  const toggleGroupExpand = useCallback(async (groupKey: string) => {
+    setExpandedGroups((s) => {
+      const next = new Set(s);
+      if (next.has(groupKey)) next.delete(groupKey); else next.add(groupKey);
       return next;
     });
-  };
+    setExpandingKey(groupKey);
+    await loadGroupChildren(groupKey);
+    setExpandingKey(null);
+  }, [loadGroupChildren]);
 
-  const resetFilters = () => {
-    setFromDate(fyStart()); setToDate(today());
-    setWarehouse(""); setCategory(""); setBrand(""); setSearch(""); setStockFilter("all");
-  };
+  const expandAll = useCallback(async () => {
+    setExpandedGroups(new Set(groupRows.map((g) => g.group_key)));
+    // Bounded to the current page's groups (max PAGE_SIZE) × a small per-group
+    // cap — never the whole inventory — so this can't freeze the browser.
+    await Promise.all(groupRows.map((g) => loadGroupChildren(g.group_key)));
+  }, [groupRows, loadGroupChildren]);
+  const collapseAll = useCallback(() => setExpandedGroups(new Set()), []);
 
-  // ─── Ledger mode ──────────────────────────────────────────────────────────
-  const loadLedger = useCallback(async (offset: number, append: boolean) => {
-    if (!bId || !ledgerProduct) return;
-    setLedgerLoading(true);
-    try {
-      const data = await fetchMovementRegister(bId, fromDate, toDate, ledgerProduct.id, warehouse || null, null, LEDGER_PAGE, offset);
-      // Register returns newest-first; ledger reads oldest-first with a
-      // running balance, so reverse for display.
-      const chrono = data.slice().reverse();
-      setLedgerRows((prev) => (append ? [...chrono, ...prev] : chrono));
-      setLedgerOffset(offset);
-    } catch (e: any) { setError(e.message); }
-    finally { setLedgerLoading(false); }
-  }, [bId, ledgerProduct, fromDate, toDate, warehouse]);
+  // Detailed format only makes sense at the group list; leaving it clears any stale expansion state.
+  useEffect(() => { if (config.reportFormat !== "detailed" || frame.level !== "group") { setExpandedGroups(new Set()); } }, [config.reportFormat, frame.level, frame.offset]);
 
+  // ── Keyboard nav (disabled while the Configuration dialog owns keyboard focus — Requirement #33) ──
+  const { selectedIndex, setSelectedIndex } = useKeyboardRowNav({
+    rowCount,
+    enabled: !configOpen,
+    onActivate: activateRow,
+    onBack: stack.length > 1 ? goBack : undefined,
+    onRefresh: load,
+    onFocusSearch: () => searchRef.current?.focus(),
+    onEscape: () => { if (searchInput) setSearchInput(""); else searchRef.current?.blur(); },
+  });
+
+  // F12 opens Configuration at the report level. Best-effort preventDefault —
+  // some browsers/OSes reserve F12 for devtools regardless of page scripts.
   useEffect(() => {
-    if (mode === "ledger" && ledgerProduct) loadLedger(0, false);
-  }, [mode, ledgerProduct, fromDate, toDate, warehouse, loadLedger]);
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "F12") { e.preventDefault(); e.stopPropagation(); setConfigOpen((v) => !v); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
-  const ledgerHasMore = ledgerRows.length > 0 && ledgerRows.length % LEDGER_PAGE === 0 &&
-    (ledgerRows[0]?.total_rows ?? 0) > ledgerRows.length;
+  // ── Grand totals (current page only — server-computed at each level) ────
+  const groupTotals = useMemo(() => groupRows.reduce((a, r) => ({
+    closing_qty: a.closing_qty + r.closing_qty, closing_value: a.closing_value + r.closing_value,
+  }), { closing_qty: 0, closing_value: 0 }), [groupRows]);
+  const productTotals = useMemo(() => productRows.reduce((a, r) => ({
+    closing_qty: a.closing_qty + r.closing_qty, closing_value: a.closing_value + r.closing_value,
+  }), { closing_qty: 0, closing_value: 0 }), [productRows]);
 
-  const openVoucher = (r: MovementRow) => {
-    const route = VOUCHER_ROUTES[r.reference_type]?.(r.reference_id);
-    if (route) navigate(route);
-  };
+  // ── Dynamic columns — single source of truth for on-screen + print/export (Requirement #26/27) ──
+  const groupColumns = useMemo(() => buildGroupColumns(config), [config]);
+  const productColumns = useMemo(() => buildProductColumns(config), [config]);
+  const ledgerColumns = useMemo(() => buildLedgerColumns(config), [config]);
 
-  // ─── Export (Summary mode: hierarchical rows, indentation preserved,
-  // numeric columns stay numeric) ─────────────────────────────────────────
-  const summaryExportRows = useMemo(() => {
-    const out: Record<string, unknown>[] = [];
-    for (const g of hierarchy) {
-      out.push({
-        particulars: g.label, level: "Group",
-        opening_qty: g.opening, inward_qty: g.inward, outward_qty: g.outward,
-        closing_qty: g.closing, rate: null, closing_value: g.closingValue,
-      });
-      for (const it of g.items) {
-        out.push({
-          particulars: `    ${it.label}${it.partNumber ? ` (${it.partNumber})` : ""} [${it.warehouseName ?? "Unassigned"}]`,
-          level: "Item",
-          opening_qty: it.opening, inward_qty: it.inward, outward_qty: it.outward,
-          closing_qty: it.closing, rate: it.rate, closing_value: it.closingValue,
-        });
-      }
-    }
-    return out;
-  }, [hierarchy]);
-
-  const summaryColumns: UdmColumn[] = [
-    { key: "particulars", label: "Stock Group / Item" },
-    { key: "opening_qty", label: "Opening Qty", align: "right", format: "number" },
-    { key: "inward_qty", label: "Inward Qty", align: "right", format: "number" },
-    { key: "outward_qty", label: "Outward Qty", align: "right", format: "number" },
-    { key: "closing_qty", label: "Closing Qty", align: "right", format: "number" },
-    { key: "rate", label: "Rate", align: "right", format: "number" },
-    { key: "closing_value", label: "Closing Value", align: "right", format: "currency" },
-  ];
-
-  const detailedColumns: UdmColumn[] = [
-    { key: "part_number", label: "Part No" },
-    { key: "product_name", label: "Item" },
-    { key: "category", label: "Stock Group" },
-    { key: "brand", label: "Brand" },
-    { key: "warehouse_name", label: "Warehouse" },
-    { key: "unit", label: "Unit" },
-    { key: "opening_qty", label: "Opening Qty", align: "right", format: "number" },
-    { key: "inward_qty", label: "Inward Qty", align: "right", format: "number" },
-    { key: "outward_qty", label: "Outward Qty", align: "right", format: "number" },
-    { key: "closing_qty", label: "Closing Qty", align: "right", format: "number" },
-    { key: "avg_rate", label: "Rate", align: "right", format: "number" },
-    { key: "closing_value", label: "Closing Value", align: "right", format: "currency" },
-  ];
-
-  const ledgerColumns: UdmColumn[] = [
-    { key: "movement_date", label: "Date" },
-    { key: "voucher_number", label: "Voucher No." },
-    { key: "movement_type", label: "Voucher Type" },
-    { key: "party_name", label: "Particulars" },
-    { key: "inward_qty", label: "Inward", align: "right", format: "number" },
-    { key: "outward_qty", label: "Outward", align: "right", format: "number" },
-    { key: "stock_after", label: "Running Balance", align: "right", format: "number" },
-    { key: "rate", label: "Rate", align: "right", format: "number" },
-    { key: "value", label: "Value", align: "right", format: "currency" },
-  ];
-
-  const businessHeaderLines = buildBusinessHeaderLines(business as any);
+  // ── Export (current level, current filters + configuration) ──────────────
   const filterSummary = [
     `Period: ${fd(fromDate)} to ${fd(toDate)}`,
     warehouse ? `Warehouse: ${warehouses.find((w) => w.id === warehouse)?.warehouse_name ?? warehouse}` : "Warehouse: All",
-    category ? `Stock Group: ${category}` : null,
-    brand ? `Brand: ${brand}` : null,
     stockFilter !== "all" ? `Stock Status: ${stockFilter}` : null,
+    stack.length > 1 ? `Drilled: ${stack.slice(1).map((f) => f.label).join(" > ")}` : null,
   ].filter(Boolean).join(" · ");
+  const businessHeaderLines = buildBusinessHeaderLines(business as any);
 
-  const documentNumber = mode === "ledger" && ledgerProduct
-    ? `stock-ledger-${ledgerProduct.partNumber ?? ledgerProduct.id}-${toDate}`
-    : `stock-summary-${mode}-${toDate}`;
+  const toUdmColumns = (cols: { key: string; label: string; align: "left" | "right" | "center"; udmFormat?: "number" | "currency" | "badge" }[]): UdmColumn[] =>
+    cols.map((c) => ({ key: c.key, label: c.label, align: c.align, format: c.udmFormat }));
 
   const getReportUdm = (): ReportUdm => {
-    if (mode === "summary") {
+    if (frame.level === "group") {
       return {
-        kind: "report",
-        documentTypeId: "tally_stock_summary",
-        title: "Stock Summary",
-        subtitle: filterSummary,
-        headerLines: businessHeaderLines,
-        centered: true,
-        columns: summaryColumns,
-        rows: summaryExportRows,
-        summary: [
-          { label: "Total Opening Qty", value: fmtQty(grandTotal.opening) },
-          { label: "Total Inward Qty", value: fmtQty(grandTotal.inward) },
-          { label: "Total Outward Qty", value: fmtQty(grandTotal.outward) },
-          { label: "Total Closing Qty", value: fmtQty(grandTotal.closing) },
-          { label: "Total Closing Value", value: `${fmtInr(grandTotal.closingValue)}` },
-        ],
-        pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+        kind: "report", documentTypeId: "tally_stock_summary", title: "Stock Summary",
+        subtitle: filterSummary, headerLines: businessHeaderLines, centered: true,
+        columns: toUdmColumns(groupColumns), rows: groupRows as any,
+        summary: [{ label: "Grand Total Qty", value: fmtQty(groupTotals.closing_qty) }, { label: "Grand Total Value", value: fmtInr(groupTotals.closing_value) }],
+        pageProfile: { pageSize: "A4", orientation: "portrait", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
       };
     }
-    if (mode === "ledger") {
+    if (frame.level === "product") {
       return {
-        kind: "report",
-        documentTypeId: "tally_stock_summary",
-        title: `Stock Ledger — ${ledgerProduct?.name ?? ""}`,
-        subtitle: filterSummary,
-        headerLines: businessHeaderLines,
-        centered: true,
-        columns: ledgerColumns,
-        rows: ledgerRows as any,
+        kind: "report", documentTypeId: "tally_stock_summary", title: `Stock Summary — ${frame.label}`,
+        subtitle: filterSummary, headerLines: businessHeaderLines, centered: true,
+        columns: toUdmColumns(productColumns), rows: productRows as any,
+        summary: [{ label: "Total Qty", value: fmtQty(productTotals.closing_qty) }, { label: "Total Value", value: fmtInr(productTotals.closing_value) }],
         pageProfile: { pageSize: "A4", orientation: "portrait", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
       };
     }
     return {
-      kind: "report",
-      documentTypeId: "tally_stock_summary",
-      title: "Detailed Stock Summary",
-      subtitle: filterSummary,
-      headerLines: businessHeaderLines,
-      centered: true,
-      columns: detailedColumns,
-      rows: rows.map((r) => ({ ...r, avg_rate: effectiveRate(r), closing_value: effectiveClosingValue(r) })) as any,
-      summary: [
-        { label: "Total Closing Qty", value: fmtQty(rows.reduce((s, r) => s + r.closing_qty, 0)) },
-        { label: "Total Closing Value", value: `${fmtInr(rows.reduce((s, r) => s + effectiveClosingValue(r), 0))}` },
-      ],
-      pageProfile: { pageSize: "A4", orientation: "landscape", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
+      kind: "report", documentTypeId: "tally_stock_summary", title: `Stock Ledger — ${frame.label}`,
+      subtitle: filterSummary, headerLines: businessHeaderLines, centered: true,
+      columns: toUdmColumns(ledgerColumns), rows: ledgerRows as any,
+      pageProfile: { pageSize: "A4", orientation: "portrait", marginTopMm: 10, marginBottomMm: 10, marginLeftMm: 10, marginRightMm: 10 },
     };
   };
 
-  // Fully-expanded print view for Summary mode (Preview/PDF) -- independent
-  // of the on-screen expand/collapse state, so a collapsed screen never
-  // silently produces a collapsed/incomplete PDF.
-  const renderSummaryPrintView = () => (
-    <div className="p-6 bg-white text-black text-sm">
-      <div className="text-center mb-4">
-        {businessHeaderLines.map((l, i) => <div key={i} className={i === 0 ? "font-bold text-lg" : "text-xs text-muted-foreground"}>{l}</div>)}
-        <div className="font-bold text-base mt-2">Stock Summary</div>
-        <div className="text-xs">{filterSummary}</div>
-      </div>
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="border-b-2 border-black">
-            {["Stock Group / Item", "Opening Qty", "Inward Qty", "Outward Qty", "Closing Qty", "Rate", "Closing Value"].map((h, i) => (
-              <th key={h} className={`py-1.5 px-2 ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {hierarchy.map((g) => (
-            <Fragment key={g.key}>
-              <tr className="font-bold bg-gray-100 border-b border-gray-300">
-                <td className="py-1 px-2">{g.label}</td>
-                <td className="py-1 px-2 text-right">{fmtQty(g.opening)}</td>
-                <td className="py-1 px-2 text-right">{fmtQty(g.inward)}</td>
-                <td className="py-1 px-2 text-right">{fmtQty(g.outward)}</td>
-                <td className={`py-1 px-2 text-right ${g.closing < 0 ? "text-red-600" : ""}`}>{fmtQty(g.closing)}</td>
-                <td className="py-1 px-2 text-right">—</td>
-                <td className="py-1 px-2 text-right">{fmtInr(g.closingValue)}</td>
-              </tr>
-              {g.items.map((it) => (
-                <tr key={it.key} className="border-b border-gray-100">
-                  <td className="py-1 px-2 pl-6">
-                    {it.label}
-                    {it.partNumber ? ` (${it.partNumber})` : ""}
-                    <span className="text-gray-500"> [{it.warehouseName ?? "Unassigned"}]</span>
-                  </td>
-                  <td className="py-1 px-2 text-right">{fmtQty(it.opening)}</td>
-                  <td className="py-1 px-2 text-right">{fmtQty(it.inward)}</td>
-                  <td className="py-1 px-2 text-right">{fmtQty(it.outward)}</td>
-                  <td className={`py-1 px-2 text-right ${it.closing < 0 ? "text-red-600" : ""}`}>{fmtQty(it.closing)}</td>
-                  <td className="py-1 px-2 text-right">{it.rate > 0 ? fmtQty(it.rate) : "—"}</td>
-                  <td className="py-1 px-2 text-right">{fmtInr(it.closingValue)}</td>
-                </tr>
-              ))}
-            </Fragment>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t-2 border-black font-bold">
-            <td className="py-1.5 px-2">Grand Total</td>
-            <td className="py-1.5 px-2 text-right">{fmtQty(grandTotal.opening)}</td>
-            <td className="py-1.5 px-2 text-right">{fmtQty(grandTotal.inward)}</td>
-            <td className="py-1.5 px-2 text-right">{fmtQty(grandTotal.outward)}</td>
-            <td className="py-1.5 px-2 text-right">{fmtQty(grandTotal.closing)}</td>
-            <td className="py-1.5 px-2 text-right">—</td>
-            <td className="py-1.5 px-2 text-right">{fmtInr(grandTotal.closingValue)}</td>
-          </tr>
-        </tfoot>
-      </table>
-      <div className="text-[10px] text-gray-500 mt-3">Generated {new Date().toLocaleString("en-IN")}</div>
-    </div>
-  );
-
-  const toolbar = (
-    <>
-      <ReportViewToggle<Mode>
-        value={mode}
-        onChange={setMode}
-        options={[
-          { key: "summary", label: "Stock Summary" },
-          { key: "detailed", label: "Detailed Stock Summary" },
-          { key: "ledger", label: "Stock Ledger" },
-        ]}
-      />
-      {mode === "summary" && (
-        <>
-          <Button variant="outline" size="sm" onClick={expandAll}>Expand All</Button>
-          <Button variant="outline" size="sm" onClick={collapseAll}>Collapse All</Button>
-        </>
-      )}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm"><Columns3 className="h-3.5 w-3.5 mr-1" />Columns</Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Visible Columns</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuCheckboxItem checked={showRate} onCheckedChange={setShowRate}>Rate</DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem checked={showValueSplit} onCheckedChange={setShowValueSplit}>Inward/Outward Value</DropdownMenuCheckboxItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-        <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />Refresh
-      </Button>
-      <Button variant="outline" size="sm" onClick={resetFilters}>Reset Filters</Button>
-      <DocumentOutputCenter
-        documentTypeId="tally_stock_summary"
-        documentNumber={documentNumber}
-        getReportUdm={getReportUdm}
-        getReportPrintComponent={mode === "summary" ? renderSummaryPrintView : undefined}
-        disabled={mode === "ledger" ? ledgerRows.length === 0 : rows.length === 0}
-      />
-    </>
-  );
+  // ── Render ───────────────────────────────────────────────────────────────
+  const from = totalRows === 0 ? 0 : frame.offset + 1;
+  const to = Math.min(frame.offset + PAGE_SIZE, totalRows);
 
   return (
-    <div className="max-w-full mx-auto space-y-5 animate-fade-in-up">
-      <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground font-medium">Inventory Reports</p>
-          <h1 className="font-display text-3xl font-bold mt-1">Stock Summary</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Tally-style Group → Item drill-down, computed from posted stock movements.
-          </p>
-        </div>
-      </header>
-
-      <div className="flex flex-wrap items-center gap-2">{toolbar}</div>
-
-      {/* Filters */}
-      <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
-        <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">From</p>
-            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-auto" />
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">To</p>
-            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-auto" />
-          </div>
-          <div className="flex gap-1 mt-5">
-            {[
-              { l: "Today", f: () => { const d = today(); setFromDate(d); setToDate(d); } },
-              { l: "This Month", f: () => { const n = new Date(); setFromDate(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`); setToDate(today()); } },
-              { l: "This FY", f: () => { setFromDate(fyStart()); setToDate(today()); } },
-            ].map((p) => (
-              <button key={p.l} onClick={p.f} className="px-2 py-1 text-xs border border-border rounded-lg hover:bg-muted transition-colors">{p.l}</button>
-            ))}
-          </div>
-          {mode !== "ledger" && (
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item / part number…" className="pl-8 w-52" />
-            </div>
+    <div className="max-w-full mx-auto space-y-2 text-[13px]">
+      {/* Compact header + breadcrumb */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 text-[13px]">
+          <h1 className="font-display text-base font-bold text-foreground">Stock Summary</h1>
+          {stack.map((f, i) => (
+            <span key={i} className="flex items-center gap-1.5">
+              {i > 0 && <ChevronRightIcon className="h-3 w-3 text-muted-foreground" />}
+              <button
+                className={`hover:underline ${i === stack.length - 1 ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                onClick={() => goToBreadcrumb(i)}
+              >
+                {i === 0 ? (f.level === "group" ? "Groups" : f.label) : f.label}
+              </button>
+            </span>
+          ))}
+          {stack.length > 1 && frame.level === "ledger" && (
+            <span className="text-muted-foreground text-xs ml-1">(Stock Ledger)</span>
           )}
-          <Button variant="outline" size="sm" onClick={() => setShowFilters((v) => !v)}>
-            <Filter className="h-3.5 w-3.5 mr-1" />Filters
-          </Button>
         </div>
-
-        {showFilters && (
-          <div className="flex flex-wrap gap-3 pt-2 border-t border-border">
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Warehouse / Godown</p>
-              <Select value={warehouse} onValueChange={setWarehouse}>
-                <SelectTrigger className="w-44"><SelectValue placeholder="All Warehouses" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">All Warehouses</SelectItem>
-                  {warehouses.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Stock Group (Category)</p>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="All Groups" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">All Groups</SelectItem>
-                  {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Brand / Manufacturer</p>
-              <Select value={brand} onValueChange={setBrand}>
-                <SelectTrigger className="w-36"><SelectValue placeholder="All Brands" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">All Brands</SelectItem>
-                  {brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Stock Status</p>
-              <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as StockFilter)}>
-                <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Stock</SelectItem>
-                  <SelectItem value="positive">Positive Stock</SelectItem>
-                  <SelectItem value="zero">Zero Stock</SelectItem>
-                  <SelectItem value="negative">Negative Stock</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Valuation Method</p>
-              <Select value="avg_cost" onValueChange={() => {}}>
-                <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="avg_cost">Weighted Avg. Cost (posted movements)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="flex items-center gap-1.5">
+          <div className="relative">
+            <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              ref={searchRef}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder={frame.level === "group" ? "Search group…" : frame.level === "product" ? "Search item / part no…" : "Search voucher / party…"}
+              className="pl-7 h-7 w-48 text-xs"
+            />
           </div>
-        )}
+          {config.reportFormat === "detailed" && frame.level === "group" && (
+            <>
+              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={expandAll}><ListTree className="h-3 w-3 mr-1" />Expand All</Button>
+              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={collapseAll}><LayoutList className="h-3 w-3 mr-1" />Collapse All</Button>
+            </>
+          )}
+          <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={load} disabled={loading}>
+            <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} />Refresh
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setConfigOpen(true)}>
+            <Settings2 className="h-3 w-3 mr-1" />Configuration
+          </Button>
+          <DocumentOutputCenter
+            documentTypeId="tally_stock_summary"
+            documentNumber={`stock-summary-${frame.level}-${toDate}`}
+            getReportUdm={getReportUdm}
+            disabled={rowCount === 0}
+            size="sm"
+          />
+        </div>
       </div>
 
-      {truncated && (
-        <div className="rounded-xl border border-warning/40 bg-warning/5 p-3 text-xs text-warning-foreground flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          Showing {rows.length.toLocaleString("en-IN")} of {totalRowsAvailable.toLocaleString("en-IN")} matching items (report cap). Narrow filters to see the rest.
-        </div>
-      )}
-      {error && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>
-      )}
+      {/* Compact runtime filter bar (separate from Configuration — Requirement #34) */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5">
+        <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-7 w-32 text-xs" />
+        <span className="text-muted-foreground text-xs">to</span>
+        <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-7 w-32 text-xs" />
+        <Select value={warehouse || "__all__"} onValueChange={(v) => setWarehouse(v === "__all__" ? "" : v)}>
+          <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="All Warehouses" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Warehouses</SelectItem>
+            {warehouses.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.warehouse_name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as any)}>
+          <SelectTrigger className="h-7 w-32 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Stock</SelectItem>
+            <SelectItem value="positive">Positive</SelectItem>
+            <SelectItem value="zero">Zero</SelectItem>
+            <SelectItem value="negative">Negative</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={resetFilters}>Reset Filters</Button>
+        <span className="text-[11px] text-muted-foreground ml-auto">
+          ↑↓ move · Enter drill in · ⌫ back · F5 refresh · Ctrl+F search · F12 configuration
+        </span>
+      </div>
 
-      {/* KPI Cards */}
-      {mode !== "ledger" && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: "Items", value: (mode === "summary" ? hierarchy.reduce((s, g) => s + g.items.length, 0) : rows.length).toLocaleString("en-IN") },
-            { label: "Closing Qty", value: fmtQty(mode === "summary" ? grandTotal.closing : rows.reduce((s, r) => s + r.closing_qty, 0)) },
-            { label: "Closing Value", value: `${fmtInr(mode === "summary" ? grandTotal.closingValue : rows.reduce((s, r) => s + effectiveClosingValue(r), 0))}`, tone: "text-primary" },
-            { label: "Negative Stock Items", value: rows.filter((r) => r.closing_qty < 0).length, tone: rows.some((r) => r.closing_qty < 0) ? "text-destructive" : undefined },
-          ].map((k) => (
-            <div key={k.label} className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">{k.label}</p>
-              <p className={`font-display text-2xl font-bold mt-2 tabular-nums ${(k as any).tone ?? "text-foreground"}`}>{k.value}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      {error && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</div>}
 
-      {/* ── Stock Summary (hierarchical) ── */}
-      {mode === "summary" && (
-        <div className="rounded-2xl border border-border bg-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
+      {/* Dense table */}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          {frame.level === "group" && (
+            <DenseConfigurableTable<GroupSummaryRow>
+              columns={groupColumns}
+              rows={groupRows}
+              rowKey={(r) => r.group_key}
+              loading={loading}
+              emptyText="No stock movements found for selected filters"
+              selectedIndex={selectedIndex}
+              onSelect={setSelectedIndex}
+              onActivate={activateRow}
+              stripeView={config.stripeView}
+              leadingCell={config.reportFormat === "detailed" ? (g) => (
+                <button
+                  type="button"
+                  className="mr-1 inline-flex items-center justify-center w-4 h-4 align-middle"
+                  onClick={(e) => { e.stopPropagation(); toggleGroupExpand(g.group_key); }}
+                >
+                  {expandedGroups.has(g.group_key) ? <ChevronDown className="h-3 w-3" /> : <ChevronRightIcon className="h-3 w-3" />}
+                </button>
+              ) : undefined}
+              expandedRow={config.reportFormat === "detailed" ? (g) => expandedGroups.has(g.group_key) ? (
                 <tr>
-                  <th className="px-3 py-3 text-left sticky left-0 bg-muted/50 z-10">Stock Group / Item</th>
-                  <th className="px-3 py-3 text-right">Opening Qty</th>
-                  <th className="px-3 py-3 text-right text-emerald-700">Inward Qty</th>
-                  <th className="px-3 py-3 text-right text-rose-700">Outward Qty</th>
-                  <th className="px-3 py-3 text-right font-bold">Closing Qty</th>
-                  {showRate && <th className="px-3 py-3 text-right">Rate</th>}
-                  <th className="px-3 py-3 text-right font-bold">Closing Value</th>
+                  <td colSpan={groupColumns.length} className="p-0">
+                    {expandingKey === g.group_key && !groupChildren[g.group_key] ? (
+                      <div className="px-6 py-2 text-[11px] text-muted-foreground">Loading items…</div>
+                    ) : (
+                      <div className="pl-6 border-t border-border/40 bg-muted/10">
+                        {(groupChildren[g.group_key] ?? []).map((p) => (
+                          <div key={`${p.product_id}-${p.warehouse_id ?? "nowh"}`} className="flex items-center justify-between px-2 py-[3px] text-[11px] border-t border-border/30 hover:bg-primary/5 cursor-pointer"
+                               onClick={() => drillInto({ level: "ledger", entityId: p.product_id, label: p.product_name, parentId: g.group_key, offset: 0, search: "" })}>
+                          <span className="text-foreground">{p.part_number ? `${p.part_number} — ${p.product_name}` : p.product_name}</span>
+                          <span className="tabular-nums text-muted-foreground">{fmtQty(p.closing_qty)}{config.showValue ? ` · ${fmtInr(p.closing_value)}` : ""}</span>
+                        </div>
+                        ))}
+                        {(g.product_count > INLINE_EXPAND_LIMIT) && (
+                          <button
+                            className="w-full text-left px-2 py-1 text-[11px] text-primary hover:underline"
+                            onClick={() => drillInto({ level: "product", entityId: g.group_key === "Ungrouped" || g.group_key === "Unassigned" ? null : g.group_key, label: g.group_name, parentId: null, offset: 0, search: "" })}
+                          >
+                            View all {g.product_count} items in Product List →
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <tr key={i} className="border-t border-border animate-pulse">
-                      {Array.from({ length: showRate ? 7 : 6 }).map((_, j) => (
-                        <td key={j} className="px-3 py-2.5"><div className="h-4 bg-muted rounded" /></td>
-                      ))}
-                    </tr>
-                  ))
-                ) : hierarchy.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-16 text-center text-muted-foreground">No stock movements found for selected filters</td></tr>
-                ) : hierarchy.map((g) => (
-                  <Fragment key={g.key}>
-                    <tr
-                      className="border-t border-border bg-muted/30 hover:bg-muted/50 cursor-pointer font-semibold"
-                      onClick={() => toggleGroup(g.key)}
-                    >
-                      <td className="px-3 py-2.5 sticky left-0 bg-muted/30 z-10 flex items-center gap-1.5">
-                        {expandedGroups.has(g.key) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        <FolderTree className="h-3.5 w-3.5 text-muted-foreground" />
-                        {g.label}
-                        <span className="text-xs font-normal text-muted-foreground">({g.items.length})</span>
+              ) : null : undefined}
+              footer={
+                <tfoot>
+                  <tr className="h-6 border-t-2 border-border font-bold text-[12px] bg-muted/30">
+                    {groupColumns.map((c, i) => (
+                      <td key={c.key} className={`px-2 py-[3px] ${c.align === "right" ? "text-right tabular-nums" : ""}`}>
+                        {i === 0 ? "Grand Total" : c.key === "closing_qty" ? fmtQty(groupTotals.closing_qty) : c.key === "closing_value" ? fmtInr(groupTotals.closing_value) : ""}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{fmtQty(g.opening)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700">{fmtQty(g.inward)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-rose-700">{fmtQty(g.outward)}</td>
-                      <td className={`px-3 py-2.5 text-right tabular-nums ${g.closing < 0 ? "text-destructive" : ""}`}>{fmtQty(g.closing)}</td>
-                      {showRate && <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">—</td>}
-                      <td className="px-3 py-2.5 text-right tabular-nums text-primary">{fmtInr(g.closingValue)}</td>
-                    </tr>
-                    {expandedGroups.has(g.key) && g.items.map((it) => (
-                      <tr key={it.key} className="border-t border-border/60 hover:bg-primary/5">
-                        <td className="px-3 py-2 sticky left-0 bg-card hover:bg-primary/5 z-10 pl-9">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <span className="text-foreground">{it.label}</span>
-                              {it.partNumber && <span className="text-xs text-muted-foreground font-mono ml-1.5">{it.partNumber}</span>}
-                              <Badge variant="outline" className="ml-1.5 text-[10px]">{it.warehouseName ?? "Unassigned"}</Badge>
-                            </div>
-                            <button
-                              className="text-xs text-primary hover:underline flex items-center gap-0.5 shrink-0"
-                              onClick={(e) => { e.stopPropagation(); setLedgerProduct({ id: it.productId, name: it.label, partNumber: it.partNumber }); setMode("ledger"); }}
-                            >
-                              <ScrollText className="h-3 w-3" />Ledger
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtQty(it.opening)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{it.inward > 0 ? fmtQty(it.inward) : "—"}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-rose-600">{it.outward > 0 ? fmtQty(it.outward) : "—"}</td>
-                        <td className={`px-3 py-2 text-right tabular-nums font-medium ${it.closing < 0 ? "text-destructive" : it.closing === 0 ? "text-muted-foreground" : ""}`}>
-                          {fmtQty(it.closing)}{it.closing < 0 && <Badge variant="outline" className="ml-1.5 text-[10px] border-destructive/40 text-destructive">Negative</Badge>}
-                        </td>
-                        {showRate && <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{it.rate > 0 ? fmtQty(it.rate) : "—"}</td>}
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">{it.closingValue !== 0 ? `${fmtInr(it.closingValue)}` : "—"}</td>
-                      </tr>
                     ))}
-                  </Fragment>
-                ))}
-              </tbody>
-              {hierarchy.length > 0 && (
-                <tfoot className="border-t-2 border-border bg-muted/30 font-bold">
-                  <tr>
-                    <td className="px-3 py-3 sticky left-0 bg-muted/30">Grand Total</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{fmtQty(grandTotal.opening)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-emerald-700">{fmtQty(grandTotal.inward)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-rose-700">{fmtQty(grandTotal.outward)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{fmtQty(grandTotal.closing)}</td>
-                    {showRate && <td className="px-3 py-3" />}
-                    <td className="px-3 py-3 text-right tabular-nums text-primary">{fmtInr(grandTotal.closingValue)}</td>
                   </tr>
                 </tfoot>
-              )}
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── Detailed Stock Summary (flat) ── */}
-      {mode === "detailed" && (
-        <div className="rounded-2xl border border-border bg-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-3 text-left sticky left-0 bg-muted/50 z-10">Item</th>
-                  <th className="px-3 py-3 text-left">Group</th>
-                  <th className="px-3 py-3 text-left">Warehouse</th>
-                  <th className="px-3 py-3 text-right border-l border-border">Op. Qty</th>
-                  <th className="px-3 py-3 text-right text-emerald-700">In Qty</th>
-                  {showValueSplit && <th className="px-3 py-3 text-right text-emerald-700">In Value</th>}
-                  <th className="px-3 py-3 text-right text-rose-700">Out Qty</th>
-                  {showValueSplit && <th className="px-3 py-3 text-right text-rose-700">Out Value</th>}
-                  <th className="px-3 py-3 text-right border-l border-border font-bold">Cl. Qty</th>
-                  {showRate && <th className="px-3 py-3 text-right">Rate</th>}
-                  <th className="px-3 py-3 text-right font-bold">Cl. Value</th>
-                  <th className="px-3 py-3 text-center">Ledger</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  Array.from({ length: 8 }).map((_, i) => (
-                    <tr key={i} className="border-t border-border animate-pulse">
-                      {Array.from({ length: 11 }).map((_, j) => <td key={j} className="px-3 py-2.5"><div className="h-4 bg-muted rounded" /></td>)}
-                    </tr>
-                  ))
-                ) : rows.length === 0 ? (
-                  <tr><td colSpan={11} className="px-4 py-16 text-center text-muted-foreground">No products found for selected filters</td></tr>
-                ) : rows.map((r, i) => (
-                  <tr key={i} className="border-t border-border hover:bg-muted/20">
-                    <td className="px-3 py-2.5 sticky left-0 bg-card hover:bg-muted/20 z-10">
-                      <div className="font-medium text-foreground">{r.product_name}</div>
-                      {r.part_number && <div className="text-xs text-muted-foreground font-mono">{r.part_number}</div>}
-                    </td>
-                    <td className="px-3 py-2.5">{r.category ? <Badge variant="outline" className="text-xs capitalize">{r.category}</Badge> : "—"}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs">{r.warehouse_name ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums border-l border-border">{fmtQty(r.opening_qty)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700">{r.inward_qty > 0 ? fmtQty(r.inward_qty) : "—"}</td>
-                    {showValueSplit && <td className="px-3 py-2.5 text-right tabular-nums text-emerald-600">{r.inward_value > 0 ? fmtInr(r.inward_value) : "—"}</td>}
-                    <td className="px-3 py-2.5 text-right tabular-nums text-rose-700">{r.outward_qty > 0 ? fmtQty(r.outward_qty) : "—"}</td>
-                    {showValueSplit && <td className="px-3 py-2.5 text-right tabular-nums text-rose-600">{r.outward_value > 0 ? fmtInr(r.outward_value) : "—"}</td>}
-                    <td className={`px-3 py-2.5 text-right tabular-nums border-l border-border font-bold ${r.closing_qty < 0 ? "text-destructive" : r.closing_qty === 0 ? "text-muted-foreground" : ""}`}>
-                      {fmtQty(r.closing_qty)}
-                    </td>
-                    {showRate && <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{effectiveRate(r) > 0 ? fmtQty(effectiveRate(r)) : "—"}</td>}
-                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{effectiveClosingValue(r) !== 0 ? `${fmtInr(effectiveClosingValue(r))}` : "—"}</td>
-                    <td className="px-3 py-2.5 text-center">
-                      <button
-                        className="text-primary hover:underline text-xs"
-                        onClick={() => { setLedgerProduct({ id: r.product_id, name: r.product_name, partNumber: r.part_number }); setMode("ledger"); }}
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              {rows.length > 0 && (
-                <tfoot className="border-t-2 border-border bg-muted/30 font-semibold">
-                  <tr>
-                    <td className="px-3 py-3 sticky left-0 bg-muted/30">Total ({rows.length})</td>
-                    <td colSpan={2} />
-                    <td className="px-3 py-3 text-right tabular-nums border-l border-border">{fmtQty(rows.reduce((s, r) => s + r.opening_qty, 0))}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-emerald-700">{fmtQty(rows.reduce((s, r) => s + r.inward_qty, 0))}</td>
-                    {showValueSplit && <td className="px-3 py-3 text-right tabular-nums text-emerald-600">{fmtInr(rows.reduce((s, r) => s + r.inward_value, 0))}</td>}
-                    <td className="px-3 py-3 text-right tabular-nums text-rose-700">{fmtQty(rows.reduce((s, r) => s + r.outward_qty, 0))}</td>
-                    {showValueSplit && <td className="px-3 py-3 text-right tabular-nums text-rose-600">{fmtInr(rows.reduce((s, r) => s + r.outward_value, 0))}</td>}
-                    <td className="px-3 py-3 text-right tabular-nums border-l border-border">{fmtQty(rows.reduce((s, r) => s + r.closing_qty, 0))}</td>
-                    {showRate && <td />}
-                    <td className="px-3 py-3 text-right tabular-nums text-primary">{fmtInr(rows.reduce((s, r) => s + effectiveClosingValue(r), 0))}</td>
-                    <td />
+              }
+            />
+          )}
+          {frame.level === "product" && (
+            <DenseConfigurableTable<StockSummaryRow>
+              columns={productColumns}
+              rows={productRows}
+              rowKey={(r) => `${r.product_id}-${r.warehouse_id ?? "nowh"}`}
+              loading={loading}
+              emptyText="No items in this group for the selected filters"
+              selectedIndex={selectedIndex}
+              onSelect={setSelectedIndex}
+              onActivate={activateRow}
+              stripeView={config.stripeView}
+              rowClassName={(r) => r.closing_qty < 0 ? "text-destructive" : ""}
+              footer={
+                <tfoot>
+                  <tr className="h-6 border-t-2 border-border font-bold text-[12px] bg-muted/30">
+                    {productColumns.map((c, i) => (
+                      <td key={c.key} className={`px-2 py-[3px] ${c.align === "right" ? "text-right tabular-nums" : ""}`}>
+                        {i === 0 ? `Total (${productRows.length})` : c.key === "closing_qty" ? fmtQty(productTotals.closing_qty) : c.key === "closing_value" ? fmtInr(productTotals.closing_value) : ""}
+                      </td>
+                    ))}
                   </tr>
                 </tfoot>
-              )}
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── Stock Ledger ── */}
-      {mode === "ledger" && (
-        <div className="space-y-3">
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground mb-1">Item</p>
-            <Select
-              value={ledgerProduct?.id ?? ""}
-              onValueChange={(id) => {
-                const r = rows.find((x) => x.product_id === id);
-                if (r) setLedgerProduct({ id: r.product_id, name: r.product_name, partNumber: r.part_number });
-              }}
-            >
-              <SelectTrigger className="w-full md:w-96"><SelectValue placeholder="Select an item to view its Stock Ledger" /></SelectTrigger>
-              <SelectContent>
-                {[...new Map(rows.map((r) => [r.product_id, r])).values()].map((r) => (
-                  <SelectItem key={r.product_id} value={r.product_id}>
-                    {r.product_name}{r.part_number ? ` — ${r.part_number}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!ledgerProduct && <p className="text-xs text-muted-foreground mt-2">Or click "Ledger" / "View" next to any item in Summary / Detailed mode.</p>}
-          </div>
-
-          {ledgerProduct && (
-            <div className="rounded-2xl border border-border bg-card overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                <div>
-                  <span className="font-semibold">{ledgerProduct.name}</span>
-                  {ledgerProduct.partNumber && <span className="text-xs text-muted-foreground font-mono ml-2">{ledgerProduct.partNumber}</span>}
-                </div>
-                <button onClick={() => setLedgerProduct(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
-              </div>
-              {warehouse && (
-                <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/20 text-xs text-amber-700 dark:text-amber-400 border-b border-border">
-                  Running Balance reflects total stock across all warehouses (the movement engine tracks a single running counter per item) — filtered Inward/Outward figures above are warehouse-specific, the balance column is not.
-                </div>
-              )}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground sticky top-0">
-                    <tr>
-                      {["Date", "Voucher No.", "Voucher Type", "Particulars", "Inward", "Outward", "Rate", "Value", "Running Balance"].map((h) => (
-                        <th key={h} className="px-3 py-2.5 text-left whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ledgerLoading && ledgerRows.length === 0 ? (
-                      <tr><td colSpan={9} className="px-4 py-16 text-center text-muted-foreground">Loading…</td></tr>
-                    ) : ledgerRows.length === 0 ? (
-                      <tr><td colSpan={9} className="px-4 py-16 text-center text-muted-foreground">No transactions in this period</td></tr>
-                    ) : ledgerRows.map((r) => {
-                      const route = VOUCHER_ROUTES[r.reference_type]?.(r.reference_id);
-                      return (
-                        <tr key={r.id} className="border-t border-border hover:bg-muted/20">
-                          <td className="px-3 py-2 whitespace-nowrap text-xs text-muted-foreground">{fd(r.movement_date)}</td>
-                          <td className="px-3 py-2 font-mono text-xs">
-                            {route ? (
-                              <button className="text-primary hover:underline" onClick={() => navigate(route)}>{r.voucher_number || "—"}</button>
-                            ) : (r.voucher_number || "—")}
-                          </td>
-                          <td className="px-3 py-2 text-xs capitalize">{r.movement_type.replace(/_/g, " ")}</td>
-                          <td className="px-3 py-2 text-xs">{r.party_name || r.warehouse_name || "—"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{r.inward_qty > 0 ? <span className="text-emerald-600 font-semibold">{fmtQty(r.inward_qty)}</span> : "—"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{r.outward_qty > 0 ? <span className="text-rose-600 font-semibold">{fmtQty(r.outward_qty)}</span> : "—"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-xs text-muted-foreground">{r.rate > 0 ? fmtQty(r.rate) : "—"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-xs">{r.value !== 0 ? fmtInr(Math.abs(r.value)) : "—"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-semibold">
-                            <span className={r.stock_after < 0 ? "text-destructive" : r.stock_after === 0 ? "text-muted-foreground" : ""}>{fmtQty(r.stock_after)}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {ledgerHasMore && (
-                <div className="px-4 py-3 border-t border-border flex justify-center">
-                  <Button variant="outline" size="sm" onClick={() => loadLedger(ledgerOffset + LEDGER_PAGE, true)} disabled={ledgerLoading}>
-                    {ledgerLoading ? "Loading…" : "Load Earlier Transactions"}
-                  </Button>
-                </div>
-              )}
-            </div>
+              }
+            />
+          )}
+          {frame.level === "ledger" && (
+            <LedgerTable columns={ledgerColumns} rows={ledgerRows} loading={loading} selectedIndex={selectedIndex} setSelectedIndex={setSelectedIndex}
+              onActivate={activateRow} fd={fd} stripeView={config.stripeView} />
           )}
         </div>
-      )}
+        {/* Pagination */}
+        <div className="flex items-center justify-between px-2.5 py-1.5 border-t border-border text-[11px] text-muted-foreground">
+          <span>{totalRows === 0 ? "No records" : `${from}–${to} of ${totalRows.toLocaleString("en-IN")}`}</span>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" disabled={frame.offset === 0 || loading} onClick={() => setPage(Math.max(0, frame.offset - PAGE_SIZE))}>Prev</Button>
+            <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" disabled={frame.offset + PAGE_SIZE >= totalRows || loading} onClick={() => setPage(frame.offset + PAGE_SIZE)}>Next</Button>
+          </div>
+        </div>
+      </div>
+
+      <StockSummaryConfigDialog open={configOpen} config={config} onApply={applyConfig} onClose={() => setConfigOpen(false)} />
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+const th = "px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+const td = "px-2 py-[3px] align-middle";
+
+function LedgerTable({ columns, rows, loading, selectedIndex, setSelectedIndex, onActivate, fd, stripeView }: {
+  columns: ReturnType<typeof buildLedgerColumns>; rows: MovementRow[]; loading: boolean; selectedIndex: number; setSelectedIndex: (i: number) => void;
+  onActivate: (i: number) => void; fd: (d: string) => string; stripeView: boolean;
+}) {
+  return (
+    <table className="w-full border-collapse">
+      <thead className="bg-muted/50">
+        <tr>
+          {columns.map((c) => (
+            <th key={c.key} className={`${th} ${c.align === "right" ? "text-right" : "text-left"} ${c.width ?? ""}`}>{c.label}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {loading ? (
+          <tr><td colSpan={columns.length} className="px-3 py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
+        ) : rows.length === 0 ? (
+          <tr><td colSpan={columns.length} className="px-3 py-6 text-center text-muted-foreground text-xs">No transactions in this period</td></tr>
+        ) : rows.map((r, i) => {
+          const hasRoute = !!VOUCHER_ROUTES[r.reference_type];
+          return (
+            <tr
+              key={r.id}
+              onClick={() => setSelectedIndex(i)}
+              onDoubleClick={() => onActivate(i)}
+              className={`h-6 cursor-pointer border-t border-border/70 text-[12px] leading-[18px] ${
+                i === selectedIndex ? "bg-primary/10" : stripeView && i % 2 === 1 ? "bg-muted/25 hover:bg-muted/40" : "hover:bg-muted/40"
+              }`}
+            >
+              {columns.map((c) => {
+                if (c.key === "movement_date") return <td key={c.key} className={`${td} text-muted-foreground whitespace-nowrap`}>{fd(r.movement_date)}</td>;
+                if (c.key === "voucher_number") return <td key={c.key} className={`${td} font-mono ${hasRoute ? "text-primary" : ""}`}>{r.voucher_number || "—"}</td>;
+                if (c.key === "movement_type") return <td key={c.key} className={`${td} capitalize text-muted-foreground`}>{r.movement_type.replace(/_/g, " ")}</td>;
+                if (c.key === "party_name") return <td key={c.key} className={td}>{r.party_name || r.warehouse_name || "—"}</td>;
+                if (c.key === "inward_qty") return <td key={c.key} className={`${td} text-right tabular-nums ${r.inward_qty > 0 ? "text-emerald-600 font-medium" : "text-muted-foreground/40"}`}>{r.inward_qty > 0 ? fmtQty(r.inward_qty) : "—"}</td>;
+                if (c.key === "outward_qty") return <td key={c.key} className={`${td} text-right tabular-nums ${r.outward_qty > 0 ? "text-rose-600 font-medium" : "text-muted-foreground/40"}`}>{r.outward_qty > 0 ? fmtQty(r.outward_qty) : "—"}</td>;
+                if (c.key === "stock_after") return <td key={c.key} className={`${td} text-right tabular-nums font-semibold ${r.stock_after < 0 ? "text-destructive" : ""}`}>{fmtQty(r.stock_after)}</td>;
+                if (c.key === "rate") return <td key={c.key} className={`${td} text-right tabular-nums text-muted-foreground`}>{r.rate > 0 ? fmtQty(r.rate) : "—"}</td>;
+                if (c.key === "value") return <td key={c.key} className={`${td} text-right tabular-nums`}>{r.value !== 0 ? fmtInr(Math.abs(r.value)) : "—"}</td>;
+                return <td key={c.key} className={td}>—</td>;
+              })}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
