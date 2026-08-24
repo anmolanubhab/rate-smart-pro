@@ -65,7 +65,7 @@ export default function InventoryDashboard() {
   const go = (path:string) => navigate(path);
 
   const QUICK_LINKS = [
-    { label:"Stock Summary",      route:"/reports/inventory/stock-summary",       icon:<Package className="h-4 w-4" />,       desc:"Opening/Closing with drill-down" },
+    { label:"Stock Summary",      route:"/reports/inventory/stock-summary-tally", icon:<Package className="h-4 w-4" />,       desc:"Group → Item → Ledger drill-down" },
     { label:"Stock Movement",     route:"/reports/inventory/movement-register",   icon:<Activity className="h-4 w-4" />,      desc:"All inflows and outflows" },
     { label:"Stock Ageing",       route:"/reports/inventory/stock-ageing",        icon:<Clock className="h-4 w-4" />,         desc:"Days since last movement" },
     { label:"Dead Stock",         route:"/reports/inventory/dead-stock",          icon:<AlertTriangle className="h-4 w-4" />, desc:"Idle stock report" },

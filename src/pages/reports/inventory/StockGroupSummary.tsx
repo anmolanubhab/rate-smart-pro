@@ -20,7 +20,7 @@ export default function StockGroupSummary() {
   useEffect(() => {
     if (!business?.id) return;
     setLoading(true); setError(null);
-    fetchStockGroupSummary(business.id, fromDate, toDate)
+    fetchStockGroupSummary({ businessId: business.id, fromDate, toDate, limit: 1000 })
       .then(setRows).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, [business?.id, fromDate, toDate]);
 

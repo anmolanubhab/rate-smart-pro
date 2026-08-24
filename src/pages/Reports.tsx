@@ -18,7 +18,7 @@ import { exportSheet } from "@/lib/excelTemplates";
 import { useFormatDate } from "@/lib/dateFormat";
 
 const INV_REPORT_LINKS = [
-  { label: "Stock Summary",      route: "/reports/inventory/stock-summary",     icon: FileSpreadsheet, desc: "Opening · Inward · Outward · Closing" },
+  { label: "Stock Summary",      route: "/reports/inventory/stock-summary-tally", icon: FileSpreadsheet, desc: "Group → Item → Ledger drill-down, Tally-style" },
   { label: "Movement Register",  route: "/reports/inventory/movement-register", icon: Activity,        desc: "All stock inflows & outflows" },
   { label: "Stock Ageing",       route: "/reports/inventory/stock-ageing",      icon: Clock,           desc: "Days since last movement" },
   { label: "Dead Stock",         route: "/reports/inventory/dead-stock",        icon: AlertTriangle,   desc: "Idle inventory report" },
